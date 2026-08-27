@@ -396,8 +396,10 @@ git commit -m "Implement DialogUtils find/click and read-text methods"
         /// <returns><c>true</c> if a matching dialog was found before the timeout.</returns>
         public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
         {
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            do
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+            int start = Environment.TickCount;
+            while (true)
             {
                 IntPtr found = FindDialog(titlePattern, exactMatch: false);
                 if (found != IntPtr.Zero)
@@ -405,25 +407,28 @@ git commit -m "Implement DialogUtils find/click and read-text methods"
                     hWnd = found;
                     return true;
                 }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    hWnd = IntPtr.Zero;
+                    return false;
+                }
                 Thread.Sleep(pollIntervalMs);
-            } while (DateTime.UtcNow < deadline);
-
-            hWnd = IntPtr.Zero;
-            return false;
+            }
         }
 
         /// <summary>Polls until a dialog handle is no longer valid (the dialog closed), or the timeout elapses.</summary>
         public bool WaitForDialogToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            do
-            {
-                if (!IsWindowNative(hWnd))
-                    return true;
-                Thread.Sleep(pollIntervalMs);
-            } while (DateTime.UtcNow < deadline);
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
 
-            return false;
+            int start = Environment.TickCount;
+            while (IsWindowNative(hWnd))
+            {
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    return false;
+                Thread.Sleep(pollIntervalMs);
+            }
+            return true;
         }
 
         #endregion
