@@ -175,6 +175,50 @@ namespace DialogAutomation
 
         #endregion
 
+        #region Wait-for-Dialog Polling
+
+        /// <summary>Polls for a top-level dialog matching <paramref name="titlePattern"/> (substring, case-insensitive) until it appears or the timeout elapses.</summary>
+        /// <param name="hWnd">The matching dialog's handle, or <see cref="IntPtr.Zero"/> if not found in time.</param>
+        /// <returns><c>true</c> if a matching dialog was found before the timeout.</returns>
+        public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
+        {
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+            int start = Environment.TickCount;
+            while (true)
+            {
+                IntPtr found = FindDialog(titlePattern, exactMatch: false);
+                if (found != IntPtr.Zero)
+                {
+                    hWnd = found;
+                    return true;
+                }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    hWnd = IntPtr.Zero;
+                    return false;
+                }
+                Thread.Sleep(pollIntervalMs);
+            }
+        }
+
+        /// <summary>Polls until a dialog handle is no longer valid (the dialog closed), or the timeout elapses.</summary>
+        public bool WaitForDialogToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
+        {
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+            int start = Environment.TickCount;
+            while (IsWindowNative(hWnd))
+            {
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    return false;
+                Thread.Sleep(pollIntervalMs);
+            }
+            return true;
+        }
+
+        #endregion
+
         #region Win32 Interop
 
         private const uint BM_CLICK = 0x00F5;
