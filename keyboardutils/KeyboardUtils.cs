@@ -350,7 +350,7 @@ namespace KeyboardAutomation
         public void HoldKey(VirtualKey key, int holdMilliseconds)
         {
             KeyDown(key);
-            Thread.Sleep(holdMilliseconds);
+            Thread.Sleep(Math.Max(0, holdMilliseconds));
             KeyUp(key);
         }
 

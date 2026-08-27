@@ -571,7 +571,7 @@ git commit -m "Add VirtualKey/ModifierKeys enums and SendInput interop layer to 
         public void HoldKey(VirtualKey key, int holdMilliseconds)
         {
             KeyDown(key);
-            Thread.Sleep(holdMilliseconds);
+            Thread.Sleep(Math.Max(0, holdMilliseconds));
             KeyUp(key);
         }
 
