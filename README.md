@@ -8,13 +8,27 @@ Robot Studio design surface, with its own README and per-method usage docs.
 |---|---|---|
 | [mouseutils](mouseutils/README.md) | `MouseAutomation` | Moves, clicks, drags, and scrolls the mouse via `SendInput`/`SetCursorPos`; controls cursor appearance, visibility, and confinement. |
 | [screencaptureutils](screencaptureutils/README.md) | `ScreenCaptureAutomation` | Captures the screen, a region, or a window to a file/clipboard; compares captures against a baseline; annotates or redacts saved screenshots. |
+| [keyboardutils](keyboardutils/README.md) | `KeyboardAutomation` | Injects keyboard input via `SendInput`: key presses, combos, typed text, and a clipboard-paste fallback; queries key/modifier state. |
+| [windowutils](windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
+| [ocrutils](ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
+| [dialogutils](dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 
-The two components are designed to be used together: MouseUtils owns
-cursor/input concerns, ScreenCaptureUtils owns pixels-to-image concerns.
+> **Status:** `keyboardutils`, `windowutils`, `ocrutils`, and `dialogutils` are
+> designed and planned (see `docs/superpowers/specs/` and
+> `docs/superpowers/plans/`) but not yet implemented — their linked READMEs
+> don't exist until their implementation plans are executed.
+
+Each component is fully standalone (no project references between them), but
+they're designed to complement each other: MouseUtils and KeyboardUtils own
+input (cursor/click and keyboard, respectively), ScreenCaptureUtils and
+OcrUtils own pixels-to-information (images and recognized text), and
+WindowUtils and DialogUtils own window management (general windows and
+native dialogs, respectively).
 
 ## Requirements
 
-- Windows (both projects target `net10.0-windows`)
+- Windows (most projects target `net10.0-windows`; `ocrutils` targets the
+  versioned `net10.0-windows10.0.19041.0` to consume WinRT's `Windows.Media.Ocr`)
 - .NET 10 SDK
 - Visual Studio 2022 (17.x) or later, or Pega Robot Studio, to consume the
   built components
@@ -37,3 +51,4 @@ Each component has its own README with the full method reference, plus a
 
 - [mouseutils/README.md](mouseutils/README.md) and [mouseutils/Documentation/](mouseutils/Documentation/README.md)
 - [screencaptureutils/README.md](screencaptureutils/README.md)
+- keyboardutils/README.md, windowutils/README.md, ocrutils/README.md, dialogutils/README.md (planned — see the Status note above)
