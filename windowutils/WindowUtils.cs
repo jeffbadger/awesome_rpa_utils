@@ -309,6 +309,39 @@ namespace WindowAutomation
 
         #endregion
 
+        #region Child / Multi-Window Enumeration
+
+        /// <summary>Gets all direct child windows/controls of a parent window via <c>EnumChildWindows</c>.</summary>
+        public List<IntPtr> GetChildWindows(IntPtr hWndParent)
+        {
+            var children = new List<IntPtr>();
+            EnumChildWindows(hWndParent, (hWnd, lParam) =>
+            {
+                children.Add(hWnd);
+                return true;
+            }, IntPtr.Zero);
+            return children;
+        }
+
+        /// <summary>
+        /// Finds a child window under <paramref name="hWndParent"/> matching the given title
+        /// and/or class name (pass <c>null</c> for either to not filter on it). Returns
+        /// <see cref="IntPtr.Zero"/> if none matches.
+        /// </summary>
+        public IntPtr FindChildWindow(IntPtr hWndParent, string title, string className)
+        {
+            foreach (var child in GetChildWindows(hWndParent))
+            {
+                bool titleMatches = title == null || GetWindowTitle(child) == title;
+                bool classMatches = className == null || GetWindowClassName(child) == className;
+                if (titleMatches && classMatches)
+                    return child;
+            }
+            return IntPtr.Zero;
+        }
+
+        #endregion
+
         #region Win32 Interop
 
         private const uint WM_CLOSE = 0x0010;
