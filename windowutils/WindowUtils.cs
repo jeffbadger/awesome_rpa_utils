@@ -220,6 +220,89 @@ namespace WindowAutomation
 
         #endregion
 
+        #region Activation & Z-Order
+
+        /// <summary>Brings a window to the foreground and gives it input focus.</summary>
+        /// <exception cref="Win32Exception">
+        /// SetForegroundWindow failed. Windows' foreground-lock rules can block activation
+        /// requested from a background process that isn't the user's currently active app.
+        /// </exception>
+        public void ActivateWindow(IntPtr hWnd)
+        {
+            if (!SetForegroundWindowNative(hWnd))
+                throw new Win32Exception(Marshal.GetLastWin32Error(),
+                    "SetForegroundWindow failed. (Windows' foreground-lock rules can block activation from a background process.)");
+        }
+
+        /// <summary>
+        /// Makes a window always-on-top (or removes that state), system-wide and
+        /// session-persistent until changed again.
+        /// </summary>
+        /// <exception cref="Win32Exception">SetWindowPos failed.</exception>
+        public void SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop)
+        {
+            IntPtr insertAfter = alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
+            if (!SetWindowPos(hWnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "SetWindowPos failed.");
+        }
+
+        /// <summary>
+        /// Polls for a top-level window matching <paramref name="title"/> (substring,
+        /// case-insensitive) until it appears or the timeout elapses.
+        /// </summary>
+        /// <param name="title">The window title substring to match (case-insensitive).</param>
+        /// <param name="timeoutMs">Maximum time to poll, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Time to sleep between polls, in milliseconds.</param>
+        /// <param name="hWnd">The matching window's handle, or <see cref="IntPtr.Zero"/> if not found in time.</param>
+        /// <returns><c>true</c> if a matching window was found before the timeout.</returns>
+        public bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            do
+            {
+                IntPtr found = FindWindowByTitle(title, exactMatch: false);
+                if (found != IntPtr.Zero)
+                {
+                    hWnd = found;
+                    return true;
+                }
+                Thread.Sleep(pollIntervalMs);
+            } while (DateTime.UtcNow < deadline);
+
+            hWnd = IntPtr.Zero;
+            return false;
+        }
+
+        /// <summary>Polls until a window handle is no longer valid (the window closed), or the timeout elapses.</summary>
+        public bool WaitForWindowToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            do
+            {
+                if (!IsWindowNative(hWnd))
+                    return true;
+                Thread.Sleep(pollIntervalMs);
+            } while (DateTime.UtcNow < deadline);
+
+            return false;
+        }
+
+        /// <summary>Polls until the given window becomes the foreground window, or the timeout elapses.</summary>
+        public bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            do
+            {
+                if (GetForegroundWindow() == hWnd)
+                    return true;
+                Thread.Sleep(pollIntervalMs);
+            } while (DateTime.UtcNow < deadline);
+
+            return false;
+        }
+
+        #endregion
+
         #region Win32 Interop
 
         private const uint WM_CLOSE = 0x0010;
