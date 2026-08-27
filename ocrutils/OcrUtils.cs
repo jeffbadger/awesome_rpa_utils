@@ -90,12 +90,13 @@ namespace OcrAutomation
         }
 
         /// <summary>Loads an image file and returns its recognized text.</summary>
-        /// <param name="filePath">The path to the image file to load and recognize.</param>
+        /// <param name="filePath">Path to the image file to recognize.</param>
         /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
+        /// <exception cref="FileNotFoundException"><paramref name="filePath"/> does not exist.</exception>
         /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
         public string GetTextFromImageFile(string filePath, string languageTag = null)
         {
-            using (Bitmap bitmap = new Bitmap(filePath))
+            using (Bitmap bitmap = LoadBitmapWithoutLockingFile(filePath))
             {
                 return RecognizeText(bitmap, languageTag).Text;
             }
@@ -116,6 +117,19 @@ namespace OcrAutomation
                 g.CopyFromScreen(left, top, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
             }
             return bmp;
+        }
+
+        private static Bitmap LoadBitmapWithoutLockingFile(string filePath)
+        {
+            if (!File.Exists(filePath))
+                throw new FileNotFoundException("Image file not found.", filePath);
+
+            byte[] bytes = File.ReadAllBytes(filePath);
+            using (MemoryStream ms = new MemoryStream(bytes))
+            using (Bitmap decoded = new Bitmap(ms))
+            {
+                return new Bitmap(decoded);
+            }
         }
 
         /// <summary>
