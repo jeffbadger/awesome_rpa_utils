@@ -24,7 +24,7 @@ target application runs at a higher integrity level (UIPI).
 A keyboard key identified by its Windows virtual-key code: letters (`A`-`Z`),
 digits (`D0`-`D9`), function keys (`F1`-`F24`), navigation keys (`Left`,
 `Right`, `Up`, `Down`, `Home`, `End`, `PageUp`, `PageDown`), editing keys
-(`Enter`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Escape`),
+(`Enter`, `Tab`, `Space`, `Back`, `Delete`, `Insert`, `Escape`),
 modifier keys (`Control`, `Shift`, `Alt`, and side-specific `LControl`/
 `RControl`/`LShift`/`RShift`/`LAlt`/`RAlt`), `LWin`/`RWin`, numpad keys
 (`Numpad0`-`Numpad9`, `Multiply`, `Add`, `Subtract`, `Decimal`, `Divide`,

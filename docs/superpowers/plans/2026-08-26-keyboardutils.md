@@ -957,7 +957,7 @@ target application runs at a higher integrity level (UIPI).
 A keyboard key identified by its Windows virtual-key code: letters (`A`-`Z`),
 digits (`D0`-`D9`), function keys (`F1`-`F24`), navigation keys (`Left`,
 `Right`, `Up`, `Down`, `Home`, `End`, `PageUp`, `PageDown`), editing keys
-(`Enter`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `Escape`),
+(`Enter`, `Tab`, `Space`, `Back`, `Delete`, `Insert`, `Escape`),
 modifier keys (`Control`, `Shift`, `Alt`, and side-specific `LControl`/
 `RControl`/`LShift`/`RShift`/`LAlt`/`RAlt`), `LWin`/`RWin`, numpad keys
 (`Numpad0`-`Numpad9`, `Multiply`, `Add`, `Subtract`, `Decimal`, `Divide`,
@@ -1154,8 +1154,7 @@ Create `keyboardutils/Documentation/ClipboardPaste.md`:
 keyboard.PasteText("some-value-that-typed-badly");
 ```
 
-The original clipboard contents are restored automatically afterward, even
-if the paste itself throws.
+The original clipboard contents are restored automatically afterward when they were plain text (or the clipboard was empty). If the clipboard held something else, such as an image, that content can't be restored — the pasted text is left in place instead. See the main [README](../README.md)'s Notes & Caveats section for details.
 ```
 
 - [ ] **Step 5: Write `StateQuery.md`**
