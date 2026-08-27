@@ -49,7 +49,7 @@ ID, for use with `ClickDialogButton`: `Ok`, `Cancel`, `Abort`, `Retry`,
 
 | Method | Description |
 |---|---|
-| `string GetDialogText(IntPtr hDialog)` | Gets a dialog's message body (its first `Static`-class child control's text). |
+| `string GetDialogText(IntPtr hDialog)` | Gets a dialog's message body (the first `Static`-class child control with non-empty text — skips icon controls, which have no text). |
 | `string GetControlText(IntPtr hControl)` | Gets any control's text (buttons, labels, edit fields, title bars). |
 
 ### Wait-for-Dialog Polling
@@ -75,3 +75,4 @@ ID, for use with `ClickDialogButton`: `Ok`, `Cancel`, `Abort`, `Retry`,
   interactive automation use.
 - **Dialog handles (`IntPtr`) become invalid once the dialog closes.** Re-find the dialog
   (or use `WaitForDialog`) rather than caching a handle across a long-running step.
+- **`GetDialogText`** skips `Static`-class children with empty text (such as an icon control on a MessageBox with `MessageBoxIcon.Warning`/`Error`/etc.) and returns the first one with actual text, so it correctly finds the message body regardless of whether — or where — an icon control appears among the dialog's children.
