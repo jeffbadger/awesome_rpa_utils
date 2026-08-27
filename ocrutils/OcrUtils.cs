@@ -169,6 +169,29 @@ namespace OcrAutomation
 
         #endregion
 
+        #region Wait-for-Text Polling
+
+        /// <summary>Polls a screen region until it contains text matching <paramref name="expectedText"/> (case-insensitive substring), or the timeout elapses.</summary>
+        /// <exception cref="ArgumentException">Width or height is not positive.</exception>
+        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs)
+        {
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+            int start = Environment.TickCount;
+            while (true)
+            {
+                string text = GetTextFromRegion(left, top, width, height);
+                if (text.IndexOf(expectedText, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    return false;
+                Thread.Sleep(pollIntervalMs);
+            }
+        }
+
+        #endregion
+
         #region Internal Helpers
 
         private static Bitmap CaptureRegionToBitmap(int left, int top, int width, int height)
