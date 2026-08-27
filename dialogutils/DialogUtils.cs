@@ -68,6 +68,8 @@ namespace DialogAutomation
         /// If <c>false</c>, matches any window whose title contains
         /// <paramref name="titlePattern"/> (case-insensitive).
         /// </param>
+        [Category("Dialog - Find & Click")]
+        [Description("Finds a top-level dialog window by its title, or returns null if none matches.")]
         public IntPtr FindDialog(string titlePattern, bool exactMatch = true)
         {
             foreach (var hWnd in GetTopLevelWindows())
@@ -86,6 +88,8 @@ namespace DialogAutomation
         /// Finds a button on a dialog by its visible text (case-insensitive). Returns
         /// <see cref="IntPtr.Zero"/> if none matches.
         /// </summary>
+        [Category("Dialog - Find & Click")]
+        [Description("Finds a button on a dialog by its visible text, or returns null if none matches.")]
         public IntPtr FindButtonByText(IntPtr hDialog, string buttonText)
         {
             foreach (var child in GetChildWindows(hDialog))
@@ -103,6 +107,8 @@ namespace DialogAutomation
         /// Finds a control on a dialog by its control ID (<c>GetDlgItem</c>). Returns
         /// <see cref="IntPtr.Zero"/> if none matches.
         /// </summary>
+        [Category("Dialog - Find & Click")]
+        [Description("Finds a control on a dialog by its control ID, or returns null if none matches.")]
         public IntPtr FindButtonById(IntPtr hDialog, int controlId)
         {
             return GetDlgItem(hDialog, controlId);
@@ -116,6 +122,8 @@ namespace DialogAutomation
         /// <c>SendMessage</c>'s return value for <c>BM_CLICK</c> carries no useful
         /// success/failure signal, so this method never throws based on it.
         /// </remarks>
+        [Category("Dialog - Find & Click")]
+        [Description("Invokes a button by sending it BM_CLICK, without moving the cursor.")]
         public void ClickButton(IntPtr hButton)
         {
             SendMessage(hButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
@@ -123,6 +131,8 @@ namespace DialogAutomation
 
         /// <summary>Invokes a standard dialog button by its well-known control ID.</summary>
         /// <exception cref="InvalidOperationException">The dialog has no control with that ID.</exception>
+        [Category("Dialog - Find & Click")]
+        [Description("Invokes a standard dialog button by its well-known control ID.")]
         public void ClickDialogButton(IntPtr hDialog, DialogButton button)
         {
             IntPtr hButton = GetDlgItem(hDialog, (int)button);
@@ -133,6 +143,8 @@ namespace DialogAutomation
 
         /// <summary>Finds a button by its visible text and invokes it.</summary>
         /// <exception cref="InvalidOperationException">The dialog has no button with that text.</exception>
+        [Category("Dialog - Find & Click")]
+        [Description("Finds a button by its visible text and invokes it.")]
         public void ClickDialogButtonByText(IntPtr hDialog, string buttonText)
         {
             IntPtr hButton = FindButtonByText(hDialog, buttonText);
@@ -152,6 +164,8 @@ namespace DialogAutomation
         /// an icon control on a MessageBox with an icon set. Returns an empty string if
         /// no <c>Static</c> child has text.
         /// </summary>
+        [Category("Dialog - Read Text")]
+        [Description("Gets a dialog's message body text from its first non-empty Static child control.")]
         public string GetDialogText(IntPtr hDialog)
         {
             foreach (var child in GetChildWindows(hDialog))
@@ -167,6 +181,8 @@ namespace DialogAutomation
         }
 
         /// <summary>Gets any control's text via <c>GetWindowText</c> (buttons, static labels, edit fields, and the dialog's own title bar).</summary>
+        [Category("Dialog - Read Text")]
+        [Description("Gets any control's text (buttons, labels, edit fields, or a dialog's title bar).")]
         public string GetControlText(IntPtr hControl)
         {
             int length = GetWindowTextLength(hControl);
@@ -185,6 +201,8 @@ namespace DialogAutomation
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
         /// <param name="hWnd">The matching dialog's handle, or <see cref="IntPtr.Zero"/> if not found in time.</param>
         /// <returns><c>true</c> if a matching dialog was found before the timeout.</returns>
+        [Category("Dialog - Wait for Dialog")]
+        [Description("Polls for a top-level dialog matching a title pattern until it appears or the timeout elapses.")]
         public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
@@ -212,6 +230,8 @@ namespace DialogAutomation
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
         /// <returns><c>true</c> if the handle became invalid before the timeout; <c>false</c> if the timeout elapsed first.</returns>
+        [Category("Dialog - Wait for Dialog")]
+        [Description("Polls until a dialog handle is no longer valid, or the timeout elapses.")]
         public bool WaitForDialogToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
