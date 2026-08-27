@@ -67,7 +67,7 @@ namespace WindowAutomation
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
-        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [DllImport("user32.dll", EntryPoint = "FindWindow", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern IntPtr FindWindowNative(string lpClassName, string lpWindowName);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
