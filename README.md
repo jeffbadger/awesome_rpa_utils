@@ -13,10 +13,10 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [ocrutils](ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
 | [dialogutils](dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 
-> **Status:** `windowutils`, `ocrutils`, and `dialogutils` are designed and
-> planned (see `docs/superpowers/specs/` and `docs/superpowers/plans/`) but
-> not yet implemented — their linked READMEs don't exist until their
-> implementation plans are executed. `keyboardutils` is fully implemented.
+> **Status:** `ocrutils` and `dialogutils` are designed and planned (see
+> `docs/superpowers/specs/` and `docs/superpowers/plans/`) but not yet
+> implemented — their linked READMEs don't exist until their implementation
+> plans are executed. `keyboardutils` and `windowutils` are fully implemented.
 
 Each component is fully standalone (no project references between them), but
 they're designed to complement each other: MouseUtils and KeyboardUtils own
@@ -52,4 +52,5 @@ Each component has its own README with the full method reference, plus a
 - [mouseutils/README.md](mouseutils/README.md) and [mouseutils/Documentation/](mouseutils/Documentation/README.md)
 - [screencaptureutils/README.md](screencaptureutils/README.md)
 - [keyboardutils/README.md](keyboardutils/README.md) and [keyboardutils/Documentation/](keyboardutils/Documentation/README.md)
-- windowutils/README.md, ocrutils/README.md, dialogutils/README.md (planned — see the Status note above)
+- [windowutils/README.md](windowutils/README.md) and [windowutils/Documentation/](windowutils/Documentation/README.md)
+- ocrutils/README.md, dialogutils/README.md (planned — see the Status note above)
