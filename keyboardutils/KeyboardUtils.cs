@@ -409,6 +409,120 @@ namespace KeyboardAutomation
 
         #endregion
 
+        #region Clipboard-Paste Fallback
+
+        /// <summary>
+        /// Saves the current clipboard text (if any), sets the clipboard to
+        /// <paramref name="text"/>, sends Ctrl+V, then restores the original clipboard
+        /// contents. Use when synthetic key events are ignored or mangled by the target
+        /// (e.g. some IME-backed fields). Requires an STA thread, as with any Windows
+        /// clipboard access.
+        /// </summary>
+        /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
+        /// <exception cref="Win32Exception">A clipboard or input injection call failed.</exception>
+        public void PasteText(string text)
+        {
+            if (text == null)
+                throw new ArgumentException("Text cannot be null.", nameof(text));
+
+            string original = GetClipboardText();
+            try
+            {
+                SetClipboardText(text);
+                PressKeyWithModifiers(VirtualKey.V, ModifierKeys.Control);
+                Thread.Sleep(50);
+            }
+            finally
+            {
+                if (original != null)
+                    SetClipboardText(original);
+                else
+                    ClearClipboard();
+            }
+        }
+
+        private static string GetClipboardText()
+        {
+            if (!IsClipboardFormatAvailable(CF_UNICODETEXT))
+                return null;
+
+            if (!OpenClipboard(IntPtr.Zero))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenClipboard failed.");
+            try
+            {
+                IntPtr handle = GetClipboardData(CF_UNICODETEXT);
+                if (handle == IntPtr.Zero)
+                    return null;
+
+                IntPtr pointer = GlobalLock(handle);
+                if (pointer == IntPtr.Zero)
+                    return null;
+                try
+                {
+                    return Marshal.PtrToStringUni(pointer);
+                }
+                finally
+                {
+                    GlobalUnlock(handle);
+                }
+            }
+            finally
+            {
+                CloseClipboard();
+            }
+        }
+
+        private static void SetClipboardText(string text)
+        {
+            if (!OpenClipboard(IntPtr.Zero))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenClipboard failed.");
+            try
+            {
+                EmptyClipboard();
+
+                int byteCount = (text.Length + 1) * 2;
+                IntPtr handle = GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)byteCount);
+                if (handle == IntPtr.Zero)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "GlobalAlloc failed.");
+
+                IntPtr pointer = GlobalLock(handle);
+                if (pointer == IntPtr.Zero)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "GlobalLock failed.");
+                try
+                {
+                    Marshal.Copy(text.ToCharArray(), 0, pointer, text.Length);
+                    Marshal.WriteInt16(pointer, text.Length * 2, 0);
+                }
+                finally
+                {
+                    GlobalUnlock(handle);
+                }
+
+                if (SetClipboardData(CF_UNICODETEXT, handle) == IntPtr.Zero)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "SetClipboardData failed.");
+            }
+            finally
+            {
+                CloseClipboard();
+            }
+        }
+
+        private static void ClearClipboard()
+        {
+            if (!OpenClipboard(IntPtr.Zero))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenClipboard failed.");
+            try
+            {
+                EmptyClipboard();
+            }
+            finally
+            {
+                CloseClipboard();
+            }
+        }
+
+        #endregion
+
         #region Win32 Interop
 
         private const uint INPUT_KEYBOARD = 1;
@@ -420,6 +534,36 @@ namespace KeyboardAutomation
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
+
+        private const uint CF_UNICODETEXT = 13;
+        private const uint GMEM_MOVEABLE = 0x0002;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool CloseClipboard();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool EmptyClipboard();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr GetClipboardData(uint uFormat);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsClipboardFormatAvailable(uint format);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalLock(IntPtr hMem);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GlobalUnlock(IntPtr hMem);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct INPUT
