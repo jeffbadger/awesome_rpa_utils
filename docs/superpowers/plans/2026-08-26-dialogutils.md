@@ -346,7 +346,11 @@ This will fail to compile until Task 4 adds `GetControlText` (used above by `Fin
             foreach (var child in GetChildWindows(hDialog))
             {
                 if (GetWindowClassName(child) == "Static")
-                    return GetControlText(child);
+                {
+                    string text = GetControlText(child);
+                    if (!string.IsNullOrEmpty(text))
+                        return text;
+                }
             }
             return string.Empty;
         }
