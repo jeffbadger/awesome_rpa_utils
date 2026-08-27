@@ -311,7 +311,7 @@ namespace WindowAutomation
 
         #region Child / Multi-Window Enumeration
 
-        /// <summary>Gets all direct child windows/controls of a parent window via <c>EnumChildWindows</c>.</summary>
+        /// <summary>Gets all descendant windows/controls of a parent window (recursively, not just immediate children) via <c>EnumChildWindows</c>.</summary>
         public List<IntPtr> GetChildWindows(IntPtr hWndParent)
         {
             var children = new List<IntPtr>();
