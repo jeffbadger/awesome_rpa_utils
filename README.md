@@ -6,12 +6,12 @@ Robot Studio design surface, with its own README and per-method usage docs.
 
 | Component | Assembly | Description |
 |---|---|---|
-| [mouseutils](mouseutils/README.md) | `MouseAutomation` | Moves, clicks, drags, and scrolls the mouse via `SendInput`/`SetCursorPos`; controls cursor appearance, visibility, and confinement. |
-| [screencaptureutils](screencaptureutils/README.md) | `ScreenCaptureAutomation` | Captures the screen, a region, or a window to a file/clipboard; compares captures against a baseline; annotates or redacts saved screenshots. |
-| [keyboardutils](keyboardutils/README.md) | `KeyboardAutomation` | Injects keyboard input via `SendInput`: key presses, combos, typed text, and a clipboard-paste fallback; queries key/modifier state. |
-| [windowutils](windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
-| [ocrutils](ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
-| [dialogutils](dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
+| [mouseutils](src/mouseutils/README.md) | `MouseAutomation` | Moves, clicks, drags, and scrolls the mouse via `SendInput`/`SetCursorPos`; controls cursor appearance, visibility, and confinement. |
+| [screencaptureutils](src/screencaptureutils/README.md) | `ScreenCaptureAutomation` | Captures the screen, a region, or a window to a file/clipboard; compares captures against a baseline; annotates or redacts saved screenshots. |
+| [keyboardutils](src/keyboardutils/README.md) | `KeyboardAutomation` | Injects keyboard input via `SendInput`: key presses, combos, typed text, and a clipboard-paste fallback; queries key/modifier state. |
+| [windowutils](src/windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
+| [ocrutils](src/ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
+| [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 
 Each component is fully standalone (no project references between them), but
 they're designed to complement each other: MouseUtils and KeyboardUtils own
@@ -31,22 +31,29 @@ native dialogs, respectively).
 ## Building
 
 ```bash
-dotnet build AwesomeRpaUtils.sln
+dotnet build src/AwesomeRpaUtils.sln
 ```
 
-All projects share build settings via [Directory.Build.props](Directory.Build.props),
-which combines every project's output into a single root-level `bin/` folder
+All projects share build settings via [Directory.Build.props](src/Directory.Build.props),
+which combines every project's output into a single `src/bin/` folder
 (intermediate `obj/` output stays per-project to avoid concurrent-build
 collisions).
+
+Prebuilt DLLs for each tagged version are available on the
+[Releases](../../releases) page.
 
 ## Documentation
 
 Each component has its own README with the full method reference, plus a
 `Documentation/` folder with real-world usage examples organized by category:
 
-- [mouseutils/README.md](mouseutils/README.md) and [mouseutils/Documentation/](mouseutils/Documentation/README.md)
-- [screencaptureutils/README.md](screencaptureutils/README.md)
-- [keyboardutils/README.md](keyboardutils/README.md) and [keyboardutils/Documentation/](keyboardutils/Documentation/README.md)
-- [windowutils/README.md](windowutils/README.md) and [windowutils/Documentation/](windowutils/Documentation/README.md)
-- [ocrutils/README.md](ocrutils/README.md) and [ocrutils/Documentation/](ocrutils/Documentation/README.md)
-- [dialogutils/README.md](dialogutils/README.md) and [dialogutils/Documentation/](dialogutils/Documentation/README.md)
+- [mouseutils/README.md](src/mouseutils/README.md) and [mouseutils/Documentation/](src/mouseutils/Documentation/README.md)
+- [screencaptureutils/README.md](src/screencaptureutils/README.md)
+- [keyboardutils/README.md](src/keyboardutils/README.md) and [keyboardutils/Documentation/](src/keyboardutils/Documentation/README.md)
+- [windowutils/README.md](src/windowutils/README.md) and [windowutils/Documentation/](src/windowutils/Documentation/README.md)
+- [ocrutils/README.md](src/ocrutils/README.md) and [ocrutils/Documentation/](src/ocrutils/Documentation/README.md)
+- [dialogutils/README.md](src/dialogutils/README.md) and [dialogutils/Documentation/](src/dialogutils/Documentation/README.md)
+
+## License
+
+MIT — see [LICENSE](LICENSE).
