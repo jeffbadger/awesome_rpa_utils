@@ -277,6 +277,8 @@ namespace KeyboardAutomation
 
         /// <summary>Presses and holds a key. Pair with <see cref="KeyUp"/>.</summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
+        [Category("Keyboard - Press/Hold/Combo")]
+        [Description("Presses and holds a key down.")]
         public void KeyDown(VirtualKey key)
         {
             SendInputs(new[] { MakeKeyInput((int)key, false) });
@@ -284,6 +286,8 @@ namespace KeyboardAutomation
 
         /// <summary>Releases a key previously pressed with <see cref="KeyDown"/>.</summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
+        [Category("Keyboard - Press/Hold/Combo")]
+        [Description("Releases a previously pressed key.")]
         public void KeyUp(VirtualKey key)
         {
             SendInputs(new[] { MakeKeyInput((int)key, true) });
@@ -291,6 +295,8 @@ namespace KeyboardAutomation
 
         /// <summary>Presses and releases a key (~20 ms between down and up).</summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
+        [Category("Keyboard - Press/Hold/Combo")]
+        [Description("Presses and releases a key (~20 ms between down and up).")]
         public void PressKey(VirtualKey key)
         {
             KeyDown(key);
@@ -304,6 +310,8 @@ namespace KeyboardAutomation
         /// interleave mid-sequence.
         /// </summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
+        [Category("Keyboard - Press/Hold/Combo")]
+        [Description("Presses a key while holding modifier keys (Control/Shift/Alt/Win).")]
         public void PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers)
         {
             var batch = new List<INPUT>();
@@ -331,6 +339,8 @@ namespace KeyboardAutomation
         /// </summary>
         /// <exception cref="ArgumentException"><paramref name="keys"/> is null or empty.</exception>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
+        [Category("Keyboard - Press/Hold/Combo")]
+        [Description("Presses all given keys down in order, then releases them in reverse order.")]
         public void PressKeyCombo(params VirtualKey[] keys)
         {
             if (keys == null || keys.Length == 0)
@@ -347,6 +357,8 @@ namespace KeyboardAutomation
 
         /// <summary>Holds a key down for the given duration, then releases it.</summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
+        [Category("Keyboard - Press/Hold/Combo")]
+        [Description("Holds a key down for the given duration, then releases it.")]
         public void HoldKey(VirtualKey key, int holdMilliseconds)
         {
             KeyDown(key);
@@ -361,6 +373,8 @@ namespace KeyboardAutomation
         /// <summary>Types a string via <c>KEYEVENTF_UNICODE</c> (default ~10 ms/character).</summary>
         /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
+        [Category("Keyboard - Text Typing")]
+        [Description("Types a string via simulated Unicode key input (default ~10 ms/character).")]
         public void TypeText(string text)
         {
             TypeText(text, 10);
@@ -374,6 +388,8 @@ namespace KeyboardAutomation
         /// </summary>
         /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
+        [Category("Keyboard - Text Typing")]
+        [Description("Types a string via simulated Unicode key input with a custom per-character delay.")]
         public void TypeText(string text, int delayMilliseconds)
         {
             if (text == null)
@@ -422,6 +438,8 @@ namespace KeyboardAutomation
         /// </summary>
         /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
         /// <exception cref="Win32Exception">A clipboard or input injection call failed.</exception>
+        [Category("Keyboard - Clipboard")]
+        [Description("Sets the clipboard to the given text, sends Ctrl+V, then restores the original clipboard.")]
         public void PasteText(string text)
         {
             if (text == null)
@@ -532,6 +550,8 @@ namespace KeyboardAutomation
         #region State Query & Modifiers
 
         /// <summary>Returns <c>true</c> while <paramref name="key"/> is currently held down.</summary>
+        [Category("Keyboard - State Query")]
+        [Description("Returns true while the given key is currently held down.")]
         public bool IsKeyDown(VirtualKey key)
         {
             return (GetAsyncKeyState((int)key) & 0x8000) != 0;
@@ -541,12 +561,16 @@ namespace KeyboardAutomation
         /// Returns <c>true</c> if every modifier flag set in <paramref name="modifier"/> is
         /// currently held down (Win checks both LWin and RWin).
         /// </summary>
+        [Category("Keyboard - State Query")]
+        [Description("Returns true if every given modifier flag is currently held down.")]
         public bool IsModifierDown(ModifierKeys modifier)
         {
             return (GetActiveModifiers() & modifier) == modifier;
         }
 
         /// <summary>Returns the combination of Ctrl/Shift/Alt/Win currently held, as flags.</summary>
+        [Category("Keyboard - State Query")]
+        [Description("Returns the combination of Ctrl/Shift/Alt/Win currently held, as flags.")]
         public ModifierKeys GetActiveModifiers()
         {
             ModifierKeys result = ModifierKeys.None;
