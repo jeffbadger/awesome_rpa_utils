@@ -529,6 +529,36 @@ namespace KeyboardAutomation
 
         #endregion
 
+        #region State Query & Modifiers
+
+        /// <summary>Returns <c>true</c> while <paramref name="key"/> is currently held down.</summary>
+        public bool IsKeyDown(VirtualKey key)
+        {
+            return (GetAsyncKeyState((int)key) & 0x8000) != 0;
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if every modifier flag set in <paramref name="modifier"/> is
+        /// currently held down (Win checks both LWin and RWin).
+        /// </summary>
+        public bool IsModifierDown(ModifierKeys modifier)
+        {
+            return (GetActiveModifiers() & modifier) == modifier;
+        }
+
+        /// <summary>Returns the combination of Ctrl/Shift/Alt/Win currently held, as flags.</summary>
+        public ModifierKeys GetActiveModifiers()
+        {
+            ModifierKeys result = ModifierKeys.None;
+            if (IsKeyDown(VirtualKey.Control)) result |= ModifierKeys.Control;
+            if (IsKeyDown(VirtualKey.Shift)) result |= ModifierKeys.Shift;
+            if (IsKeyDown(VirtualKey.Alt)) result |= ModifierKeys.Alt;
+            if (IsKeyDown(VirtualKey.LWin) || IsKeyDown(VirtualKey.RWin)) result |= ModifierKeys.Win;
+            return result;
+        }
+
+        #endregion
+
         #region Win32 Interop
 
         private const uint INPUT_KEYBOARD = 1;
