@@ -54,6 +54,11 @@ Each component has its own README with the full method reference, plus a
 - [ocrutils/README.md](src/ocrutils/README.md) and [ocrutils/Documentation/](src/ocrutils/Documentation/README.md)
 - [dialogutils/README.md](src/dialogutils/README.md) and [dialogutils/Documentation/](src/dialogutils/Documentation/README.md)
 
+## Testing
+
+See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
+using Pega Robot Studio's Unit Testing framework.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
