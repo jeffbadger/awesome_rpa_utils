@@ -627,6 +627,7 @@ git commit -m "Implement KeyboardUtils core press/hold/combo methods"
             if (text == null)
                 throw new ArgumentException("Text cannot be null.", nameof(text));
 
+            Span<char> chars = stackalloc char[2];
             foreach (var rune in text.EnumerateRunes())
             {
                 if (rune.Utf16SequenceLength == 1)
@@ -639,7 +640,6 @@ git commit -m "Implement KeyboardUtils core press/hold/combo methods"
                 }
                 else
                 {
-                    Span<char> chars = stackalloc char[2];
                     rune.EncodeToUtf16(chars);
                     SendInputs(new[]
                     {

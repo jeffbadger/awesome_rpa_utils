@@ -379,6 +379,7 @@ namespace KeyboardAutomation
             if (text == null)
                 throw new ArgumentException("Text cannot be null.", nameof(text));
 
+            Span<char> chars = stackalloc char[2];
             foreach (var rune in text.EnumerateRunes())
             {
                 if (rune.Utf16SequenceLength == 1)
@@ -391,7 +392,6 @@ namespace KeyboardAutomation
                 }
                 else
                 {
-                    Span<char> chars = stackalloc char[2];
                     rune.EncodeToUtf16(chars);
                     SendInputs(new[]
                     {
