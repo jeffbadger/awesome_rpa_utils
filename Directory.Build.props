@@ -1,0 +1,10 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Combine all projects' build output into one root-level bin folder. -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)bin\</BaseOutputPath>
+    <!-- Intermediate objs stay per-project to avoid concurrent-build collisions. -->
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+
+</Project>
