@@ -415,8 +415,10 @@ namespace KeyboardAutomation
         /// Saves the current clipboard text (if any), sets the clipboard to
         /// <paramref name="text"/>, sends Ctrl+V, then restores the original clipboard
         /// contents. Use when synthetic key events are ignored or mangled by the target
-        /// (e.g. some IME-backed fields). Requires an STA thread, as with any Windows
-        /// clipboard access.
+        /// (e.g. some IME-backed fields). This uses raw Win32 clipboard calls directly (no
+        /// COM/OLE), so unlike <c>System.Windows.Forms.Clipboard</c> it does not require an
+        /// STA thread; <c>OpenClipboard</c> can transiently fail if another process (e.g. a
+        /// clipboard manager) briefly holds the clipboard open.
         /// </summary>
         /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
         /// <exception cref="Win32Exception">A clipboard or input injection call failed.</exception>
@@ -426,6 +428,7 @@ namespace KeyboardAutomation
                 throw new ArgumentException("Text cannot be null.", nameof(text));
 
             string original = GetClipboardText();
+            bool clipboardWasEmpty = CountClipboardFormats() == 0;
             try
             {
                 SetClipboardText(text);
@@ -436,8 +439,11 @@ namespace KeyboardAutomation
             {
                 if (original != null)
                     SetClipboardText(original);
-                else
+                else if (clipboardWasEmpty)
                     ClearClipboard();
+                // else: the clipboard held non-text content we can't restore (e.g. an
+                // image) - leave the pasted text in place rather than silently destroying
+                // it via EmptyClipboard.
             }
         }
 
@@ -555,6 +561,9 @@ namespace KeyboardAutomation
 
         [DllImport("user32.dll")]
         private static extern bool IsClipboardFormatAvailable(uint format);
+
+        [DllImport("user32.dll")]
+        private static extern int CountClipboardFormats();
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
