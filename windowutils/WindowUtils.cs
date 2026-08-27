@@ -257,8 +257,10 @@ namespace WindowAutomation
         /// <returns><c>true</c> if a matching window was found before the timeout.</returns>
         public bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
         {
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            do
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+            int start = Environment.TickCount;
+            while (true)
             {
                 IntPtr found = FindWindowByTitle(title, exactMatch: false);
                 if (found != IntPtr.Zero)
@@ -266,39 +268,43 @@ namespace WindowAutomation
                     hWnd = found;
                     return true;
                 }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    hWnd = IntPtr.Zero;
+                    return false;
+                }
                 Thread.Sleep(pollIntervalMs);
-            } while (DateTime.UtcNow < deadline);
-
-            hWnd = IntPtr.Zero;
-            return false;
+            }
         }
 
         /// <summary>Polls until a window handle is no longer valid (the window closed), or the timeout elapses.</summary>
         public bool WaitForWindowToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            do
-            {
-                if (!IsWindowNative(hWnd))
-                    return true;
-                Thread.Sleep(pollIntervalMs);
-            } while (DateTime.UtcNow < deadline);
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
 
-            return false;
+            int start = Environment.TickCount;
+            while (IsWindowNative(hWnd))
+            {
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    return false;
+                Thread.Sleep(pollIntervalMs);
+            }
+            return true;
         }
 
         /// <summary>Polls until the given window becomes the foreground window, or the timeout elapses.</summary>
         public bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            do
-            {
-                if (GetForegroundWindow() == hWnd)
-                    return true;
-                Thread.Sleep(pollIntervalMs);
-            } while (DateTime.UtcNow < deadline);
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
 
-            return false;
+            int start = Environment.TickCount;
+            while (GetForegroundWindow() != hWnd)
+            {
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    return false;
+                Thread.Sleep(pollIntervalMs);
+            }
+            return true;
         }
 
         #endregion
