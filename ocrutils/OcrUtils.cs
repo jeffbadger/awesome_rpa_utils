@@ -156,6 +156,19 @@ namespace OcrAutomation
 
         #endregion
 
+        #region Language
+
+        /// <summary>Gets the BCP-47 language tags of every OCR language pack currently installed.</summary>
+        public List<string> GetAvailableLanguages()
+        {
+            var tags = new List<string>();
+            foreach (Language language in OcrEngine.AvailableRecognizerLanguages)
+                tags.Add(language.LanguageTag);
+            return tags;
+        }
+
+        #endregion
+
         #region Internal Helpers
 
         private static Bitmap CaptureRegionToBitmap(int left, int top, int width, int height)
