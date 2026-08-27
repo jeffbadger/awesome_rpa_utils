@@ -178,6 +178,9 @@ namespace DialogAutomation
         #region Wait-for-Dialog Polling
 
         /// <summary>Polls for a top-level dialog matching <paramref name="titlePattern"/> (substring, case-insensitive) until it appears or the timeout elapses.</summary>
+        /// <param name="titlePattern">The title to match.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
         /// <param name="hWnd">The matching dialog's handle, or <see cref="IntPtr.Zero"/> if not found in time.</param>
         /// <returns><c>true</c> if a matching dialog was found before the timeout.</returns>
         public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
