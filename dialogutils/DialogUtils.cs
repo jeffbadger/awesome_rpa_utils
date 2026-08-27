@@ -56,6 +56,121 @@ namespace DialogAutomation
             container?.Add(this);
         }
 
+        #region Find & Click
+
+        /// <summary>
+        /// Finds a top-level dialog window by its title. Returns <see cref="IntPtr.Zero"/>
+        /// if none matches (not found is a normal, checkable outcome, not an error).
+        /// </summary>
+        /// <param name="titlePattern">The title to match.</param>
+        /// <param name="exactMatch">
+        /// If <c>true</c> (default), requires an exact, case-sensitive title match.
+        /// If <c>false</c>, matches any window whose title contains
+        /// <paramref name="titlePattern"/> (case-insensitive).
+        /// </param>
+        public IntPtr FindDialog(string titlePattern, bool exactMatch = true)
+        {
+            foreach (var hWnd in GetTopLevelWindows())
+            {
+                string title = GetControlText(hWnd);
+                bool matches = exactMatch
+                    ? string.Equals(title, titlePattern, StringComparison.Ordinal)
+                    : title.IndexOf(titlePattern, StringComparison.OrdinalIgnoreCase) >= 0;
+                if (matches)
+                    return hWnd;
+            }
+            return IntPtr.Zero;
+        }
+
+        /// <summary>
+        /// Finds a button on a dialog by its visible text (case-insensitive). Returns
+        /// <see cref="IntPtr.Zero"/> if none matches.
+        /// </summary>
+        public IntPtr FindButtonByText(IntPtr hDialog, string buttonText)
+        {
+            foreach (var child in GetChildWindows(hDialog))
+            {
+                if (GetWindowClassName(child) == "Button" &&
+                    string.Equals(GetControlText(child), buttonText, StringComparison.OrdinalIgnoreCase))
+                {
+                    return child;
+                }
+            }
+            return IntPtr.Zero;
+        }
+
+        /// <summary>
+        /// Finds a control on a dialog by its control ID (<c>GetDlgItem</c>). Returns
+        /// <see cref="IntPtr.Zero"/> if none matches.
+        /// </summary>
+        public IntPtr FindButtonById(IntPtr hDialog, int controlId)
+        {
+            return GetDlgItem(hDialog, controlId);
+        }
+
+        /// <summary>
+        /// Invokes a button by sending it <c>BM_CLICK</c> — no cursor movement is involved,
+        /// and it works even if the dialog is behind other windows.
+        /// </summary>
+        /// <remarks>
+        /// <c>SendMessage</c>'s return value for <c>BM_CLICK</c> carries no useful
+        /// success/failure signal, so this method never throws based on it.
+        /// </remarks>
+        public void ClickButton(IntPtr hButton)
+        {
+            SendMessage(hButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        /// <summary>Invokes a standard dialog button by its well-known control ID.</summary>
+        /// <exception cref="InvalidOperationException">The dialog has no control with that ID.</exception>
+        public void ClickDialogButton(IntPtr hDialog, DialogButton button)
+        {
+            IntPtr hButton = GetDlgItem(hDialog, (int)button);
+            if (hButton == IntPtr.Zero)
+                throw new InvalidOperationException($"Dialog has no control with ID {(int)button} ({button}).");
+            ClickButton(hButton);
+        }
+
+        /// <summary>Finds a button by its visible text and invokes it.</summary>
+        /// <exception cref="InvalidOperationException">The dialog has no button with that text.</exception>
+        public void ClickDialogButtonByText(IntPtr hDialog, string buttonText)
+        {
+            IntPtr hButton = FindButtonByText(hDialog, buttonText);
+            if (hButton == IntPtr.Zero)
+                throw new InvalidOperationException($"Dialog has no button labeled '{buttonText}'.");
+            ClickButton(hButton);
+        }
+
+        #endregion
+
+        #region Read Text
+
+        /// <summary>
+        /// Gets a dialog's message body: the text of its first child control of class
+        /// <c>Static</c> (the standard control class for a MessageBox's message text).
+        /// Returns an empty string if the dialog has no <c>Static</c> child.
+        /// </summary>
+        public string GetDialogText(IntPtr hDialog)
+        {
+            foreach (var child in GetChildWindows(hDialog))
+            {
+                if (GetWindowClassName(child) == "Static")
+                    return GetControlText(child);
+            }
+            return string.Empty;
+        }
+
+        /// <summary>Gets any control's text via <c>GetWindowText</c> (buttons, static labels, edit fields, and the dialog's own title bar).</summary>
+        public string GetControlText(IntPtr hControl)
+        {
+            int length = GetWindowTextLength(hControl);
+            var sb = new StringBuilder(length + 1);
+            GetWindowText(hControl, sb, sb.Capacity);
+            return sb.ToString();
+        }
+
+        #endregion
+
         #region Win32 Interop
 
         private const uint BM_CLICK = 0x00F5;
