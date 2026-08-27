@@ -208,7 +208,7 @@ namespace WindowAutomation
 
         /// <summary>Returns <c>true</c> if the window is visible.</summary>
         [Category("Window - State & Geometry")]
-        [Description("Returns true if the window is visible.")]
+        [Description("Returns True if the window is visible.")]
         public bool IsWindowVisible(IntPtr hWnd)
         {
             return IsWindowVisibleNative(hWnd);
@@ -219,7 +219,7 @@ namespace WindowAutomation
         /// <c>IsHungAppWindow</c>).
         /// </summary>
         [Category("Window - State & Geometry")]
-        [Description("Returns true if the window is responding to messages.")]
+        [Description("Returns True if the window is responding to messages.")]
         public bool IsWindowResponding(IntPtr hWnd)
         {
             return !IsHungAppWindowNative(hWnd);

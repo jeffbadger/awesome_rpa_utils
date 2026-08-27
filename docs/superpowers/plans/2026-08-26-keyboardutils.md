@@ -498,7 +498,7 @@ git commit -m "Add VirtualKey/ModifierKeys enums and SendInput interop layer to 
 
         /// <summary>Presses and holds a key. Pair with <see cref="KeyUp"/>.</summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
-        [Category("Keyboard - Press/Hold/Combo")]
+        [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses and holds a key down.")]
         public void KeyDown(VirtualKey key)
         {
@@ -507,7 +507,7 @@ git commit -m "Add VirtualKey/ModifierKeys enums and SendInput interop layer to 
 
         /// <summary>Releases a key previously pressed with <see cref="KeyDown"/>.</summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
-        [Category("Keyboard - Press/Hold/Combo")]
+        [Category("Keyboard - Press & Hold & Combo")]
         [Description("Releases a previously pressed key.")]
         public void KeyUp(VirtualKey key)
         {
@@ -516,7 +516,7 @@ git commit -m "Add VirtualKey/ModifierKeys enums and SendInput interop layer to 
 
         /// <summary>Presses and releases a key (~20 ms between down and up).</summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
-        [Category("Keyboard - Press/Hold/Combo")]
+        [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses and releases a key (~20 ms between down and up).")]
         public void PressKey(VirtualKey key)
         {
@@ -531,7 +531,7 @@ git commit -m "Add VirtualKey/ModifierKeys enums and SendInput interop layer to 
         /// interleave mid-sequence.
         /// </summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
-        [Category("Keyboard - Press/Hold/Combo")]
+        [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses a key while holding modifier keys (Control/Shift/Alt/Win).")]
         public void PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers)
         {
@@ -560,7 +560,7 @@ git commit -m "Add VirtualKey/ModifierKeys enums and SendInput interop layer to 
         /// </summary>
         /// <exception cref="ArgumentException"><paramref name="keys"/> is null or empty.</exception>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
-        [Category("Keyboard - Press/Hold/Combo")]
+        [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses all given keys down in order, then releases them in reverse order.")]
         public void PressKeyCombo(params VirtualKey[] keys)
         {
@@ -578,7 +578,7 @@ git commit -m "Add VirtualKey/ModifierKeys enums and SendInput interop layer to 
 
         /// <summary>Holds a key down for the given duration, then releases it.</summary>
         /// <exception cref="Win32Exception">Input injection failed.</exception>
-        [Category("Keyboard - Press/Hold/Combo")]
+        [Category("Keyboard - Press & Hold & Combo")]
         [Description("Holds a key down for the given duration, then releases it.")]
         public void HoldKey(VirtualKey key, int holdMilliseconds)
         {
@@ -894,7 +894,7 @@ git commit -m "Implement KeyboardUtils clipboard-paste fallback"
 
         /// <summary>Returns <c>true</c> while <paramref name="key"/> is currently held down.</summary>
         [Category("Keyboard - State Query")]
-        [Description("Returns true while the given key is currently held down.")]
+        [Description("Returns True while the given key is currently held down.")]
         public bool IsKeyDown(VirtualKey key)
         {
             return (GetAsyncKeyState((int)key) & 0x8000) != 0;
@@ -905,7 +905,7 @@ git commit -m "Implement KeyboardUtils clipboard-paste fallback"
         /// currently held down (Win checks both LWin and RWin).
         /// </summary>
         [Category("Keyboard - State Query")]
-        [Description("Returns true if every given modifier flag is currently held down.")]
+        [Description("Returns True if every given modifier flag is currently held down.")]
         public bool IsModifierDown(ModifierKeys modifier)
         {
             return (GetActiveModifiers() & modifier) == modifier;
