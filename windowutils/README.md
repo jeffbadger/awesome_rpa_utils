@@ -66,7 +66,7 @@ The window-state command applied by `SetWindowState`, wrapping the Win32
 |---|---|
 | `void ActivateWindow(IntPtr hWnd)` | Brings a window to the foreground and gives it input focus. |
 | `void SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop)` | Makes a window always-on-top (or removes that state). |
-| `bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)` | Polls for a window matching the title until it appears or the timeout elapses. |
+| `bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)` | Polls for a window matching the title (substring, case-insensitive) until it appears or the timeout elapses. |
 | `bool WaitForWindowToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until a window handle is no longer valid, or the timeout elapses. |
 | `bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until the given window becomes the foreground window, or the timeout elapses. |
 
@@ -85,11 +85,12 @@ The window-state command applied by `SetWindowState`, wrapping the Win32
 - **`SetWindowState`** never throws: `ShowWindow`'s return value reports the window's
   *previous* visibility state, not whether the call succeeded, so there is nothing
   meaningful to check.
-- **`ActivateWindow`** can fail due to Windows' foreground-lock timeout rules, which block a
-  background process from stealing focus from the user's currently active app — this is a
-  deliberate OS security behavior, not a bug.
+- **`ActivateWindow`** throws when `SetForegroundWindow` reports failure, but Windows'
+  foreground-lock rules can also cause the call to succeed without actually raising the window
+  (a deliberate OS security behavior, not a bug) — pair with `WaitForWindowActive` to confirm
+  the window actually became active rather than relying on the absence of an exception.
 - **`SetAlwaysOnTop`** is system-wide and session-persistent for that window until changed
   again or the window closes.
 - **`CloseWindow`** posts `WM_CLOSE` (a polite request); an application with unsaved changes
   may show a "Save changes?" prompt instead of closing immediately — pair with
-  `WaitForWindowToClose` and handle that dialog if it can appear (e.g. via DialogUtils).
+  `WaitForWindowToClose` and handle that dialog if it can appear (e.g. via your own dialog-handling logic).
