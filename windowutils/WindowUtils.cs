@@ -278,6 +278,10 @@ namespace WindowAutomation
         }
 
         /// <summary>Polls until a window handle is no longer valid (the window closed), or the timeout elapses.</summary>
+        /// <param name="hWnd">The window handle to watch.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
+        /// <returns><c>true</c> if the handle became invalid before the timeout; <c>false</c> if the timeout elapsed first.</returns>
         public bool WaitForWindowToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
@@ -293,6 +297,10 @@ namespace WindowAutomation
         }
 
         /// <summary>Polls until the given window becomes the foreground window, or the timeout elapses.</summary>
+        /// <param name="hWnd">The window handle to watch.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
+        /// <returns><c>true</c> if the window became active before the timeout; <c>false</c> if the timeout elapsed first.</returns>
         public bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
