@@ -356,6 +356,59 @@ namespace KeyboardAutomation
 
         #endregion
 
+        #region Text Typing
+
+        /// <summary>Types a string via <c>KEYEVENTF_UNICODE</c> (default ~10 ms/character).</summary>
+        /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
+        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        public void TypeText(string text)
+        {
+            TypeText(text, 10);
+        }
+
+        /// <summary>
+        /// Types a string via <c>KEYEVENTF_UNICODE</c> with a custom per-character delay.
+        /// Unicode-safe: characters outside the Basic Multilingual Plane (emoji, some CJK
+        /// extension characters) are sent as their UTF-16 surrogate pair, one code unit
+        /// per <c>SendInput</c> key-down/up pair.
+        /// </summary>
+        /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
+        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        public void TypeText(string text, int delayMilliseconds)
+        {
+            if (text == null)
+                throw new ArgumentException("Text cannot be null.", nameof(text));
+
+            foreach (var rune in text.EnumerateRunes())
+            {
+                if (rune.Utf16SequenceLength == 1)
+                {
+                    SendInputs(new[]
+                    {
+                        MakeUnicodeKeyInput((char)rune.Value, false),
+                        MakeUnicodeKeyInput((char)rune.Value, true)
+                    });
+                }
+                else
+                {
+                    Span<char> chars = stackalloc char[2];
+                    rune.EncodeToUtf16(chars);
+                    SendInputs(new[]
+                    {
+                        MakeUnicodeKeyInput(chars[0], false),
+                        MakeUnicodeKeyInput(chars[0], true),
+                        MakeUnicodeKeyInput(chars[1], false),
+                        MakeUnicodeKeyInput(chars[1], true)
+                    });
+                }
+
+                if (delayMilliseconds > 0)
+                    Thread.Sleep(delayMilliseconds);
+            }
+        }
+
+        #endregion
+
         #region Win32 Interop
 
         private const uint INPUT_KEYBOARD = 1;
