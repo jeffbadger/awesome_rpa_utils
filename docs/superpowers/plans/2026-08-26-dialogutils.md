@@ -424,6 +424,10 @@ git commit -m "Implement DialogUtils find/click and read-text methods"
         }
 
         /// <summary>Polls until a dialog handle is no longer valid (the dialog closed), or the timeout elapses.</summary>
+        /// <param name="hWnd">The dialog handle to watch.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
+        /// <returns><c>true</c> if the handle became invalid before the timeout; <c>false</c> if the timeout elapsed first.</returns>
         public bool WaitForDialogToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
