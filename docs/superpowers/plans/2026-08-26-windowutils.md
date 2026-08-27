@@ -246,6 +246,8 @@ git commit -m "Add ShowWindowCommand enum and Win32 interop layer to WindowUtils
         #region Enumeration & Lookup
 
         /// <summary>Gets all top-level windows via <c>EnumWindows</c>.</summary>
+        [Category("Window - Enumeration & Lookup")]
+        [Description("Gets all top-level windows currently open.")]
         public List<IntPtr> GetTopLevelWindows()
         {
             var windows = new List<IntPtr>();
@@ -267,6 +269,8 @@ git commit -m "Add ShowWindowCommand enum and Win32 interop layer to WindowUtils
         /// If <c>false</c>, matches any window whose title contains <paramref name="title"/>
         /// (case-insensitive).
         /// </param>
+        [Category("Window - Enumeration & Lookup")]
+        [Description("Finds a top-level window by its title (exact or substring match).")]
         public IntPtr FindWindowByTitle(string title, bool exactMatch = true)
         {
             foreach (var hWnd in GetTopLevelWindows())
@@ -285,6 +289,8 @@ git commit -m "Add ShowWindowCommand enum and Win32 interop layer to WindowUtils
         /// Finds the first top-level window of the given window class. Returns
         /// <see cref="IntPtr.Zero"/> if none matches.
         /// </summary>
+        [Category("Window - Enumeration & Lookup")]
+        [Description("Finds the first top-level window of the given window class.")]
         public IntPtr FindWindowByClass(string className)
         {
             return FindWindowNative(className, null);
@@ -294,6 +300,8 @@ git commit -m "Add ShowWindowCommand enum and Win32 interop layer to WindowUtils
         /// Finds all top-level windows owned by the given process ID (a process can own
         /// more than one top-level window).
         /// </summary>
+        [Category("Window - Enumeration & Lookup")]
+        [Description("Finds all top-level windows owned by the given process ID.")]
         public List<IntPtr> FindWindowsByProcessId(int processId)
         {
             var matches = new List<IntPtr>();
@@ -306,6 +314,8 @@ git commit -m "Add ShowWindowCommand enum and Win32 interop layer to WindowUtils
         }
 
         /// <summary>Gets the handle of the current foreground (active) window.</summary>
+        [Category("Window - Enumeration & Lookup")]
+        [Description("Gets the handle of the current foreground (active) window.")]
         public IntPtr GetForegroundWindow()
         {
             return GetForegroundWindowNative();
@@ -334,6 +344,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
 
         /// <summary>Gets the screen-space bounding rectangle of a window.</summary>
         /// <exception cref="Win32Exception">GetWindowRect failed.</exception>
+        [Category("Window - State & Geometry")]
+        [Description("Gets the screen-space bounding rectangle of a window.")]
         public System.Drawing.Rectangle GetWindowBounds(IntPtr hWnd)
         {
             if (!GetWindowRect(hWnd, out RECT rect))
@@ -344,6 +356,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
         /// <summary>Moves and/or resizes a window to the given screen-space rectangle.</summary>
         /// <exception cref="ArgumentException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
         /// <exception cref="Win32Exception">MoveWindow failed.</exception>
+        [Category("Window - State & Geometry")]
+        [Description("Moves and/or resizes a window to the given screen-space rectangle.")]
         public void SetWindowBounds(IntPtr hWnd, int left, int top, int width, int height)
         {
             if (width < 0 || height < 0)
@@ -354,6 +368,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
 
         /// <summary>Moves a window to a new position without changing its size.</summary>
         /// <exception cref="Win32Exception">GetWindowRect or MoveWindow failed.</exception>
+        [Category("Window - State & Geometry")]
+        [Description("Moves a window to a new position without changing its size.")]
         public void MoveWindow(IntPtr hWnd, int left, int top)
         {
             var bounds = GetWindowBounds(hWnd);
@@ -363,6 +379,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
         /// <summary>Resizes a window without changing its position.</summary>
         /// <exception cref="ArgumentException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
         /// <exception cref="Win32Exception">GetWindowRect or MoveWindow failed.</exception>
+        [Category("Window - State & Geometry")]
+        [Description("Resizes a window without changing its position.")]
         public void ResizeWindow(IntPtr hWnd, int width, int height)
         {
             var bounds = GetWindowBounds(hWnd);
@@ -370,6 +388,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
         }
 
         /// <summary>Gets a window's title text (empty string if it has none).</summary>
+        [Category("Window - State & Geometry")]
+        [Description("Gets a window's title text.")]
         public string GetWindowTitle(IntPtr hWnd)
         {
             int length = GetWindowTextLength(hWnd);
@@ -379,6 +399,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
         }
 
         /// <summary>Gets a window's window-class name.</summary>
+        [Category("Window - State & Geometry")]
+        [Description("Gets a window's window-class name.")]
         public string GetWindowClassName(IntPtr hWnd)
         {
             var sb = new StringBuilder(256);
@@ -387,6 +409,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
         }
 
         /// <summary>Gets the process ID that owns a window.</summary>
+        [Category("Window - State & Geometry")]
+        [Description("Gets the process ID that owns a window.")]
         public int GetWindowProcessId(IntPtr hWnd)
         {
             GetWindowThreadProcessId(hWnd, out uint processId);
@@ -394,6 +418,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
         }
 
         /// <summary>Returns <c>true</c> if the window is visible.</summary>
+        [Category("Window - State & Geometry")]
+        [Description("Returns true if the window is visible.")]
         public bool IsWindowVisible(IntPtr hWnd)
         {
             return IsWindowVisibleNative(hWnd);
@@ -403,6 +429,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
         /// Returns <c>true</c> if the window is responding to messages (the inverse of
         /// <c>IsHungAppWindow</c>).
         /// </summary>
+        [Category("Window - State & Geometry")]
+        [Description("Returns true if the window is responding to messages.")]
         public bool IsWindowResponding(IntPtr hWnd)
         {
             return !IsHungAppWindowNative(hWnd);
@@ -416,6 +444,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
         /// visible, not whether this call succeeded — there is nothing meaningful to
         /// check or throw on, so this method never throws.
         /// </remarks>
+        [Category("Window - State & Geometry")]
+        [Description("Applies a show/hide/minimize/maximize/restore state to a window.")]
         public void SetWindowState(IntPtr hWnd, ShowWindowCommand command)
         {
             ShowWindowNative(hWnd, (int)command);
@@ -423,6 +453,8 @@ This will fail to compile until Task 4 adds `GetWindowTitle`/`GetWindowProcessId
 
         /// <summary>Asks a window to close by posting <c>WM_CLOSE</c> to it.</summary>
         /// <exception cref="Win32Exception">PostMessage failed.</exception>
+        [Category("Window - State & Geometry")]
+        [Description("Asks a window to close by posting WM_CLOSE to it.")]
         public void CloseWindow(IntPtr hWnd)
         {
             if (!PostMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero))
@@ -465,6 +497,8 @@ git commit -m "Implement WindowUtils enumeration/lookup and state/geometry metho
         /// SetForegroundWindow failed. Windows' foreground-lock rules can block activation
         /// requested from a background process that isn't the user's currently active app.
         /// </exception>
+        [Category("Window - Activation & Z-Order")]
+        [Description("Brings a window to the foreground and gives it input focus.")]
         public void ActivateWindow(IntPtr hWnd)
         {
             if (!SetForegroundWindowNative(hWnd))
@@ -477,6 +511,8 @@ git commit -m "Implement WindowUtils enumeration/lookup and state/geometry metho
         /// session-persistent until changed again.
         /// </summary>
         /// <exception cref="Win32Exception">SetWindowPos failed.</exception>
+        [Category("Window - Activation & Z-Order")]
+        [Description("Makes a window always-on-top (or removes that state).")]
         public void SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop)
         {
             IntPtr insertAfter = alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
@@ -493,6 +529,8 @@ git commit -m "Implement WindowUtils enumeration/lookup and state/geometry metho
         /// <param name="pollIntervalMs">Time to sleep between polls, in milliseconds.</param>
         /// <param name="hWnd">The matching window's handle, or <see cref="IntPtr.Zero"/> if not found in time.</param>
         /// <returns><c>true</c> if a matching window was found before the timeout.</returns>
+        [Category("Window - Activation & Z-Order")]
+        [Description("Polls for a window matching the title until it appears or the timeout elapses.")]
         public bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
@@ -520,6 +558,8 @@ git commit -m "Implement WindowUtils enumeration/lookup and state/geometry metho
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
         /// <returns><c>true</c> if the handle became invalid before the timeout; <c>false</c> if the timeout elapsed first.</returns>
+        [Category("Window - Activation & Z-Order")]
+        [Description("Polls until a window handle is no longer valid (the window closed).")]
         public bool WaitForWindowToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
@@ -539,6 +579,8 @@ git commit -m "Implement WindowUtils enumeration/lookup and state/geometry metho
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
         /// <returns><c>true</c> if the window became active before the timeout; <c>false</c> if the timeout elapsed first.</returns>
+        [Category("Window - Activation & Z-Order")]
+        [Description("Polls until the given window becomes the foreground window.")]
         public bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
@@ -585,6 +627,8 @@ git commit -m "Implement WindowUtils activation and z-order methods"
         #region Child / Multi-Window Enumeration
 
         /// <summary>Gets all descendant windows/controls of a parent window (recursively, not just immediate children) via <c>EnumChildWindows</c>.</summary>
+        [Category("Window - Child Windows")]
+        [Description("Gets all descendant windows/controls of a parent window.")]
         public List<IntPtr> GetChildWindows(IntPtr hWndParent)
         {
             var children = new List<IntPtr>();
@@ -601,6 +645,8 @@ git commit -m "Implement WindowUtils activation and z-order methods"
         /// and/or class name (pass <c>null</c> for either to not filter on it). Returns
         /// <see cref="IntPtr.Zero"/> if none matches.
         /// </summary>
+        [Category("Window - Child Windows")]
+        [Description("Finds a child window matching the given title and/or class name.")]
         public IntPtr FindChildWindow(IntPtr hWndParent, string title, string className)
         {
             foreach (var child in GetChildWindows(hWndParent))
