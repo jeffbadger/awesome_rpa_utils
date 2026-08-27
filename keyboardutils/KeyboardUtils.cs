@@ -273,6 +273,89 @@ namespace KeyboardAutomation
             container?.Add(this);
         }
 
+        #region Core Press/Hold/Combo
+
+        /// <summary>Presses and holds a key. Pair with <see cref="KeyUp"/>.</summary>
+        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        public void KeyDown(VirtualKey key)
+        {
+            SendInputs(new[] { MakeKeyInput((int)key, false) });
+        }
+
+        /// <summary>Releases a key previously pressed with <see cref="KeyDown"/>.</summary>
+        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        public void KeyUp(VirtualKey key)
+        {
+            SendInputs(new[] { MakeKeyInput((int)key, true) });
+        }
+
+        /// <summary>Presses and releases a key (~20 ms between down and up).</summary>
+        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        public void PressKey(VirtualKey key)
+        {
+            KeyDown(key);
+            Thread.Sleep(20);
+            KeyUp(key);
+        }
+
+        /// <summary>
+        /// Presses a key while holding modifier keys (Control/Shift/Alt/Win, combinable),
+        /// injected as one atomic <c>SendInput</c> batch so real user input cannot
+        /// interleave mid-sequence.
+        /// </summary>
+        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        public void PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers)
+        {
+            var batch = new List<INPUT>();
+
+            if ((modifiers & ModifierKeys.Control) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Control, false));
+            if ((modifiers & ModifierKeys.Shift) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Shift, false));
+            if ((modifiers & ModifierKeys.Alt) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Alt, false));
+            if ((modifiers & ModifierKeys.Win) != 0) batch.Add(MakeKeyInput((int)VirtualKey.LWin, false));
+
+            batch.Add(MakeKeyInput((int)key, false));
+            batch.Add(MakeKeyInput((int)key, true));
+
+            if ((modifiers & ModifierKeys.Win) != 0) batch.Add(MakeKeyInput((int)VirtualKey.LWin, true));
+            if ((modifiers & ModifierKeys.Alt) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Alt, true));
+            if ((modifiers & ModifierKeys.Shift) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Shift, true));
+            if ((modifiers & ModifierKeys.Control) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Control, true));
+
+            SendInputs(batch.ToArray());
+        }
+
+        /// <summary>
+        /// Presses all given keys down in order, then releases them in reverse order, as
+        /// one atomic <c>SendInput</c> batch (e.g. Ctrl+Shift+Esc, where none of the keys
+        /// is a modifier in the <see cref="ModifierKeys"/> flags sense).
+        /// </summary>
+        /// <exception cref="ArgumentException"><paramref name="keys"/> is null or empty.</exception>
+        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        public void PressKeyCombo(params VirtualKey[] keys)
+        {
+            if (keys == null || keys.Length == 0)
+                throw new ArgumentException("At least one key is required.", nameof(keys));
+
+            var batch = new List<INPUT>();
+            foreach (var key in keys)
+                batch.Add(MakeKeyInput((int)key, false));
+            for (int i = keys.Length - 1; i >= 0; i--)
+                batch.Add(MakeKeyInput((int)keys[i], true));
+
+            SendInputs(batch.ToArray());
+        }
+
+        /// <summary>Holds a key down for the given duration, then releases it.</summary>
+        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        public void HoldKey(VirtualKey key, int holdMilliseconds)
+        {
+            KeyDown(key);
+            Thread.Sleep(holdMilliseconds);
+            KeyUp(key);
+        }
+
+        #endregion
+
         #region Win32 Interop
 
         private const uint INPUT_KEYBOARD = 1;
