@@ -71,6 +71,38 @@ namespace OcrAutomation
             container?.Add(this);
         }
 
+        #region Region/Image to Plain Text
+
+        /// <summary>Captures a screen region and returns its recognized text.</summary>
+        /// <param name="left">The X-coordinate of the top-left corner of the region to capture.</param>
+        /// <param name="top">The Y-coordinate of the top-left corner of the region to capture.</param>
+        /// <param name="width">The width of the region to capture, in pixels.</param>
+        /// <param name="height">The height of the region to capture, in pixels.</param>
+        /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
+        /// <exception cref="ArgumentException">Width or height is not positive.</exception>
+        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        public string GetTextFromRegion(int left, int top, int width, int height, string languageTag = null)
+        {
+            using (Bitmap bitmap = CaptureRegionToBitmap(left, top, width, height))
+            {
+                return RecognizeText(bitmap, languageTag, left, top).Text;
+            }
+        }
+
+        /// <summary>Loads an image file and returns its recognized text.</summary>
+        /// <param name="filePath">The path to the image file to load and recognize.</param>
+        /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
+        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        public string GetTextFromImageFile(string filePath, string languageTag = null)
+        {
+            using (Bitmap bitmap = new Bitmap(filePath))
+            {
+                return RecognizeText(bitmap, languageTag).Text;
+            }
+        }
+
+        #endregion
+
         #region Internal Helpers
 
         private static Bitmap CaptureRegionToBitmap(int left, int top, int width, int height)
