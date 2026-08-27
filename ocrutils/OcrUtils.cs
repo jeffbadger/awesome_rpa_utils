@@ -104,6 +104,47 @@ namespace OcrAutomation
 
         #endregion
 
+        #region Structured Results
+
+        /// <summary>Captures a screen region and returns its recognized text as lines/words with screen-space bounding rectangles.</summary>
+        /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
+        /// <exception cref="ArgumentException">Width or height is not positive.</exception>
+        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        public OcrResult GetStructuredTextFromRegion(int left, int top, int width, int height, string languageTag = null)
+        {
+            using (Bitmap bitmap = CaptureRegionToBitmap(left, top, width, height))
+            {
+                return RecognizeText(bitmap, languageTag, left, top);
+            }
+        }
+
+        /// <summary>
+        /// Searches a screen region for text matching <paramref name="searchText"/> (a line
+        /// match is preferred; falls back to a single-word match) and returns its bounding
+        /// rectangle in screen coordinates, or <see cref="Rectangle.Empty"/> if not found
+        /// (not found is a normal, checkable outcome, not an error).
+        /// </summary>
+        /// <exception cref="ArgumentException">Width or height is not positive.</exception>
+        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        public Rectangle FindTextLocation(string searchText, int left, int top, int width, int height)
+        {
+            OcrResult result = GetStructuredTextFromRegion(left, top, width, height);
+            foreach (var line in result.Lines)
+            {
+                if (line.Text.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return line.Bounds;
+
+                foreach (var word in line.Words)
+                {
+                    if (word.Text.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return word.Bounds;
+                }
+            }
+            return Rectangle.Empty;
+        }
+
+        #endregion
+
         #region Internal Helpers
 
         private static Bitmap CaptureRegionToBitmap(int left, int top, int width, int height)
