@@ -1,0 +1,56 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "mouseutils", "mouseutils", "{CDCACED8-01E0-946F-CE03-1CB45B041332}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MouseAutomation", "mouseutils\MouseAutomation.csproj", "{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "screencaptureutils", "screencaptureutils", "{A6A20304-7229-D7EA-BEB0-AF5524780D24}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScreenCaptureUtils", "screencaptureutils\ScreenCaptureUtils.csproj", "{16D0105C-6B68-4FDB-A8C3-98731E192368}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Debug|x64.ActiveCfg = Debug|x64
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Debug|x64.Build.0 = Debug|x64
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Debug|x86.Build.0 = Debug|Any CPU
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Release|x64.ActiveCfg = Release|x64
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Release|x64.Build.0 = Release|x64
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Release|x86.ActiveCfg = Release|Any CPU
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C}.Release|x86.Build.0 = Release|Any CPU
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Debug|x64.ActiveCfg = Debug|x64
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Debug|x64.Build.0 = Debug|x64
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Debug|x86.Build.0 = Debug|Any CPU
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Release|Any CPU.Build.0 = Release|Any CPU
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Release|x64.ActiveCfg = Release|x64
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Release|x64.Build.0 = Release|x64
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Release|x86.ActiveCfg = Release|Any CPU
+		{16D0105C-6B68-4FDB-A8C3-98731E192368}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{31321700-1B2C-4DF5-B6C5-BCCD32910C9C} = {CDCACED8-01E0-946F-CE03-1CB45B041332}
+		{16D0105C-6B68-4FDB-A8C3-98731E192368} = {A6A20304-7229-D7EA-BEB0-AF5524780D24}
+	EndGlobalSection
+EndGlobal
