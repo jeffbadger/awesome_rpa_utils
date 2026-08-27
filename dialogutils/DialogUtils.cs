@@ -69,7 +69,7 @@ namespace DialogAutomation
         /// <paramref name="titlePattern"/> (case-insensitive).
         /// </param>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a top-level dialog window by its title, or returns null if none matches.")]
+        [Description("Finds a top-level dialog window by its title, or returns a zero handle if none matches.")]
         public IntPtr FindDialog(string titlePattern, bool exactMatch = true)
         {
             foreach (var hWnd in GetTopLevelWindows())
@@ -89,7 +89,7 @@ namespace DialogAutomation
         /// <see cref="IntPtr.Zero"/> if none matches.
         /// </summary>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a button on a dialog by its visible text, or returns null if none matches.")]
+        [Description("Finds a button on a dialog by its visible text, or returns a zero handle if none matches.")]
         public IntPtr FindButtonByText(IntPtr hDialog, string buttonText)
         {
             foreach (var child in GetChildWindows(hDialog))
@@ -108,7 +108,7 @@ namespace DialogAutomation
         /// <see cref="IntPtr.Zero"/> if none matches.
         /// </summary>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a control on a dialog by its control ID, or returns null if none matches.")]
+        [Description("Finds a control on a dialog by its control ID, or returns a zero handle if none matches.")]
         public IntPtr FindButtonById(IntPtr hDialog, int controlId)
         {
             return GetDlgItem(hDialog, controlId);
