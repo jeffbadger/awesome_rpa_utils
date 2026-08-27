@@ -81,6 +81,8 @@ namespace OcrAutomation
         /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
         /// <exception cref="ArgumentException">Width or height is not positive.</exception>
         /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        [Category("OCR - Plain Text")]
+        [Description("Captures a screen region and returns its recognized text.")]
         public string GetTextFromRegion(int left, int top, int width, int height, string languageTag = null)
         {
             using (Bitmap bitmap = CaptureRegionToBitmap(left, top, width, height))
@@ -94,6 +96,8 @@ namespace OcrAutomation
         /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
         /// <exception cref="FileNotFoundException"><paramref name="filePath"/> does not exist.</exception>
         /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        [Category("OCR - Plain Text")]
+        [Description("Loads an image file and returns its recognized text.")]
         public string GetTextFromImageFile(string filePath, string languageTag = null)
         {
             using (Bitmap bitmap = LoadBitmapWithoutLockingFile(filePath))
@@ -114,6 +118,8 @@ namespace OcrAutomation
         /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
         /// <exception cref="ArgumentException">Width or height is not positive.</exception>
         /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        [Category("OCR - Structured Results")]
+        [Description("Captures a screen region and returns its recognized text as positioned lines and words.")]
         public OcrResult GetStructuredTextFromRegion(int left, int top, int width, int height, string languageTag = null)
         {
             using (Bitmap bitmap = CaptureRegionToBitmap(left, top, width, height))
@@ -137,6 +143,8 @@ namespace OcrAutomation
         /// <param name="height">The height of the region to search, in pixels.</param>
         /// <exception cref="ArgumentException">Width or height is not positive.</exception>
         /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        [Category("OCR - Structured Results")]
+        [Description("Searches a screen region for text and returns its bounding rectangle, or empty if not found.")]
         public Rectangle FindTextLocation(string searchText, int left, int top, int width, int height)
         {
             OcrResult result = GetStructuredTextFromRegion(left, top, width, height);
@@ -159,6 +167,8 @@ namespace OcrAutomation
         #region Language
 
         /// <summary>Gets the BCP-47 language tags of every OCR language pack currently installed.</summary>
+        [Category("OCR - Language")]
+        [Description("Gets the language tags of every OCR language pack currently installed.")]
         public List<string> GetAvailableLanguages()
         {
             var tags = new List<string>();
@@ -182,6 +192,8 @@ namespace OcrAutomation
         /// <returns><c>true</c> if the expected text appeared before the timeout; <c>false</c> if it timed out.</returns>
         /// <exception cref="ArgumentException">Width or height is not positive.</exception>
         /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        [Category("OCR - Wait for Text")]
+        [Description("Polls a screen region until it contains the expected text, or the timeout elapses.")]
         public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
