@@ -712,7 +712,7 @@ The window-state command applied by `SetWindowState`, wrapping the Win32
 
 | Method | Description |
 |---|---|
-| `List<IntPtr> GetChildWindows(IntPtr hWndParent)` | Gets all direct child windows/controls of a parent window. |
+| `List<IntPtr> GetChildWindows(IntPtr hWndParent)` | Gets all descendant windows/controls of a parent window (recursively, not just immediate children). |
 | `IntPtr FindChildWindow(IntPtr hWndParent, string title, string className)` | Finds a child window matching the given title and/or class name. |
 
 ## Notes & Caveats
