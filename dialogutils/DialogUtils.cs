@@ -146,9 +146,11 @@ namespace DialogAutomation
         #region Read Text
 
         /// <summary>
-        /// Gets a dialog's message body: the text of its first child control of class
-        /// <c>Static</c> (the standard control class for a MessageBox's message text).
-        /// Returns an empty string if the dialog has no <c>Static</c> child.
+        /// Gets a dialog's message body: the text of the first child control of class
+        /// <c>Static</c> (the standard control class for a MessageBox's message text)
+        /// that has non-empty text, skipping empty-text <c>Static</c> children such as
+        /// an icon control on a MessageBox with an icon set. Returns an empty string if
+        /// no <c>Static</c> child has text.
         /// </summary>
         public string GetDialogText(IntPtr hDialog)
         {
