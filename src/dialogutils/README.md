@@ -22,8 +22,8 @@ this repo.
 
 ### `DialogButton`
 A standard Windows MessageBox button, identified by its well-known control
-ID, for use with `ClickDialogButton`: `Ok`, `Cancel`, `Abort`, `Retry`,
-`Ignore`, `Yes`, `No`.
+ID, for use with `ClickDialogButtonById` (cast to `int`, e.g. `(int)DialogButton.Yes`):
+`Ok`, `Cancel`, `Abort`, `Retry`, `Ignore`, `Yes`, `No`.
 
 ## Constructors
 
@@ -32,6 +32,14 @@ ID, for use with `ClickDialogButton`: `Ok`, `Cancel`, `Abort`, `Retry`,
 | `DialogUtils()` | Empty constructor required so Pega Robot Studio can create the component. |
 | `DialogUtils(IContainer container)` | Standard designer constructor; attaches the component to a container. |
 
+## Types
+
+### `DialogControlInfo`
+Describes one control returned by `ListDialogControls`: `Handle` (`IntPtr`), `Id`
+(`int`, the control ID used by `FindButtonById`), `Text` (`string`), `ClassName`
+(`string`, the window class, e.g. `Button`/`Static`/`Edit`), and `Enabled` (`bool`,
+via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
+
 ## Methods
 
 ### Find & Click
@@ -39,11 +47,13 @@ ID, for use with `ClickDialogButton`: `Ok`, `Cancel`, `Abort`, `Retry`,
 | Method | Description |
 |---|---|
 | `IntPtr FindDialog(string titlePattern, bool exactMatch = true)` | Finds a top-level dialog window by its title (exact or substring match). |
-| `IntPtr FindButtonByText(IntPtr hDialog, string buttonText)` | Finds a button on a dialog by its visible text. |
+| `IntPtr FindDialog(string titlePattern, bool exactMatch, out bool canDismiss)` | Same, and also reports whether the dialog has a native `Button` control DialogUtils can click. |
+| `bool CanDismissDialog(IntPtr hDialog)` | Checks whether a dialog has at least one native `Button` control that `ClickButton`/`ClickDialogButtonById`/`ClickDialogButtonByText` can target. |
+| `IntPtr FindButtonByText(IntPtr hDialog, string buttonText, bool exactMatch = true)` | Finds a button on a dialog by its visible text (exact match, or substring when `exactMatch: false`). |
 | `IntPtr FindButtonById(IntPtr hDialog, int controlId)` | Finds a control on a dialog by its control ID. |
-| `void ClickButton(IntPtr hButton)` | Invokes a button by sending it `BM_CLICK`. |
-| `void ClickDialogButton(IntPtr hDialog, DialogButton button)` | Invokes a standard dialog button by its well-known control ID. |
-| `void ClickDialogButtonByText(IntPtr hDialog, string buttonText)` | Finds a button by its visible text and invokes it. |
+| `void ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by sending it `BM_CLICK`, waiting briefly for the button to become enabled first. |
+| `void ClickDialogButtonById(IntPtr hDialog, int controlId, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by its control ID — a well-known `DialogButton` value cast to `int`, or a custom ID from `ListDialogControls`. |
+| `bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)` | Finds a button by its visible text (exact match, or substring when `exactMatch: false`) and invokes it, verifying the dialog actually closed and re-clicking (up to `maxAttempts`) if it didn't. Returns whether it closed. |
 
 ### Read Text
 
@@ -51,6 +61,8 @@ ID, for use with `ClickDialogButton`: `Ok`, `Cancel`, `Abort`, `Retry`,
 |---|---|
 | `string GetDialogText(IntPtr hDialog)` | Gets a dialog's message body (the first `Static`-class child control with non-empty text — skips icon controls, which have no text). |
 | `string GetControlText(IntPtr hControl)` | Gets any control's text (buttons, labels, edit fields, title bars). |
+| `List<DialogControlInfo> ListDialogControls(IntPtr hDialog)` | Lists every control on a dialog (including nested controls) with its ID, text, and window class name. |
+| `void HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around a control (e.g. a handle from `ListDialogControls`) to visually confirm which on-screen control it is. |
 
 ### Wait-for-Dialog Polling
 
@@ -61,18 +73,69 @@ ID, for use with `ClickDialogButton`: `Ok`, `Cancel`, `Abort`, `Retry`,
 
 ## Notes & Caveats
 
-- **`ClickButton`/`ClickDialogButton`/`ClickDialogButtonByText`** only work against standard
+- **`ClickButton`/`ClickDialogButtonById`/`ClickDialogButtonByText`** only work against standard
   Win32 dialogs built from real `Button`/`Static`/`Edit` controls; owner-drawn or non-standard
   dialogs (some modern WPF/Electron/browser-rendered "dialogs" that are really just styled
   windows) may not respond to `BM_CLICK` at all — for those, use
   [KeyboardUtils](../keyboardutils/README.md) or
   [MouseUtils](../mouseutils/MouseUtils.cs)'s window-relative click methods instead.
+- **WinUI3/UWP app dialogs (e.g. the Windows 11 Notepad "Do you want to save changes?"
+  prompt) have no `DialogUtils`-visible controls at all** — confirmed by enumerating a live
+  instance: the prompt is a XAML `ContentDialog` composited inside the app's existing
+  top-level window, not a separate dialog window, and its child HWNDs are all
+  `Microsoft.UI.Content.DesktopChildSiteBridge`/`InputSiteWindowClass` composition hosts —
+  there is no `Button`/`Static` HWND per on-screen control for `ListDialogControls` to find or
+  `ClickButton` to target. Because the prompt reuses the app's existing top-level window rather
+  than opening a new one, `FindDialog` will still "find" it (matching the app's window title),
+  which is why `FindDialog`'s `out bool canDismiss` overload / `CanDismissDialog` exist — check
+  `canDismiss` before assuming a found window's buttons are clickable. When it's `false`, skip
+  `DialogUtils` entirely and drive the dialog with
+  [KeyboardUtils](../keyboardutils/README.md) instead — the prompt is modal, so keyboard input
+  goes to it regardless of the parent window's focus:
+  ```csharp
+  IntPtr hWnd = dialog.FindDialog("helloworld.cs", exactMatch: false, out bool canDismiss);
+  if (hWnd != IntPtr.Zero && !canDismiss)
+  {
+      keyboard.PressKey(VirtualKey.Enter);   // activates the highlighted default button (Save)
+      keyboard.PressKey(VirtualKey.Escape);  // Cancel (closes the prompt, keeps the app open with changes unsaved)
+      // "Don't Save": Tab to it, then Enter
+      keyboard.PressKey(VirtualKey.Tab);
+      keyboard.PressKey(VirtualKey.Tab);
+      keyboard.PressKey(VirtualKey.Enter);
+  }
+  ```
 - **`SendMessage`'s return value for `BM_CLICK`** carries no reliable success/failure signal,
   so `ClickButton` never throws based on it — a click that had no visible effect usually means
   the target wasn't actually a clickable `Button` control, not a Win32-level failure.
+- **A button found immediately via `FindDialog`/`GetDlgItem` can still be temporarily
+  disabled** — some dialogs finish enabling their buttons slightly after the window and
+  controls are created (e.g. while completing modal setup), and Windows silently ignores
+  `BM_CLICK` on a disabled control. `ClickButton`/`ClickDialogButtonById` poll `IsWindowEnabled`
+  for up to `waitForEnabledMs` (default 500 ms) before clicking to avoid this race; pass
+  `waitForEnabledMs: 0` to click immediately without waiting. `ClickDialogButtonByText` uses
+  `ClickButton`'s default wait internally (not separately tunable through it) — see the next
+  point for why it handles a stuck click differently.
+- **A click that's found the right button and isn't blocked by a disabled state can still
+  have no visible effect the first time** — some apps' click handlers ignore a click for
+  reasons that aren't visible through Win32 at all (app-internal validation/state not
+  reflected in `IsWindowEnabled`), so waiting for "enabled" doesn't help here; the only
+  reliable fix is to verify the outcome and retry. `ClickDialogButtonByText` does this by
+  default: it clicks, checks whether the dialog actually closed, and re-clicks (up to
+  `maxAttempts`, default 3, `retryDelayMs` apart, default 300 ms) if not, returning whether it
+  closed. This only makes sense for a click expected to close the dialog — for a button that
+  intentionally keeps it open (e.g. "Apply"), it'll use up every attempt and return `false`;
+  pass `maxAttempts: 1` to click exactly once with no retry.
+- **`FindButtonByText`/`ClickDialogButtonByText` strip the `&` access-key mnemonic** from
+  both the button's raw text and the text you pass before comparing — a standard `MessageBox`'s
+  Yes/No buttons are literally `"&Yes"`/`"&No"` per `GetWindowText` (Windows only draws the `&`
+  as an underline; it isn't stripped from the text itself), so matching plain `"Yes"` against
+  it would otherwise fail every time — not a timing issue, and not specific to a non-default
+  button, retrying it wouldn't have helped either. A literal `&` in a label (escaped as `&&`)
+  is preserved as one `&` rather than stripped.
 - **`FindDialog`/`FindButtonByText`** do a linear scan of top-level windows / child controls
   each call; on a system with many open windows this is a few milliseconds, not a concern for
   interactive automation use.
 - **Dialog handles (`IntPtr`) become invalid once the dialog closes.** Re-find the dialog
   (or use `WaitForDialog`) rather than caching a handle across a long-running step.
 - **`GetDialogText`** skips `Static`-class children with empty text (such as an icon control on a MessageBox with `MessageBoxIcon.Warning`/`Error`/etc.) and returns the first one with actual text, so it correctly finds the message body regardless of whether — or where — an icon control appears among the dialog's children.
+- **`HighlightControl`** draws with `R2_NOTXORPEN`, the same erase-exactly XOR technique as [MouseUtils](../mouseutils/MouseUtils.cs)'s `FlashCursorHighlight` — if the control repaints while the rectangle is visible, the second XOR pass may not fully erase it, and the apparent color varies with what's underneath.

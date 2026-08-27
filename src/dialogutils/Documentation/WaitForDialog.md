@@ -5,7 +5,7 @@
 ```csharp
 if (dialog.WaitForDialog("Save changes", timeoutMs: 3000, pollIntervalMs: 100, out IntPtr hWnd))
 {
-    dialog.ClickDialogButton(hWnd, DialogButton.No);
+    dialog.ClickDialogButtonById(hWnd, (int)DialogButton.No);
 }
 // else: the app closed without prompting - nothing to do
 ```
@@ -13,6 +13,6 @@ if (dialog.WaitForDialog("Save changes", timeoutMs: 3000, pollIntervalMs: 100, o
 ## Wait for a dialog to close after clicking its button
 
 ```csharp
-dialog.ClickDialogButton(hWnd, DialogButton.Ok);
+dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Ok);
 dialog.WaitForDialogToClose(hWnd, timeoutMs: 5000, pollIntervalMs: 100);
 ```
