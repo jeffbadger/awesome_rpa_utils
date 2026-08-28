@@ -59,12 +59,26 @@ namespace DialogAutomation
         #region Find & Click
 
         /// <summary>
-        /// Finds a top-level dialog window by its title. Never throws - a null
-        /// <paramref name="titlePattern"/> or no match are both reported by returning
-        /// <c>false</c> (not found is a normal, checkable outcome, not an error).
+        /// Finds a top-level dialog window by its title, and reports via
+        /// <paramref name="canDismiss"/> whether it has at least one native <c>Button</c>
+        /// control that <see cref="ClickButton"/>/<see cref="ClickDialogButtonById"/>/
+        /// <see cref="ClickDialogButtonByText"/> can target — see <see cref="CanDismissDialog"/>.
+        /// Never throws - a null <paramref name="titlePattern"/> or no match are both
+        /// reported by returning <c>false</c> (not found is a normal, checkable outcome,
+        /// not an error).
         /// </summary>
         /// <param name="titlePattern">The title to match.</param>
         /// <param name="hDialog">The matching dialog's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
+        /// <param name="canDismiss">
+        /// <c>true</c> if a dialog was found and it has at least one native <c>Button</c>
+        /// control; <c>false</c> if no dialog was found, or the dialog was found but has no
+        /// native <c>Button</c> control — e.g. a modern WinUI3/UWP "dialog" (such as the
+        /// Windows 11 Notepad "Do you want to save changes?" prompt) rendered as XAML content
+        /// inside its host window rather than as real <c>Button</c> controls. When
+        /// <c>canDismiss</c> is <c>false</c> for a found dialog, drive it with
+        /// <c>KeyboardUtils</c> instead (see the DialogUtils README's Notes &amp;
+        /// Caveats).
+        /// </param>
         /// <param name="exactMatch">
         /// If <c>true</c> (default), requires an exact, case-sensitive title match.
         /// If <c>false</c>, matches any window whose title contains
@@ -72,8 +86,8 @@ namespace DialogAutomation
         /// </param>
         /// <returns><c>true</c> if a matching dialog was found.</returns>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a top-level dialog window by its title. Returns True if found; never throws.")]
-        public bool FindDialog(string titlePattern, out IntPtr hDialog, bool exactMatch = true)
+        [Description("Finds a top-level dialog window by its title, and reports whether DialogUtils can dismiss it via a native Button control. Returns True if found; never throws.")]
+        public bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true)
         {
             if (titlePattern != null)
             {
@@ -86,45 +100,15 @@ namespace DialogAutomation
                     if (matches)
                     {
                         hDialog = hWnd;
+                        canDismiss = CanDismissDialog(hWnd);
                         return true;
                     }
                 }
             }
 
             hDialog = IntPtr.Zero;
+            canDismiss = false;
             return false;
-        }
-
-        /// <summary>
-        /// Finds a top-level dialog window by its title, same as <see cref="FindDialog(string, out IntPtr, bool)"/>,
-        /// and additionally reports via <paramref name="canDismiss"/> whether the dialog has at
-        /// least one native <c>Button</c> control that <see cref="ClickButton"/>/
-        /// <see cref="ClickDialogButtonById"/>/<see cref="ClickDialogButtonByText"/> can target — see
-        /// <see cref="CanDismissDialog"/>.
-        /// </summary>
-        /// <param name="titlePattern">The title to match.</param>
-        /// <param name="exactMatch">
-        /// If <c>true</c>, requires an exact, case-sensitive title match. If <c>false</c>,
-        /// matches any window whose title contains <paramref name="titlePattern"/>
-        /// (case-insensitive).
-        /// </param>
-        /// <param name="canDismiss">
-        /// <c>true</c> if a dialog was found and it has at least one native <c>Button</c>
-        /// control; <c>false</c> if no dialog was found, or the dialog was found but has no
-        /// native <c>Button</c> control — e.g. a modern WinUI3/UWP "dialog" (such as the
-        /// Windows 11 Notepad "Do you want to save changes?" prompt) rendered as XAML content
-        /// inside its host window rather than as real <c>Button</c> controls. When
-        /// <c>canDismiss</c> is <c>false</c> for a found dialog, drive it with
-        /// <c>KeyboardUtils</c> instead (see the DialogUtils README's Notes &amp;
-        /// Caveats).
-        /// </param>
-        [Category("Dialog - Find & Click")]
-        [Description("Finds a top-level dialog window by its title, and reports whether DialogUtils can dismiss it via a native Button control.")]
-        public IntPtr FindDialog(string titlePattern, bool exactMatch, out bool canDismiss)
-        {
-            FindDialog(titlePattern, out IntPtr hWnd, exactMatch);
-            canDismiss = hWnd != IntPtr.Zero && CanDismissDialog(hWnd);
-            return hWnd;
         }
 
         /// <summary>
@@ -492,7 +476,7 @@ namespace DialogAutomation
             int start = Environment.TickCount;
             while (true)
             {
-                if (FindDialog(titlePattern, out IntPtr found, exactMatch: false))
+                if (FindDialog(titlePattern, out IntPtr found, out _, exactMatch: false))
                 {
                     hWnd = found;
                     return true;
