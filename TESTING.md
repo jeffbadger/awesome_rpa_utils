@@ -158,6 +158,18 @@ where the method is documented to throw.
   pixels changed as expected — spot-check specific pixel colors, or diff
   against a pre-rendered "expected annotated" fixture)
 
+### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, and tree; Cleanup: close it)
+
+- `GetRootElement`, `FromWindowHandle`, `FromPoint` (basic bridging sanity checks against the harness window)
+- `FindByAutomationId`, `FindByName`, `FindByClassName`, `FindByControlType`, `FindAllByControlType`, `GetChildren` (found and not-found cases against harness controls; `descendantsOnly` true/false cases)
+- `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName`, `GetBoundingRectangle`, `IsEnabled`, `IsOffscreen` (assert against known harness control properties)
+- `IsElementAvailable` (true for a live control; false after closing the harness window and re-checking a cached reference)
+- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; exception case calling the wrong action on the wrong control type, e.g. `Toggle` on a button)
+- `WaitForElementByAutomationId`, `WaitForElementByName` (found-in-time and timeout cases, e.g. a harness control that appears after a delay)
+- `HighlightElement` (visual-only — verify manually/via screenshot, same as `DialogUtils.HighlightControl`)
+
+Note: this component needs a WinForms/WPF test harness with native `AutomationId`/`Name` values set explicitly (plain WinForms controls without explicit AutomationIds fall back to less predictable auto-generated ones) — reuse or extend the Test Harness from Phase 0 rather than building a second one.
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned
