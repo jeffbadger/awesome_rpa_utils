@@ -133,10 +133,12 @@ namespace DialogAutomation
         }
 
         /// <summary>
-        /// Finds a button on a dialog by its visible text (case-insensitive). Returns
-        /// <see cref="IntPtr.Zero"/> if none matches.
+        /// Finds a button on a dialog by its visible text (case-insensitive). Never
+        /// throws - a null <paramref name="buttonText"/> or no match are both reported by
+        /// returning <c>false</c>.
         /// </summary>
         /// <param name="hDialog">The dialog to search.</param>
+        /// <param name="hButton">The matching button's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
         /// <param name="buttonText">The button text to match.</param>
         /// <param name="exactMatch">
         /// If <c>true</c> (default), requires an exact (case-insensitive) text match.
@@ -145,6 +147,7 @@ namespace DialogAutomation
         /// whose text includes a variable part, e.g. a trailing ellipsis
         /// (<c>"Details..."</c>) or a count (<c>"Retry (3 left)"</c>).
         /// </param>
+        /// <returns><c>true</c> if a matching button was found.</returns>
         /// <remarks>
         /// Button window text carries a raw <c>&amp;</c> access-key mnemonic that Windows
         /// draws as an underline but keeps in <c>GetWindowText</c> — a standard Yes/No
@@ -156,23 +159,31 @@ namespace DialogAutomation
         /// works, with either <paramref name="exactMatch"/> setting.
         /// </remarks>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a button on a dialog by its visible text (exact or substring match, ignoring access-key & mnemonics), or returns a zero handle if none matches.")]
-        public IntPtr FindButtonByText(IntPtr hDialog, string buttonText, bool exactMatch = true)
+        [Description("Finds a button on a dialog by its visible text (exact or substring match, ignoring access-key & mnemonics). Returns True if found; never throws.")]
+        public bool FindButtonByText(IntPtr hDialog, out IntPtr hButton, string buttonText, bool exactMatch = true)
         {
-            string target = StripAccessKeyMnemonic(buttonText);
-            foreach (var child in GetChildWindows(hDialog))
+            if (buttonText != null)
             {
-                if (GetWindowClassName(child) != "Button")
-                    continue;
+                string target = StripAccessKeyMnemonic(buttonText);
+                foreach (var child in GetChildWindows(hDialog))
+                {
+                    if (GetWindowClassName(child) != "Button")
+                        continue;
 
-                string text = StripAccessKeyMnemonic(GetControlText(child));
-                bool matches = exactMatch
-                    ? string.Equals(text, target, StringComparison.OrdinalIgnoreCase)
-                    : text.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0;
-                if (matches)
-                    return child;
+                    string text = StripAccessKeyMnemonic(GetControlText(child));
+                    bool matches = exactMatch
+                        ? string.Equals(text, target, StringComparison.OrdinalIgnoreCase)
+                        : text.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (matches)
+                    {
+                        hButton = child;
+                        return true;
+                    }
+                }
             }
-            return IntPtr.Zero;
+
+            hButton = IntPtr.Zero;
+            return false;
         }
 
         /// <summary>
@@ -282,8 +293,7 @@ namespace DialogAutomation
 
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
-                IntPtr hButton = FindButtonByText(hDialog, buttonText, exactMatch);
-                if (hButton == IntPtr.Zero)
+                if (!FindButtonByText(hDialog, out IntPtr hButton, buttonText, exactMatch))
                     throw new InvalidOperationException($"Dialog has no button labeled '{buttonText}'.");
 
                 ClickButton(hButton);
