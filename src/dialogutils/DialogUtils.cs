@@ -59,44 +59,16 @@ namespace DialogAutomation
         #region Find & Click
 
         /// <summary>
-        /// Finds a top-level dialog window by its title. Returns <see cref="IntPtr.Zero"/>
-        /// if none matches (not found is a normal, checkable outcome, not an error).
+        /// Finds a top-level dialog window by its title, and reports via
+        /// <paramref name="canDismiss"/> whether it has at least one native <c>Button</c>
+        /// control that <see cref="ClickButton"/>/<see cref="ClickDialogButtonById"/>/
+        /// <see cref="ClickDialogButtonByText"/> can target — see <see cref="CanDismissDialog"/>.
+        /// Never throws - a null <paramref name="titlePattern"/> or no match are both
+        /// reported by returning <c>false</c> (not found is a normal, checkable outcome,
+        /// not an error).
         /// </summary>
         /// <param name="titlePattern">The title to match.</param>
-        /// <param name="exactMatch">
-        /// If <c>true</c> (default), requires an exact, case-sensitive title match.
-        /// If <c>false</c>, matches any window whose title contains
-        /// <paramref name="titlePattern"/> (case-insensitive).
-        /// </param>
-        [Category("Dialog - Find & Click")]
-        [Description("Finds a top-level dialog window by its title, or returns a zero handle if none matches.")]
-        public IntPtr FindDialog(string titlePattern, bool exactMatch = true)
-        {
-            foreach (var hWnd in GetTopLevelWindows())
-            {
-                string title = GetControlText(hWnd);
-                bool matches = exactMatch
-                    ? string.Equals(title, titlePattern, StringComparison.Ordinal)
-                    : title.IndexOf(titlePattern, StringComparison.OrdinalIgnoreCase) >= 0;
-                if (matches)
-                    return hWnd;
-            }
-            return IntPtr.Zero;
-        }
-
-        /// <summary>
-        /// Finds a top-level dialog window by its title, same as <see cref="FindDialog(string, bool)"/>,
-        /// and additionally reports via <paramref name="canDismiss"/> whether the dialog has at
-        /// least one native <c>Button</c> control that <see cref="ClickButton"/>/
-        /// <see cref="ClickDialogButtonById"/>/<see cref="ClickDialogButtonByText"/> can target — see
-        /// <see cref="CanDismissDialog"/>.
-        /// </summary>
-        /// <param name="titlePattern">The title to match.</param>
-        /// <param name="exactMatch">
-        /// If <c>true</c>, requires an exact, case-sensitive title match. If <c>false</c>,
-        /// matches any window whose title contains <paramref name="titlePattern"/>
-        /// (case-insensitive).
-        /// </param>
+        /// <param name="hDialog">The matching dialog's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
         /// <param name="canDismiss">
         /// <c>true</c> if a dialog was found and it has at least one native <c>Button</c>
         /// control; <c>false</c> if no dialog was found, or the dialog was found but has no
@@ -107,13 +79,36 @@ namespace DialogAutomation
         /// <c>KeyboardUtils</c> instead (see the DialogUtils README's Notes &amp;
         /// Caveats).
         /// </param>
+        /// <param name="exactMatch">
+        /// If <c>true</c> (default), requires an exact, case-sensitive title match.
+        /// If <c>false</c>, matches any window whose title contains
+        /// <paramref name="titlePattern"/> (case-insensitive).
+        /// </param>
+        /// <returns><c>true</c> if a matching dialog was found.</returns>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a top-level dialog window by its title, and reports whether DialogUtils can dismiss it via a native Button control.")]
-        public IntPtr FindDialog(string titlePattern, bool exactMatch, out bool canDismiss)
+        [Description("Finds a top-level dialog window by its title, and reports whether DialogUtils can dismiss it via a native Button control. Returns True if found; never throws.")]
+        public bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true)
         {
-            IntPtr hWnd = FindDialog(titlePattern, exactMatch);
-            canDismiss = hWnd != IntPtr.Zero && CanDismissDialog(hWnd);
-            return hWnd;
+            if (titlePattern != null)
+            {
+                foreach (var hWnd in GetTopLevelWindows())
+                {
+                    string title = GetControlText(hWnd);
+                    bool matches = exactMatch
+                        ? string.Equals(title, titlePattern, StringComparison.Ordinal)
+                        : title.IndexOf(titlePattern, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (matches)
+                    {
+                        hDialog = hWnd;
+                        canDismiss = CanDismissDialog(hWnd);
+                        return true;
+                    }
+                }
+            }
+
+            hDialog = IntPtr.Zero;
+            canDismiss = false;
+            return false;
         }
 
         /// <summary>
@@ -138,10 +133,12 @@ namespace DialogAutomation
         }
 
         /// <summary>
-        /// Finds a button on a dialog by its visible text (case-insensitive). Returns
-        /// <see cref="IntPtr.Zero"/> if none matches.
+        /// Finds a button on a dialog by its visible text (case-insensitive). Never
+        /// throws - a null <paramref name="buttonText"/> or no match are both reported by
+        /// returning <c>false</c>.
         /// </summary>
         /// <param name="hDialog">The dialog to search.</param>
+        /// <param name="hButton">The matching button's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
         /// <param name="buttonText">The button text to match.</param>
         /// <param name="exactMatch">
         /// If <c>true</c> (default), requires an exact (case-insensitive) text match.
@@ -150,6 +147,7 @@ namespace DialogAutomation
         /// whose text includes a variable part, e.g. a trailing ellipsis
         /// (<c>"Details..."</c>) or a count (<c>"Retry (3 left)"</c>).
         /// </param>
+        /// <returns><c>true</c> if a matching button was found.</returns>
         /// <remarks>
         /// Button window text carries a raw <c>&amp;</c> access-key mnemonic that Windows
         /// draws as an underline but keeps in <c>GetWindowText</c> — a standard Yes/No
@@ -161,34 +159,46 @@ namespace DialogAutomation
         /// works, with either <paramref name="exactMatch"/> setting.
         /// </remarks>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a button on a dialog by its visible text (exact or substring match, ignoring access-key & mnemonics), or returns a zero handle if none matches.")]
-        public IntPtr FindButtonByText(IntPtr hDialog, string buttonText, bool exactMatch = true)
+        [Description("Finds a button on a dialog by its visible text (exact or substring match, ignoring access-key & mnemonics). Returns True if found; never throws.")]
+        public bool FindButtonByText(IntPtr hDialog, out IntPtr hButton, string buttonText, bool exactMatch = true)
         {
-            string target = StripAccessKeyMnemonic(buttonText);
-            foreach (var child in GetChildWindows(hDialog))
+            if (buttonText != null)
             {
-                if (GetWindowClassName(child) != "Button")
-                    continue;
+                string target = StripAccessKeyMnemonic(buttonText);
+                foreach (var child in GetChildWindows(hDialog))
+                {
+                    if (GetWindowClassName(child) != "Button")
+                        continue;
 
-                string text = StripAccessKeyMnemonic(GetControlText(child));
-                bool matches = exactMatch
-                    ? string.Equals(text, target, StringComparison.OrdinalIgnoreCase)
-                    : text.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0;
-                if (matches)
-                    return child;
+                    string text = StripAccessKeyMnemonic(GetControlText(child));
+                    bool matches = exactMatch
+                        ? string.Equals(text, target, StringComparison.OrdinalIgnoreCase)
+                        : text.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (matches)
+                    {
+                        hButton = child;
+                        return true;
+                    }
+                }
             }
-            return IntPtr.Zero;
+
+            hButton = IntPtr.Zero;
+            return false;
         }
 
         /// <summary>
-        /// Finds a control on a dialog by its control ID (<c>GetDlgItem</c>). Returns
-        /// <see cref="IntPtr.Zero"/> if none matches.
+        /// Finds a control on a dialog by its control ID (<c>GetDlgItem</c>). Never throws.
         /// </summary>
+        /// <param name="hDialog">The dialog to search.</param>
+        /// <param name="hButton">The matching control's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
+        /// <param name="controlId">The control ID to match.</param>
+        /// <returns><c>true</c> if a matching control was found.</returns>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a control on a dialog by its control ID, or returns a zero handle if none matches.")]
-        public IntPtr FindButtonById(IntPtr hDialog, int controlId)
+        [Description("Finds a control on a dialog by its control ID. Returns True if found; never throws.")]
+        public bool FindButtonById(IntPtr hDialog, out IntPtr hButton, int controlId)
         {
-            return GetDlgItem(hDialog, controlId);
+            hButton = GetDlgItem(hDialog, controlId);
+            return hButton != IntPtr.Zero;
         }
 
         /// <summary>
@@ -206,24 +216,31 @@ namespace DialogAutomation
         /// click immediately without waiting, matching the previous behavior.
         /// </param>
         /// <param name="pollIntervalMs">Delay between enabled-state checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <remarks>
-        /// <c>SendMessage</c>'s return value for <c>BM_CLICK</c> carries no useful
-        /// success/failure signal, so this method never throws based on it — it always sends
-        /// the click after waiting, even if the button never became enabled.
-        /// </remarks>
+        /// <returns>
+        /// <c>true</c> if the button was enabled when the click was sent; <c>false</c> if it
+        /// was still disabled after <paramref name="waitForEnabledMs"/> elapsed. The click is
+        /// sent either way - this only reports whether it had a fighting chance of landing,
+        /// not whether the target application actually reacted to it, which
+        /// <c>SendMessage</c>'s return value for <c>BM_CLICK</c> cannot tell you (a disabled
+        /// control silently ignores <c>BM_CLICK</c>, so this is the one honest signal
+        /// available without inspecting the target application itself).
+        /// </returns>
         [Category("Dialog - Find & Click")]
-        [Description("Invokes a button by sending it BM_CLICK, without moving the cursor. Waits briefly for the button to become enabled first.")]
-        public void ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)
+        [Description("Invokes a button by sending it BM_CLICK, without moving the cursor. Waits briefly for the button to become enabled first. Returns True if it was enabled when clicked.")]
+        public bool ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
-            while (!IsWindowEnabled(hButton) && unchecked(Environment.TickCount - start) < waitForEnabledMs)
+            bool enabled = IsWindowEnabled(hButton);
+            while (!enabled && unchecked(Environment.TickCount - start) < waitForEnabledMs)
             {
                 Thread.Sleep(pollIntervalMs);
+                enabled = IsWindowEnabled(hButton);
             }
 
             SendMessage(hButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+            return enabled;
         }
 
         /// <summary>
@@ -236,17 +253,27 @@ namespace DialogAutomation
         /// </summary>
         /// <param name="hDialog">The dialog whose button to click.</param>
         /// <param name="controlId">The control ID to click.</param>
+        /// <param name="wasEnabled">
+        /// <c>true</c> if the button was enabled when the click was sent; <c>false</c> if it
+        /// was still disabled after <paramref name="waitForEnabledMs"/> elapsed, or if no
+        /// control with <paramref name="controlId"/> was found. See <see cref="ClickButton"/>.
+        /// </param>
         /// <param name="waitForEnabledMs">See <see cref="ClickButton"/>.</param>
         /// <param name="pollIntervalMs">See <see cref="ClickButton"/>.</param>
-        /// <exception cref="InvalidOperationException">The dialog has no control with that ID.</exception>
+        /// <returns><c>true</c> if a control with <paramref name="controlId"/> was found (and clicked). Never throws.</returns>
         [Category("Dialog - Find & Click")]
-        [Description("Invokes a button by its control ID (GetDlgItem).")]
-        public void ClickDialogButtonById(IntPtr hDialog, int controlId, int waitForEnabledMs = 500, int pollIntervalMs = 25)
+        [Description("Invokes a button by its control ID (GetDlgItem). Returns True if found; never throws.")]
+        public bool ClickDialogButtonById(IntPtr hDialog, int controlId, out bool wasEnabled, int waitForEnabledMs = 500, int pollIntervalMs = 25)
         {
             IntPtr hButton = GetDlgItem(hDialog, controlId);
             if (hButton == IntPtr.Zero)
-                throw new InvalidOperationException($"Dialog has no control with ID {controlId}.");
-            ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
+            {
+                wasEnabled = false;
+                return false;
+            }
+
+            wasEnabled = ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
+            return true;
         }
 
         /// <summary>
@@ -260,6 +287,12 @@ namespace DialogAutomation
         /// </summary>
         /// <param name="hDialog">The dialog to search and click on.</param>
         /// <param name="buttonText">The button text to match.</param>
+        /// <param name="message">
+        /// <c>null</c> if this returns <c>true</c>. If this returns <c>false</c>, a
+        /// human-readable description of why: either that no button labeled
+        /// <paramref name="buttonText"/> was found, or that it was clicked
+        /// <paramref name="maxAttempts"/> time(s) but the dialog never closed.
+        /// </param>
         /// <param name="exactMatch">
         /// If <c>true</c> (default), requires an exact (case-insensitive) text match.
         /// If <c>false</c>, matches any button whose text contains
@@ -271,8 +304,7 @@ namespace DialogAutomation
         /// How long to wait after each click for the dialog to close before deciding it
         /// didn't work and re-clicking (default 300 ms).
         /// </param>
-        /// <returns><c>true</c> if the dialog closed within <paramref name="maxAttempts"/> clicks; <c>false</c> if it was still open after the last attempt.</returns>
-        /// <exception cref="InvalidOperationException">The dialog has no button with that text.</exception>
+        /// <returns><c>true</c> if the dialog closed within <paramref name="maxAttempts"/> clicks; <c>false</c> if no matching button was found, or it was still open after the last attempt. Never throws.</returns>
         /// <remarks>
         /// Retrying is only meaningful for a click that's expected to close
         /// <paramref name="hDialog"/> — not for a button that intentionally keeps the dialog
@@ -280,21 +312,28 @@ namespace DialogAutomation
         /// attempt.
         /// </remarks>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a button by its visible text (exact or substring match) and invokes it, re-clicking (up to maxAttempts) if the dialog doesn't close.")]
-        public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)
+        [Description("Finds a button by its visible text (exact or substring match) and invokes it, re-clicking (up to maxAttempts) if the dialog doesn't close. Never throws.")]
+        public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)
         {
             if (maxAttempts < 1) maxAttempts = 1;
 
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
-                IntPtr hButton = FindButtonByText(hDialog, buttonText, exactMatch);
-                if (hButton == IntPtr.Zero)
-                    throw new InvalidOperationException($"Dialog has no button labeled '{buttonText}'.");
+                if (!FindButtonByText(hDialog, out IntPtr hButton, buttonText, exactMatch))
+                {
+                    message = $"Dialog has no button labeled '{buttonText}'.";
+                    return false;
+                }
 
                 ClickButton(hButton);
                 if (WaitForDialogToClose(hDialog, retryDelayMs, pollIntervalMs: 25))
+                {
+                    message = null;
                     return true;
+                }
             }
+
+            message = $"Button '{buttonText}' was clicked {maxAttempts} time(s) but the dialog did not close.";
             return false;
         }
 
@@ -408,7 +447,7 @@ namespace DialogAutomation
         /// Because the rectangle uses XOR drawing, the visible color depends on what
         /// is under it. Default is 0x0000FF (red).
         /// </param>
-        /// <exception cref="Win32Exception"><c>GetWindowRect</c> or <c>GetDC</c> failed (e.g. an invalid handle).</exception>
+        /// <returns><c>true</c> if the control was highlighted; <c>false</c> if <c>GetWindowRect</c> or <c>GetDC</c> failed (e.g. an invalid handle). Never throws.</returns>
         /// <remarks>
         /// Caveats:
         ///  - If the control repaints while the rectangle is visible, the highlight pixels
@@ -417,19 +456,19 @@ namespace DialogAutomation
         ///  - The XOR blend means the apparent color varies by background.
         /// </remarks>
         [Category("Dialog - Read Text")]
-        [Description("Flashes an inverting rectangle around a control to visually confirm which on-screen control a handle corresponds to.")]
-        public void HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
+        [Description("Flashes an inverting rectangle around a control to visually confirm which on-screen control a handle corresponds to. Returns True on success; never throws.")]
+        public bool HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
         {
             if (flashes < 1) flashes = 1;
             if (flashMs < 1) flashMs = 1;
             if (lineWidth < 1) lineWidth = 1;
 
             if (!GetWindowRect(hControl, out RECT rc))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.");
+                return false;
 
             IntPtr hdc = GetDC(IntPtr.Zero);
             if (hdc == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.");
+                return false;
 
             IntPtr hPen = CreatePen(PS_SOLID, lineWidth, (uint)colorRef);
             IntPtr hOldPen = IntPtr.Zero;
@@ -460,6 +499,8 @@ namespace DialogAutomation
                 if (hdc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdc);
                 if (hPen != IntPtr.Zero) DeleteObject(hPen);
             }
+
+            return true;
         }
 
         #endregion
@@ -481,8 +522,7 @@ namespace DialogAutomation
             int start = Environment.TickCount;
             while (true)
             {
-                IntPtr found = FindDialog(titlePattern, exactMatch: false);
-                if (found != IntPtr.Zero)
+                if (FindDialog(titlePattern, out IntPtr found, out _, exactMatch: false))
                 {
                     hWnd = found;
                     return true;

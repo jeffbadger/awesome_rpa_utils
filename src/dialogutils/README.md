@@ -46,14 +46,13 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
 
 | Method | Description |
 |---|---|
-| `IntPtr FindDialog(string titlePattern, bool exactMatch = true)` | Finds a top-level dialog window by its title (exact or substring match). |
-| `IntPtr FindDialog(string titlePattern, bool exactMatch, out bool canDismiss)` | Same, and also reports whether the dialog has a native `Button` control DialogUtils can click. |
+| `bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true)` | Finds a top-level dialog window by its title (exact or substring match), and reports whether it has a native `Button` control DialogUtils can click. Returns True if found; never throws. |
 | `bool CanDismissDialog(IntPtr hDialog)` | Checks whether a dialog has at least one native `Button` control that `ClickButton`/`ClickDialogButtonById`/`ClickDialogButtonByText` can target. |
-| `IntPtr FindButtonByText(IntPtr hDialog, string buttonText, bool exactMatch = true)` | Finds a button on a dialog by its visible text (exact match, or substring when `exactMatch: false`). |
-| `IntPtr FindButtonById(IntPtr hDialog, int controlId)` | Finds a control on a dialog by its control ID. |
-| `void ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by sending it `BM_CLICK`, waiting briefly for the button to become enabled first. |
-| `void ClickDialogButtonById(IntPtr hDialog, int controlId, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by its control ID — a well-known `DialogButton` value cast to `int`, or a custom ID from `ListDialogControls`. |
-| `bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)` | Finds a button by its visible text (exact match, or substring when `exactMatch: false`) and invokes it, verifying the dialog actually closed and re-clicking (up to `maxAttempts`) if it didn't. Returns whether it closed. |
+| `bool FindButtonByText(IntPtr hDialog, out IntPtr hButton, string buttonText, bool exactMatch = true)` | Finds a button on a dialog by its visible text (exact match, or substring when `exactMatch: false`). Returns True if found; never throws. |
+| `bool FindButtonById(IntPtr hDialog, out IntPtr hButton, int controlId)` | Finds a control on a dialog by its control ID. Returns True if found; never throws. |
+| `bool ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by sending it `BM_CLICK`, waiting briefly for the button to become enabled first. Returns True if it was enabled when clicked. |
+| `bool ClickDialogButtonById(IntPtr hDialog, int controlId, out bool wasEnabled, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by its control ID — a well-known `DialogButton` value cast to `int`, or a custom ID from `ListDialogControls`. Returns True if the control was found (and clicked); never throws. |
+| `bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)` | Finds a button by its visible text (exact match, or substring when `exactMatch: false`) and invokes it, verifying the dialog actually closed and re-clicking (up to `maxAttempts`) if it didn't. Returns whether it closed; `message` explains why when it returns False. Never throws. |
 
 ### Read Text
 
@@ -62,7 +61,7 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
 | `string GetDialogText(IntPtr hDialog)` | Gets a dialog's message body (the first `Static`-class child control with non-empty text — skips icon controls, which have no text). |
 | `string GetControlText(IntPtr hControl)` | Gets any control's text (buttons, labels, edit fields, title bars). |
 | `List<DialogControlInfo> ListDialogControls(IntPtr hDialog)` | Lists every control on a dialog (including nested controls) with its ID, text, and window class name. |
-| `void HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around a control (e.g. a handle from `ListDialogControls`) to visually confirm which on-screen control it is. |
+| `bool HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around a control (e.g. a handle from `ListDialogControls`) to visually confirm which on-screen control it is. Returns True on success; never throws. |
 
 ### Wait-for-Dialog Polling
 
@@ -87,14 +86,14 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
   there is no `Button`/`Static` HWND per on-screen control for `ListDialogControls` to find or
   `ClickButton` to target. Because the prompt reuses the app's existing top-level window rather
   than opening a new one, `FindDialog` will still "find" it (matching the app's window title),
-  which is why `FindDialog`'s `out bool canDismiss` overload / `CanDismissDialog` exist — check
+  which is why `FindDialog`'s `out bool canDismiss` parameter / `CanDismissDialog` exist — check
   `canDismiss` before assuming a found window's buttons are clickable. When it's `false`, skip
   `DialogUtils` entirely and drive the dialog with
   [KeyboardUtils](../keyboardutils/README.md) instead — the prompt is modal, so keyboard input
   goes to it regardless of the parent window's focus:
   ```csharp
-  IntPtr hWnd = dialog.FindDialog("helloworld.cs", exactMatch: false, out bool canDismiss);
-  if (hWnd != IntPtr.Zero && !canDismiss)
+  bool found = dialog.FindDialog("helloworld.cs", out IntPtr hWnd, out bool canDismiss, exactMatch: false);
+  if (found && !canDismiss)
   {
       keyboard.PressKey(VirtualKey.Enter);   // activates the highlighted default button (Save)
       keyboard.PressKey(VirtualKey.Escape);  // Cancel (closes the prompt, keeps the app open with changes unsaved)
