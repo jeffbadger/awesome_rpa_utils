@@ -427,7 +427,13 @@ namespace UIAutomation
         [Description("Invokes an element (click-equivalent for buttons/menu items) via InvokePattern.")]
         public void Invoke(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            if (!element.TryGetCurrentPattern(InvokePattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support InvokePattern.");
+
+            ((InvokePattern)patternObj).Invoke();
         }
 
         /// <summary>Sets an element's value via <c>ValuePattern</c>.</summary>
@@ -439,7 +445,15 @@ namespace UIAutomation
         [Description("Sets an element's value via ValuePattern.")]
         public void SetValue(AutomationElement element, string value)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+            if (value == null)
+                throw new ArgumentException("A value is required.", nameof(value));
+
+            if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support ValuePattern.");
+
+            ((ValuePattern)patternObj).SetValue(value);
         }
 
         /// <summary>Gets an element's value via <c>ValuePattern</c>.</summary>
@@ -450,7 +464,13 @@ namespace UIAutomation
         [Description("Gets an element's value via ValuePattern.")]
         public string GetValue(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support ValuePattern.");
+
+            return ((ValuePattern)patternObj).Current.Value;
         }
 
         /// <summary>Toggles an element (e.g. a checkbox) via <c>TogglePattern</c>.</summary>
@@ -461,7 +481,13 @@ namespace UIAutomation
         [Description("Toggles an element (e.g. a checkbox) via TogglePattern.")]
         public void Toggle(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            if (!element.TryGetCurrentPattern(TogglePattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support TogglePattern.");
+
+            ((TogglePattern)patternObj).Toggle();
         }
 
         /// <summary>Returns <c>true</c> if a toggleable element is currently On.</summary>
@@ -472,7 +498,13 @@ namespace UIAutomation
         [Description("Returns True if a toggleable element is currently On.")]
         public bool IsToggled(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            if (!element.TryGetCurrentPattern(TogglePattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support TogglePattern.");
+
+            return ((TogglePattern)patternObj).Current.ToggleState == ToggleState.On;
         }
 
         /// <summary>Expands an element (e.g. a combo box or tree node) via <c>ExpandCollapsePattern</c>.</summary>
@@ -483,7 +515,13 @@ namespace UIAutomation
         [Description("Expands an element (e.g. a combo box or tree node) via ExpandCollapsePattern.")]
         public void Expand(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            if (!element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support ExpandCollapsePattern.");
+
+            ((ExpandCollapsePattern)patternObj).Expand();
         }
 
         /// <summary>Collapses an element via <c>ExpandCollapsePattern</c>.</summary>
@@ -494,7 +532,13 @@ namespace UIAutomation
         [Description("Collapses an element via ExpandCollapsePattern.")]
         public void Collapse(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            if (!element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support ExpandCollapsePattern.");
+
+            ((ExpandCollapsePattern)patternObj).Collapse();
         }
 
         /// <summary>Selects an element (e.g. a list item) via <c>SelectionItemPattern</c>.</summary>
@@ -505,7 +549,13 @@ namespace UIAutomation
         [Description("Selects an element (e.g. a list item) via SelectionItemPattern.")]
         public void Select(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            if (!element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support SelectionItemPattern.");
+
+            ((SelectionItemPattern)patternObj).Select();
         }
 
         /// <summary>Returns <c>true</c> if a selectable element is currently selected.</summary>
@@ -516,7 +566,13 @@ namespace UIAutomation
         [Description("Returns True if a selectable element is currently selected.")]
         public bool IsSelected(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            if (!element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object patternObj))
+                throw new InvalidOperationException("This element does not support SelectionItemPattern.");
+
+            return ((SelectionItemPattern)patternObj).Current.IsSelected;
         }
 
         #endregion
