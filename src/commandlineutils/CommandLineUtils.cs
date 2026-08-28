@@ -230,7 +230,19 @@ namespace CommandLineAutomation
         [Description("Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately.")]
         public int StartFireAndForget(string fileName, string arguments = null, string workingDirectory = null)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentException("A file name is required.", nameof(fileName));
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments ?? string.Empty,
+                WorkingDirectory = workingDirectory ?? string.Empty,
+                UseShellExecute = false
+            };
+
+            Process process = Process.Start(psi);
+            return process.Id;
         }
 
         #endregion
