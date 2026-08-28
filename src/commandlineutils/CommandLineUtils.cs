@@ -95,15 +95,16 @@ namespace CommandLineAutomation
         /// available.
         /// </summary>
         /// <param name="fileName">Path to the executable to run.</param>
+        /// <param name="timedOut">Set to <c>true</c> if the process was killed for exceeding <paramref name="timeoutMs"/>; otherwise <c>false</c>. When <c>true</c>, the returned exit code is meaningless - use this flag, not a sentinel exit-code value, to detect a timeout (a real process can legitimately exit with any code, including <c>-1</c>).</param>
         /// <param name="arguments">Command-line arguments, or <c>null</c> for none.</param>
         /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
-        /// <returns>The process's exit code, or <c>-1</c> if it was killed for exceeding <paramref name="timeoutMs"/>.</returns>
+        /// <returns>The process's exit code, or an unspecified value if <paramref name="timedOut"/> is <c>true</c>.</returns>
         /// <exception cref="ArgumentException"><paramref name="fileName"/> is null, empty, or whitespace.</exception>
         /// <exception cref="Win32Exception">The executable could not be started, or the UAC prompt was cancelled by the user.</exception>
         [Category("CommandLine - Elevated")]
         [Description("Runs an executable elevated (UAC prompt) and waits for it to exit. Returns only the exit code - output cannot be captured for an elevated process.")]
-        public int RunElevated(string fileName, string arguments = null, string workingDirectory = null, int timeoutMs = -1)
+        public int RunElevated(string fileName, out bool timedOut, string arguments = null, string workingDirectory = null, int timeoutMs = -1)
         {
             throw new NotImplementedException();
         }
