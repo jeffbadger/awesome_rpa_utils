@@ -662,7 +662,47 @@ namespace UIAutomation
         [Description("Flashes an inverting rectangle around an element to visually confirm which on-screen element it corresponds to.")]
         public void HighlightElement(AutomationElement element, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+            if (flashes < 1) flashes = 1;
+            if (flashMs < 1) flashMs = 1;
+            if (lineWidth < 1) lineWidth = 1;
+
+            System.Drawing.Rectangle rc = GetBoundingRectangle(element);
+
+            IntPtr hdc = GetDC(IntPtr.Zero);
+            if (hdc == IntPtr.Zero)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.");
+
+            IntPtr hPen = CreatePen(PS_SOLID, lineWidth, (uint)colorRef);
+            IntPtr hOldPen = IntPtr.Zero;
+            IntPtr hOldBrush = IntPtr.Zero;
+
+            try
+            {
+                hOldPen = SelectObject(hdc, hPen);
+                hOldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                SetROP2(hdc, R2_NOTXORPEN);
+
+                for (int i = 0; i < flashes; i++)
+                {
+                    // Draw (visible) - XOR
+                    DrawRectangle(hdc, rc.Left, rc.Top, rc.Right, rc.Bottom);
+                    Thread.Sleep(flashMs);
+                    // Draw again (erases) - XOR XOR = original pixels
+                    DrawRectangle(hdc, rc.Left, rc.Top, rc.Right, rc.Bottom);
+
+                    if (i < flashes - 1)
+                        Thread.Sleep(flashMs);
+                }
+            }
+            finally
+            {
+                if (hOldPen != IntPtr.Zero) SelectObject(hdc, hOldPen);
+                if (hOldBrush != IntPtr.Zero) SelectObject(hdc, hOldBrush);
+                if (hdc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdc);
+                if (hPen != IntPtr.Zero) DeleteObject(hPen);
+            }
         }
 
         #endregion
@@ -711,6 +751,40 @@ namespace UIAutomation
             }
             return null;
         }
+
+        private const int PS_SOLID = 0;
+        private const int NULL_BRUSH = 5;
+        private const int R2_NOTXORPEN = 10; // Draw = NOT (pen XOR dest)
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr GetDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        private static extern IntPtr CreatePen(int fnPenStyle, int nWidth, uint crColor);
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeleteObject(IntPtr hObject);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr GetStockObject(int fnObject);
+
+        [DllImport("gdi32.dll")]
+        private static extern int SetROP2(IntPtr hdc, int fnDrawMode);
+
+        // Named DrawRectangle (not "Rectangle") to avoid colliding with the
+        // System.Drawing.Rectangle type used elsewhere in this file - unlike
+        // DialogUtils.HighlightControl's equivalent P/Invoke (which has no
+        // System.Drawing usage to collide with).
+        [DllImport("gdi32.dll", EntryPoint = "Rectangle")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DrawRectangle(IntPtr hdc, int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
 
         #endregion
     }
