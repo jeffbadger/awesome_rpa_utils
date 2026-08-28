@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>UIAutomation</AssemblyName>
+    <RootNamespace>UIAutomation</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <!-- Needed for System.Windows.Automation (AutomationElement and friends) -->
+    <UseWPF>true</UseWPF>
+    <!-- Allows building this Windows-targeted, WPF-referencing project from a non-Windows SDK host -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Emit UIAutomation.xml next to the DLL so the XML doc comments are consumable -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>
