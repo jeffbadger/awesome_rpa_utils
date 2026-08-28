@@ -192,6 +192,7 @@ Note: this component needs a WinForms/WPF test harness with native `AutomationId
 ### ServiceUtils (needs Setup: install a small disposable test service — e.g. via `sc create ZZTestSvc binPath= ...` against a trivial do-nothing executable — never test against a real system service; Cleanup: stop and `sc delete` it)
 
 - `IsServiceInstalled` (true for the test service; false for a made-up name)
+- `IsRunning` (true after `StartService`; false after `StopService`; false for a made-up name — confirm it never throws, unlike `GetStatus`)
 - `GetStatus` (assert against the test service's actual state after each Control method call below)
 - `GetStartType` (assert against each value set via `SetStartType`, including `AutomaticDelayedStart` specifically — this is the one case with no equivalent already-proven code elsewhere in the repo, so it deserves the most scrutiny)
 - `ListServiceNames`, `FindServiceNamesByDisplayName` (assert the test service's name/display name appear; exact vs substring cases)

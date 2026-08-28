@@ -76,6 +76,34 @@ namespace ServiceAutomation
             }
         }
 
+        /// <summary>
+        /// Returns <c>true</c> if a service with the given name is installed and currently
+        /// running. Unlike <see cref="GetStatus"/>, this does not throw for a service that
+        /// isn't installed - it returns <c>false</c>, matching <see cref="IsServiceInstalled"/>'s
+        /// safe-check convention rather than requiring a try/catch for a simple yes/no check.
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name) to check.</param>
+        /// <exception cref="ArgumentException"><paramref name="serviceName"/> is null or empty.</exception>
+        [Category("Service - Query")]
+        [Description("Returns True if a service with the given name is installed and currently running.")]
+        public bool IsRunning(string serviceName)
+        {
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            using (var sc = new ServiceController(serviceName))
+            {
+                try
+                {
+                    return sc.Status == ServiceControllerStatus.Running;
+                }
+                catch (InvalidOperationException)
+                {
+                    return false;
+                }
+            }
+        }
+
         /// <summary>Gets a service's current status.</summary>
         /// <param name="serviceName">The service name (not display name).</param>
         /// <exception cref="ArgumentException"><paramref name="serviceName"/> is null or empty.</exception>
