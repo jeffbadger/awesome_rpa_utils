@@ -58,6 +58,7 @@ namespace CommandLineAutomation
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
         /// <param name="environmentVariables">Environment variables to add/override for the child process, or <c>null</c> for none.</param>
         /// <exception cref="ArgumentException"><paramref name="fileName"/> is null, empty, or whitespace.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than -1.</exception>
         /// <exception cref="Win32Exception">The executable could not be found or started.</exception>
         [Category("CommandLine - Run")]
         [Description("Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr.")]
@@ -160,8 +161,15 @@ namespace CommandLineAutomation
         /// classic pipe-buffer deadlock from synchronous reads), waits up to
         /// <paramref name="timeoutMs"/>, and kills the whole process tree if it's exceeded.
         /// </summary>
+        /// <param name="psi">The fully-configured process to start.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
+        /// <returns>The result of running the process, including exit code, captured output, and whether it timed out.</returns>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than <c>-1</c>.</exception>
         private static CommandResult RunAndCapture(ProcessStartInfo psi, int timeoutMs)
         {
+            if (timeoutMs < -1)
+                throw new ArgumentOutOfRangeException(nameof(timeoutMs), timeoutMs, "timeoutMs must be -1 (infinite) or non-negative.");
+
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
 
@@ -177,8 +185,34 @@ namespace CommandLineAutomation
                 bool exited = process.WaitForExit(timeoutMs);
                 if (!exited)
                 {
-                    process.Kill(entireProcessTree: true);
-                    process.WaitForExit();
+                    bool killedSuccessfully = true;
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // The process (and its tree) finished on its own between
+                        // WaitForExit(timeoutMs) returning false and this Kill() call.
+                        killedSuccessfully = false;
+                    }
+
+                    // Bounded: a stray descendant that outlived the tree-kill snapshot
+                    // must not be able to make this method hang past its stated timeout.
+                    bool finishedAfterKill = process.WaitForExit(5000);
+
+                    if (!killedSuccessfully && finishedAfterKill)
+                    {
+                        // It genuinely finished on its own in time after all.
+                        return new CommandResult
+                        {
+                            ExitCode = process.ExitCode,
+                            StandardOutput = stdout.ToString(),
+                            StandardError = stderr.ToString(),
+                            TimedOut = false
+                        };
+                    }
+
                     return new CommandResult
                     {
                         ExitCode = 0,
