@@ -301,7 +301,9 @@ namespace UIAutomation
         [Description("Gets an element's Name property.")]
         public string GetName(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+            return element.Current.Name;
         }
 
         /// <summary>Gets an element's <c>AutomationId</c> property.</summary>
@@ -311,7 +313,9 @@ namespace UIAutomation
         [Description("Gets an element's AutomationId property.")]
         public string GetAutomationId(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+            return element.Current.AutomationId;
         }
 
         /// <summary>Gets an element's window class name.</summary>
@@ -321,7 +325,9 @@ namespace UIAutomation
         [Description("Gets an element's window class name.")]
         public string GetClassName(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+            return element.Current.ClassName;
         }
 
         /// <summary>Gets a friendly name for an element's control type (e.g. <c>"Button"</c>).</summary>
@@ -331,7 +337,16 @@ namespace UIAutomation
         [Description("Gets a friendly name for an element's control type (e.g. \"Button\").")]
         public string GetControlTypeName(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            // ProgrammaticName looks like "ControlType.Button" - strip the prefix so callers
+            // get the same short form used by UiControlType (e.g. "Button").
+            string programmaticName = element.Current.ControlType.ProgrammaticName;
+            const string prefix = "ControlType.";
+            return programmaticName.StartsWith(prefix, StringComparison.Ordinal)
+                ? programmaticName.Substring(prefix.Length)
+                : programmaticName;
         }
 
         /// <summary>Gets an element's screen-space bounding rectangle.</summary>
@@ -341,7 +356,11 @@ namespace UIAutomation
         [Description("Gets an element's screen-space bounding rectangle.")]
         public System.Drawing.Rectangle GetBoundingRectangle(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+
+            System.Windows.Rect rect = element.Current.BoundingRectangle;
+            return new System.Drawing.Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
         }
 
         /// <summary>Returns <c>true</c> if the element is enabled.</summary>
@@ -351,7 +370,9 @@ namespace UIAutomation
         [Description("Returns True if the element is enabled.")]
         public bool IsEnabled(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+            return element.Current.IsEnabled;
         }
 
         /// <summary>Returns <c>true</c> if the element is offscreen.</summary>
@@ -361,7 +382,9 @@ namespace UIAutomation
         [Description("Returns True if the element is offscreen.")]
         public bool IsOffscreen(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                throw new ArgumentException("An element is required.", nameof(element));
+            return element.Current.IsOffscreen;
         }
 
         /// <summary>
@@ -376,7 +399,20 @@ namespace UIAutomation
         [Description("Returns True if the element is still available (its underlying UI hasn't gone away).")]
         public bool IsElementAvailable(AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                return false;
+
+            try
+            {
+                // Any Current property access throws ElementNotAvailableException if the
+                // element's underlying UI has gone away - IsEnabled is as good as any.
+                _ = element.Current.IsEnabled;
+                return true;
+            }
+            catch (ElementNotAvailableException)
+            {
+                return false;
+            }
         }
 
         #endregion
