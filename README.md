@@ -13,6 +13,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [ocrutils](src/ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
+| [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
 
 Each component is fully standalone (no project references between them), but
 they're designed to complement each other: MouseUtils and KeyboardUtils own
@@ -55,6 +56,7 @@ Each component has its own README with the full method reference, plus a
 - [ocrutils/README.md](src/ocrutils/README.md) and [ocrutils/Documentation/](src/ocrutils/Documentation/README.md)
 - [dialogutils/README.md](src/dialogutils/README.md) and [dialogutils/Documentation/](src/dialogutils/Documentation/README.md)
 - [uiautomationutils/README.md](src/uiautomationutils/README.md) and [uiautomationutils/Documentation/](src/uiautomationutils/Documentation/README.md)
+- [commandlineutils/README.md](src/commandlineutils/README.md) and [commandlineutils/Documentation/](src/commandlineutils/Documentation/README.md)
 
 ## Testing
 
