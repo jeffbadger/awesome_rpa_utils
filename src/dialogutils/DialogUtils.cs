@@ -216,24 +216,31 @@ namespace DialogAutomation
         /// click immediately without waiting, matching the previous behavior.
         /// </param>
         /// <param name="pollIntervalMs">Delay between enabled-state checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <remarks>
-        /// <c>SendMessage</c>'s return value for <c>BM_CLICK</c> carries no useful
-        /// success/failure signal, so this method never throws based on it — it always sends
-        /// the click after waiting, even if the button never became enabled.
-        /// </remarks>
+        /// <returns>
+        /// <c>true</c> if the button was enabled when the click was sent; <c>false</c> if it
+        /// was still disabled after <paramref name="waitForEnabledMs"/> elapsed. The click is
+        /// sent either way - this only reports whether it had a fighting chance of landing,
+        /// not whether the target application actually reacted to it, which
+        /// <c>SendMessage</c>'s return value for <c>BM_CLICK</c> cannot tell you (a disabled
+        /// control silently ignores <c>BM_CLICK</c>, so this is the one honest signal
+        /// available without inspecting the target application itself).
+        /// </returns>
         [Category("Dialog - Find & Click")]
-        [Description("Invokes a button by sending it BM_CLICK, without moving the cursor. Waits briefly for the button to become enabled first.")]
-        public void ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)
+        [Description("Invokes a button by sending it BM_CLICK, without moving the cursor. Waits briefly for the button to become enabled first. Returns True if it was enabled when clicked.")]
+        public bool ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
-            while (!IsWindowEnabled(hButton) && unchecked(Environment.TickCount - start) < waitForEnabledMs)
+            bool enabled = IsWindowEnabled(hButton);
+            while (!enabled && unchecked(Environment.TickCount - start) < waitForEnabledMs)
             {
                 Thread.Sleep(pollIntervalMs);
+                enabled = IsWindowEnabled(hButton);
             }
 
             SendMessage(hButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+            return enabled;
         }
 
         /// <summary>
