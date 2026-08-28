@@ -590,7 +590,24 @@ namespace UIAutomation
         [Description("Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses.")]
         public bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+            int start = Environment.TickCount;
+            while (true)
+            {
+                AutomationElement found = FindByAutomationId(parent, automationId);
+                if (found != null)
+                {
+                    element = found;
+                    return true;
+                }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    element = null;
+                    return false;
+                }
+                Thread.Sleep(pollIntervalMs);
+            }
         }
 
         /// <summary>Polls for a descendant element matching the given <c>Name</c> until it appears or the timeout elapses.</summary>
@@ -605,7 +622,24 @@ namespace UIAutomation
         [Description("Polls for a descendant element matching the given Name until it appears or the timeout elapses.")]
         public bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element)
         {
-            throw new NotImplementedException();
+            if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+            int start = Environment.TickCount;
+            while (true)
+            {
+                AutomationElement found = FindByName(parent, name, exactMatch);
+                if (found != null)
+                {
+                    element = found;
+                    return true;
+                }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    element = null;
+                    return false;
+                }
+                Thread.Sleep(pollIntervalMs);
+            }
         }
 
         #endregion
