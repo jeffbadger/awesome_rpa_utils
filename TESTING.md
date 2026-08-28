@@ -1,23 +1,23 @@
 # Testing Plan: Pega Robotic Automation
 
-A step-by-step plan for testing all eight components (`DialogUtils`,
+A step-by-step plan for testing all nine components (`DialogUtils`,
 `KeyboardUtils`, `MouseUtils`, `OcrUtils`, `ScreenCaptureUtils`, `WindowUtils`,
-`UIAutomationUtils`, `CommandLineUtils`) using Pega Robot Studio's Unit
-Testing framework.
+`UIAutomationUtils`, `CommandLineUtils`, `ServiceUtils`) using Pega Robot
+Studio's Unit Testing framework.
 
 Unlike Pega's usual caution against fully-automated RPA test suites (that guidance
 targets fragile, ever-changing *target-application* automations — see the RPA
-Automated Testing Strategy manual), these eight classes are your own deterministic
+Automated Testing Strategy manual), these nine classes are your own deterministic
 library code with a stable, versioned API. That's exactly the case where
 component-level automated testing pays off.
 
 ## Phase 0 — Project setup
 
-1. `dotnet build src/AwesomeRpaUtils.sln` to produce the eight DLLs in `src/bin/`.
+1. `dotnet build src/AwesomeRpaUtils.sln` to produce the nine DLLs in `src/bin/`.
 2. Create a new Robot Studio project, e.g. `AwesomeRpaUtils.Tests`. Add each DLL
    as a Toolbox reference (project asset) so `DialogUtils`, `KeyboardUtils`,
    `MouseUtils`, `OcrUtils`, `ScreenCaptureUtils`, `WindowUtils`,
-   `UIAutomationUtils`, and `CommandLineUtils` all appear in the Toolbox and
+   `UIAutomationUtils`, `CommandLineUtils`, and `ServiceUtils` all appear in the Toolbox and
    can be dragged onto automation surfaces.
 3. Build a small **Test Harness** WinForms app (a few native `Button`/`Edit`/
    `Static`/`ListBox` controls with fixed, known control IDs, plus one that opens
@@ -188,6 +188,19 @@ Note: this component needs a WinForms/WPF test harness with native `AutomationId
 - `StartFireAndForget` (assert the call returns quickly and the returned PID
   corresponds to a running process, via `WindowUtils.FindWindowsByProcessId`
   or a direct process check)
+
+### ServiceUtils (needs Setup: install a small disposable test service — e.g. via `sc create ZZTestSvc binPath= ...` against a trivial do-nothing executable — never test against a real system service; Cleanup: stop and `sc delete` it)
+
+- `IsServiceInstalled` (true for the test service; false for a made-up name)
+- `GetStatus` (assert against the test service's actual state after each Control method call below)
+- `GetStartType` (assert against each value set via `SetStartType`, including `AutomaticDelayedStart` specifically — this is the one case with no equivalent already-proven code elsewhere in the repo, so it deserves the most scrutiny)
+- `ListServiceNames`, `FindServiceNamesByDisplayName` (assert the test service's name/display name appear; exact vs substring cases)
+- `StartService`, `StopService`, `RestartService` (happy path; timeout case against a deliberately slow-starting test service if you can construct one, or note as difficult to force and rely on hand-traced logic instead)
+- `PauseService`/`ResumeService` (only if the test service is written to support `SERVICE_ACCEPT_PAUSE_CONTINUE` — otherwise this is exception-only coverage, which is still worth a test case)
+- `WaitForServiceStatus` (found-in-time and timeout cases)
+- `SetStartType` (all six `ServiceStartType` values against the test service; specifically verify switching from `AutomaticDelayedStart` back to `Automatic` actually clears the delayed flag — check via `sc qc <name>` or the registry, not just via `GetStartType` which is implemented by the same component under test)
+
+**Never point any of this component's tests at a real system service** (a database engine, a network service, anything another process depends on) — a disposable, purpose-built test service is the only safe target, unlike every other component in this repo, which only ever touches a throwaway test-harness app.
 
 ## Phase 2 — Outcome conditions
 
