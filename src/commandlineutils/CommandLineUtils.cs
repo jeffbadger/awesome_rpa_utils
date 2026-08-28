@@ -173,33 +173,41 @@ namespace CommandLineAutomation
                 // (InvalidOperationException) or, for an elevated child launched from a
                 // non-elevated caller, because Windows' integrity-level rules deny
                 // PROCESS_TERMINATE access even to the process that started it
-                // (Win32Exception, "Access is denied"). Either way, fall through to the
-                // bounded wait below rather than letting the exception escape.
+                // (Win32Exception, "Access is denied"). Either way, we did NOT actually
+                // terminate the process ourselves in these two cases.
+                bool killedByUs = true;
                 try
                 {
                     process.Kill(entireProcessTree: true);
                 }
                 catch (InvalidOperationException)
                 {
+                    killedByUs = false;
                 }
                 catch (Win32Exception)
                 {
+                    killedByUs = false;
                 }
 
                 // Bounded: never let this method hang past its stated timeout contract,
                 // whether the kill succeeded, failed, or the process is just slow to die.
                 process.WaitForExit(5000);
 
-                if (process.HasExited)
+                if (!killedByUs && process.HasExited)
                 {
+                    // We did not terminate it ourselves, and it turned out to have
+                    // exited anyway (already gone before the kill, or finished on its
+                    // own within the grace window despite the kill being denied) - not
+                    // a timeout from the caller's perspective.
                     timedOut = false;
                     return process.ExitCode;
                 }
 
-                // Could not confirm the process actually exited - report a timeout and
-                // don't touch ExitCode (reading it on a still-running process throws).
+                // Either we successfully killed it (a real timeout), or we couldn't
+                // kill it AND it's still running (also a real timeout, from the
+                // caller's perspective, even though we couldn't confirm termination).
                 timedOut = true;
-                return -1;
+                return process.HasExited ? process.ExitCode : -1;
             }
         }
 
