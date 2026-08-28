@@ -130,13 +130,14 @@ namespace CommandLineAutomation
         /// available.
         /// </summary>
         /// <param name="fileName">Path to the executable to run.</param>
-        /// <param name="timedOut">Set to <c>true</c> if the process was killed for exceeding <paramref name="timeoutMs"/>; otherwise <c>false</c>. When <c>true</c>, the returned exit code is meaningless - use this flag, not a sentinel exit-code value, to detect a timeout (a real process can legitimately exit with any code, including <c>-1</c>).</param>
+        /// <param name="timedOut">Set to <c>true</c> if the process was killed for exceeding <paramref name="timeoutMs"/>, or if it could not be confirmed to have exited within a bounded grace period after an attempted kill; otherwise <c>false</c>. When <c>true</c>, the returned exit code is meaningless - use this flag, not a sentinel exit-code value, to detect a timeout (a real process can legitimately exit with any code, including <c>-1</c>). If the calling process is not itself running elevated, it may be unable to terminate the elevated child on timeout (Windows denies a lower-integrity-level process the rights to terminate a higher-integrity-level one) - in that case the elevated process may continue running in the background after this method returns with <paramref name="timedOut"/> <c>true</c>.</param>
         /// <param name="arguments">Command-line arguments, or <c>null</c> for none.</param>
         /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
         /// <returns>The process's exit code, or an unspecified value if <paramref name="timedOut"/> is <c>true</c>.</returns>
         /// <exception cref="ArgumentException"><paramref name="fileName"/> is null, empty, or whitespace.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than -1.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than <c>-1</c>.</exception>
+        /// <exception cref="InvalidOperationException"><c>Process.Start</c> returned null (the shell reused an existing process instance instead of starting a new one).</exception>
         /// <exception cref="Win32Exception">The executable could not be started, or the UAC prompt was cancelled by the user.</exception>
         [Category("CommandLine - Elevated")]
         [Description("Runs an executable elevated (UAC prompt) and waits for it to exit. Returns only the exit code - output cannot be captured for an elevated process.")]
@@ -168,28 +169,37 @@ namespace CommandLineAutomation
                     return process.ExitCode;
                 }
 
-                bool killedSuccessfully = true;
+                // Attempt to kill it. This can fail either because it already exited
+                // (InvalidOperationException) or, for an elevated child launched from a
+                // non-elevated caller, because Windows' integrity-level rules deny
+                // PROCESS_TERMINATE access even to the process that started it
+                // (Win32Exception, "Access is denied"). Either way, fall through to the
+                // bounded wait below rather than letting the exception escape.
                 try
                 {
                     process.Kill(entireProcessTree: true);
                 }
                 catch (InvalidOperationException)
                 {
-                    // The process (and its tree) finished on its own between
-                    // WaitForExit(timeoutMs) returning false and this Kill() call.
-                    killedSuccessfully = false;
+                }
+                catch (Win32Exception)
+                {
                 }
 
-                bool finishedAfterKill = process.WaitForExit(5000);
+                // Bounded: never let this method hang past its stated timeout contract,
+                // whether the kill succeeded, failed, or the process is just slow to die.
+                process.WaitForExit(5000);
 
-                if (!killedSuccessfully && finishedAfterKill)
+                if (process.HasExited)
                 {
                     timedOut = false;
                     return process.ExitCode;
                 }
 
+                // Could not confirm the process actually exited - report a timeout and
+                // don't touch ExitCode (reading it on a still-running process throws).
                 timedOut = true;
-                return process.ExitCode;
+                return -1;
             }
         }
 
