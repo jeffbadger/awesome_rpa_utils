@@ -63,7 +63,27 @@ namespace CommandLineAutomation
         [Description("Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr.")]
         public CommandResult Run(string fileName, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentException("A file name is required.", nameof(fileName));
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments ?? string.Empty,
+                WorkingDirectory = workingDirectory ?? string.Empty,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            if (environmentVariables != null)
+            {
+                foreach (var pair in environmentVariables)
+                    psi.Environment[pair.Key] = pair.Value;
+            }
+
+            return RunAndCapture(psi, timeoutMs);
         }
 
         /// <summary>
@@ -129,6 +149,57 @@ namespace CommandLineAutomation
         public int StartFireAndForget(string fileName, string arguments = null, string workingDirectory = null)
         {
             throw new NotImplementedException();
+        }
+
+        #endregion
+
+        #region Internal Helpers
+
+        /// <summary>
+        /// Starts <paramref name="psi"/>, asynchronously drains stdout/stderr (avoiding the
+        /// classic pipe-buffer deadlock from synchronous reads), waits up to
+        /// <paramref name="timeoutMs"/>, and kills the whole process tree if it's exceeded.
+        /// </summary>
+        private static CommandResult RunAndCapture(ProcessStartInfo psi, int timeoutMs)
+        {
+            var stdout = new StringBuilder();
+            var stderr = new StringBuilder();
+
+            using (var process = new Process { StartInfo = psi })
+            {
+                process.OutputDataReceived += (s, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
+                process.ErrorDataReceived += (s, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
+
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                bool exited = process.WaitForExit(timeoutMs);
+                if (!exited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit();
+                    return new CommandResult
+                    {
+                        ExitCode = 0,
+                        StandardOutput = stdout.ToString(),
+                        StandardError = stderr.ToString(),
+                        TimedOut = true
+                    };
+                }
+
+                // Ensure the async OutputDataReceived/ErrorDataReceived events have
+                // finished firing before reading the buffers back out.
+                process.WaitForExit();
+
+                return new CommandResult
+                {
+                    ExitCode = process.ExitCode,
+                    StandardOutput = stdout.ToString(),
+                    StandardError = stderr.ToString(),
+                    TimedOut = false
+                };
+            }
         }
 
         #endregion
