@@ -187,14 +187,18 @@ namespace DialogAutomation
         }
 
         /// <summary>
-        /// Finds a control on a dialog by its control ID (<c>GetDlgItem</c>). Returns
-        /// <see cref="IntPtr.Zero"/> if none matches.
+        /// Finds a control on a dialog by its control ID (<c>GetDlgItem</c>). Never throws.
         /// </summary>
+        /// <param name="hDialog">The dialog to search.</param>
+        /// <param name="hButton">The matching control's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
+        /// <param name="controlId">The control ID to match.</param>
+        /// <returns><c>true</c> if a matching control was found.</returns>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a control on a dialog by its control ID, or returns a zero handle if none matches.")]
-        public IntPtr FindButtonById(IntPtr hDialog, int controlId)
+        [Description("Finds a control on a dialog by its control ID. Returns True if found; never throws.")]
+        public bool FindButtonById(IntPtr hDialog, out IntPtr hButton, int controlId)
         {
-            return GetDlgItem(hDialog, controlId);
+            hButton = GetDlgItem(hDialog, controlId);
+            return hButton != IntPtr.Zero;
         }
 
         /// <summary>
