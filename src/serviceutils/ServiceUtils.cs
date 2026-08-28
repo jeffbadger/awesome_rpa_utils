@@ -178,7 +178,14 @@ namespace ServiceAutomation
         [Description("Starts a service and waits for it to reach Running. Returns False (not an exception) if it times out.")]
         public bool StartService(string serviceName, int timeoutMs = 30000)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            using (var sc = new ServiceController(serviceName))
+            {
+                sc.Start();
+                return WaitForStatusInternal(sc, ServiceControllerStatus.Running, timeoutMs);
+            }
         }
 
         /// <summary>Stops a service and waits for it to reach <see cref="ServiceControllerStatus.Stopped"/>.</summary>
@@ -191,7 +198,14 @@ namespace ServiceAutomation
         [Description("Stops a service and waits for it to reach Stopped. Returns False (not an exception) if it times out.")]
         public bool StopService(string serviceName, int timeoutMs = 30000)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            using (var sc = new ServiceController(serviceName))
+            {
+                sc.Stop();
+                return WaitForStatusInternal(sc, ServiceControllerStatus.Stopped, timeoutMs);
+            }
         }
 
         /// <summary>
@@ -207,7 +221,12 @@ namespace ServiceAutomation
         [Description("Stops then starts a service. Each phase gets its own timeoutMs budget.")]
         public bool RestartService(string serviceName, int timeoutMs = 30000)
         {
-            throw new NotImplementedException();
+            // Each call opens and disposes its own ServiceController - Stop and Start
+            // don't need to share one instance, since ServiceController is a thin,
+            // stateless-between-calls wrapper keyed by service name.
+            bool stopped = StopService(serviceName, timeoutMs);
+            bool started = StartService(serviceName, timeoutMs);
+            return stopped && started;
         }
 
         /// <summary>Pauses a running service.</summary>
@@ -218,7 +237,13 @@ namespace ServiceAutomation
         [Description("Pauses a running service.")]
         public void PauseService(string serviceName)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            using (var sc = new ServiceController(serviceName))
+            {
+                sc.Pause();
+            }
         }
 
         /// <summary>Resumes a paused service.</summary>
@@ -229,7 +254,13 @@ namespace ServiceAutomation
         [Description("Resumes a paused service.")]
         public void ResumeService(string serviceName)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            using (var sc = new ServiceController(serviceName))
+            {
+                sc.Continue();
+            }
         }
 
         /// <summary>
@@ -249,7 +280,13 @@ namespace ServiceAutomation
         [Description("Polls for a service to reach the given status until it does, or the timeout elapses.")]
         public bool WaitForServiceStatus(string serviceName, ServiceControllerStatus expectedStatus, int timeoutMs)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            using (var sc = new ServiceController(serviceName))
+            {
+                return WaitForStatusInternal(sc, expectedStatus, timeoutMs);
+            }
         }
 
         #endregion
@@ -301,6 +338,27 @@ namespace ServiceAutomation
         [DllImport("advapi32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool QueryServiceConfig2(IntPtr hService, uint dwInfoLevel, IntPtr buffer, uint bufferSize, out uint bytesNeeded);
+
+        /// <summary>
+        /// Waits for a service to reach a status, translating a timeout into False instead
+        /// of letting the exception propagate. Note the deliberately fully-qualified
+        /// <c>System.ServiceProcess.TimeoutException</c> in the catch clause below - a bare
+        /// <c>TimeoutException</c> in this file resolves to <c>System.TimeoutException</c>
+        /// (the BCL one), a different type from the one <c>WaitForStatus</c> actually throws.
+        /// That would compile fine and silently never catch the real exception.
+        /// </summary>
+        private static bool WaitForStatusInternal(ServiceController sc, ServiceControllerStatus expectedStatus, int timeoutMs)
+        {
+            try
+            {
+                sc.WaitForStatus(expectedStatus, TimeSpan.FromMilliseconds(timeoutMs));
+                return true;
+            }
+            catch (System.ServiceProcess.TimeoutException)
+            {
+                return false;
+            }
+        }
 
         /// <summary>Reads the delayed-auto-start flag for a service via QueryServiceConfig2. Assumes the caller already confirmed the service exists.</summary>
         private static bool IsDelayedAutoStart(string serviceName)
