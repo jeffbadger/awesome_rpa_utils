@@ -45,19 +45,27 @@ where the method is documented to throw.
 
 ### DialogUtils (needs Setup: harness shows a MessageBox or custom dialog)
 
-- `FindDialog` (exact + substring match; not-found → `IntPtr.Zero`)
+- `FindDialog` (exact + substring match; not-found → returns `false`, `out`
+  params zeroed; also assert `canDismiss` — `true` for the harness's native
+  `Button` dialog, `false` if you can simulate a WinUI-style one, or document
+  that case as manual-only)
 - `CanDismissDialog` (native `Button` dialog → true; simulate a WinUI-style
   dialog if you can, or just document as manual-only)
 - `FindButtonByText` (exact/substring; mnemonic-stripping case — button labeled
-  `"&Yes"` should match input `"Yes"`)
-- `FindButtonById`, `ClickDialogButtonById` (happy path; exception case for
-  unknown ID)
+  `"&Yes"` should match input `"Yes"`; not-found → returns `false`, never throws)
+- `FindButtonById`, `ClickDialogButtonById` (happy path — assert `wasEnabled`;
+  not-found case for an unknown ID → both return `false`, never throw)
 - `ClickDialogButtonByText` (verify dialog closes; retry path — button that
-  doesn't close the dialog should return `false` after `maxAttempts`)
+  doesn't close the dialog should return `false` after `maxAttempts` with
+  `message` explaining why; not-found case → `false` with `message` set,
+  never throws)
 - `GetDialogText`, `GetControlText`, `ListDialogControls` (assert count/text/
   class/enabled state against harness's known controls)
-- `HighlightControl` (no return value — verify manually/via screenshot, see
-  Phase 3)
+- `ClickButton` (assert the `bool` return matches whether the target was
+  actually enabled when clicked — force the disabled case if the harness can
+  hold a button disabled briefly)
+- `HighlightControl` (assert the `bool` return — `true` for a valid handle;
+  verify the actual flash manually/via screenshot, see Phase 3)
 - `WaitForDialog`, `WaitForDialogToClose` (timeout-not-met and found-in-time
   cases; use a delayed-launch step in Setup to hit the "found before timeout"
   branch)
