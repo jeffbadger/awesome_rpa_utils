@@ -102,7 +102,21 @@ namespace CommandLineAutomation
         [Description("Runs a command through cmd.exe /c, waits for it to exit, and captures its exit code, stdout, and stderr.")]
         public CommandResult RunShellCommand(string command, string workingDirectory = null, int timeoutMs = -1)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(command))
+                throw new ArgumentException("A command is required.", nameof(command));
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c \"" + command + "\"",
+                WorkingDirectory = workingDirectory ?? string.Empty,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            return RunAndCapture(psi, timeoutMs);
         }
 
         #endregion
