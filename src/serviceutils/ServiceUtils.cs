@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.ServiceProcess;
 
 namespace ServiceAutomation
@@ -58,7 +59,21 @@ namespace ServiceAutomation
         [Description("Returns True if a service with the given name is installed.")]
         public bool IsServiceInstalled(string serviceName)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            using (var sc = new ServiceController(serviceName))
+            {
+                try
+                {
+                    _ = sc.Status;
+                    return true;
+                }
+                catch (InvalidOperationException)
+                {
+                    return false;
+                }
+            }
         }
 
         /// <summary>Gets a service's current status.</summary>
@@ -69,7 +84,13 @@ namespace ServiceAutomation
         [Description("Gets a service's current status.")]
         public ServiceControllerStatus GetStatus(string serviceName)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            using (var sc = new ServiceController(serviceName))
+            {
+                return sc.Status;
+            }
         }
 
         /// <summary>Gets a service's configured startup type.</summary>
@@ -81,7 +102,27 @@ namespace ServiceAutomation
         [Description("Gets a service's configured startup type.")]
         public ServiceStartType GetStartType(string serviceName)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            ServiceStartMode mode;
+            using (var sc = new ServiceController(serviceName))
+            {
+                mode = sc.StartType;
+            }
+
+            if (mode == ServiceStartMode.Automatic && IsDelayedAutoStart(serviceName))
+                return ServiceStartType.AutomaticDelayedStart;
+
+            switch (mode)
+            {
+                case ServiceStartMode.Boot: return ServiceStartType.Boot;
+                case ServiceStartMode.System: return ServiceStartType.System;
+                case ServiceStartMode.Automatic: return ServiceStartType.Automatic;
+                case ServiceStartMode.Manual: return ServiceStartType.Manual;
+                case ServiceStartMode.Disabled: return ServiceStartType.Disabled;
+                default: throw new InvalidOperationException($"Unrecognized service start mode: {mode}.");
+            }
         }
 
         /// <summary>Gets the service names of every installed service.</summary>
@@ -89,7 +130,13 @@ namespace ServiceAutomation
         [Description("Gets the service names of every installed service.")]
         public List<string> ListServiceNames()
         {
-            throw new NotImplementedException();
+            var results = new List<string>();
+            foreach (ServiceController sc in ServiceController.GetServices())
+            {
+                results.Add(sc.ServiceName);
+                sc.Dispose();
+            }
+            return results;
         }
 
         /// <summary>Finds the service name(s) of installed services matching a display name.</summary>
@@ -101,7 +148,20 @@ namespace ServiceAutomation
         [Description("Finds the service name(s) of installed services matching a display name (exact or substring match).")]
         public List<string> FindServiceNamesByDisplayName(string displayName, bool exactMatch = true)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(displayName))
+                throw new ArgumentException("A display name is required.", nameof(displayName));
+
+            var results = new List<string>();
+            foreach (ServiceController sc in ServiceController.GetServices())
+            {
+                bool matches = exactMatch
+                    ? string.Equals(sc.DisplayName, displayName, StringComparison.Ordinal)
+                    : sc.DisplayName.IndexOf(displayName, StringComparison.OrdinalIgnoreCase) >= 0;
+                if (matches)
+                    results.Add(sc.ServiceName);
+                sc.Dispose();
+            }
+            return results;
         }
 
         #endregion
@@ -210,6 +270,77 @@ namespace ServiceAutomation
         public void SetStartType(string serviceName, ServiceStartType startType)
         {
             throw new NotImplementedException();
+        }
+
+        #endregion
+
+        #region Internal Helpers
+
+        private const uint SC_MANAGER_CONNECT = 0x0001;
+        private const uint SERVICE_QUERY_CONFIG = 0x0001;
+        private const uint SERVICE_CHANGE_CONFIG = 0x0002;
+        private const uint SERVICE_CONFIG_DELAYED_AUTO_START_INFO = 3;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SERVICE_DELAYED_AUTO_START_INFO
+        {
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool fDelayedAutostart;
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr OpenSCManager(string lpMachineName, string lpDatabaseName, uint dwDesiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool QueryServiceConfig2(IntPtr hService, uint dwInfoLevel, IntPtr buffer, uint bufferSize, out uint bytesNeeded);
+
+        /// <summary>Reads the delayed-auto-start flag for a service via QueryServiceConfig2. Assumes the caller already confirmed the service exists.</summary>
+        private static bool IsDelayedAutoStart(string serviceName)
+        {
+            IntPtr hScm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
+            if (hScm == IntPtr.Zero)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenSCManager failed.");
+
+            try
+            {
+                IntPtr hService = OpenService(hScm, serviceName, SERVICE_QUERY_CONFIG);
+                if (hService == IntPtr.Zero)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), $"OpenService failed for '{serviceName}'.");
+
+                try
+                {
+                    int size = Marshal.SizeOf<SERVICE_DELAYED_AUTO_START_INFO>();
+                    IntPtr buffer = Marshal.AllocHGlobal(size);
+                    try
+                    {
+                        if (!QueryServiceConfig2(hService, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, buffer, (uint)size, out uint bytesNeeded))
+                            throw new Win32Exception(Marshal.GetLastWin32Error(), "QueryServiceConfig2 failed.");
+
+                        var info = Marshal.PtrToStructure<SERVICE_DELAYED_AUTO_START_INFO>(buffer);
+                        return info.fDelayedAutostart;
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(buffer);
+                    }
+                }
+                finally
+                {
+                    CloseServiceHandle(hService);
+                }
+            }
+            finally
+            {
+                CloseServiceHandle(hScm);
+            }
         }
 
         #endregion
