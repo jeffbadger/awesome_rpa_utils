@@ -136,12 +136,61 @@ namespace CommandLineAutomation
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
         /// <returns>The process's exit code, or an unspecified value if <paramref name="timedOut"/> is <c>true</c>.</returns>
         /// <exception cref="ArgumentException"><paramref name="fileName"/> is null, empty, or whitespace.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than -1.</exception>
         /// <exception cref="Win32Exception">The executable could not be started, or the UAC prompt was cancelled by the user.</exception>
         [Category("CommandLine - Elevated")]
         [Description("Runs an executable elevated (UAC prompt) and waits for it to exit. Returns only the exit code - output cannot be captured for an elevated process.")]
         public int RunElevated(string fileName, out bool timedOut, string arguments = null, string workingDirectory = null, int timeoutMs = -1)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentException("A file name is required.", nameof(fileName));
+            if (timeoutMs < -1)
+                throw new ArgumentOutOfRangeException(nameof(timeoutMs), timeoutMs, "timeoutMs must be -1 (infinite) or non-negative.");
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments ?? string.Empty,
+                WorkingDirectory = workingDirectory ?? string.Empty,
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            using (var process = Process.Start(psi))
+            {
+                if (process == null)
+                    throw new InvalidOperationException($"Process.Start returned null for '{fileName}'.");
+
+                bool exited = process.WaitForExit(timeoutMs);
+                if (exited)
+                {
+                    timedOut = false;
+                    return process.ExitCode;
+                }
+
+                bool killedSuccessfully = true;
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // The process (and its tree) finished on its own between
+                    // WaitForExit(timeoutMs) returning false and this Kill() call.
+                    killedSuccessfully = false;
+                }
+
+                bool finishedAfterKill = process.WaitForExit(5000);
+
+                if (!killedSuccessfully && finishedAfterKill)
+                {
+                    timedOut = false;
+                    return process.ExitCode;
+                }
+
+                timedOut = true;
+                return process.ExitCode;
+            }
         }
 
         #endregion
