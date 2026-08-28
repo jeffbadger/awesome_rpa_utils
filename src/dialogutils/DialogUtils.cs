@@ -447,7 +447,7 @@ namespace DialogAutomation
         /// Because the rectangle uses XOR drawing, the visible color depends on what
         /// is under it. Default is 0x0000FF (red).
         /// </param>
-        /// <exception cref="Win32Exception"><c>GetWindowRect</c> or <c>GetDC</c> failed (e.g. an invalid handle).</exception>
+        /// <returns><c>true</c> if the control was highlighted; <c>false</c> if <c>GetWindowRect</c> or <c>GetDC</c> failed (e.g. an invalid handle). Never throws.</returns>
         /// <remarks>
         /// Caveats:
         ///  - If the control repaints while the rectangle is visible, the highlight pixels
@@ -456,19 +456,19 @@ namespace DialogAutomation
         ///  - The XOR blend means the apparent color varies by background.
         /// </remarks>
         [Category("Dialog - Read Text")]
-        [Description("Flashes an inverting rectangle around a control to visually confirm which on-screen control a handle corresponds to.")]
-        public void HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
+        [Description("Flashes an inverting rectangle around a control to visually confirm which on-screen control a handle corresponds to. Returns True on success; never throws.")]
+        public bool HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
         {
             if (flashes < 1) flashes = 1;
             if (flashMs < 1) flashMs = 1;
             if (lineWidth < 1) lineWidth = 1;
 
             if (!GetWindowRect(hControl, out RECT rc))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.");
+                return false;
 
             IntPtr hdc = GetDC(IntPtr.Zero);
             if (hdc == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.");
+                return false;
 
             IntPtr hPen = CreatePen(PS_SOLID, lineWidth, (uint)colorRef);
             IntPtr hOldPen = IntPtr.Zero;
@@ -499,6 +499,8 @@ namespace DialogAutomation
                 if (hdc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdc);
                 if (hPen != IntPtr.Zero) DeleteObject(hPen);
             }
+
+            return true;
         }
 
         #endregion
