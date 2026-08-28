@@ -241,8 +241,10 @@ namespace CommandLineAutomation
                 UseShellExecute = false
             };
 
-            Process process = Process.Start(psi);
-            return process.Id;
+            using (Process process = Process.Start(psi))
+            {
+                return process.Id;
+            }
         }
 
         #endregion
