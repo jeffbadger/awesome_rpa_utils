@@ -14,6 +14,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
+| [serviceutils](src/serviceutils/README.md) | `ServiceAutomation` | Queries, starts, stops, restarts, and configures the startup type of Windows services. |
 
 Each component is fully standalone (no project references between them), but
 they're designed to complement each other: MouseUtils and KeyboardUtils own
@@ -57,6 +58,7 @@ Each component has its own README with the full method reference, plus a
 - [dialogutils/README.md](src/dialogutils/README.md) and [dialogutils/Documentation/](src/dialogutils/Documentation/README.md)
 - [uiautomationutils/README.md](src/uiautomationutils/README.md) and [uiautomationutils/Documentation/](src/uiautomationutils/Documentation/README.md)
 - [commandlineutils/README.md](src/commandlineutils/README.md) and [commandlineutils/Documentation/](src/commandlineutils/Documentation/README.md)
+- [serviceutils/README.md](src/serviceutils/README.md) and [serviceutils/Documentation/](src/serviceutils/Documentation/README.md)
 
 ## Testing
 

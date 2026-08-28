@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>ServiceAutomation</AssemblyName>
+    <RootNamespace>ServiceAutomation</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <!-- Allows building this Windows-targeted project from a non-Windows SDK host -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Emit ServiceAutomation.xml next to the DLL so the XML doc comments are consumable -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- First NuGet dependency in this repo - see README's Notes & Caveats for why.
+         ServiceController can query/start/stop/pause a service but has no method to
+         change its startup type, which is why SetStartType uses a small amount of
+         direct advapi32.dll P/Invoke instead. -->
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>
