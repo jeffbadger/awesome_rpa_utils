@@ -96,7 +96,7 @@ namespace UIAutomation
         [Description("Gets the desktop root element.")]
         public AutomationElement GetRootElement()
         {
-            throw new NotImplementedException();
+            return AutomationElement.RootElement;
         }
 
         /// <summary>
@@ -109,7 +109,21 @@ namespace UIAutomation
         [Description("Gets the UI Automation element for a window handle (bridges WindowUtils/DialogUtils), or null if invalid.")]
         public AutomationElement FromWindowHandle(IntPtr hWnd)
         {
-            throw new NotImplementedException();
+            if (hWnd == IntPtr.Zero)
+                return null;
+
+            try
+            {
+                return AutomationElement.FromHandle(hWnd);
+            }
+            catch (ElementNotAvailableException)
+            {
+                return null;
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -123,7 +137,14 @@ namespace UIAutomation
         [Description("Gets the UI Automation element at a screen point (bridges MouseUtils coordinates), or null on failure.")]
         public AutomationElement FromPoint(int x, int y)
         {
-            throw new NotImplementedException();
+            try
+            {
+                return AutomationElement.FromPoint(new System.Windows.Point(x, y));
+            }
+            catch (ElementNotAvailableException)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -138,7 +159,14 @@ namespace UIAutomation
         [Description("Finds a descendant (or child) element by its AutomationId, or null if none matches.")]
         public AutomationElement FindByAutomationId(AutomationElement parent, string automationId, bool descendantsOnly = true)
         {
-            throw new NotImplementedException();
+            if (parent == null)
+                throw new ArgumentException("A parent element is required.", nameof(parent));
+            if (string.IsNullOrEmpty(automationId))
+                throw new ArgumentException("An automation ID is required.", nameof(automationId));
+
+            var condition = new PropertyCondition(AutomationElement.AutomationIdProperty, automationId);
+            var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
+            return parent.FindFirst(scope, condition);
         }
 
         /// <summary>
@@ -154,7 +182,27 @@ namespace UIAutomation
         [Description("Finds a descendant (or child) element by its Name (exact or substring match), or null if none matches.")]
         public AutomationElement FindByName(AutomationElement parent, string name, bool exactMatch = true, bool descendantsOnly = true)
         {
-            throw new NotImplementedException();
+            if (parent == null)
+                throw new ArgumentException("A parent element is required.", nameof(parent));
+            if (string.IsNullOrEmpty(name))
+                throw new ArgumentException("A name is required.", nameof(name));
+
+            var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
+
+            if (exactMatch)
+            {
+                var condition = new PropertyCondition(AutomationElement.NameProperty, name);
+                return parent.FindFirst(scope, condition);
+            }
+
+            // PropertyCondition only supports exact-value matches - UIA has no built-in
+            // substring condition, so enumerate candidates ourselves and filter, the same
+            // way WindowUtils.FindWindowByTitle does for its exactMatch=false case.
+            return FindFirstMatching(parent, scope, el =>
+            {
+                string elementName = el.Current.Name;
+                return elementName != null && elementName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
+            });
         }
 
         /// <summary>
@@ -169,7 +217,14 @@ namespace UIAutomation
         [Description("Finds a descendant (or child) element by its window class name, or null if none matches.")]
         public AutomationElement FindByClassName(AutomationElement parent, string className, bool descendantsOnly = true)
         {
-            throw new NotImplementedException();
+            if (parent == null)
+                throw new ArgumentException("A parent element is required.", nameof(parent));
+            if (string.IsNullOrEmpty(className))
+                throw new ArgumentException("A class name is required.", nameof(className));
+
+            var condition = new PropertyCondition(AutomationElement.ClassNameProperty, className);
+            var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
+            return parent.FindFirst(scope, condition);
         }
 
         /// <summary>
@@ -185,7 +240,12 @@ namespace UIAutomation
         [Description("Finds the first descendant (or child) element of the given control type, or null if none matches.")]
         public AutomationElement FindByControlType(AutomationElement parent, UiControlType controlType, bool descendantsOnly = true)
         {
-            throw new NotImplementedException();
+            if (parent == null)
+                throw new ArgumentException("A parent element is required.", nameof(parent));
+
+            var condition = new PropertyCondition(AutomationElement.ControlTypeProperty, ToControlType(controlType));
+            var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
+            return parent.FindFirst(scope, condition);
         }
 
         /// <summary>
@@ -201,7 +261,16 @@ namespace UIAutomation
         [Description("Finds every descendant (or child) element of the given control type.")]
         public List<AutomationElement> FindAllByControlType(AutomationElement parent, UiControlType controlType, bool descendantsOnly = true)
         {
-            throw new NotImplementedException();
+            if (parent == null)
+                throw new ArgumentException("A parent element is required.", nameof(parent));
+
+            var condition = new PropertyCondition(AutomationElement.ControlTypeProperty, ToControlType(controlType));
+            var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
+
+            var results = new List<AutomationElement>();
+            foreach (AutomationElement element in parent.FindAll(scope, condition))
+                results.Add(element);
+            return results;
         }
 
         /// <summary>Gets all immediate children of an element.</summary>
@@ -212,7 +281,13 @@ namespace UIAutomation
         [Description("Gets all immediate children of an element.")]
         public List<AutomationElement> GetChildren(AutomationElement parent)
         {
-            throw new NotImplementedException();
+            if (parent == null)
+                throw new ArgumentException("A parent element is required.", nameof(parent));
+
+            var results = new List<AutomationElement>();
+            foreach (AutomationElement child in parent.FindAll(TreeScope.Children, Condition.TrueCondition))
+                results.Add(child);
+            return results;
         }
 
         #endregion
@@ -462,6 +537,53 @@ namespace UIAutomation
         public void HighlightElement(AutomationElement element, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
         {
             throw new NotImplementedException();
+        }
+
+        #endregion
+
+        #region Internal Helpers
+
+        private static readonly Dictionary<UiControlType, ControlType> ControlTypeMap = new Dictionary<UiControlType, ControlType>
+        {
+            [UiControlType.Button] = ControlType.Button,
+            [UiControlType.CheckBox] = ControlType.CheckBox,
+            [UiControlType.ComboBox] = ControlType.ComboBox,
+            [UiControlType.Edit] = ControlType.Edit,
+            [UiControlType.Hyperlink] = ControlType.Hyperlink,
+            [UiControlType.Image] = ControlType.Image,
+            [UiControlType.List] = ControlType.List,
+            [UiControlType.ListItem] = ControlType.ListItem,
+            [UiControlType.Menu] = ControlType.Menu,
+            [UiControlType.MenuItem] = ControlType.MenuItem,
+            [UiControlType.Pane] = ControlType.Pane,
+            [UiControlType.RadioButton] = ControlType.RadioButton,
+            [UiControlType.Tab] = ControlType.Tab,
+            [UiControlType.TabItem] = ControlType.TabItem,
+            [UiControlType.Text] = ControlType.Text,
+            [UiControlType.Tree] = ControlType.Tree,
+            [UiControlType.TreeItem] = ControlType.TreeItem,
+            [UiControlType.Window] = ControlType.Window,
+            [UiControlType.Custom] = ControlType.Custom,
+        };
+
+        /// <summary>Maps our designer-friendly <see cref="UiControlType"/> to the real <see cref="ControlType"/>.</summary>
+        private static ControlType ToControlType(UiControlType controlType)
+        {
+            if (ControlTypeMap.TryGetValue(controlType, out ControlType result))
+                return result;
+            throw new ArgumentOutOfRangeException(nameof(controlType), controlType, "Unrecognized control type.");
+        }
+
+        /// <summary>Enumerates every element in <paramref name="scope"/> under <paramref name="parent"/> and returns the first one matching <paramref name="predicate"/>, or null.</summary>
+        private static AutomationElement FindFirstMatching(AutomationElement parent, TreeScope scope, Func<AutomationElement, bool> predicate)
+        {
+            AutomationElementCollection candidates = parent.FindAll(scope, Condition.TrueCondition);
+            foreach (AutomationElement candidate in candidates)
+            {
+                if (predicate(candidate))
+                    return candidate;
+            }
+            return null;
         }
 
         #endregion
