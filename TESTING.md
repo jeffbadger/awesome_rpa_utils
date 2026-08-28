@@ -1,22 +1,24 @@
 # Testing Plan: Pega Robotic Automation
 
-A step-by-step plan for testing all six components (`DialogUtils`, `KeyboardUtils`,
-`MouseUtils`, `OcrUtils`, `ScreenCaptureUtils`, `WindowUtils`) using Pega Robot
-Studio's Unit Testing framework.
+A step-by-step plan for testing all eight components (`DialogUtils`,
+`KeyboardUtils`, `MouseUtils`, `OcrUtils`, `ScreenCaptureUtils`, `WindowUtils`,
+`UIAutomationUtils`, `CommandLineUtils`) using Pega Robot Studio's Unit
+Testing framework.
 
 Unlike Pega's usual caution against fully-automated RPA test suites (that guidance
 targets fragile, ever-changing *target-application* automations — see the RPA
-Automated Testing Strategy manual), these six classes are your own deterministic
+Automated Testing Strategy manual), these eight classes are your own deterministic
 library code with a stable, versioned API. That's exactly the case where
 component-level automated testing pays off.
 
 ## Phase 0 — Project setup
 
-1. `dotnet build src/AwesomeRpaUtils.sln` to produce the six DLLs in `src/bin/`.
+1. `dotnet build src/AwesomeRpaUtils.sln` to produce the eight DLLs in `src/bin/`.
 2. Create a new Robot Studio project, e.g. `AwesomeRpaUtils.Tests`. Add each DLL
    as a Toolbox reference (project asset) so `DialogUtils`, `KeyboardUtils`,
-   `MouseUtils`, `OcrUtils`, `ScreenCaptureUtils`, `WindowUtils` all appear in the
-   Toolbox and can be dragged onto automation surfaces.
+   `MouseUtils`, `OcrUtils`, `ScreenCaptureUtils`, `WindowUtils`,
+   `UIAutomationUtils`, and `CommandLineUtils` all appear in the Toolbox and
+   can be dragged onto automation surfaces.
 3. Build a small **Test Harness** WinForms app (a few native `Button`/`Edit`/
    `Static`/`ListBox` controls with fixed, known control IDs, plus one that opens
    a `MessageBox`). Don't rely on Notepad/Calculator as the target — Notepad's
@@ -169,6 +171,7 @@ where the method is documented to throw.
 - `HighlightElement` (visual-only — verify manually/via screenshot, same as `DialogUtils.HighlightControl`)
 
 Note: this component needs a WinForms/WPF test harness with native `AutomationId`/`Name` values set explicitly (plain WinForms controls without explicit AutomationIds fall back to less predictable auto-generated ones) — reuse or extend the Test Harness from Phase 0 rather than building a second one.
+
 ### CommandLineUtils (needs Setup: none — it launches its own target processes; Cleanup: none)
 
 - `Run` (happy path against a known-good executable; timeout case against a
