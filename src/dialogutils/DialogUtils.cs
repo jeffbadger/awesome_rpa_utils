@@ -287,6 +287,12 @@ namespace DialogAutomation
         /// </summary>
         /// <param name="hDialog">The dialog to search and click on.</param>
         /// <param name="buttonText">The button text to match.</param>
+        /// <param name="message">
+        /// <c>null</c> if this returns <c>true</c>. If this returns <c>false</c>, a
+        /// human-readable description of why: either that no button labeled
+        /// <paramref name="buttonText"/> was found, or that it was clicked
+        /// <paramref name="maxAttempts"/> time(s) but the dialog never closed.
+        /// </param>
         /// <param name="exactMatch">
         /// If <c>true</c> (default), requires an exact (case-insensitive) text match.
         /// If <c>false</c>, matches any button whose text contains
@@ -298,8 +304,7 @@ namespace DialogAutomation
         /// How long to wait after each click for the dialog to close before deciding it
         /// didn't work and re-clicking (default 300 ms).
         /// </param>
-        /// <returns><c>true</c> if the dialog closed within <paramref name="maxAttempts"/> clicks; <c>false</c> if it was still open after the last attempt.</returns>
-        /// <exception cref="InvalidOperationException">The dialog has no button with that text.</exception>
+        /// <returns><c>true</c> if the dialog closed within <paramref name="maxAttempts"/> clicks; <c>false</c> if no matching button was found, or it was still open after the last attempt. Never throws.</returns>
         /// <remarks>
         /// Retrying is only meaningful for a click that's expected to close
         /// <paramref name="hDialog"/> — not for a button that intentionally keeps the dialog
@@ -307,20 +312,28 @@ namespace DialogAutomation
         /// attempt.
         /// </remarks>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a button by its visible text (exact or substring match) and invokes it, re-clicking (up to maxAttempts) if the dialog doesn't close.")]
-        public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)
+        [Description("Finds a button by its visible text (exact or substring match) and invokes it, re-clicking (up to maxAttempts) if the dialog doesn't close. Never throws.")]
+        public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)
         {
             if (maxAttempts < 1) maxAttempts = 1;
 
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
                 if (!FindButtonByText(hDialog, out IntPtr hButton, buttonText, exactMatch))
-                    throw new InvalidOperationException($"Dialog has no button labeled '{buttonText}'.");
+                {
+                    message = $"Dialog has no button labeled '{buttonText}'.";
+                    return false;
+                }
 
                 ClickButton(hButton);
                 if (WaitForDialogToClose(hDialog, retryDelayMs, pollIntervalMs: 25))
+                {
+                    message = null;
                     return true;
+                }
             }
+
+            message = $"Button '{buttonText}' was clicked {maxAttempts} time(s) but the dialog did not close.";
             return false;
         }
 
