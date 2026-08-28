@@ -7,9 +7,20 @@ if (!svc.IsServiceInstalled("MSSQLSERVER"))
 {
     // Handle the missing-dependency case.
 }
-else if (svc.GetStatus("MSSQLSERVER") != ServiceControllerStatus.Running)
+else if (!svc.IsRunning("MSSQLSERVER"))
 {
     svc.StartService("MSSQLSERVER", timeoutMs: 60000);
+}
+```
+
+## Check whether a service is running, without caring whether it's even installed
+
+```csharp
+// IsRunning returns False (not an exception) for a nonexistent service too,
+// so this is safe to call without an IsServiceInstalled check first.
+if (!svc.IsRunning("MyBackgroundAgent"))
+{
+    // Not running - either it's stopped, or it isn't installed at all.
 }
 ```
 

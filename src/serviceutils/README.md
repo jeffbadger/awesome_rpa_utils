@@ -41,6 +41,7 @@ with the separate delayed-auto-start flag that mode doesn't expose:
 | Method | Description |
 |---|---|
 | `bool IsServiceInstalled(string serviceName)` | Returns True if a service with the given name is installed. |
+| `bool IsRunning(string serviceName)` | Returns True if a service with the given name is installed and currently running. Returns False (not an exception) for a nonexistent service. |
 | `ServiceControllerStatus GetStatus(string serviceName)` | Gets a service's current status. |
 | `ServiceStartType GetStartType(string serviceName)` | Gets a service's configured startup type. |
 | `List<string> ListServiceNames()` | Gets the service names of every installed service. |
