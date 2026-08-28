@@ -97,6 +97,7 @@ namespace CommandLineAutomation
         /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
         /// <exception cref="ArgumentException"><paramref name="command"/> is null, empty, or whitespace.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than -1.</exception>
         /// <exception cref="Win32Exception"><c>cmd.exe</c> could not be found or started.</exception>
         [Category("CommandLine - Run")]
         [Description("Runs a command through cmd.exe /c, waits for it to exit, and captures its exit code, stdout, and stderr.")]
@@ -289,6 +290,14 @@ namespace CommandLineAutomation
                     {
                         // The process (and its tree) finished on its own between
                         // WaitForExit(timeoutMs) returning false and this Kill() call.
+                        killedSuccessfully = false;
+                    }
+                    catch (Win32Exception)
+                    {
+                        // Kill can fail for reasons other than "already exited" - access
+                        // denied, a protected process, AV/EDR hooks, or a handle-recycling
+                        // race - even for a non-elevated child (rarer than for the elevated
+                        // case RunElevated guards against, but still possible).
                         killedSuccessfully = false;
                     }
 
