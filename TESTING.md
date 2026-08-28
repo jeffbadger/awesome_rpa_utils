@@ -158,6 +158,23 @@ where the method is documented to throw.
   pixels changed as expected — spot-check specific pixel colors, or diff
   against a pre-rendered "expected annotated" fixture)
 
+### CommandLineUtils (needs Setup: none — it launches its own target processes; Cleanup: none)
+
+- `Run` (happy path against a known-good executable; timeout case against a
+  deliberately slow command, assert `TimedOut = true` and that the child
+  process is gone afterward; exception case for a nonexistent executable)
+- `RunShellCommand` (happy path using a shell built-in like `dir`/`echo`;
+  same timeout and not-found exception cases as `Run`)
+- `RunElevated` (manual-only — triggers a real UAC prompt, so it can't run
+  unattended in a batch; verify the returned exit code against a known
+  elevated command, and separately verify `timedOut` against a deliberately
+  slow elevated command — note it may report `timedOut = true` while leaving
+  the process running if the test session itself isn't elevated, since a
+  non-elevated caller can't always terminate an elevated child)
+- `StartFireAndForget` (assert the call returns quickly and the returned PID
+  corresponds to a running process, via `WindowUtils.FindWindowsByProcessId`
+  or a direct process check)
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned
