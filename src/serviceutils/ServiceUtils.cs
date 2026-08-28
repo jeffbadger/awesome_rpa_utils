@@ -302,11 +302,49 @@ namespace ServiceAutomation
         /// <param name="startType">The startup type to set.</param>
         /// <exception cref="ArgumentException"><paramref name="serviceName"/> is null or empty.</exception>
         /// <exception cref="Win32Exception">The service could not be opened or reconfigured (e.g. access denied, or no service with that name).</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="startType"/> is not a defined value.</exception>
         [Category("Service - Configuration")]
         [Description("Sets a service's startup type, including delayed-auto-start.")]
         public void SetStartType(string serviceName, ServiceStartType startType)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrEmpty(serviceName))
+                throw new ArgumentException("A service name is required.", nameof(serviceName));
+
+            uint dwStartType = ToWin32StartType(startType);
+            bool delayed = startType == ServiceStartType.AutomaticDelayedStart;
+
+            IntPtr hScm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
+            if (hScm == IntPtr.Zero)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenSCManager failed.");
+
+            try
+            {
+                IntPtr hService = OpenService(hScm, serviceName, SERVICE_CHANGE_CONFIG);
+                if (hService == IntPtr.Zero)
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), $"OpenService failed for '{serviceName}'.");
+
+                try
+                {
+                    if (!ChangeServiceConfig(hService, SERVICE_NO_CHANGE, dwStartType, SERVICE_NO_CHANGE, null, null, IntPtr.Zero, null, null, null, null))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "ChangeServiceConfig failed.");
+
+                    // Explicitly set the delayed-auto-start flag either way - not calling
+                    // ChangeServiceConfig2 at all for the "normal" cases would leave a
+                    // previously-set delayed flag stale when switching away from
+                    // AutomaticDelayedStart back to plain Automatic (or to Manual/Disabled).
+                    var info = new SERVICE_DELAYED_AUTO_START_INFO { fDelayedAutostart = delayed };
+                    if (!ChangeServiceConfig2(hService, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, ref info))
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "ChangeServiceConfig2 failed.");
+                }
+                finally
+                {
+                    CloseServiceHandle(hService);
+                }
+            }
+            finally
+            {
+                CloseServiceHandle(hScm);
+            }
         }
 
         #endregion
@@ -317,6 +355,12 @@ namespace ServiceAutomation
         private const uint SERVICE_QUERY_CONFIG = 0x0001;
         private const uint SERVICE_CHANGE_CONFIG = 0x0002;
         private const uint SERVICE_CONFIG_DELAYED_AUTO_START_INFO = 3;
+        private const uint SERVICE_NO_CHANGE = 0xFFFFFFFF;
+        private const uint SERVICE_BOOT_START = 0;
+        private const uint SERVICE_SYSTEM_START = 1;
+        private const uint SERVICE_AUTO_START = 2;
+        private const uint SERVICE_DEMAND_START = 3;
+        private const uint SERVICE_DISABLED = 4;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct SERVICE_DELAYED_AUTO_START_INFO
@@ -338,6 +382,40 @@ namespace ServiceAutomation
         [DllImport("advapi32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool QueryServiceConfig2(IntPtr hService, uint dwInfoLevel, IntPtr buffer, uint bufferSize, out uint bytesNeeded);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ChangeServiceConfig(
+            IntPtr hService,
+            uint dwServiceType,
+            uint dwStartType,
+            uint dwErrorControl,
+            string lpBinaryPathName,
+            string lpLoadOrderGroup,
+            IntPtr lpdwTagId,
+            string lpDependencies,
+            string lpServiceStartName,
+            string lpPassword,
+            string lpDisplayName);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ChangeServiceConfig2(IntPtr hService, uint dwInfoLevel, ref SERVICE_DELAYED_AUTO_START_INFO lpInfo);
+
+        /// <summary>Maps our designer-friendly <see cref="ServiceStartType"/> to the raw Win32 dwStartType value.</summary>
+        private static uint ToWin32StartType(ServiceStartType startType)
+        {
+            switch (startType)
+            {
+                case ServiceStartType.Boot: return SERVICE_BOOT_START;
+                case ServiceStartType.System: return SERVICE_SYSTEM_START;
+                case ServiceStartType.Automatic: return SERVICE_AUTO_START;
+                case ServiceStartType.AutomaticDelayedStart: return SERVICE_AUTO_START;
+                case ServiceStartType.Manual: return SERVICE_DEMAND_START;
+                case ServiceStartType.Disabled: return SERVICE_DISABLED;
+                default: throw new ArgumentOutOfRangeException(nameof(startType), startType, "Unrecognized start type.");
+            }
+        }
 
         /// <summary>
         /// Waits for a service to reach a status, translating a timeout into False instead
