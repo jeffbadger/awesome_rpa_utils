@@ -59,33 +59,44 @@ namespace DialogAutomation
         #region Find & Click
 
         /// <summary>
-        /// Finds a top-level dialog window by its title. Returns <see cref="IntPtr.Zero"/>
-        /// if none matches (not found is a normal, checkable outcome, not an error).
+        /// Finds a top-level dialog window by its title. Never throws - a null
+        /// <paramref name="titlePattern"/> or no match are both reported by returning
+        /// <c>false</c> (not found is a normal, checkable outcome, not an error).
         /// </summary>
         /// <param name="titlePattern">The title to match.</param>
+        /// <param name="hDialog">The matching dialog's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
         /// <param name="exactMatch">
         /// If <c>true</c> (default), requires an exact, case-sensitive title match.
         /// If <c>false</c>, matches any window whose title contains
         /// <paramref name="titlePattern"/> (case-insensitive).
         /// </param>
+        /// <returns><c>true</c> if a matching dialog was found.</returns>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a top-level dialog window by its title, or returns a zero handle if none matches.")]
-        public IntPtr FindDialog(string titlePattern, bool exactMatch = true)
+        [Description("Finds a top-level dialog window by its title. Returns True if found; never throws.")]
+        public bool FindDialog(string titlePattern, out IntPtr hDialog, bool exactMatch = true)
         {
-            foreach (var hWnd in GetTopLevelWindows())
+            if (titlePattern != null)
             {
-                string title = GetControlText(hWnd);
-                bool matches = exactMatch
-                    ? string.Equals(title, titlePattern, StringComparison.Ordinal)
-                    : title.IndexOf(titlePattern, StringComparison.OrdinalIgnoreCase) >= 0;
-                if (matches)
-                    return hWnd;
+                foreach (var hWnd in GetTopLevelWindows())
+                {
+                    string title = GetControlText(hWnd);
+                    bool matches = exactMatch
+                        ? string.Equals(title, titlePattern, StringComparison.Ordinal)
+                        : title.IndexOf(titlePattern, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (matches)
+                    {
+                        hDialog = hWnd;
+                        return true;
+                    }
+                }
             }
-            return IntPtr.Zero;
+
+            hDialog = IntPtr.Zero;
+            return false;
         }
 
         /// <summary>
-        /// Finds a top-level dialog window by its title, same as <see cref="FindDialog(string, bool)"/>,
+        /// Finds a top-level dialog window by its title, same as <see cref="FindDialog(string, out IntPtr, bool)"/>,
         /// and additionally reports via <paramref name="canDismiss"/> whether the dialog has at
         /// least one native <c>Button</c> control that <see cref="ClickButton"/>/
         /// <see cref="ClickDialogButtonById"/>/<see cref="ClickDialogButtonByText"/> can target — see
@@ -111,7 +122,7 @@ namespace DialogAutomation
         [Description("Finds a top-level dialog window by its title, and reports whether DialogUtils can dismiss it via a native Button control.")]
         public IntPtr FindDialog(string titlePattern, bool exactMatch, out bool canDismiss)
         {
-            IntPtr hWnd = FindDialog(titlePattern, exactMatch);
+            FindDialog(titlePattern, out IntPtr hWnd, exactMatch);
             canDismiss = hWnd != IntPtr.Zero && CanDismissDialog(hWnd);
             return hWnd;
         }
@@ -481,8 +492,7 @@ namespace DialogAutomation
             int start = Environment.TickCount;
             while (true)
             {
-                IntPtr found = FindDialog(titlePattern, exactMatch: false);
-                if (found != IntPtr.Zero)
+                if (FindDialog(titlePattern, out IntPtr found, exactMatch: false))
                 {
                     hWnd = found;
                     return true;
