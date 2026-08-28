@@ -7,7 +7,7 @@
 ```csharp
 string message = dialog.GetDialogText(hWnd);
 Console.WriteLine($"Dialog said: {message}");
-dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Ok);
+dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Ok, out _);
 ```
 
 ## Read the dialog's own title bar text

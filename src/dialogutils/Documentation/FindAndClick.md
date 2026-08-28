@@ -5,14 +5,14 @@
 ```csharp
 if (dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100, out IntPtr hWnd))
 {
-    dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes);
+    dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _);
 }
 ```
 
 ## Click a button by its visible label instead of a control ID
 
 ```csharp
-dialog.ClickDialogButtonByText(hWnd, "Don't Save");
+dialog.ClickDialogButtonByText(hWnd, "Don't Save", out _);
 ```
 
 ## Click a button whose text you only know part of
@@ -21,7 +21,7 @@ Useful when a button's text includes a variable suffix, e.g. `"Retry (3 left)"`
 or a trailing ellipsis like `"Details..."`:
 
 ```csharp
-dialog.ClickDialogButtonByText(hWnd, "Retry", exactMatch: false);
+dialog.ClickDialogButtonByText(hWnd, "Retry", out _, exactMatch: false);
 ```
 
 ## Matching "Yes"/"No"/"OK" against real button text
@@ -35,14 +35,13 @@ comparing, so matching against what you actually see on screen just works — no
 special-casing needed, and this applies with either `exactMatch` setting:
 
 ```csharp
-dialog.ClickDialogButtonByText(hWnd, "Yes"); // matches a button whose real text is "&Yes"
+dialog.ClickDialogButtonByText(hWnd, "Yes", out _); // matches a button whose real text is "&Yes"
 ```
 
 ## Lower-level: find then click
 
 ```csharp
-IntPtr okButton = dialog.FindButtonByText(hWnd, "OK");
-if (okButton != IntPtr.Zero)
+if (dialog.FindButtonByText(hWnd, out IntPtr okButton, "OK"))
 {
     dialog.ClickButton(okButton);
 }
@@ -55,14 +54,13 @@ Most useful once you've discovered a control's ID with `ListDialogControls`
 or app-specific, with no need to first look up a matching `DialogButton` enum value:
 
 ```csharp
-dialog.ClickDialogButtonById(hWnd, 1001);
+dialog.ClickDialogButtonById(hWnd, 1001, out _);
 ```
 
 Lower-level, if you need the handle itself for something else (e.g. `HighlightControl`):
 
 ```csharp
-IntPtr detailsButton = dialog.FindButtonById(hWnd, 1001);
-if (detailsButton != IntPtr.Zero)
+if (dialog.FindButtonById(hWnd, out IntPtr detailsButton, 1001))
 {
     dialog.ClickButton(detailsButton);
 }
@@ -77,11 +75,10 @@ there's nothing for `ClickButton` to target. Check `canDismiss` before relying o
 it, and fall back to `KeyboardUtils` when it's `false`:
 
 ```csharp
-IntPtr hWnd = dialog.FindDialog("Confirm", exactMatch: false, out bool canDismiss);
-if (hWnd != IntPtr.Zero)
+if (dialog.FindDialog("Confirm", out IntPtr hWnd, out bool canDismiss, exactMatch: false))
 {
     if (canDismiss)
-        dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes);
+        dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _);
     else
         keyboard.PressKey(VirtualKey.Enter); // drive it via keyboard instead
 }
@@ -102,10 +99,10 @@ handles it. Tune it if needed:
 
 ```csharp
 // Wait longer for a dialog known to be slow to become interactive:
-dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, waitForEnabledMs: 2000);
+dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _, waitForEnabledMs: 2000);
 
 // Or skip the wait entirely (previous behavior):
-dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, waitForEnabledMs: 0);
+dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _, waitForEnabledMs: 0);
 ```
 
 ## The click found the right button but the dialog just doesn't close (already enabled, no exception)
@@ -119,16 +116,19 @@ checks whether the dialog actually closed, and re-clicks (up to `maxAttempts`, d
 3, `retryDelayMs` apart, default 300 ms) if not — no separate call needed:
 
 ```csharp
-bool closed = dialog.ClickDialogButtonByText(hWnd, "Yes", exactMatch: false);
+bool closed = dialog.ClickDialogButtonByText(hWnd, "Yes", out string message, exactMatch: false);
 if (!closed)
 {
-    // Still open after every attempt — something else is wrong (wrong button, app hung, etc.)
+    // Still open after every attempt, or no button matched at all — message explains which:
+    Console.WriteLine(message);
 }
 
 // Tune the retry, or disable it (click exactly once):
-dialog.ClickDialogButtonByText(hWnd, "Yes", exactMatch: false, maxAttempts: 5, retryDelayMs: 500);
-dialog.ClickDialogButtonByText(hWnd, "Yes", exactMatch: false, maxAttempts: 1);
+dialog.ClickDialogButtonByText(hWnd, "Yes", out _, exactMatch: false, maxAttempts: 5, retryDelayMs: 500);
+dialog.ClickDialogButtonByText(hWnd, "Yes", out _, exactMatch: false, maxAttempts: 1);
 ```
 
 Only meaningful for a click expected to close the dialog — a button that intentionally
-keeps it open (e.g. "Apply") will use up every attempt and return `false`.
+keeps it open (e.g. "Apply") will use up every attempt and return `false` (with `message`
+saying so). This method never throws — a missing button is also reported via `message`,
+not an exception.
