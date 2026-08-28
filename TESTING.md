@@ -25,7 +25,11 @@ component-level automated testing pays off.
    Windows 11 dialogs are WinUI3 (no native `Button` controls), which is a
    documented gap in `DialogUtils` itself. The harness gives you deterministic
    controls for `DialogUtils`, `KeyboardUtils`, `MouseUtils`, and `WindowUtils`
-   to drive.
+   to drive. **This already exists** — see [`test-harness/`](test-harness/README.md)
+   at the repo root (kept outside `src/` and out of the main solution, since
+   it's test tooling, not a shipped component). It also has a `CheckBox` and
+   `TreeView` with known names, covering `UIAutomationUtils`' `Toggle`/
+   `Expand`/`Collapse`/`Select` methods.
 4. Create a `Unit Tests` folder in the project (Setup/Cleanup automations must
    live in subfolders of it). Under it, one subfolder per component:
    `Unit Tests/DialogUtils`, `.../KeyboardUtils`, etc.
