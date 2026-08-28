@@ -253,17 +253,27 @@ namespace DialogAutomation
         /// </summary>
         /// <param name="hDialog">The dialog whose button to click.</param>
         /// <param name="controlId">The control ID to click.</param>
+        /// <param name="wasEnabled">
+        /// <c>true</c> if the button was enabled when the click was sent; <c>false</c> if it
+        /// was still disabled after <paramref name="waitForEnabledMs"/> elapsed, or if no
+        /// control with <paramref name="controlId"/> was found. See <see cref="ClickButton"/>.
+        /// </param>
         /// <param name="waitForEnabledMs">See <see cref="ClickButton"/>.</param>
         /// <param name="pollIntervalMs">See <see cref="ClickButton"/>.</param>
-        /// <exception cref="InvalidOperationException">The dialog has no control with that ID.</exception>
+        /// <returns><c>true</c> if a control with <paramref name="controlId"/> was found (and clicked). Never throws.</returns>
         [Category("Dialog - Find & Click")]
-        [Description("Invokes a button by its control ID (GetDlgItem).")]
-        public void ClickDialogButtonById(IntPtr hDialog, int controlId, int waitForEnabledMs = 500, int pollIntervalMs = 25)
+        [Description("Invokes a button by its control ID (GetDlgItem). Returns True if found; never throws.")]
+        public bool ClickDialogButtonById(IntPtr hDialog, int controlId, out bool wasEnabled, int waitForEnabledMs = 500, int pollIntervalMs = 25)
         {
             IntPtr hButton = GetDlgItem(hDialog, controlId);
             if (hButton == IntPtr.Zero)
-                throw new InvalidOperationException($"Dialog has no control with ID {controlId}.");
-            ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
+            {
+                wasEnabled = false;
+                return false;
+            }
+
+            wasEnabled = ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
+            return true;
         }
 
         /// <summary>
