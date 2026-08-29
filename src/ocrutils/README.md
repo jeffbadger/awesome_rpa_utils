@@ -99,3 +99,7 @@ internal screen capture, though, so it has no project reference to either.
   WinRT types with no UI-thread/dispatcher affinity, so blocking here should not deadlock against a
   UI/dispatcher thread — though this hasn't been verified against real Windows hardware, since this
   repo is developed on a non-Windows host.
+- **Guard tests.** `OcrUtils.Tests` (in this folder) covers the null/empty-text,
+  non-positive-dimension, missing/corrupt-file, and no-poll-stall never-throw paths.
+  It runs on Windows only (see `TESTING.md` at the repo root for why, and for the
+  live-OCR test plan).

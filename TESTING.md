@@ -212,6 +212,14 @@ dimensions, a missing image file, a missing OCR language pack), instead of an
   step that renders the text after a delay; same not-found-vs-real-failure
   distinction as `FindTextLocation`)
 
+The null/empty-text guards, non-positive width/height guards, and the
+missing/corrupt-file and no-poll-stall never-throw paths already have xunit
+coverage in `src/ocrutils/OcrUtils.Tests`
+(`dotnet test src/ocrutils/OcrUtils.Tests/OcrUtils.Tests.csproj` — like
+`UIAutomation.Tests`, this project runs only on Windows because the
+component's `UseWindowsForms` flows the WindowsDesktop runtime requirement
+into the test project; `dotnet build` works anywhere).
+
 ### ScreenCaptureUtils (some cases need no live screen at all — see Phase 3)
 
 All methods here except `CaptureToClipboard` return `bool` with an
