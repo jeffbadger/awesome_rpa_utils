@@ -158,7 +158,7 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 | `ClientPointToScreen` | `bool ClientPointToScreen(IntPtr hWnd, int clientX, int clientY, out int screenX, out int screenY, out string message)` | Converts a point in a window's client area to screen coordinates. |
 | `ScreenPointToClient` | `bool ScreenPointToClient(IntPtr hWnd, int screenX, int screenY, out int clientX, out int clientY, out string message)` | Converts a screen coordinate to a point relative to a window's client area. |
 | `ClickAtClientPoint` | `bool ClickAtClientPoint(IntPtr hWnd, int clientX, int clientY, MouseButton button, out string message)` | Moves the real cursor to a window-relative client point and clicks there (works where PostMessage-based clicks are ignored, e.g. WPF/Electron/Chromium). |
-| `ClickAtRelativePosition` | `bool ClickAtRelativePosition(IntPtr hWnd, double xFraction, double yFraction, MouseButton button, out string message)` | Clicks at a fractional position within a window (e.g. 0.5, 0.9), resilient to minor resizes across machines. |
+| `ClickAtRelativePosition` | `bool ClickAtRelativePosition(IntPtr hWnd, double xFraction, double yFraction, MouseButton button, out string message)` | Clicks at a fractional position within a window's client area (e.g. 0.5, 0.9), resilient to minor resizes across machines. |
 | `GetWindowAtPoint` | `IntPtr GetWindowAtPoint(int x, int y)` | Gets the handle of the window at the given screen point (`WindowFromPoint`). |
 | `SafeClickAt` | `bool SafeClickAt(int x, int y, MouseButton button, IntPtr expectedWindowHandle, out string message)` | Clicks only if the window under the point matches the expected window (or a descendant) — guards against misclicks from a shifted layout. |
 

@@ -12,4 +12,9 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!-- The test project lives in a subfolder; keep its sources out of the component DLL. -->
+  <ItemGroup>
+    <Compile Remove="MouseUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>

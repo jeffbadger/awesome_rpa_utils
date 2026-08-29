@@ -58,8 +58,8 @@ mouse.ClickAtClientPoint(electronAppHandle, clientX: 300, clientY: 150, MouseBut
 **Scenario:** The same automation needs to run unmodified on both a
 1920×1080 workstation and a 1366×768 laptop. Instead of hardcoding a pixel
 coordinate for the "Next" button (which sits in different absolute positions
-on each), the automation clicks at a fraction of the window's size that
-stays correct regardless of resolution.
+on each), the automation clicks at a fraction of the window's client area
+that stays correct regardless of resolution.
 
 ```csharp
 mouse.ClickAtRelativePosition(wizardWindowHandle, xFraction: 0.9, yFraction: 0.95, MouseButton.Left, out _); // bottom-right "Next" button
