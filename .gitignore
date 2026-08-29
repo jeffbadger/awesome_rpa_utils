@@ -3,6 +3,9 @@
 [Oo]bj/
 out/
 
+# Packaging output (Package-Release.ps1 defaults to the repo root)
+*.zip
+
 # Visual Studio
 .vs/
 *.user
