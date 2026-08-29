@@ -63,12 +63,15 @@ Each component has its own README with the full method reference, plus a
 ## Testing
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
-using Pega Robot Studio's Unit Testing framework. `DialogUtils` and
-`CommandLineUtils` additionally have plain xunit projects —
-`dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj` and
-`dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj` —
+using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
+`CommandLineUtils`, and `KeyboardUtils` additionally have plain xunit projects —
+`dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
+`dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
+and
+`dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
-the shell-command allowlist tokenizer), argument validation, and the
+the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
+and key-down/release batch ordering), argument validation, and the
 never-throw contract (Windows-only interop/process cases self-skip on
 non-Windows machines).
 

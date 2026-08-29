@@ -321,6 +321,7 @@ namespace KeyboardAutomation
         /// <param name="key">The key to press.</param>
         /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
         /// <returns><c>true</c> if the input was injected successfully.</returns>
+        /// <remarks>If the release fails after the press succeeded, the key remains held down. Never throws.</remarks>
         [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses and releases a key (~20 ms between down and up). Returns True on success; never throws.")]
         public bool PressKey(VirtualKey key, out string message)
@@ -330,7 +331,6 @@ namespace KeyboardAutomation
             Thread.Sleep(20);
             if (!KeyUp(key, out message))
                 return false;
-            message = null;
             return true;
         }
 
@@ -343,9 +343,32 @@ namespace KeyboardAutomation
         /// <param name="modifiers">Modifier keys to hold during the press; combinable flags.</param>
         /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
         /// <returns><c>true</c> if the input was injected successfully.</returns>
+        /// <remarks>If the batch is only partially injected (e.g. the modifier key-downs
+        /// were inserted before the call was blocked), the keys already pressed remain
+        /// held down. Never throws.</remarks>
         [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses a key while holding modifier keys (Control/Shift/Alt/Win). Returns True on success; never throws.")]
         public bool PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers, out string message)
+        {
+            try
+            {
+                SendInputs(BuildModifierComboBatch(key, modifiers).ToArray());
+                message = null;
+                return true;
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Builds the atomic batch for <see cref="PressKeyWithModifiers"/>: modifiers down
+        /// (Control, Shift, Alt, Win order), the key down and up, then modifiers released
+        /// in reverse order.
+        /// </summary>
+        internal static List<INPUT> BuildModifierComboBatch(VirtualKey key, ModifierKeys modifiers)
         {
             var batch = new List<INPUT>();
 
@@ -362,9 +385,32 @@ namespace KeyboardAutomation
             if ((modifiers & ModifierKeys.Shift) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Shift, true));
             if ((modifiers & ModifierKeys.Control) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Control, true));
 
+            return batch;
+        }
+
+        /// <summary>
+        /// Presses all given keys down in order, then releases them in reverse order, as
+        /// one atomic <c>SendInput</c> batch (e.g. Ctrl+Shift+Esc, where none of the keys
+        /// is a modifier in the <see cref="ModifierKeys"/> flags sense). Never throws.
+        /// </summary>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c> (including a null/empty <paramref name="keys"/>).</param>
+        /// <param name="keys">The keys to press, in order.</param>
+        /// <returns><c>true</c> if the input was injected successfully.</returns>
+        /// <remarks>If the batch is only partially injected, the keys already pressed
+        /// remain held down. Never throws.</remarks>
+        [Category("Keyboard - Press & Hold & Combo")]
+        [Description("Presses all given keys down in order, then releases them in reverse order. Returns True on success; never throws.")]
+        public bool PressKeyCombo(out string message, params VirtualKey[] keys)
+        {
+            if (keys == null || keys.Length == 0)
+            {
+                message = "At least one key is required.";
+                return false;
+            }
+
             try
             {
-                SendInputs(batch.ToArray());
+                SendInputs(BuildComboBatch(keys).ToArray());
                 message = null;
                 return true;
             }
@@ -376,40 +422,17 @@ namespace KeyboardAutomation
         }
 
         /// <summary>
-        /// Presses all given keys down in order, then releases them in reverse order, as
-        /// one atomic <c>SendInput</c> batch (e.g. Ctrl+Shift+Esc, where none of the keys
-        /// is a modifier in the <see cref="ModifierKeys"/> flags sense). Never throws.
+        /// Builds the atomic batch for <see cref="PressKeyCombo"/>: all keys down in
+        /// order, then released in reverse order.
         /// </summary>
-        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c> (including a null/empty <paramref name="keys"/>).</param>
-        /// <param name="keys">The keys to press, in order.</param>
-        /// <returns><c>true</c> if the input was injected successfully.</returns>
-        [Category("Keyboard - Press & Hold & Combo")]
-        [Description("Presses all given keys down in order, then releases them in reverse order. Returns True on success; never throws.")]
-        public bool PressKeyCombo(out string message, params VirtualKey[] keys)
+        internal static List<INPUT> BuildComboBatch(VirtualKey[] keys)
         {
-            if (keys == null || keys.Length == 0)
-            {
-                message = "At least one key is required.";
-                return false;
-            }
-
             var batch = new List<INPUT>();
             foreach (var key in keys)
                 batch.Add(MakeKeyInput((int)key, false));
             for (int i = keys.Length - 1; i >= 0; i--)
                 batch.Add(MakeKeyInput((int)keys[i], true));
-
-            try
-            {
-                SendInputs(batch.ToArray());
-                message = null;
-                return true;
-            }
-            catch (Win32Exception ex)
-            {
-                message = ex.Message;
-                return false;
-            }
+            return batch;
         }
 
         /// <summary>Holds a key down for the given duration, then releases it. Never throws.</summary>
@@ -417,6 +440,7 @@ namespace KeyboardAutomation
         /// <param name="holdMilliseconds">How long to hold the key, in milliseconds.</param>
         /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
         /// <returns><c>true</c> if the input was injected successfully.</returns>
+        /// <remarks>If the release fails after the press succeeded, the key remains held down. Never throws.</remarks>
         [Category("Keyboard - Press & Hold & Combo")]
         [Description("Holds a key down for the given duration, then releases it. Returns True on success; never throws.")]
         public bool HoldKey(VirtualKey key, int holdMilliseconds, out string message)
@@ -426,7 +450,6 @@ namespace KeyboardAutomation
             Thread.Sleep(Math.Max(0, holdMilliseconds));
             if (!KeyUp(key, out message))
                 return false;
-            message = null;
             return true;
         }
 
@@ -514,16 +537,29 @@ namespace KeyboardAutomation
         /// contents. Use when synthetic key events are ignored or mangled by the target
         /// (e.g. some IME-backed fields). This uses raw Win32 clipboard calls directly (no
         /// COM/OLE), so unlike <c>System.Windows.Forms.Clipboard</c> it does not require an
-        /// STA thread; <c>OpenClipboard</c> can transiently fail if another process (e.g. a
-        /// clipboard manager) briefly holds the clipboard open.
+        /// STA thread.
         /// </summary>
         /// <param name="text">The text to paste.</param>
         /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c> (including a null <paramref name="text"/>).</param>
+        /// <param name="postPasteDelayMilliseconds">How long to wait after sending Ctrl+V
+        /// before restoring the original clipboard, in milliseconds (default 50). Paste
+        /// delivery is asynchronous at the target's pace, so a value that is too low risks
+        /// the target reading the <i>restored</i> clipboard instead of the pasted text.</param>
         /// <returns><c>true</c> if the text was set on the clipboard and Ctrl+V was sent successfully.</returns>
-        /// <remarks>Never throws - if restoring the original clipboard contents afterward itself fails, that failure is swallowed rather than masking the primary outcome already captured in <paramref name="message"/>/the return value.</remarks>
+        /// <remarks>
+        /// Never throws. Restore semantics: a clipboard that was empty is restored empty,
+        /// and a clipboard that held plain text has that text restored afterward. Any
+        /// other content (an image, files) is destroyed when the paste text is set and
+        /// cannot be restored - the clipboard is left holding the pasted text. Note the
+        /// text briefly sits on the system clipboard, where any process monitoring the
+        /// clipboard can observe it; prefer <see cref="TypeText"/> for sensitive values.
+        /// If restoring the original clipboard contents afterward itself fails, that
+        /// failure is swallowed rather than masking the primary outcome already captured
+        /// in <paramref name="message"/>/the return value.
+        /// </remarks>
         [Category("Keyboard - Clipboard")]
         [Description("Sets the clipboard to the given text, sends Ctrl+V, then restores the original clipboard. Returns True on success; never throws.")]
-        public bool PasteText(string text, out string message)
+        public bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)
         {
             if (text == null)
             {
@@ -548,7 +584,8 @@ namespace KeyboardAutomation
                 }
                 else
                 {
-                    Thread.Sleep(50);
+                    if (postPasteDelayMilliseconds > 0)
+                        Thread.Sleep(postPasteDelayMilliseconds);
                     succeeded = true;
                 }
             }
@@ -565,9 +602,11 @@ namespace KeyboardAutomation
                         SetClipboardText(original);
                     else if (clipboardWasEmpty)
                         ClearClipboard();
-                    // else: the clipboard held non-text content we can't restore (e.g. an
-                    // image) - leave the pasted text in place rather than silently destroying
-                    // it via EmptyClipboard.
+                    // else: the clipboard held non-text content (e.g. an image), which was
+                    // already destroyed by EmptyClipboard inside SetClipboardText when the
+                    // paste text was set - EmptyClipboard must precede SetClipboardData, so
+                    // there is no raw-Win32 way to preserve it. Leave the pasted text on
+                    // the clipboard; the original content is gone either way.
                 }
                 catch (Win32Exception)
                 {
@@ -585,7 +624,7 @@ namespace KeyboardAutomation
             if (!IsClipboardFormatAvailable(CF_UNICODETEXT))
                 return null;
 
-            if (!OpenClipboard(IntPtr.Zero))
+            if (!OpenClipboardWithRetry())
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenClipboard failed.");
             try
             {
@@ -613,7 +652,7 @@ namespace KeyboardAutomation
 
         private static void SetClipboardText(string text)
         {
-            if (!OpenClipboard(IntPtr.Zero))
+            if (!OpenClipboardWithRetry())
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenClipboard failed.");
             try
             {
@@ -638,7 +677,12 @@ namespace KeyboardAutomation
                 }
 
                 if (SetClipboardData(CF_UNICODETEXT, handle) == IntPtr.Zero)
+                {
+                    // On failure the clipboard has NOT taken ownership - the caller still
+                    // owns the handle and must free it (per MSDN's SetClipboardData docs).
+                    GlobalFree(handle);
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "SetClipboardData failed.");
+                }
             }
             finally
             {
@@ -648,7 +692,7 @@ namespace KeyboardAutomation
 
         private static void ClearClipboard()
         {
-            if (!OpenClipboard(IntPtr.Zero))
+            if (!OpenClipboardWithRetry())
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenClipboard failed.");
             try
             {
@@ -657,6 +701,26 @@ namespace KeyboardAutomation
             finally
             {
                 CloseClipboard();
+            }
+        }
+
+        /// <summary>
+        /// Opens the clipboard, retrying briefly: OpenClipboard can transiently fail if
+        /// another process (e.g. a clipboard manager) briefly holds the clipboard open.
+        /// Retries every 25 ms for up to ~250 ms total before giving up.
+        /// </summary>
+        private static bool OpenClipboardWithRetry()
+        {
+            const int attempts = 10;
+            const int retryDelayMs = 25;
+
+            for (int attempt = 0; ; attempt++)
+            {
+                if (OpenClipboard(IntPtr.Zero))
+                    return true;
+                if (attempt >= attempts - 1)
+                    return false;
+                Thread.Sleep(retryDelayMs);
             }
         }
 
@@ -704,6 +768,9 @@ namespace KeyboardAutomation
         private const uint KEYEVENTF_KEYUP = 0x0002;
         private const uint KEYEVENTF_UNICODE = 0x0004;
 
+        // SendInput's cbSize argument - fixed at first use rather than re-evaluated per call.
+        private static readonly int InputSize = Marshal.SizeOf<INPUT>();
+
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
@@ -743,8 +810,11 @@ namespace KeyboardAutomation
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool GlobalUnlock(IntPtr hMem);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalFree(IntPtr hMem);
+
         [StructLayout(LayoutKind.Sequential)]
-        private struct INPUT
+        internal struct INPUT
         {
             public uint type;
             public INPUTUNION U;
@@ -755,7 +825,7 @@ namespace KeyboardAutomation
         // (MOUSEINPUT), and SendInput's cbSize contract requires our marshaled struct size
         // to match that real size exactly, or the call silently fails.
         [StructLayout(LayoutKind.Explicit)]
-        private struct INPUTUNION
+        internal struct INPUTUNION
         {
             [FieldOffset(0)] public MOUSEINPUT mi;
             [FieldOffset(0)] public KEYBDINPUT ki;
@@ -763,7 +833,7 @@ namespace KeyboardAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct MOUSEINPUT
+        internal struct MOUSEINPUT
         {
             public int dx;
             public int dy;
@@ -774,7 +844,7 @@ namespace KeyboardAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct KEYBDINPUT
+        internal struct KEYBDINPUT
         {
             public ushort wVk;
             public ushort wScan;
@@ -784,7 +854,7 @@ namespace KeyboardAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct HARDWAREINPUT
+        internal struct HARDWAREINPUT
         {
             public uint uMsg;
             public ushort wParamL;
@@ -830,7 +900,7 @@ namespace KeyboardAutomation
         /// </summary>
         private static void SendInputs(INPUT[] inputs)
         {
-            uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+            uint sent = SendInput((uint)inputs.Length, inputs, InputSize);
             if (sent != (uint)inputs.Length)
                 throw new Win32Exception(Marshal.GetLastWin32Error(),
                     "SendInput failed to inject the input event(s). (Desktop locked, UAC/secure desktop, or insufficient privileges?)");
