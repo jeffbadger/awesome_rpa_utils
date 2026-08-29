@@ -275,44 +275,77 @@ namespace KeyboardAutomation
 
         #region Core Press/Hold/Combo
 
-        /// <summary>Presses and holds a key. Pair with <see cref="KeyUp"/>.</summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <summary>Presses and holds a key. Pair with <see cref="KeyUp"/>. Never throws.</summary>
+        /// <param name="key">The key to press down.</param>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
+        /// <returns><c>true</c> if the input was injected successfully.</returns>
         [Category("Keyboard - Press & Hold & Combo")]
-        [Description("Presses and holds a key down.")]
-        public void KeyDown(VirtualKey key)
+        [Description("Presses and holds a key down. Returns True on success; never throws.")]
+        public bool KeyDown(VirtualKey key, out string message)
         {
-            SendInputs(new[] { MakeKeyInput((int)key, false) });
+            try
+            {
+                SendInputs(new[] { MakeKeyInput((int)key, false) });
+                message = null;
+                return true;
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
         }
 
-        /// <summary>Releases a key previously pressed with <see cref="KeyDown"/>.</summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <summary>Releases a key previously pressed with <see cref="KeyDown"/>. Never throws.</summary>
+        /// <param name="key">The key to release.</param>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
+        /// <returns><c>true</c> if the input was injected successfully.</returns>
         [Category("Keyboard - Press & Hold & Combo")]
-        [Description("Releases a previously pressed key.")]
-        public void KeyUp(VirtualKey key)
+        [Description("Releases a previously pressed key. Returns True on success; never throws.")]
+        public bool KeyUp(VirtualKey key, out string message)
         {
-            SendInputs(new[] { MakeKeyInput((int)key, true) });
+            try
+            {
+                SendInputs(new[] { MakeKeyInput((int)key, true) });
+                message = null;
+                return true;
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
         }
 
-        /// <summary>Presses and releases a key (~20 ms between down and up).</summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <summary>Presses and releases a key (~20 ms between down and up). Never throws.</summary>
+        /// <param name="key">The key to press.</param>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
+        /// <returns><c>true</c> if the input was injected successfully.</returns>
         [Category("Keyboard - Press & Hold & Combo")]
-        [Description("Presses and releases a key (~20 ms between down and up).")]
-        public void PressKey(VirtualKey key)
+        [Description("Presses and releases a key (~20 ms between down and up). Returns True on success; never throws.")]
+        public bool PressKey(VirtualKey key, out string message)
         {
-            KeyDown(key);
+            if (!KeyDown(key, out message))
+                return false;
             Thread.Sleep(20);
-            KeyUp(key);
+            if (!KeyUp(key, out message))
+                return false;
+            message = null;
+            return true;
         }
 
         /// <summary>
         /// Presses a key while holding modifier keys (Control/Shift/Alt/Win, combinable),
         /// injected as one atomic <c>SendInput</c> batch so real user input cannot
-        /// interleave mid-sequence.
+        /// interleave mid-sequence. Never throws.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="key">The key to press.</param>
+        /// <param name="modifiers">Modifier keys to hold during the press; combinable flags.</param>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
+        /// <returns><c>true</c> if the input was injected successfully.</returns>
         [Category("Keyboard - Press & Hold & Combo")]
-        [Description("Presses a key while holding modifier keys (Control/Shift/Alt/Win).")]
-        public void PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers)
+        [Description("Presses a key while holding modifier keys (Control/Shift/Alt/Win). Returns True on success; never throws.")]
+        public bool PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers, out string message)
         {
             var batch = new List<INPUT>();
 
@@ -329,22 +362,36 @@ namespace KeyboardAutomation
             if ((modifiers & ModifierKeys.Shift) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Shift, true));
             if ((modifiers & ModifierKeys.Control) != 0) batch.Add(MakeKeyInput((int)VirtualKey.Control, true));
 
-            SendInputs(batch.ToArray());
+            try
+            {
+                SendInputs(batch.ToArray());
+                message = null;
+                return true;
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
         }
 
         /// <summary>
         /// Presses all given keys down in order, then releases them in reverse order, as
         /// one atomic <c>SendInput</c> batch (e.g. Ctrl+Shift+Esc, where none of the keys
-        /// is a modifier in the <see cref="ModifierKeys"/> flags sense).
+        /// is a modifier in the <see cref="ModifierKeys"/> flags sense). Never throws.
         /// </summary>
-        /// <exception cref="ArgumentException"><paramref name="keys"/> is null or empty.</exception>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c> (including a null/empty <paramref name="keys"/>).</param>
+        /// <param name="keys">The keys to press, in order.</param>
+        /// <returns><c>true</c> if the input was injected successfully.</returns>
         [Category("Keyboard - Press & Hold & Combo")]
-        [Description("Presses all given keys down in order, then releases them in reverse order.")]
-        public void PressKeyCombo(params VirtualKey[] keys)
+        [Description("Presses all given keys down in order, then releases them in reverse order. Returns True on success; never throws.")]
+        public bool PressKeyCombo(out string message, params VirtualKey[] keys)
         {
             if (keys == null || keys.Length == 0)
-                throw new ArgumentException("At least one key is required.", nameof(keys));
+            {
+                message = "At least one key is required.";
+                return false;
+            }
 
             var batch = new List<INPUT>();
             foreach (var key in keys)
@@ -352,74 +399,108 @@ namespace KeyboardAutomation
             for (int i = keys.Length - 1; i >= 0; i--)
                 batch.Add(MakeKeyInput((int)keys[i], true));
 
-            SendInputs(batch.ToArray());
+            try
+            {
+                SendInputs(batch.ToArray());
+                message = null;
+                return true;
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
         }
 
-        /// <summary>Holds a key down for the given duration, then releases it.</summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <summary>Holds a key down for the given duration, then releases it. Never throws.</summary>
+        /// <param name="key">The key to hold.</param>
+        /// <param name="holdMilliseconds">How long to hold the key, in milliseconds.</param>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
+        /// <returns><c>true</c> if the input was injected successfully.</returns>
         [Category("Keyboard - Press & Hold & Combo")]
-        [Description("Holds a key down for the given duration, then releases it.")]
-        public void HoldKey(VirtualKey key, int holdMilliseconds)
+        [Description("Holds a key down for the given duration, then releases it. Returns True on success; never throws.")]
+        public bool HoldKey(VirtualKey key, int holdMilliseconds, out string message)
         {
-            KeyDown(key);
+            if (!KeyDown(key, out message))
+                return false;
             Thread.Sleep(Math.Max(0, holdMilliseconds));
-            KeyUp(key);
+            if (!KeyUp(key, out message))
+                return false;
+            message = null;
+            return true;
         }
 
         #endregion
 
         #region Text Typing
 
-        /// <summary>Types a string via <c>KEYEVENTF_UNICODE</c> (default ~10 ms/character).</summary>
-        /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <summary>Types a string via <c>KEYEVENTF_UNICODE</c> (default ~10 ms/character). Never throws.</summary>
+        /// <param name="text">The text to type.</param>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c> (including a null <paramref name="text"/>).</param>
+        /// <returns><c>true</c> if the whole string was typed successfully.</returns>
         [Category("Keyboard - Text Typing")]
-        [Description("Types a string via simulated Unicode key input (default ~10 ms/character).")]
-        public void TypeText(string text)
+        [Description("Types a string via simulated Unicode key input (default ~10 ms/character). Returns True on success; never throws.")]
+        public bool TypeText(string text, out string message)
         {
-            TypeText(text, 10);
+            return TypeText(text, 10, out message);
         }
 
         /// <summary>
         /// Types a string via <c>KEYEVENTF_UNICODE</c> with a custom per-character delay.
         /// Unicode-safe: characters outside the Basic Multilingual Plane (emoji, some CJK
         /// extension characters) are sent as their UTF-16 surrogate pair, one code unit
-        /// per <c>SendInput</c> key-down/up pair.
+        /// per <c>SendInput</c> key-down/up pair. Never throws.
         /// </summary>
-        /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="text">The text to type.</param>
+        /// <param name="delayMilliseconds">Delay after each character, in milliseconds.</param>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c> (including a null <paramref name="text"/>). If injection fails partway through, any characters already typed remain typed.</param>
+        /// <returns><c>true</c> if the whole string was typed successfully.</returns>
         [Category("Keyboard - Text Typing")]
-        [Description("Types a string via simulated Unicode key input with a custom per-character delay.")]
-        public void TypeText(string text, int delayMilliseconds)
+        [Description("Types a string via simulated Unicode key input with a custom per-character delay. Returns True on success; never throws.")]
+        public bool TypeText(string text, int delayMilliseconds, out string message)
         {
             if (text == null)
-                throw new ArgumentException("Text cannot be null.", nameof(text));
-
-            Span<char> chars = stackalloc char[2];
-            foreach (var rune in text.EnumerateRunes())
             {
-                if (rune.Utf16SequenceLength == 1)
+                message = "Text cannot be null.";
+                return false;
+            }
+
+            try
+            {
+                Span<char> chars = stackalloc char[2];
+                foreach (var rune in text.EnumerateRunes())
                 {
-                    SendInputs(new[]
+                    if (rune.Utf16SequenceLength == 1)
                     {
-                        MakeUnicodeKeyInput((char)rune.Value, false),
-                        MakeUnicodeKeyInput((char)rune.Value, true)
-                    });
-                }
-                else
-                {
-                    rune.EncodeToUtf16(chars);
-                    SendInputs(new[]
+                        SendInputs(new[]
+                        {
+                            MakeUnicodeKeyInput((char)rune.Value, false),
+                            MakeUnicodeKeyInput((char)rune.Value, true)
+                        });
+                    }
+                    else
                     {
-                        MakeUnicodeKeyInput(chars[0], false),
-                        MakeUnicodeKeyInput(chars[0], true),
-                        MakeUnicodeKeyInput(chars[1], false),
-                        MakeUnicodeKeyInput(chars[1], true)
-                    });
+                        rune.EncodeToUtf16(chars);
+                        SendInputs(new[]
+                        {
+                            MakeUnicodeKeyInput(chars[0], false),
+                            MakeUnicodeKeyInput(chars[0], true),
+                            MakeUnicodeKeyInput(chars[1], false),
+                            MakeUnicodeKeyInput(chars[1], true)
+                        });
+                    }
+
+                    if (delayMilliseconds > 0)
+                        Thread.Sleep(delayMilliseconds);
                 }
 
-                if (delayMilliseconds > 0)
-                    Thread.Sleep(delayMilliseconds);
+                message = null;
+                return true;
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
             }
         }
 
@@ -436,33 +517,67 @@ namespace KeyboardAutomation
         /// STA thread; <c>OpenClipboard</c> can transiently fail if another process (e.g. a
         /// clipboard manager) briefly holds the clipboard open.
         /// </summary>
-        /// <exception cref="ArgumentException"><paramref name="text"/> is null.</exception>
-        /// <exception cref="Win32Exception">A clipboard or input injection call failed.</exception>
+        /// <param name="text">The text to paste.</param>
+        /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c> (including a null <paramref name="text"/>).</param>
+        /// <returns><c>true</c> if the text was set on the clipboard and Ctrl+V was sent successfully.</returns>
+        /// <remarks>Never throws - if restoring the original clipboard contents afterward itself fails, that failure is swallowed rather than masking the primary outcome already captured in <paramref name="message"/>/the return value.</remarks>
         [Category("Keyboard - Clipboard")]
-        [Description("Sets the clipboard to the given text, sends Ctrl+V, then restores the original clipboard.")]
-        public void PasteText(string text)
+        [Description("Sets the clipboard to the given text, sends Ctrl+V, then restores the original clipboard. Returns True on success; never throws.")]
+        public bool PasteText(string text, out string message)
         {
             if (text == null)
-                throw new ArgumentException("Text cannot be null.", nameof(text));
+            {
+                message = "Text cannot be null.";
+                return false;
+            }
 
-            string original = GetClipboardText();
-            bool clipboardWasEmpty = CountClipboardFormats() == 0;
+            string original = null;
+            bool clipboardWasEmpty = false;
+            bool succeeded = false;
+            string failureMessage = null;
+
             try
             {
+                original = GetClipboardText();
+                clipboardWasEmpty = CountClipboardFormats() == 0;
+
                 SetClipboardText(text);
-                PressKeyWithModifiers(VirtualKey.V, ModifierKeys.Control);
-                Thread.Sleep(50);
+                if (!PressKeyWithModifiers(VirtualKey.V, ModifierKeys.Control, out failureMessage))
+                {
+                    succeeded = false;
+                }
+                else
+                {
+                    Thread.Sleep(50);
+                    succeeded = true;
+                }
+            }
+            catch (Win32Exception ex)
+            {
+                succeeded = false;
+                failureMessage = ex.Message;
             }
             finally
             {
-                if (original != null)
-                    SetClipboardText(original);
-                else if (clipboardWasEmpty)
-                    ClearClipboard();
-                // else: the clipboard held non-text content we can't restore (e.g. an
-                // image) - leave the pasted text in place rather than silently destroying
-                // it via EmptyClipboard.
+                try
+                {
+                    if (original != null)
+                        SetClipboardText(original);
+                    else if (clipboardWasEmpty)
+                        ClearClipboard();
+                    // else: the clipboard held non-text content we can't restore (e.g. an
+                    // image) - leave the pasted text in place rather than silently destroying
+                    // it via EmptyClipboard.
+                }
+                catch (Win32Exception)
+                {
+                    // Best-effort restoration - don't let a cleanup failure mask the
+                    // primary paste outcome already captured above.
+                }
             }
+
+            message = succeeded ? null : failureMessage;
+            return succeeded;
         }
 
         private static string GetClipboardText()
