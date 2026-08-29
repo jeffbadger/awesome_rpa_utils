@@ -21,6 +21,10 @@ keyboard.TypeText("slow-field-value", 40, out _);
 keyboard.TypeText("Approved 👍", out _);
 ```
 
+Non-BMP characters are sent as a surrogate pair in the canonical order — high
+surrogate down, low surrogate down, low surrogate up, high surrogate up — so the
+target composes a single character rather than two replacement glyphs.
+
 ## Checking why typing failed
 
 ```csharp

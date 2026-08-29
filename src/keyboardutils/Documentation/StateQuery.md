@@ -19,6 +19,9 @@ if ((active & ModifierKeys.Shift) != 0)
 }
 ```
 
+`IsModifierDown(ModifierKeys.None)` returns `false` — no modifier is "held" when
+none is requested.
+
 ## Poll for a specific key being released before continuing
 
 ```csharp

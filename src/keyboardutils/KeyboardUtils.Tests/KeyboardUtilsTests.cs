@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using KeyboardAutomation;
 using Xunit;
 
@@ -149,6 +150,38 @@ namespace KeyboardAutomation.Tests
             }
         }
 
+        [Fact]
+        public void BuildUnicodeRuneBatch_single_code_unit_is_down_then_up()
+        {
+            var batch = KeyboardUtils.BuildUnicodeRuneBatch(new Rune('A'));
+
+            Assert.Equal(2, batch.Length);
+            Assert.Equal(0u, batch[0].U.ki.dwFlags & KEYEVENTF_KEYUP);
+            Assert.NotEqual(0u, batch[1].U.ki.dwFlags & KEYEVENTF_KEYUP);
+            Assert.Equal((ushort)'A', batch[0].U.ki.wScan);
+            Assert.Equal((ushort)'A', batch[1].U.ki.wScan);
+        }
+
+        [Fact]
+        public void BuildUnicodeRuneBatch_surrogate_pair_holds_both_units_before_release()
+        {
+            // 👍 U+1F44D = high surrogate 0xD83D + low surrogate 0xDC4D. The canonical
+            // SendInput sequence is high-down, low-down, low-up, high-up — both code units
+            // held before either is released, so the target composes one character.
+            var batch = KeyboardUtils.BuildUnicodeRuneBatch(new Rune(0x1F44D));
+
+            Assert.Equal(4, batch.Length);
+            Assert.Equal(0u, batch[0].U.ki.dwFlags & KEYEVENTF_KEYUP); // high down
+            Assert.Equal(0u, batch[1].U.ki.dwFlags & KEYEVENTF_KEYUP); // low down
+            Assert.NotEqual(0u, batch[2].U.ki.dwFlags & KEYEVENTF_KEYUP); // low up
+            Assert.NotEqual(0u, batch[3].U.ki.dwFlags & KEYEVENTF_KEYUP); // high up
+
+            Assert.Equal((ushort)0xD83D, batch[0].U.ki.wScan);
+            Assert.Equal((ushort)0xDC4D, batch[1].U.ki.wScan);
+            Assert.Equal((ushort)0xDC4D, batch[2].U.ki.wScan);
+            Assert.Equal((ushort)0xD83D, batch[3].U.ki.wScan);
+        }
+
         // ------------------------------------------------------------------
         // Argument validation / never-throw contract (no interop needed)
         // ------------------------------------------------------------------
@@ -233,30 +266,30 @@ namespace KeyboardAutomation.Tests
             Assert.Null(upMessage);
         }
 
+        // ------------------------------------------------------------------
+        // Modifier combination logic (pure, no interop)
+        // ------------------------------------------------------------------
+
         [Fact]
-        public void GetActiveModifiers_returns_none_when_no_modifiers_held()
+        public void ModifiersFromKeyStates_none_when_nothing_held()
         {
-            if (!OperatingSystem.IsWindows())
-                return;
-
-            var keyboard = new KeyboardUtils();
-            // Not press-atomic with the assertion below, but F-keys are not modifiers,
-            // so this should hold unless a human is typing at the same moment.
-            var modifiers = keyboard.GetActiveModifiers();
-
-            Assert.True(
-                modifiers == ModifierKeys.None || Enum.IsDefined(typeof(ModifierKeys), modifiers)
-                || IsValidFlagCombo(modifiers));
+            Assert.Equal(ModifierKeys.None, KeyboardUtils.ModifiersFromKeyStates(_ => false));
         }
 
-        private static bool IsValidFlagCombo(ModifierKeys modifiers)
+        [Fact]
+        public void ModifiersFromKeyStates_combines_flags_from_key_states()
         {
-            return modifiers != ModifierKeys.None
-                && modifiers == (ModifierKeys.None
-                    | (((int)modifiers & 1) != 0 ? ModifierKeys.Control : 0)
-                    | (((int)modifiers & 2) != 0 ? ModifierKeys.Shift : 0)
-                    | (((int)modifiers & 4) != 0 ? ModifierKeys.Alt : 0)
-                    | (((int)modifiers & 8) != 0 ? ModifierKeys.Win : 0));
+            var result = KeyboardUtils.ModifiersFromKeyStates(key =>
+                key == VirtualKey.Control || key == VirtualKey.Shift);
+
+            Assert.Equal(ModifierKeys.Control | ModifierKeys.Shift, result);
+        }
+
+        [Fact]
+        public void ModifiersFromKeyStates_win_checks_both_sides()
+        {
+            Assert.Equal(ModifierKeys.Win, KeyboardUtils.ModifiersFromKeyStates(key => key == VirtualKey.LWin));
+            Assert.Equal(ModifierKeys.Win, KeyboardUtils.ModifiersFromKeyStates(key => key == VirtualKey.RWin));
         }
     }
 }

@@ -99,14 +99,15 @@ exception` condition.
   field, verify effect)
 - `HoldKey` (duration-honored — combine with a stopwatch or `IsKeyDown` polling)
 - `TypeText` (both overloads — assert harness field's resulting text; include a
-  non-BMP character, e.g. an emoji, to test the surrogate-pair path; null
+  non-BMP character, e.g. an emoji, to test the surrogate-pair path, which must
+  compose a single character (high-down, low-down, low-up, high-up); null
   `text` → `false` + message)
 - `PasteText` (assert field content; assert clipboard is restored to its
   pre-call value afterward — this is the one most worth a dedicated case, since
   the restore logic has three branches: had text, was empty, had non-text)
 - `IsKeyDown`, `IsModifierDown`, `GetActiveModifiers` (state query — hold a key
-  via `KeyDown` in the same test, then assert; unchanged by the API review,
-  still plain `bool`/enum returns with no `message` parameter)
+  via `KeyDown` in the same test, then assert; `IsModifierDown(ModifierKeys.None)`
+  must return `false`; still plain `bool`/enum returns with no `message` parameter)
 
 ### MouseUtils (Setup: run the test harness — it provides a click target with a button-detail label, a scrollable multi-select list, and a drag target)
 
