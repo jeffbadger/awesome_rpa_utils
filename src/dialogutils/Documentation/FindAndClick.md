@@ -87,6 +87,26 @@ if (dialog.FindDialog("Confirm", out IntPtr hWnd, out bool canDismiss, exactMatc
 `CanDismissDialog(hWnd)` is also available standalone, for a handle you already have
 (e.g. from `WaitForDialog`).
 
+## Only match dialogs from a specific application
+
+`FindDialog` scans every visible top-level window on the desktop by default. To keep a
+coincidentally similar title in another app from ever matching (and being clicked), scope
+the search to the target process with `processId` — get it from
+[WindowUtils](../../windowutils/README.md)'s `GetWindowProcessId`/`FindWindowsByProcessId`.
+Hidden windows are skipped in either mode, so an app's pre-created-but-invisible forms
+can't match before the dialog actually shows:
+
+```csharp
+if (dialog.FindDialog("Confirm", out IntPtr hWnd, out bool canDismiss,
+                      exactMatch: false, processId: targetPid))
+{
+    if (canDismiss)
+        dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _);
+    else
+        keyboard.PressKey(VirtualKey.Enter); // drive it via keyboard instead
+}
+```
+
 ## A click right after finding the dialog has no effect the first time
 
 By default, `ClickButton`/`ClickDialogButtonById` wait up to 500 ms for the target button

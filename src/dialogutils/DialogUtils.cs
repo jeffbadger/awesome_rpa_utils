@@ -63,9 +63,17 @@ namespace DialogAutomation
         /// <paramref name="canDismiss"/> whether it has at least one native <c>Button</c>
         /// control that <see cref="ClickButton"/>/<see cref="ClickDialogButtonById"/>/
         /// <see cref="ClickDialogButtonByText"/> can target — see <see cref="CanDismissDialog"/>.
-        /// Never throws - a null <paramref name="titlePattern"/> or no match are both
-        /// reported by returning <c>false</c> (not found is a normal, checkable outcome,
-        /// not an error).
+        /// Never throws - a null or empty <paramref name="titlePattern"/>, or no match,
+        /// are all reported by returning <c>false</c> (not found is a normal, checkable
+        /// outcome, not an error).
+        /// <para>
+        /// Only <b>visible</b> top-level windows are considered — hidden windows (e.g. a
+        /// form an app has pre-created with a title that already matches) are skipped, so
+        /// the method cannot match a dialog before it actually appears on screen. When
+        /// <paramref name="processId"/> is non-zero, only windows owned by that process
+        /// are considered, so a robot can scope matching to its target application
+        /// instead of every window on the desktop.
+        /// </para>
         /// </summary>
         /// <param name="titlePattern">The title to match.</param>
         /// <param name="hDialog">The matching dialog's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
@@ -80,22 +88,38 @@ namespace DialogAutomation
         /// Caveats).
         /// </param>
         /// <param name="exactMatch">
-        /// If <c>true</c> (default), requires an exact, case-sensitive title match.
+        /// If <c>true</c> (default), requires an exact (case-insensitive) title match.
         /// If <c>false</c>, matches any window whose title contains
-        /// <paramref name="titlePattern"/> (case-insensitive).
+        /// <paramref name="titlePattern"/> (also case-insensitive).
+        /// </param>
+        /// <param name="processId">
+        /// When non-zero, only windows owned by this process ID (as reported by
+        /// <c>GetWindowThreadProcessId</c>) are considered — use this to scope matching
+        /// to the robot's target application so a title that coincidentally appears in
+        /// another app's window can never be matched. 0 (the default) matches any process.
         /// </param>
         /// <returns><c>true</c> if a matching dialog was found.</returns>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a top-level dialog window by its title, and reports whether DialogUtils can dismiss it via a native Button control. Returns True if found; never throws.")]
-        public bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true)
+        [Description("Finds a visible top-level dialog window by its title (optionally scoped to a process ID), and reports whether DialogUtils can dismiss it via a native Button control. Returns True if found; never throws.")]
+        public bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true, int processId = 0)
         {
-            if (titlePattern != null)
+            if (!string.IsNullOrEmpty(titlePattern))
             {
                 foreach (var hWnd in GetTopLevelWindows())
                 {
+                    if (!IsWindowVisible(hWnd))
+                        continue;
+
+                    if (processId != 0)
+                    {
+                        GetWindowThreadProcessId(hWnd, out uint windowProcessId);
+                        if (windowProcessId != (uint)processId)
+                            continue;
+                    }
+
                     string title = GetControlText(hWnd);
                     bool matches = exactMatch
-                        ? string.Equals(title, titlePattern, StringComparison.Ordinal)
+                        ? string.Equals(title, titlePattern, StringComparison.OrdinalIgnoreCase)
                         : title.IndexOf(titlePattern, StringComparison.OrdinalIgnoreCase) >= 0;
                     if (matches)
                     {
@@ -134,8 +158,9 @@ namespace DialogAutomation
 
         /// <summary>
         /// Finds a button on a dialog by its visible text (case-insensitive). Never
-        /// throws - a null <paramref name="buttonText"/> or no match are both reported by
-        /// returning <c>false</c>.
+        /// throws - a null or empty <paramref name="buttonText"/>, or no match, are all
+        /// reported by returning <c>false</c> (an empty pattern is treated as a mistake,
+        /// not as "match the first button").
         /// </summary>
         /// <param name="hDialog">The dialog to search.</param>
         /// <param name="hButton">The matching button's handle, or <see cref="IntPtr.Zero"/> if none matches.</param>
@@ -162,7 +187,7 @@ namespace DialogAutomation
         [Description("Finds a button on a dialog by its visible text (exact or substring match, ignoring access-key & mnemonics). Returns True if found; never throws.")]
         public bool FindButtonByText(IntPtr hDialog, out IntPtr hButton, string buttonText, bool exactMatch = true)
         {
-            if (buttonText != null)
+            if (!string.IsNullOrEmpty(buttonText))
             {
                 string target = StripAccessKeyMnemonic(buttonText);
                 foreach (var child in GetChildWindows(hDialog))
@@ -203,7 +228,9 @@ namespace DialogAutomation
 
         /// <summary>
         /// Invokes a button by sending it <c>BM_CLICK</c> — no cursor movement is involved,
-        /// and it works even if the dialog is behind other windows.
+        /// and it works even if the dialog is behind other windows. The click is delivered
+        /// via <c>SendMessageTimeout</c> with <c>SMTO_ABORTIFHUNG</c>, so a hung target
+        /// application aborts the call instead of blocking this thread forever.
         /// </summary>
         /// <param name="hButton">The button to click.</param>
         /// <param name="waitForEnabledMs">
@@ -218,12 +245,14 @@ namespace DialogAutomation
         /// <param name="pollIntervalMs">Delay between enabled-state checks, in milliseconds; values below 1 are treated as 1.</param>
         /// <returns>
         /// <c>true</c> if the button was enabled when the click was sent; <c>false</c> if it
-        /// was still disabled after <paramref name="waitForEnabledMs"/> elapsed. The click is
-        /// sent either way - this only reports whether it had a fighting chance of landing,
-        /// not whether the target application actually reacted to it, which
-        /// <c>SendMessage</c>'s return value for <c>BM_CLICK</c> cannot tell you (a disabled
-        /// control silently ignores <c>BM_CLICK</c>, so this is the one honest signal
-        /// available without inspecting the target application itself).
+        /// was still disabled after <paramref name="waitForEnabledMs"/> elapsed (or the
+        /// handle stopped being a valid window while waiting, in which case the click is a
+        /// harmless no-op). The click is sent either way - this only reports whether it had
+        /// a fighting chance of landing, not whether the target application actually
+        /// reacted to it, which <c>SendMessageTimeout</c>'s return value for <c>BM_CLICK</c>
+        /// cannot tell you (a disabled control silently ignores <c>BM_CLICK</c>, so this is
+        /// the one honest signal available without inspecting the target application
+        /// itself).
         /// </returns>
         [Category("Dialog - Find & Click")]
         [Description("Invokes a button by sending it BM_CLICK, without moving the cursor. Waits briefly for the button to become enabled first. Returns True if it was enabled when clicked.")]
@@ -233,13 +262,15 @@ namespace DialogAutomation
 
             int start = Environment.TickCount;
             bool enabled = IsWindowEnabled(hButton);
-            while (!enabled && unchecked(Environment.TickCount - start) < waitForEnabledMs)
+            // Bail out early if the button's window dies mid-wait — IsWindowEnabled keeps
+            // returning false for a dead handle, and clicking it is a guaranteed no-op.
+            while (!enabled && IsWindowNative(hButton) && unchecked(Environment.TickCount - start) < waitForEnabledMs)
             {
                 Thread.Sleep(pollIntervalMs);
                 enabled = IsWindowEnabled(hButton);
             }
 
-            SendMessage(hButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+            SendMessageTimeout(hButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero, SMTO_ABORTIFHUNG, BM_CLICK_TIMEOUT_MS, out _);
             return enabled;
         }
 
@@ -261,6 +292,13 @@ namespace DialogAutomation
         /// <param name="waitForEnabledMs">See <see cref="ClickButton"/>.</param>
         /// <param name="pollIntervalMs">See <see cref="ClickButton"/>.</param>
         /// <returns><c>true</c> if a control with <paramref name="controlId"/> was found (and clicked). Never throws.</returns>
+        /// <remarks>
+        /// "Found" is not the same as "closed" — this returns <c>true</c> once the click
+        /// was sent, not once the dialog went away. When the click is expected to close
+        /// <paramref name="hDialog"/>, verify it with <see cref="WaitForDialogToClose"/>
+        /// (matching by text instead? <see cref="ClickDialogButtonByText"/> builds that
+        /// verify-and-retry in).
+        /// </remarks>
         [Category("Dialog - Find & Click")]
         [Description("Invokes a button by its control ID (GetDlgItem). Returns True if found; never throws.")]
         public bool ClickDialogButtonById(IntPtr hDialog, int controlId, out bool wasEnabled, int waitForEnabledMs = 500, int pollIntervalMs = 25)
@@ -412,7 +450,7 @@ namespace DialogAutomation
         /// then <see cref="HighlightControl"/> a handle from the results to confirm which
         /// control on screen it corresponds to.
         /// </summary>
-        [Category("Dialog - Read Text")]
+        [Category("Dialog - Discover & Highlight")]
         [Description("Lists every control on a dialog with its control ID, text, and window class name.")]
         public List<DialogControlInfo> ListDialogControls(IntPtr hDialog)
         {
@@ -450,12 +488,18 @@ namespace DialogAutomation
         /// <returns><c>true</c> if the control was highlighted; <c>false</c> if <c>GetWindowRect</c> or <c>GetDC</c> failed (e.g. an invalid handle). Never throws.</returns>
         /// <remarks>
         /// Caveats:
+        ///  - Blocks the calling thread for roughly <c>flashes × 2 × flashMs</c>
+        ///    (~1.2 s with the defaults) — don't call it from a thread that must keep
+        ///    repainting.
         ///  - If the control repaints while the rectangle is visible, the highlight pixels
         ///    may leave artifacts that the second XOR pass cannot fully erase.
         ///  - Does not draw over exclusive fullscreen (DirectX) applications.
         ///  - The XOR blend means the apparent color varies by background.
+        ///  - Coordinates come from <c>GetWindowRect</c> and the screen DC, so under DPI
+        ///    virtualization (a process that isn't DPI-aware while the display is scaled)
+        ///    the rectangle can be drawn offset from the control.
         /// </remarks>
-        [Category("Dialog - Read Text")]
+        [Category("Dialog - Discover & Highlight")]
         [Description("Flashes an inverting rectangle around a control to visually confirm which on-screen control a handle corresponds to. Returns True on success; never throws.")]
         public bool HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
         {
@@ -507,22 +551,26 @@ namespace DialogAutomation
 
         #region Wait-for-Dialog Polling
 
-        /// <summary>Polls for a top-level dialog matching <paramref name="titlePattern"/> (substring, case-insensitive) until it appears or the timeout elapses.</summary>
-        /// <param name="titlePattern">The title to match.</param>
+        /// <summary>Polls for a visible top-level dialog matching <paramref name="titlePattern"/> (substring, case-insensitive) until it appears or the timeout elapses.</summary>
+        /// <param name="titlePattern">The title to match. Null or empty never matches.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
         /// <param name="hWnd">The matching dialog's handle, or <see cref="IntPtr.Zero"/> if not found in time.</param>
+        /// <param name="processId">
+        /// When non-zero, only windows owned by this process ID are considered — see
+        /// <see cref="FindDialog"/>. 0 (the default) matches any process.
+        /// </param>
         /// <returns><c>true</c> if a matching dialog was found before the timeout.</returns>
         [Category("Dialog - Wait for Dialog")]
-        [Description("Polls for a top-level dialog matching a title pattern until it appears or the timeout elapses.")]
-        public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
+        [Description("Polls for a visible top-level dialog matching a title pattern (optionally scoped to a process ID) until it appears or the timeout elapses.")]
+        public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, int processId = 0)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
             while (true)
             {
-                if (FindDialog(titlePattern, out IntPtr found, out _, exactMatch: false))
+                if (FindDialog(titlePattern, out IntPtr found, out _, exactMatch: false, processId))
                 {
                     hWnd = found;
                     return true;
@@ -563,6 +611,14 @@ namespace DialogAutomation
 
         private const uint BM_CLICK = 0x00F5;
 
+        /// <summary>
+        /// Max time (ms) <c>SendMessageTimeout</c> waits for a click handler to return;
+        /// combined with <c>SMTO_ABORTIFHUNG</c> the call returns immediately if the target
+        /// thread is hung, so a frozen target application can never block the caller.
+        /// </summary>
+        private const uint BM_CLICK_TIMEOUT_MS = 2000;
+        private const uint SMTO_ABORTIFHUNG = 0x0002;
+
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -586,8 +642,15 @@ namespace DialogAutomation
         [DllImport("user32.dll", SetLastError = true)]
         private static extern int GetDlgCtrlID(IntPtr hWnd);
 
-        [DllImport("user32.dll", EntryPoint = "SendMessage", CharSet = CharSet.Unicode)]
-        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
         [DllImport("user32.dll", EntryPoint = "IsWindow")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -676,7 +739,7 @@ namespace DialogAutomation
         /// collapses to one <c>&amp;</c>. E.g. <c>"&amp;Yes"</c> → <c>"Yes"</c>,
         /// <c>"Save &amp;&amp; Exit"</c> → <c>"Save &amp; Exit"</c>.
         /// </summary>
-        private static string StripAccessKeyMnemonic(string text)
+        internal static string StripAccessKeyMnemonic(string text)
         {
             if (string.IsNullOrEmpty(text) || text.IndexOf('&') < 0)
                 return text;

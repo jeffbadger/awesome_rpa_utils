@@ -63,7 +63,10 @@ Each component has its own README with the full method reference, plus a
 ## Testing
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
-using Pega Robot Studio's Unit Testing framework.
+using Pega Robot Studio's Unit Testing framework. `DialogUtils` additionally
+has a plain xunit project — `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj` —
+covering its pure logic (mnemonic stripping, the `DialogButton` Win32 IDs)
+and its never-throw contract (interop cases self-skip on non-Windows machines).
 
 ## License
 
