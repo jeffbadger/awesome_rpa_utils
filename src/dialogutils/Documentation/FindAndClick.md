@@ -107,6 +107,22 @@ if (dialog.FindDialog("Confirm", out IntPtr hWnd, out bool canDismiss,
 }
 ```
 
+## Find every dialog matching a title
+
+`FindDialog`/`WaitForDialog` return the first matching window. When more than one window
+could match (e.g. two apps both showing a "Confirm" dialog), `FindAllDialogs` returns every
+match so you can pick the right one — same matching rules, same optional `processId` scoping:
+
+```csharp
+List<IntPtr> matches = dialog.FindAllDialogs("Confirm", exactMatch: false, processId: targetPid);
+if (matches.Count > 0)
+{
+    // Pick the one you want (e.g. the topmost, or the one whose controls you recognize),
+    // then drive it as usual:
+    dialog.ClickDialogButtonById(matches[0], (int)DialogButton.Yes, out _);
+}
+```
+
 ## A click right after finding the dialog has no effect the first time
 
 By default, `ClickButton`/`ClickDialogButtonById` wait up to 500 ms for the target button
@@ -146,6 +162,10 @@ if (!closed)
 // Tune the retry, or disable it (click exactly once):
 dialog.ClickDialogButtonByText(hWnd, "Yes", out _, exactMatch: false, maxAttempts: 5, retryDelayMs: 500);
 dialog.ClickDialogButtonByText(hWnd, "Yes", out _, exactMatch: false, maxAttempts: 1);
+
+// Each click also waits up to waitForEnabledMs for the button to become enabled
+// (default 500 ms) — tune it for a dialog known to be slow to become interactive:
+dialog.ClickDialogButtonByText(hWnd, "Yes", out _, waitForEnabledMs: 2000);
 ```
 
 Only meaningful for a click expected to close the dialog — a button that intentionally

@@ -99,40 +99,52 @@ namespace DialogAutomation
         /// another app's window can never be matched. 0 (the default) matches any process.
         /// </param>
         /// <returns><c>true</c> if a matching dialog was found.</returns>
+        /// <remarks>
+        /// Returns the <b>first</b> matching window in enumeration order. If more than
+        /// one window could match (e.g. two apps both showing a "Confirm" dialog), use
+        /// <see cref="FindAllDialogs"/> to get every match and pick the right one, or
+        /// scope with <paramref name="processId"/>.
+        /// </remarks>
         [Category("Dialog - Find & Click")]
         [Description("Finds a visible top-level dialog window by its title (optionally scoped to a process ID), and reports whether DialogUtils can dismiss it via a native Button control. Returns True if found; never throws.")]
         public bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true, int processId = 0)
         {
-            if (!string.IsNullOrEmpty(titlePattern))
+            foreach (var hWnd in GetMatchingTopLevelWindows(titlePattern, exactMatch, processId))
             {
-                foreach (var hWnd in GetTopLevelWindows())
-                {
-                    if (!IsWindowVisible(hWnd))
-                        continue;
-
-                    if (processId != 0)
-                    {
-                        GetWindowThreadProcessId(hWnd, out uint windowProcessId);
-                        if (windowProcessId != (uint)processId)
-                            continue;
-                    }
-
-                    string title = GetControlText(hWnd);
-                    bool matches = exactMatch
-                        ? string.Equals(title, titlePattern, StringComparison.OrdinalIgnoreCase)
-                        : title.IndexOf(titlePattern, StringComparison.OrdinalIgnoreCase) >= 0;
-                    if (matches)
-                    {
-                        hDialog = hWnd;
-                        canDismiss = CanDismissDialog(hWnd);
-                        return true;
-                    }
-                }
+                hDialog = hWnd;
+                canDismiss = CanDismissDialog(hWnd);
+                return true;
             }
 
             hDialog = IntPtr.Zero;
             canDismiss = false;
             return false;
+        }
+
+        /// <summary>
+        /// Finds every visible top-level window whose title matches
+        /// <paramref name="titlePattern"/> — the same matching rules as
+        /// <see cref="FindDialog"/>, but returning all matches instead of just the
+        /// first. Use this when more than one window could match (e.g. two apps both
+        /// showing a "Confirm" dialog) and you need to pick the right one, or to
+        /// confirm how many windows match before acting. Never throws.
+        /// </summary>
+        /// <param name="titlePattern">The title to match. Null or empty never matches.</param>
+        /// <param name="exactMatch">
+        /// If <c>true</c> (default), requires an exact (case-insensitive) title match.
+        /// If <c>false</c>, matches any window whose title contains
+        /// <paramref name="titlePattern"/> (also case-insensitive).
+        /// </param>
+        /// <param name="processId">
+        /// When non-zero, only windows owned by this process ID are considered — see
+        /// <see cref="FindDialog"/>. 0 (the default) matches any process.
+        /// </param>
+        /// <returns>The handles of every matching window, in enumeration order; an empty list if none match.</returns>
+        [Category("Dialog - Find & Click")]
+        [Description("Finds every visible top-level window whose title matches (exact or substring, optionally process-scoped). Returns all matches; never throws.")]
+        public List<IntPtr> FindAllDialogs(string titlePattern, bool exactMatch = true, int processId = 0)
+        {
+            return GetMatchingTopLevelWindows(titlePattern, exactMatch, processId);
         }
 
         /// <summary>
@@ -342,6 +354,8 @@ namespace DialogAutomation
         /// How long to wait after each click for the dialog to close before deciding it
         /// didn't work and re-clicking (default 300 ms).
         /// </param>
+        /// <param name="waitForEnabledMs">See <see cref="ClickButton"/>.</param>
+        /// <param name="pollIntervalMs">See <see cref="ClickButton"/>.</param>
         /// <returns><c>true</c> if the dialog closed within <paramref name="maxAttempts"/> clicks; <c>false</c> if no matching button was found, or it was still open after the last attempt. Never throws.</returns>
         /// <remarks>
         /// Retrying is only meaningful for a click that's expected to close
@@ -351,7 +365,7 @@ namespace DialogAutomation
         /// </remarks>
         [Category("Dialog - Find & Click")]
         [Description("Finds a button by its visible text (exact or substring match) and invokes it, re-clicking (up to maxAttempts) if the dialog doesn't close. Never throws.")]
-        public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)
+        public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300, int waitForEnabledMs = 500, int pollIntervalMs = 25)
         {
             if (maxAttempts < 1) maxAttempts = 1;
 
@@ -363,7 +377,7 @@ namespace DialogAutomation
                     return false;
                 }
 
-                ClickButton(hButton);
+                ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
                 if (WaitForDialogToClose(hDialog, retryDelayMs, pollIntervalMs: 25))
                 {
                     message = null;
@@ -408,7 +422,9 @@ namespace DialogAutomation
         public string GetControlText(IntPtr hControl)
         {
             int length = GetWindowTextLength(hControl);
-            var sb = new StringBuilder(length + 1);
+            // Use a minimum buffer so a title that grows between the length query and
+            // the read isn't silently truncated.
+            var sb = new StringBuilder(Math.Max(length, 256) + 1);
             GetWindowText(hControl, sb, sb.Capacity);
             return sb.ToString();
         }
@@ -485,7 +501,7 @@ namespace DialogAutomation
         /// Because the rectangle uses XOR drawing, the visible color depends on what
         /// is under it. Default is 0x0000FF (red).
         /// </param>
-        /// <returns><c>true</c> if the control was highlighted; <c>false</c> if <c>GetWindowRect</c> or <c>GetDC</c> failed (e.g. an invalid handle). Never throws.</returns>
+        /// <returns><c>true</c> if the control was highlighted; <c>false</c> if <c>GetWindowRect</c>, <c>GetDC</c>, or pen creation failed (e.g. an invalid handle), or the first draw failed. Never throws.</returns>
         /// <remarks>
         /// Caveats:
         ///  - Blocks the calling thread for roughly <c>flashes × 2 × flashMs</c>
@@ -515,6 +531,12 @@ namespace DialogAutomation
                 return false;
 
             IntPtr hPen = CreatePen(PS_SOLID, lineWidth, (uint)colorRef);
+            if (hPen == IntPtr.Zero)
+            {
+                ReleaseDC(IntPtr.Zero, hdc);
+                return false;
+            }
+
             IntPtr hOldPen = IntPtr.Zero;
             IntPtr hOldBrush = IntPtr.Zero;
 
@@ -522,12 +544,17 @@ namespace DialogAutomation
             {
                 hOldPen = SelectObject(hdc, hPen);
                 hOldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                if (hOldPen == IntPtr.Zero || hOldBrush == IntPtr.Zero)
+                    return false;
+
                 SetROP2(hdc, R2_NOTXORPEN);
 
                 for (int i = 0; i < flashes; i++)
                 {
-                    // Draw (visible) — XOR
-                    Rectangle(hdc, rc.Left, rc.Top, rc.Right, rc.Bottom);
+                    // Draw (visible) — XOR. If the first draw fails (e.g. the control
+                    // moved off-screen), nothing was drawn, so report failure.
+                    if (!Rectangle(hdc, rc.Left, rc.Top, rc.Right, rc.Bottom))
+                        return false;
                     Thread.Sleep(flashMs);
                     // Draw again (erases) — XOR XOR = original pixels
                     Rectangle(hdc, rc.Left, rc.Top, rc.Right, rc.Bottom);
@@ -551,7 +578,7 @@ namespace DialogAutomation
 
         #region Wait-for-Dialog Polling
 
-        /// <summary>Polls for a visible top-level dialog matching <paramref name="titlePattern"/> (substring, case-insensitive) until it appears or the timeout elapses.</summary>
+        /// <summary>Polls for a visible top-level dialog matching <paramref name="titlePattern"/> until it appears or the timeout elapses.</summary>
         /// <param name="titlePattern">The title to match. Null or empty never matches.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
@@ -560,17 +587,24 @@ namespace DialogAutomation
         /// When non-zero, only windows owned by this process ID are considered — see
         /// <see cref="FindDialog"/>. 0 (the default) matches any process.
         /// </param>
+        /// <param name="exactMatch">
+        /// If <c>true</c>, requires an exact (case-insensitive) title match. If <c>false</c>
+        /// (default), matches any window whose title contains <paramref name="titlePattern"/>
+        /// (also case-insensitive). Note this default differs from <see cref="FindDialog"/>'s
+        /// (<c>true</c>) — pass it explicitly if you need the same matching as
+        /// <see cref="FindDialog"/>.
+        /// </param>
         /// <returns><c>true</c> if a matching dialog was found before the timeout.</returns>
         [Category("Dialog - Wait for Dialog")]
-        [Description("Polls for a visible top-level dialog matching a title pattern (optionally scoped to a process ID) until it appears or the timeout elapses.")]
-        public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, int processId = 0)
+        [Description("Polls for a visible top-level dialog matching a title pattern (exact or substring, optionally scoped to a process ID) until it appears or the timeout elapses.")]
+        public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, int processId = 0, bool exactMatch = false)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
             while (true)
             {
-                if (FindDialog(titlePattern, out IntPtr found, out _, exactMatch: false, processId))
+                if (FindDialog(titlePattern, out IntPtr found, out _, exactMatch, processId))
                 {
                     hWnd = found;
                     return true;
@@ -712,6 +746,45 @@ namespace DialogAutomation
                 return true;
             }, IntPtr.Zero);
             return windows;
+        }
+
+        /// <summary>
+        /// Enumerates the visible top-level windows whose title matches
+        /// <paramref name="titlePattern"/>, applying the same visibility, process-ID
+        /// scoping, and exact/substring rules as <see cref="FindDialog"/>. A null or
+        /// empty pattern matches nothing (no Win32 calls are made).
+        /// </summary>
+        private List<IntPtr> GetMatchingTopLevelWindows(string titlePattern, bool exactMatch, int processId)
+        {
+            var matches = new List<IntPtr>();
+            if (string.IsNullOrEmpty(titlePattern))
+                return matches;
+
+            if (processId < 0) processId = 0;
+
+            foreach (var hWnd in GetTopLevelWindows())
+            {
+                if (!IsWindowVisible(hWnd))
+                    continue;
+
+                if (processId != 0)
+                {
+                    GetWindowThreadProcessId(hWnd, out uint windowProcessId);
+                    if (windowProcessId != (uint)processId)
+                        continue;
+                }
+
+                if (TitleMatches(GetControlText(hWnd), titlePattern, exactMatch))
+                    matches.Add(hWnd);
+            }
+            return matches;
+        }
+
+        private static bool TitleMatches(string title, string titlePattern, bool exactMatch)
+        {
+            return exactMatch
+                ? string.Equals(title, titlePattern, StringComparison.OrdinalIgnoreCase)
+                : title.IndexOf(titlePattern, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static List<IntPtr> GetChildWindows(IntPtr hWndParent)

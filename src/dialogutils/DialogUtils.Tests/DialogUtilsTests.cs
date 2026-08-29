@@ -108,5 +108,50 @@ namespace DialogAutomation.Tests
             // A zero handle is never a valid window, so "closed" is immediate.
             Assert.True(_dialog.WaitForDialogToClose(IntPtr.Zero, timeoutMs: 10, pollIntervalMs: 10));
         }
+
+        // --- FindAllDialogs (new): empty pattern matches nothing without touching Win32 ---
+
+        [Fact]
+        public void FindAllDialogs_NullOrEmptyPattern_ReturnsEmptyList()
+        {
+            Assert.Empty(_dialog.FindAllDialogs(null));
+            Assert.Empty(_dialog.FindAllDialogs("", exactMatch: false));
+        }
+
+        // --- WaitForDialog (new exactMatch param): empty pattern returns false immediately ---
+
+        [Fact]
+        public void WaitForDialog_NullOrEmptyPattern_ReturnsFalseAndZeroHandle()
+        {
+            // timeoutMs: 0 makes the first timeout check fire immediately, so no Win32
+            // call is made and the test runs on any OS.
+            Assert.False(_dialog.WaitForDialog(null, timeoutMs: 0, pollIntervalMs: 10, out IntPtr hWnd));
+            Assert.Equal(IntPtr.Zero, hWnd);
+
+            Assert.False(_dialog.WaitForDialog("", timeoutMs: 0, pollIntervalMs: 10, out hWnd, exactMatch: true));
+            Assert.Equal(IntPtr.Zero, hWnd);
+        }
+
+        // --- ClickDialogButtonByText (new wait params): empty button text reports via message ---
+
+        [Fact]
+        public void ClickDialogButtonByText_NullOrEmptyButtonText_ReturnsFalseWithMessage()
+        {
+            Assert.False(_dialog.ClickDialogButtonByText(IntPtr.Zero, null, out string message));
+            Assert.False(string.IsNullOrEmpty(message));
+
+            Assert.False(_dialog.ClickDialogButtonByText(IntPtr.Zero, "", out message, exactMatch: false));
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- HighlightControl (new GDI failure handling): invalid handle reports failure ---
+
+        [Fact]
+        public void HighlightControl_InvalidHandle_ReturnsFalse()
+        {
+            if (!OperatingSystem.IsWindows()) return;
+
+            Assert.False(_dialog.HighlightControl(IntPtr.Zero));
+        }
     }
 }
