@@ -277,8 +277,11 @@ exception` condition.
   afterward; nonexistent-executable case → `false` + message; non-default
   `outputEncoding` case — a child writing UTF-8 decoded with
   `Encoding.UTF8` vs garbled under the default; a chatty child vs the
-  capture cap → `result.OutputTruncated = true`. Most of these already have
-  xunit coverage in `src/commandlineutils/CommandLineUtils.Tests` —
+  capture cap → `result.OutputTruncated = true`, and a single oversized
+  newline-free line → truncated rather than blowing past the cap; a
+  null-key `environmentVariables` entry → `false` + message, never throws.
+  Most of these already have xunit coverage in
+  `src/commandlineutils/CommandLineUtils.Tests` —
   `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`)
 - `RunShellCommand` (happy path using a shell built-in like `dir`/`echo`;
   same timeout and nonexistent-executable cases as `Run`; embedded-quote
@@ -301,7 +304,8 @@ exception` condition.
   slow elevated command — note it may report `timedOut = true` while leaving
   the process running if the test session itself isn't elevated, since a
   non-elevated caller can't always terminate an elevated child; nonexistent
-  executable/cancelled UAC prompt → `false` + message)
+  executable/cancelled UAC prompt → `false` + message; a relative `fileName`
+  → `false` + message, rejected before any UAC prompt)
 - `StartFireAndForget` (assert the call returns quickly, `true`, and the
   `out int processId` corresponds to a running process, via
   `WindowUtils.FindWindowsByProcessId` or a direct process check; nonexistent

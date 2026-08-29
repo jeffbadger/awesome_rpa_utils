@@ -4,10 +4,12 @@
 `out int exitCode`, `out bool timedOut`, and `out string message` — never
 throws, including for a missing executable or a cancelled UAC prompt.
 
-Always pass an **absolute** `fileName` (e.g. `@"C:\tools\setup.exe"`, not
-`"setup.exe"`): a bare or relative name is resolved through PATH and the working
-directory before the UAC prompt, and that resolution runs with admin rights —
-a planted executable earlier in PATH would be the one that gets elevated.
+Only an **absolute** `fileName` is accepted (e.g. `@"C:\tools\setup.exe"`, not
+`"setup.exe"`): a bare or relative name would be resolved through PATH and the
+working directory before the UAC prompt, and that resolution would run with
+admin rights — a planted executable earlier in PATH would be the one that gets
+elevated. `RunElevated` rejects a non-absolute `fileName` with a `message`
+rather than resolving it.
 
 ## Run an installer that requires admin rights
 
