@@ -145,18 +145,29 @@ genuine timeout case (`false` with `message == null`).
 
 ### WindowUtils (needs Setup: harness app + one child window)
 
+`GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow`,
+`CloseWindow`, `ActivateWindow`, and `SetAlwaysOnTop` return `bool` with an
+`out string message` and never throw — for these, replace Phase 2's
+"exception condition on the invalid-input case" with an outcome condition
+asserting `false` plus a non-null `message` on the invalid-input case (an
+invalid handle, negative width/height), instead of an `Automation exception`
+condition.
+
 - `GetTopLevelWindows`, `FindWindowByTitle` (exact/substring/not-found),
   `FindWindowByClass`, `FindWindowsByProcessId`, `GetForegroundWindow`
 - `GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow` (assert
-  bounds before/after)
+  bounds before/after; invalid handle/negative dimensions → `false` + message)
 - `GetWindowTitle`, `GetWindowClassName`, `GetWindowProcessId`,
   `IsWindowVisible`, `IsWindowResponding`
 - `SetWindowState` (Minimize/Maximize/Restore/Hide/Normal — assert via
   `IsWindowVisible`/bounds)
-- `CloseWindow` (assert via `WaitForWindowToClose`)
+- `CloseWindow` (assert via `WaitForWindowToClose`; invalid handle → `false` +
+  message)
 - `ActivateWindow` (assert `GetForegroundWindow` matches; note the
-  foreground-lock caveat — may need the harness to not be minimized)
-- `SetAlwaysOnTop` (hard to assert programmatically — visual/manual)
+  foreground-lock caveat — may need the harness to not be minimized; invalid
+  handle → `false` + message)
+- `SetAlwaysOnTop` (hard to assert programmatically — visual/manual; invalid
+  handle → `false` + message)
 - `WaitForWindow`, `WaitForWindowToClose`, `WaitForWindowActive` (both a
   within-timeout and a timeout-exceeded case)
 - `GetChildWindows`, `FindChildWindow`
