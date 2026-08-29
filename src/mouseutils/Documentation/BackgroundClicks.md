@@ -3,6 +3,10 @@
 Posting click messages directly to a window handle without moving the real
 cursor or stealing focus — the window can even be covered by other windows.
 
+Every method here returns `bool` (success) with an `out string message` explaining
+why on failure — none of them throw. The examples below discard `message` via
+`out _` where the failure reason isn't needed.
+
 ## `ClickWindow(IntPtr hWnd, MouseButton button)`
 
 **Scenario:** A monitoring bot needs to click a "Refresh" button in a
@@ -11,7 +15,7 @@ disturbing whatever the operator is actively working on in the foreground.
 
 ```csharp
 IntPtr diagnosticsWindow = FindWindowByTitle("Diagnostics Console");
-mouse.ClickWindow(diagnosticsWindow, MouseButton.Left); // clicks its center point
+mouse.ClickWindow(diagnosticsWindow, MouseButton.Left, out _); // clicks its center point
 ```
 
 ## `ClickWindowAtPoint(IntPtr hWnd, int screenX, int screenY, MouseButton button)`
@@ -22,7 +26,7 @@ window is currently obscured behind other windows, so a real cursor click
 isn't reliable.
 
 ```csharp
-mouse.ClickWindowAtPoint(hWnd, screenX: 1200, screenY: 640, MouseButton.Left);
+mouse.ClickWindowAtPoint(hWnd, screenX: 1200, screenY: 640, MouseButton.Left, out _);
 ```
 
 ## `ClickWindowAtClientPoint(IntPtr hWnd, int clientX, int clientY, MouseButton button)`
@@ -33,7 +37,7 @@ way to target a control that a background service manages, since it works
 regardless of where the window currently sits on screen.
 
 ```csharp
-mouse.ClickWindowAtClientPoint(hWnd, clientX: 84, clientY: 212, MouseButton.Left);
+mouse.ClickWindowAtClientPoint(hWnd, clientX: 84, clientY: 212, MouseButton.Left, out _);
 ```
 
 ## `DoubleClickWindowAtClientPoint(IntPtr hWnd, int clientX, int clientY)`
@@ -44,7 +48,16 @@ would interrupt the operator's current task) by posting a full double-click
 message sequence to it directly.
 
 ```csharp
-mouse.DoubleClickWindowAtClientPoint(fileManagerHandle, clientX: 120, clientY: 340);
+mouse.DoubleClickWindowAtClientPoint(fileManagerHandle, clientX: 120, clientY: 340, out _);
+```
+
+## Checking why a background click failed
+
+```csharp
+if (!mouse.ClickWindow(diagnosticsWindow, MouseButton.Left, out string message))
+{
+    Logger.Warn($"Background click failed: {message}");
+}
 ```
 
 > These methods are blocked by UIPI against windows running at a higher

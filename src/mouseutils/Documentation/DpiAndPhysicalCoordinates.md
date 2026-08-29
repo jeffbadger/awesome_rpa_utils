@@ -3,6 +3,10 @@
 Working correctly on high-DPI monitors, where a process's logical coordinates
 can be scaled relative to true hardware pixels.
 
+`GetPhysicalCursorX`/`GetPhysicalCursorY` return `bool` (success) with an
+`out int` coordinate and `out string message` — neither throws.
+`IsProcessDpiAware` is unchanged (it never accepted a failure mode).
+
 ## `GetPhysicalCursorX()` / `GetPhysicalCursorY()`
 
 **Scenario:** The automation runs on a 200%-scaled 4K monitor, but the process
@@ -12,8 +16,8 @@ reports. The automation uses the physical variants to correlate with a
 screenshot-based OCR result.
 
 ```csharp
-int physicalX = mouse.GetPhysicalCursorX();
-int physicalY = mouse.GetPhysicalCursorY();
+mouse.GetPhysicalCursorX(out int physicalX, out _);
+mouse.GetPhysicalCursorY(out int physicalY, out _);
 CorrelateWithScreenshotCoordinates(physicalX, physicalY);
 ```
 
