@@ -163,15 +163,27 @@ genuine timeout case (`false` with `message == null`).
 
 ### OcrUtils (needs Setup: a fixed test image file with known text, plus a screen region showing known text — e.g. the harness's own label)
 
+All methods here except `GetAvailableLanguages` return `bool` with an
+`out string message` and never throw — for these, replace Phase 2's
+"exception condition on the invalid-input case" with an outcome condition
+asserting `false` plus a non-null `message` on the invalid-input case (bad
+dimensions, a missing image file, a missing OCR language pack), instead of an
+`Automation exception` condition.
+
 - `GetTextFromRegion`, `GetTextFromImageFile` (assert exact/substring
-  recognized text against a fixture image checked into the test project)
+  recognized text against a fixture image checked into the test project; bad
+  dimensions/missing file → `false` + message)
 - `GetStructuredTextFromRegion` (assert line/word count and bounding-rect
   sanity — non-empty, within the requested region)
-- `FindTextLocation` (found and not-found cases)
+- `FindTextLocation` (found case → `true` + populated `location`; not-found
+  case → `false` + `message == null`; a forced real-failure case (e.g. bad
+  dimensions) → `false` + non-null `message`, to verify the two `false`
+  outcomes are distinguishable)
 - `GetAvailableLanguages` (assert non-empty on the CI/build machine — flag as
   an environment dependency, see Phase 4)
 - `WaitForTextToAppear` (found-in-time and timeout cases — pair with a Setup
-  step that renders the text after a delay)
+  step that renders the text after a delay; same not-found-vs-real-failure
+  distinction as `FindTextLocation`)
 
 ### ScreenCaptureUtils (some cases need no live screen at all — see Phase 3)
 

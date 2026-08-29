@@ -43,15 +43,15 @@ internal screen capture, though, so it has no project reference to either.
 
 | Method | Description |
 |---|---|
-| `string GetTextFromRegion(int left, int top, int width, int height, string languageTag = null)` | Captures a screen region and returns its recognized text. |
-| `string GetTextFromImageFile(string filePath, string languageTag = null)` | Loads an image file and returns its recognized text. |
+| `bool GetTextFromRegion(int left, int top, int width, int height, out string text, out string message, string languageTag = null)` | Captures a screen region and returns its recognized text. Returns True on success; never throws. |
+| `bool GetTextFromImageFile(string filePath, out string text, out string message, string languageTag = null)` | Loads an image file and returns its recognized text. Returns True on success; never throws. |
 
 ### Structured Results
 
 | Method | Description |
 |---|---|
-| `OcrResult GetStructuredTextFromRegion(int left, int top, int width, int height, string languageTag = null)` | Captures a screen region and returns its recognized text as lines/words with screen-space bounding rectangles. |
-| `Rectangle FindTextLocation(string searchText, int left, int top, int width, int height)` | Searches a region for matching text and returns its screen-space bounding rectangle, or `Rectangle.Empty` if not found. |
+| `bool GetStructuredTextFromRegion(int left, int top, int width, int height, out OcrResult result, out string message, string languageTag = null)` | Captures a screen region and returns its recognized text as lines/words with screen-space bounding rectangles. Returns True on success; never throws. |
+| `bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)` | Searches a region for matching text and returns its screen-space bounding rectangle. Returns True if found; `location` is `Rectangle.Empty` both when not found and on a real failure — check `message` to tell them apart. Never throws. |
 
 ### Language
 
@@ -63,15 +63,21 @@ internal screen capture, though, so it has no project reference to either.
 
 | Method | Description |
 |---|---|
-| `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs)` | Polls a screen region until it contains matching text, or the timeout elapses. |
+| `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains matching text, or the timeout elapses. `message` is only set if a real failure aborted the poll early. Never throws. |
 
 ## Notes & Caveats
 
+- **Every method that could previously throw now returns `bool` with an `out string message`**
+  instead — bad dimensions, a missing image file, and a missing OCR language pack are all
+  reported this way, with `message` set to a human-readable reason whenever the method
+  returns `false`. Only `GetAvailableLanguages` (never able to fail) is unchanged.
+- **`FindTextLocation`/`WaitForTextToAppear`** overload the meaning of a `false` return: it
+  covers both a normal "not found"/"timed out" outcome (`message == null`) and a real failure
+  that aborted the search/poll early (`message` set) — check `message` to tell them apart.
 - **Recognition accuracy depends on an installed OCR language pack** for the requested
   language (or the user's profile languages, if none is specified) — install one via
-  Windows Settings > Time & Language > Language & region. A missing pack throws
-  `InvalidOperationException` naming the missing language rather than silently
-  returning empty results.
+  Windows Settings > Time & Language > Language & region. A missing pack is reported via
+  `message` naming the missing language, rather than silently returning empty results.
 - **Accuracy also depends on legibility**: very small text, low-contrast text, and
   unusual fonts recognize less reliably than typical UI text at 100% DPI scaling.
 - **`FindTextLocation`** does a case-insensitive substring search, preferring a whole-line
@@ -81,7 +87,7 @@ internal screen capture, though, so it has no project reference to either.
   `left`/`top` offset is already applied by `GetStructuredTextFromRegion`/`FindTextLocation`) —
   there is currently no structured/positioned-result method for image-file input;
   `GetTextFromImageFile` returns plain text only, with no bounding rectangles.
-- **`GetTextFromImageFile`** throws `FileNotFoundException` (not a generic error) if the
+- **`GetTextFromImageFile`** reports `false` with a message (not a thrown exception) if the
   given path doesn't exist, and reads the file into memory up front rather than holding it
   open, so the source file isn't locked during the OCR pass.
 - **This component captures the screen itself** (not a dependency on ScreenCaptureUtils),
