@@ -80,7 +80,7 @@ namespace ScreenCaptureAutomation
         /// <summary>
         /// Captures the entire virtual screen (all monitors) to an image file.
         /// </summary>
-        /// <param name="filePath">Destination file path. The format is inferred from the extension (.png, .jpg/.jpeg, .bmp, .gif); unrecognized extensions are saved as PNG.</param>
+        /// <param name="filePath">Destination file path. The format is inferred from the extension (.png, .jpg/.jpeg, .bmp, .gif, .tif/.tiff); unrecognized extensions are saved as PNG.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> if <paramref name="filePath"/> is null, empty, or whitespace. Never throws.</returns>
         [Category("Capture - Core")]
@@ -151,26 +151,37 @@ namespace ScreenCaptureAutomation
                 return false;
             }
 
-            using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+            try
             {
-                using (Graphics g = Graphics.FromImage(bmp))
+                using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
                 {
-                    IntPtr hdc = g.GetHdc();
-                    try
+                    using (Graphics g = Graphics.FromImage(bmp))
                     {
-                        if (!PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT))
+                        IntPtr hdc = g.GetHdc();
+                        try
                         {
-                            message = new Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow failed.").Message;
-                            return false;
+                            if (!PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT))
+                            {
+                                message = new Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow failed.").Message;
+                                return false;
+                            }
+                        }
+                        finally
+                        {
+                            g.ReleaseHdc(hdc);
                         }
                     }
-                    finally
-                    {
-                        g.ReleaseHdc(hdc);
-                    }
-                }
 
-                return TrySaveBitmap(bmp, filePath, out message);
+                    return TrySaveBitmap(bmp, filePath, out message);
+                }
+            }
+            catch (Exception ex)
+            {
+                // new Bitmap / Graphics.FromImage / GetHdc can throw (OOM for a huge
+                // window rect, GDI resource exhaustion) - surfaces as false + message
+                // instead of an exception (never-throws contract).
+                message = $"Window capture failed: {ex.Message}";
+                return false;
             }
         }
 
@@ -310,7 +321,12 @@ namespace ScreenCaptureAutomation
             string fileName = $"{_evidenceCounter:D3}_{SanitizeFileNameSegment(stepName)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
             string candidatePath = Path.Combine(folderPath, fileName);
             if (!CaptureScreenToFile(candidatePath, out message))
+            {
+                // Roll the counter back so a failed capture doesn't leave a gap in
+                // the evidence sequence (001, 003, ...).
+                Interlocked.Decrement(ref _evidenceCounter);
                 return false;
+            }
 
             fullPath = candidatePath;
             return true;
@@ -358,7 +374,10 @@ namespace ScreenCaptureAutomation
                             for (int x = 0; x < 8; x++)
                             {
                                 Color c = small.GetPixel(x, y);
-                                luminance[i++] = (c.R + c.G + c.B) / 3;
+                                // Weighted luma (Rec. 601) rather than a plain average -
+                                // green dominates perceived brightness, so a plain average
+                                // under-weights it and over-weights blue.
+                                luminance[i++] = (long)(0.299 * c.R + 0.587 * c.G + 0.114 * c.B);
                             }
                         }
 
@@ -400,10 +419,20 @@ namespace ScreenCaptureAutomation
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
         /// <param name="message"><c>null</c> if the poll completed (changed or genuinely timed out); otherwise a human-readable reason a real failure (bad dimensions) aborted the poll early (in which case this method also returns <c>false</c>).</param>
         /// <returns><c>true</c> if the region changed before the timeout; <c>false</c> if it timed out, or if a real failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <remarks>
+        /// The actual wait can exceed <paramref name="timeoutMs"/> by up to one poll
+        /// interval plus the time of a single capture+hash pass, because the timeout
+        /// is checked between passes rather than pre-empting a pass in progress.
+        /// </remarks>
         [Category("Capture - Verification")]
         [Description("Polls a screen region until its appearance changes, or the timeout elapses. Returns True if it changed in time; never throws.")]
         public bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)
         {
+            if (timeoutMs < 0)
+            {
+                message = "Timeout must not be negative.";
+                return false;
+            }
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             if (!GetRegionHash(left, top, width, height, out string baseline, out message))
@@ -453,6 +482,12 @@ namespace ScreenCaptureAutomation
         {
             actualDifferencePercent = 0;
 
+            if (double.IsNaN(tolerancePercent) || tolerancePercent < 0 || tolerancePercent > 100)
+            {
+                message = "Tolerance must be a percentage between 0 and 100.";
+                return false;
+            }
+
             if (!TryLoadBitmapWithoutLockingFile(baselineImagePath, out Bitmap baseline, out message))
                 return false;
 
@@ -469,7 +504,17 @@ namespace ScreenCaptureAutomation
 
                 using (current)
                 {
-                    actualDifferencePercent = ComputeDifferencePercent(baseline, current);
+                    try
+                    {
+                        // LockBits/Marshal.Copy can throw (OOM, GDI failure) - surfaces
+                        // as false + message instead of an exception (never-throws contract).
+                        actualDifferencePercent = ComputeDifferencePercent(baseline, current);
+                    }
+                    catch (Exception ex)
+                    {
+                        message = "Region comparison failed: " + ex.Message;
+                        return false;
+                    }
                     message = null;
                     return actualDifferencePercent <= tolerancePercent;
                 }
@@ -612,6 +657,9 @@ namespace ScreenCaptureAutomation
                 return false;
             }
 
+            if (!TryEnsureRegionOnScreen(left, top, width, height, out message))
+                return false;
+
             try
             {
                 Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
@@ -631,6 +679,30 @@ namespace ScreenCaptureAutomation
                 message = $"Screen region capture failed at ({left},{top}) {width}x{height}: {ex.Message}";
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Rejects capture regions that lie entirely outside the virtual screen (all
+        /// monitors). A partially overlapping region is allowed - Windows copies the
+        /// on-screen part and leaves the off-screen part black - but a region entirely
+        /// off-screen would capture a solid black rectangle, so it surfaces as
+        /// false + message instead.
+        /// </summary>
+        private static bool TryEnsureRegionOnScreen(int left, int top, int width, int height, out string message)
+        {
+            Rectangle vs = System.Windows.Forms.SystemInformation.VirtualScreen;
+            long right = (long)left + width;
+            long bottom = (long)top + height;
+
+            if (right <= vs.Left || left >= vs.Right || bottom <= vs.Top || top >= vs.Bottom)
+            {
+                message = $"Capture region ({left},{top}) {width}x{height} lies entirely outside the " +
+                          $"virtual screen ({vs.Left},{vs.Top}) {vs.Width}x{vs.Height}; nothing can be captured there.";
+                return false;
+            }
+
+            message = null;
+            return true;
         }
 
         private static bool TrySaveBitmap(Bitmap bmp, string filePath, out string message)
@@ -672,6 +744,9 @@ namespace ScreenCaptureAutomation
                     return ImageFormat.Bmp;
                 case ".gif":
                     return ImageFormat.Gif;
+                case ".tif":
+                case ".tiff":
+                    return ImageFormat.Tiff;
                 case ".png":
                 default:
                     return ImageFormat.Png;
@@ -687,7 +762,10 @@ namespace ScreenCaptureAutomation
                 if (chars[i] == ' ' || Array.IndexOf(invalid, chars[i]) >= 0)
                     chars[i] = '_';
             }
-            return new string(chars);
+            string sanitized = new string(chars);
+            // Cap the length so a long step name can't push the evidence path past
+            // the Windows MAX_PATH limit (the counter and timestamp add ~24 chars).
+            return sanitized.Length > 60 ? sanitized.Substring(0, 60) : sanitized;
         }
 
         /// <summary>
@@ -708,12 +786,13 @@ namespace ScreenCaptureAutomation
             {
                 byte[] bytes = File.ReadAllBytes(filePath);
                 using (MemoryStream ms = new MemoryStream(bytes))
-                using (Bitmap decoded = new Bitmap(ms))
                 {
-                    // new Bitmap can throw ArgumentException for a file that exists
-                    // but is corrupt/not an image - surfaces as false + message
-                    // instead of an exception (never-throws contract).
-                    bitmap = new Bitmap(decoded);
+                    // new Bitmap(Stream) fully decodes raster formats (PNG/JPEG/BMP/GIF)
+                    // into memory, so disposing the stream here is safe for the inputs
+                    // this component supports - no second copy is needed. It can throw
+                    // ArgumentException for a file that exists but is corrupt/not an
+                    // image - surfaces as false + message (never-throws contract).
+                    bitmap = new Bitmap(ms);
                 }
                 message = null;
                 return true;
@@ -746,11 +825,12 @@ namespace ScreenCaptureAutomation
 
             try
             {
-                int byteCount = Math.Abs(dataA.Stride) * a.Height;
+                int stride = Math.Abs(dataA.Stride);
+                int byteCount = stride * a.Height;
                 byte[] bytesA = new byte[byteCount];
                 byte[] bytesB = new byte[byteCount];
-                Marshal.Copy(dataA.Scan0, bytesA, 0, byteCount);
-                Marshal.Copy(dataB.Scan0, bytesB, 0, byteCount);
+                CopyPixels(dataA, bytesA, stride, a.Height);
+                CopyPixels(dataB, bytesB, stride, b.Height);
 
                 long differingPixels = 0;
                 long totalPixels = (long)a.Width * a.Height;
@@ -770,6 +850,25 @@ namespace ScreenCaptureAutomation
             {
                 a.UnlockBits(dataA);
                 b.UnlockBits(dataB);
+            }
+        }
+
+        /// <summary>
+        /// Copies a locked bitmap's pixels into <paramref name="buffer"/> in top-down
+        /// row order, flipping bottom-up (negative-stride) bitmaps so both images are
+        /// compared in the same orientation. Both bitmaps are locked as 32bpp with the
+        /// same dimensions, so their strides are identical.
+        /// </summary>
+        private static void CopyPixels(BitmapData data, byte[] buffer, int stride, int height)
+        {
+            if (data.Stride > 0)
+            {
+                Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
+            }
+            else
+            {
+                for (int y = 0; y < height; y++)
+                    Marshal.Copy(data.Scan0 + (height - 1 - y) * data.Stride, buffer, y * stride, stride);
             }
         }
 

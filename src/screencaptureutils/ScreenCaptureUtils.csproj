@@ -16,4 +16,9 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="ScreenCaptureUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>
