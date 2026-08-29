@@ -167,7 +167,8 @@ asserting `false` plus a non-null `message` on the invalid-input case (an
 invalid handle, negative width/height), instead of an `Automation exception`
 condition.
 
-- `GetTopLevelWindows`, `FindWindowByTitle` (exact/substring/not-found),
+- `GetTopLevelWindows`, `FindWindowByTitle` (exact/substring/not-found; a
+  null/empty title returns `IntPtr.Zero` rather than throwing),
   `FindWindowByClass`, `FindWindowsByProcessId`, `GetForegroundWindow`
 - `GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow` (assert
   bounds before/after; invalid handle/negative dimensions → `false` + message)
@@ -184,7 +185,8 @@ condition.
   handle → `false` + message)
 - `WaitForWindow`, `WaitForWindowToClose`, `WaitForWindowActive` (both a
   within-timeout and a timeout-exceeded case)
-- `GetChildWindows`, `FindChildWindow`
+- `GetChildWindows`, `FindChildWindow` (both exact and `exactMatch: false`
+  substring matching; null/empty filters skip that axis)
 
 ### OcrUtils (needs Setup: a fixed test image file with known text, plus a screen region showing known text — e.g. the harness's own label)
 

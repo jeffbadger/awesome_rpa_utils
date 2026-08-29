@@ -12,4 +12,9 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="WindowUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>
