@@ -1,9 +1,13 @@
 # Elevated
 
+`RunElevated` returns `bool` (whether the process ran at all) with an
+`out int exitCode`, `out bool timedOut`, and `out string message` — never
+throws, including for a missing executable or a cancelled UAC prompt.
+
 ## Run an installer that requires admin rights
 
 ```csharp
-int exitCode = cmd.RunElevated("setup.exe", out bool timedOut, "/quiet", timeoutMs: 300000);
+cmd.RunElevated("setup.exe", out int exitCode, out bool timedOut, out string message, "/quiet", timeoutMs: 300000);
 if (timedOut)
 {
     // setup.exe (and any child processes) were killed after 300 seconds.
@@ -22,6 +26,15 @@ Since Windows won't let you redirect output for an elevated process, have
 the elevated command write to a file and read that file back afterward:
 
 ```csharp
-cmd.RunElevated("cmd.exe", out _, "/c whoami /priv > C:\\temp\\priv.txt");
+cmd.RunElevated("cmd.exe", out _, out _, out _, "/c whoami /priv > C:\\temp\\priv.txt");
 string output = System.IO.File.ReadAllText(@"C:\temp\priv.txt");
+```
+
+## Checking why an elevated run failed
+
+```csharp
+if (!cmd.RunElevated("setup.exe", out int exitCode, out bool timedOut, out string message))
+{
+    Console.WriteLine($"Could not run elevated: {message}");
+}
 ```

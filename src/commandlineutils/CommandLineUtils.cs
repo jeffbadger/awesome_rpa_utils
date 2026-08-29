@@ -56,16 +56,26 @@ namespace CommandLineAutomation
         /// <param name="arguments">Command-line arguments, or <c>null</c> for none.</param>
         /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
+        /// <param name="result">The result of running the process (exit code, captured output, timeout flag), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the process could not be run.</param>
         /// <param name="environmentVariables">Environment variables to add/override for the child process, or <c>null</c> for none.</param>
-        /// <exception cref="ArgumentException"><paramref name="fileName"/> is null, empty, or whitespace.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than -1.</exception>
-        /// <exception cref="Win32Exception">The executable could not be found or started.</exception>
+        /// <returns><c>true</c> if the process ran (regardless of its exit code or whether it timed out); <c>false</c> if it could not be run at all. Never throws.</returns>
         [Category("CommandLine - Run")]
-        [Description("Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr.")]
-        public CommandResult Run(string fileName, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null)
+        [Description("Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr. Returns True on success; never throws.")]
+        public bool Run(string fileName, out CommandResult result, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null)
         {
+            result = null;
+
             if (string.IsNullOrWhiteSpace(fileName))
-                throw new ArgumentException("A file name is required.", nameof(fileName));
+            {
+                message = "A file name is required.";
+                return false;
+            }
+            if (timeoutMs < -1)
+            {
+                message = "timeoutMs must be -1 (infinite) or non-negative.";
+                return false;
+            }
 
             var psi = new ProcessStartInfo
             {
@@ -84,7 +94,17 @@ namespace CommandLineAutomation
                     psi.Environment[pair.Key] = pair.Value;
             }
 
-            return RunAndCapture(psi, timeoutMs);
+            try
+            {
+                result = RunAndCapture(psi, timeoutMs);
+                message = null;
+                return true;
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
         }
 
         /// <summary>
@@ -94,17 +114,27 @@ namespace CommandLineAutomation
         /// execute directly.
         /// </summary>
         /// <param name="command">The shell command line to run.</param>
+        /// <param name="result">The result of running the process (exit code, captured output, timeout flag), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the command could not be run.</param>
         /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
-        /// <exception cref="ArgumentException"><paramref name="command"/> is null, empty, or whitespace.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than -1.</exception>
-        /// <exception cref="Win32Exception"><c>cmd.exe</c> could not be found or started.</exception>
+        /// <returns><c>true</c> if the command ran (regardless of its exit code or whether it timed out); <c>false</c> if it could not be run at all. Never throws.</returns>
         [Category("CommandLine - Run")]
-        [Description("Runs a command through cmd.exe /c, waits for it to exit, and captures its exit code, stdout, and stderr.")]
-        public CommandResult RunShellCommand(string command, string workingDirectory = null, int timeoutMs = -1)
+        [Description("Runs a command through cmd.exe /c, waits for it to exit, and captures its exit code, stdout, and stderr. Returns True on success; never throws.")]
+        public bool RunShellCommand(string command, out CommandResult result, out string message, string workingDirectory = null, int timeoutMs = -1)
         {
+            result = null;
+
             if (string.IsNullOrWhiteSpace(command))
-                throw new ArgumentException("A command is required.", nameof(command));
+            {
+                message = "A command is required.";
+                return false;
+            }
+            if (timeoutMs < -1)
+            {
+                message = "timeoutMs must be -1 (infinite) or non-negative.";
+                return false;
+            }
 
             var psi = new ProcessStartInfo
             {
@@ -117,7 +147,17 @@ namespace CommandLineAutomation
                 CreateNoWindow = true
             };
 
-            return RunAndCapture(psi, timeoutMs);
+            try
+            {
+                result = RunAndCapture(psi, timeoutMs);
+                message = null;
+                return true;
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
         }
 
         #endregion
@@ -131,23 +171,30 @@ namespace CommandLineAutomation
         /// available.
         /// </summary>
         /// <param name="fileName">Path to the executable to run.</param>
-        /// <param name="timedOut">Set to <c>true</c> if the process was killed for exceeding <paramref name="timeoutMs"/>, or if it could not be confirmed to have exited within a bounded grace period after an attempted kill; otherwise <c>false</c>. When <c>true</c>, the returned exit code is meaningless - use this flag, not a sentinel exit-code value, to detect a timeout (a real process can legitimately exit with any code, including <c>-1</c>). If the calling process is not itself running elevated, it may be unable to terminate the elevated child on timeout (Windows denies a lower-integrity-level process the rights to terminate a higher-integrity-level one) - in that case the elevated process may continue running in the background after this method returns with <paramref name="timedOut"/> <c>true</c>.</param>
+        /// <param name="exitCode">The process's exit code, or an unspecified value if <paramref name="timedOut"/> is <c>true</c>. Meaningless if this method returns <c>false</c>.</param>
+        /// <param name="timedOut">Set to <c>true</c> if the process was killed for exceeding <paramref name="timeoutMs"/>, or if it could not be confirmed to have exited within a bounded grace period after an attempted kill; otherwise <c>false</c>. When <c>true</c>, <paramref name="exitCode"/> is meaningless - use this flag, not a sentinel exit-code value, to detect a timeout (a real process can legitimately exit with any code, including <c>-1</c>). If the calling process is not itself running elevated, it may be unable to terminate the elevated child on timeout (Windows denies a lower-integrity-level process the rights to terminate a higher-integrity-level one) - in that case the elevated process may continue running in the background after this method returns with <paramref name="timedOut"/> <c>true</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the process could not be run.</param>
         /// <param name="arguments">Command-line arguments, or <c>null</c> for none.</param>
         /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
-        /// <returns>The process's exit code, or an unspecified value if <paramref name="timedOut"/> is <c>true</c>.</returns>
-        /// <exception cref="ArgumentException"><paramref name="fileName"/> is null, empty, or whitespace.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMs"/> is less than <c>-1</c>.</exception>
-        /// <exception cref="InvalidOperationException"><c>Process.Start</c> returned null (the shell reused an existing process instance instead of starting a new one).</exception>
-        /// <exception cref="Win32Exception">The executable could not be started, or the UAC prompt was cancelled by the user.</exception>
+        /// <returns><c>true</c> if the process ran (regardless of its exit code or whether it timed out); <c>false</c> if it could not be run at all (bad arguments, executable not found, <c>Process.Start</c> returned null, or the UAC prompt was cancelled). Never throws.</returns>
         [Category("CommandLine - Elevated")]
-        [Description("Runs an executable elevated (UAC prompt) and waits for it to exit. Returns only the exit code - output cannot be captured for an elevated process.")]
-        public int RunElevated(string fileName, out bool timedOut, string arguments = null, string workingDirectory = null, int timeoutMs = -1)
+        [Description("Runs an executable elevated (UAC prompt) and waits for it to exit. Returns True on success; never throws. Output cannot be captured for an elevated process.")]
+        public bool RunElevated(string fileName, out int exitCode, out bool timedOut, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1)
         {
+            exitCode = 0;
+            timedOut = false;
+
             if (string.IsNullOrWhiteSpace(fileName))
-                throw new ArgumentException("A file name is required.", nameof(fileName));
+            {
+                message = "A file name is required.";
+                return false;
+            }
             if (timeoutMs < -1)
-                throw new ArgumentOutOfRangeException(nameof(timeoutMs), timeoutMs, "timeoutMs must be -1 (infinite) or non-negative.");
+            {
+                message = "timeoutMs must be -1 (infinite) or non-negative.";
+                return false;
+            }
 
             var psi = new ProcessStartInfo
             {
@@ -158,16 +205,31 @@ namespace CommandLineAutomation
                 Verb = "runas"
             };
 
-            using (var process = Process.Start(psi))
+            Process process;
+            try
+            {
+                process = Process.Start(psi);
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
+            }
+
+            using (process)
             {
                 if (process == null)
-                    throw new InvalidOperationException($"Process.Start returned null for '{fileName}'.");
+                {
+                    message = $"Process.Start returned null for '{fileName}'.";
+                    return false;
+                }
 
                 bool exited = process.WaitForExit(timeoutMs);
                 if (exited)
                 {
-                    timedOut = false;
-                    return process.ExitCode;
+                    exitCode = process.ExitCode;
+                    message = null;
+                    return true;
                 }
 
                 // Attempt to kill it. This can fail either because it already exited
@@ -200,15 +262,18 @@ namespace CommandLineAutomation
                     // exited anyway (already gone before the kill, or finished on its
                     // own within the grace window despite the kill being denied) - not
                     // a timeout from the caller's perspective.
-                    timedOut = false;
-                    return process.ExitCode;
+                    exitCode = process.ExitCode;
+                    message = null;
+                    return true;
                 }
 
                 // Either we successfully killed it (a real timeout), or we couldn't
                 // kill it AND it's still running (also a real timeout, from the
                 // caller's perspective, even though we couldn't confirm termination).
                 timedOut = true;
-                return process.HasExited ? process.ExitCode : -1;
+                exitCode = process.HasExited ? process.ExitCode : -1;
+                message = null;
+                return true;
             }
         }
 
@@ -222,17 +287,22 @@ namespace CommandLineAutomation
         /// background processes an automation doesn't need to block on.
         /// </summary>
         /// <param name="fileName">Path to the executable to run.</param>
+        /// <param name="processId">The started process's ID, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the process could not be started.</param>
         /// <param name="arguments">Command-line arguments, or <c>null</c> for none.</param>
         /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
-        /// <returns>The started process's ID.</returns>
-        /// <exception cref="ArgumentException"><paramref name="fileName"/> is null, empty, or whitespace.</exception>
-        /// <exception cref="Win32Exception">The executable could not be found or started.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if the process could not be started. Never throws.</returns>
         [Category("CommandLine - Fire and Forget")]
-        [Description("Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately.")]
-        public int StartFireAndForget(string fileName, string arguments = null, string workingDirectory = null)
+        [Description("Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately. Returns True on success; never throws.")]
+        public bool StartFireAndForget(string fileName, out int processId, out string message, string arguments = null, string workingDirectory = null)
         {
+            processId = 0;
+
             if (string.IsNullOrWhiteSpace(fileName))
-                throw new ArgumentException("A file name is required.", nameof(fileName));
+            {
+                message = "A file name is required.";
+                return false;
+            }
 
             var psi = new ProcessStartInfo
             {
@@ -242,9 +312,19 @@ namespace CommandLineAutomation
                 UseShellExecute = false
             };
 
-            using (Process process = Process.Start(psi))
+            try
             {
-                return process.Id;
+                using (Process process = Process.Start(psi))
+                {
+                    processId = process.Id;
+                    message = null;
+                    return true;
+                }
+            }
+            catch (Win32Exception ex)
+            {
+                message = ex.Message;
+                return false;
             }
         }
 
