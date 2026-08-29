@@ -41,9 +41,15 @@ namespace EventAutomation
             return true;
         }
 
-        public bool TryRemove(string id)
+        public bool TryRemove(string id, out string message)
         {
-            return _subscriptions.TryRemove(id, out _);
+            message = null;
+            if (!_subscriptions.TryRemove(id, out _))
+            {
+                message = "No subscription with id '" + id + "'.";
+                return false;
+            }
+            return true;
         }
 
         public void SetQueueLimits(int maxEvents, string overflowPolicy)
@@ -64,7 +70,7 @@ namespace EventAutomation
         public void ClearAll()
         {
             foreach (var sub in _subscriptions.Values)
-                ClearQueue(sub.Id);
+                ClearQueue(sub.Id, out _);
             _subscriptions.Clear();
         }
 
@@ -81,11 +87,15 @@ namespace EventAutomation
             }
         }
 
-        public EventData GetNextEvent(string id, int timeoutMs, out bool hasEvent)
+        public EventData GetNextEvent(string id, int timeoutMs, out bool hasEvent, out string message)
         {
             hasEvent = false;
+            message = null;
             if (!_subscriptions.TryGetValue(id, out var sub))
+            {
+                message = "No subscription with id '" + id + "'.";
                 return null;
+            }
             long deadline = Environment.TickCount64 + Math.Max(0, timeoutMs);
             lock (sub.Gate)
             {
@@ -106,10 +116,14 @@ namespace EventAutomation
             return null;
         }
 
-        public EventData[] GetNextEvents(string id, int maxCount, int drainMs)
+        public EventData[] GetNextEvents(string id, int maxCount, int drainMs, out string message)
         {
+            message = null;
             if (!_subscriptions.TryGetValue(id, out var sub))
+            {
+                message = "No subscription with id '" + id + "'.";
                 return Array.Empty<EventData>();
+            }
             var result = new List<EventData>();
             long deadline = Environment.TickCount64 + Math.Max(0, drainMs);
             while (result.Count < maxCount)
@@ -117,7 +131,7 @@ namespace EventAutomation
                 long remaining = deadline - Environment.TickCount64;
                 if (remaining <= 0)
                     break;
-                if (GetNextEvent(id, (int)Math.Min(remaining, int.MaxValue), out bool hasEvent) is EventData e)
+                if (GetNextEvent(id, (int)Math.Min(remaining, int.MaxValue), out bool hasEvent, out _) is EventData e)
                     result.Add(e);
                 else
                     break;
@@ -125,19 +139,27 @@ namespace EventAutomation
             return result.ToArray();
         }
 
-        public bool HasEvents(string id, out int count)
+        public bool HasEvents(string id, out int count, out string message)
         {
             count = 0;
+            message = null;
             if (!_subscriptions.TryGetValue(id, out var sub))
+            {
+                message = "No subscription with id '" + id + "'.";
                 return false;
+            }
             count = sub.Count;
             return true;
         }
 
-        public void ClearQueue(string id)
+        public bool ClearQueue(string id, out string message)
         {
+            message = null;
             if (!_subscriptions.TryGetValue(id, out var sub))
-                return;
+            {
+                message = "No subscription with id '" + id + "'.";
+                return false;
+            }
             lock (sub.Gate)
             {
                 while (sub.Queue.TryDequeue(out _))
@@ -145,6 +167,7 @@ namespace EventAutomation
                 }
                 sub.Count = 0;
             }
+            return true;
         }
 
         private static bool CategoriesOverlap(HashSet<EventCategory> subCats, List<EventCategory> eventCats)

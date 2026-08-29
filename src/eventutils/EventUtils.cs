@@ -12,13 +12,15 @@ namespace EventAutomation
     /// <c>SetWinEventHook</c> and exposes two consumption models over one engine:
     /// synchronous <c>WaitForX</c> calls, and background subscriptions whose
     /// events land in a per-subscription queue the robot polls with
-    /// <c>GetNextEvent</c>. All public methods are thread-safe and never throw.
+    /// <c>GetNextEvent</c>. All public methods are thread-safe and never throw:
+    /// they return <c>bool</c> and report abnormal results through an
+    /// <c>out string message</c>.
     /// </summary>
     /// <remarks>
-    /// Call <see cref="Initialize"/> then <see cref="Start(string)"/> before any
-    /// <c>WaitForX</c> or <see cref="Subscribe"/> call. Wait methods block until
-    /// a matching event or timeout; the timeout is reported through their
-    /// <c>out bool timedOut</c> parameter.
+    /// Call <see cref="Initialize(out string)"/> then <see cref="Start(string, out string)"/>
+    /// before any <c>WaitForX</c> or <see cref="Subscribe(string, string, string, out string)"/>
+    /// call. Wait methods block until a matching event or timeout; the timeout is
+    /// reported through their <c>out bool timedOut</c> parameter.
     /// </remarks>
     [Description("Watches Windows UI events (window create/show/destroy, dialogs, " +
                  "titles, states, menus) and delivers them to waiters or subscriptions. " +
@@ -56,21 +58,27 @@ namespace EventAutomation
 
         /// <summary>
         /// Starts the background hook thread (idempotent). Call before
-        /// <see cref="Start"/>. Returns True on success; never throws.
+        /// <see cref="Start(string, out string)"/>. Returns True on success;
+        /// <paramref name="message"/> is null on success and a human-readable
+        /// reason otherwise. Never throws.
         /// </summary>
-        public bool Initialize()
+        public bool Initialize(out string message)
         {
+            message = null;
             try
             {
                 if (!OperatingSystem.IsWindows())
                 {
-                    Debug.WriteLine("EventUtils.Initialize: SetWinEventHook requires Windows.");
+                    message = "SetWinEventHook requires Windows.";
                     return false;
                 }
                 lock (_gate)
                 {
                     if (_disposed)
+                    {
+                        message = "EventUtils is disposed; create a new instance.";
                         return false;
+                    }
                     if (_engine != null)
                         return true; // already initialized
                     _engine = new WinEventEngine(OnEventReceived);
@@ -80,7 +88,7 @@ namespace EventAutomation
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.Initialize failed: " + ex.Message);
+                message = "Initialize failed: " + ex.Message;
                 return false;
             }
         }
@@ -88,22 +96,28 @@ namespace EventAutomation
         /// <summary>
         /// Activates the given categories and installs the WinEvent hook, e.g.
         /// <c>"Windows,Foreground,Dialogs"</c>. Idempotent; call after
-        /// <see cref="Initialize"/>. Returns True on success; never throws.
+        /// <see cref="Initialize(out string)"/>. Returns True on success;
+        /// <paramref name="message"/> is null on success and a human-readable
+        /// reason otherwise. Never throws.
         /// </summary>
-        public bool Start(string categoriesCsv)
+        public bool Start(string categoriesCsv, out string message)
         {
+            message = null;
             try
             {
                 lock (_gate)
                 {
                     if (_disposed)
+                    {
+                        message = "EventUtils is disposed; create a new instance.";
                         return false;
-                    if (_engine == null && !Initialize())
+                    }
+                    if (_engine == null && !Initialize(out message))
                         return false;
                     var cats = ParseCategories(categoriesCsv);
                     if (cats == null || cats.Count == 0)
                     {
-                        Debug.WriteLine("EventUtils.Start: no valid categories in '" + categoriesCsv + "'.");
+                        message = "No valid categories in '" + categoriesCsv + "'.";
                         return false;
                     }
                     _activeCategories = cats;
@@ -113,7 +127,7 @@ namespace EventAutomation
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.Start failed: " + ex.Message);
+                message = "Start failed: " + ex.Message;
                 return false;
             }
         }
@@ -121,10 +135,12 @@ namespace EventAutomation
         /// <summary>
         /// Unhooks the WinEvent hook and clears the active category set. Queues
         /// are preserved so they can still be drained. Returns True on success;
-        /// never throws.
+        /// <paramref name="message"/> is null on success and a human-readable
+        /// reason otherwise. Never throws.
         /// </summary>
-        public bool Stop()
+        public bool Stop(out string message)
         {
+            message = null;
             try
             {
                 lock (_gate)
@@ -136,7 +152,7 @@ namespace EventAutomation
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.Stop failed: " + ex.Message);
+                message = "Stop failed: " + ex.Message;
                 return false;
             }
         }
@@ -144,7 +160,7 @@ namespace EventAutomation
         /// <summary>
         /// Full teardown: unhooks, stops the hook thread, clears subscriptions,
         /// waiters, and debounce state. Safe to call multiple times; a subsequent
-        /// <see cref="Initialize"/> restarts the component.
+        /// <see cref="Initialize(out string)"/> restarts the component.
         /// </summary>
         protected override void Dispose(bool disposing)
         {
@@ -179,114 +195,148 @@ namespace EventAutomation
         /// <paramref name="categoriesCsv"/> and whose fields match
         /// <paramref name="filterJson"/> are queued under
         /// <paramref name="subscriptionId"/>. A null/empty filter matches all
-        /// events; malformed filter JSON returns False (never throws).
+        /// events. Returns True on success; <paramref name="message"/> is null
+        /// on success and a human-readable reason otherwise (malformed filter
+        /// JSON, duplicate id, invalid category). Never throws.
         /// </summary>
-        public bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId)
+        public bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId, out string message)
         {
+            message = null;
             try
             {
                 if (string.IsNullOrWhiteSpace(subscriptionId))
                 {
-                    Debug.WriteLine("EventUtils.Subscribe: subscriptionId is empty.");
+                    message = "subscriptionId is empty.";
                     return false;
                 }
                 var cats = ParseCategories(categoriesCsv);
                 if (cats == null || cats.Count == 0)
                 {
-                    Debug.WriteLine("EventUtils.Subscribe: no valid categories in '" + categoriesCsv + "'.");
+                    message = "No valid categories in '" + categoriesCsv + "'.";
                     return false;
                 }
                 EventFilter filter = EventFilter.FromJson(filterJson);
                 if (!string.IsNullOrEmpty(filterJson) && filter == null)
                 {
-                    Debug.WriteLine("EventUtils.Subscribe: malformed filter JSON for '" + subscriptionId + "'.");
+                    message = "Malformed filter JSON for '" + subscriptionId + "'.";
                     return false;
                 }
                 filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
-                return _subscriptions.TryAdd(subscriptionId, cats, filter, out string message);
+                return _subscriptions.TryAdd(subscriptionId, cats, filter, out message);
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.Subscribe failed: " + ex.Message);
+                message = "Subscribe failed: " + ex.Message;
                 return false;
             }
         }
 
-        /// <summary>Removes a subscription and drops its queue. Returns True if it existed.</summary>
-        public bool Unsubscribe(string subscriptionId)
+        /// <summary>
+        /// Removes a subscription and drops its queue. Returns True if it
+        /// existed; <paramref name="message"/> is null on success and a
+        /// human-readable reason otherwise. Never throws.
+        /// </summary>
+        public bool Unsubscribe(string subscriptionId, out string message)
         {
+            message = null;
             try
             {
-                return _subscriptions.TryRemove(subscriptionId);
+                return _subscriptions.TryRemove(subscriptionId, out message);
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.Unsubscribe failed: " + ex.Message);
+                message = "Unsubscribe failed: " + ex.Message;
                 return false;
             }
         }
 
         /// <summary>
         /// Blocks up to <paramref name="timeoutMs"/> for the next queued event.
-        /// <paramref name="hasEvent"/> is True when an event was returned.
-        /// Returns null on timeout or unknown subscription; never throws.
+        /// Returns True when the call succeeded; <paramref name="hasEvent"/> is
+        /// True when <paramref name="eventData"/> holds an event (False on
+        /// timeout). <paramref name="message"/> is null on success and a
+        /// human-readable reason otherwise (e.g. unknown subscription). Never
+        /// throws.
         /// </summary>
-        public EventData GetNextEvent(string subscriptionId, int timeoutMs, out bool hasEvent)
+        public bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)
         {
+            eventData = null;
             hasEvent = false;
+            message = null;
             try
             {
-                return _subscriptions.GetNextEvent(subscriptionId, timeoutMs, out hasEvent);
+                eventData = _subscriptions.GetNextEvent(subscriptionId, timeoutMs, out hasEvent, out message);
+                return message == null; // non-null message = unknown subscription
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.GetNextEvent failed: " + ex.Message);
-                return null;
+                message = "GetNextEvent failed: " + ex.Message;
+                return false;
             }
         }
 
         /// <summary>
         /// Drains up to <paramref name="maxCount"/> queued events, waiting up to
-        /// <paramref name="drainMs"/> for the first one. Never throws.
+        /// <paramref name="drainMs"/> for the first one. Returns True on success;
+        /// <paramref name="events"/> holds the drained events (possibly empty).
+        /// <paramref name="message"/> is null on success and a human-readable
+        /// reason otherwise. Never throws.
         /// </summary>
-        public EventData[] GetNextEvents(string subscriptionId, int maxCount, int drainMs)
+        public bool GetNextEvents(string subscriptionId, int maxCount, int drainMs, out EventData[] events, out string message)
         {
+            events = Array.Empty<EventData>();
+            message = null;
             try
             {
-                return _subscriptions.GetNextEvents(subscriptionId, maxCount, drainMs);
+                events = _subscriptions.GetNextEvents(subscriptionId, maxCount, drainMs, out message);
+                return message == null; // non-null message = unknown subscription
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.GetNextEvents failed: " + ex.Message);
-                return Array.Empty<EventData>();
-            }
-        }
-
-        /// <summary>Reports whether a subscription has queued events. Returns False for an unknown id.</summary>
-        public bool HasEvents(string subscriptionId, out int count)
-        {
-            count = 0;
-            try
-            {
-                return _subscriptions.HasEvents(subscriptionId, out count);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("EventUtils.HasEvents failed: " + ex.Message);
+                message = "GetNextEvents failed: " + ex.Message;
                 return false;
             }
         }
 
-        /// <summary>Drops all queued events for a subscription.</summary>
-        public void ClearQueue(string subscriptionId)
+        /// <summary>
+        /// Reports the number of queued events for a subscription. Returns True
+        /// when the subscription exists; <paramref name="count"/> is the queued
+        /// count (0 when empty). <paramref name="message"/> is null on success
+        /// and a human-readable reason otherwise (unknown subscription). Never
+        /// throws.
+        /// </summary>
+        public bool HasEvents(string subscriptionId, out int count, out string message)
         {
+            count = 0;
+            message = null;
             try
             {
-                _subscriptions.ClearQueue(subscriptionId);
+                return _subscriptions.HasEvents(subscriptionId, out count, out message);
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.ClearQueue failed: " + ex.Message);
+                message = "HasEvents failed: " + ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Drops all queued events for a subscription. Returns True when the
+        /// subscription exists; <paramref name="message"/> is null on success
+        /// and a human-readable reason otherwise (unknown subscription). Never
+        /// throws.
+        /// </summary>
+        public bool ClearQueue(string subscriptionId, out string message)
+        {
+            message = null;
+            try
+            {
+                return _subscriptions.ClearQueue(subscriptionId, out message);
+            }
+            catch (Exception ex)
+            {
+                message = "ClearQueue failed: " + ex.Message;
+                return false;
             }
         }
 
@@ -298,79 +348,115 @@ namespace EventAutomation
         /// Sets the debounce window (ms) for an event name, e.g. "WindowShown".
         /// A second identical (hwnd, event-name) event within the window is
         /// dropped. Defaults: 150 ms for WindowShown/WindowHidden, 0 otherwise.
+        /// Returns True on success; <paramref name="message"/> is null on
+        /// success and a human-readable reason otherwise. Never throws.
         /// </summary>
-        public void SetDebounce(string eventName, int debounceMs)
+        public bool SetDebounce(string eventName, int debounceMs, out string message)
         {
+            message = null;
             try
             {
                 _debounce.Set(eventName, debounceMs);
+                return true;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.SetDebounce failed: " + ex.Message);
+                message = "SetDebounce failed: " + ex.Message;
+                return false;
             }
         }
 
         /// <summary>
         /// Sets the per-subscription queue limit and overflow policy
         /// ("DropOldest" | "DropNewest" | "Block"). Applies to existing and
-        /// future subscriptions.
+        /// future subscriptions. Returns True on success;
+        /// <paramref name="message"/> is null on success and a human-readable
+        /// reason otherwise (invalid arguments). Never throws.
         /// </summary>
-        public void SetQueueLimits(int maxEvents, string overflowPolicy)
+        public bool SetQueueLimits(int maxEvents, string overflowPolicy, out string message)
         {
+            message = null;
             try
             {
+                if (maxEvents < 1)
+                {
+                    message = "maxEvents must be positive.";
+                    return false;
+                }
+                if (overflowPolicy != "DropOldest" && overflowPolicy != "DropNewest" && overflowPolicy != "Block")
+                {
+                    message = "overflowPolicy must be 'DropOldest', 'DropNewest', or 'Block'.";
+                    return false;
+                }
                 _subscriptions.SetQueueLimits(maxEvents, overflowPolicy);
+                return true;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.SetQueueLimits failed: " + ex.Message);
+                message = "SetQueueLimits failed: " + ex.Message;
+                return false;
             }
         }
 
         /// <summary>
         /// Returns the last <paramref name="count"/> events (newest last) as a
-        /// JSON array, regardless of subscriptions. Never throws.
+        /// JSON array in <paramref name="json"/>, regardless of subscriptions.
+        /// Returns True on success; <paramref name="message"/> is null on
+        /// success and a human-readable reason otherwise. Never throws.
         /// </summary>
-        public string DumpRecentEvents(int count)
+        public bool DumpRecentEvents(int count, out string json, out string message)
         {
+            json = "[]";
+            message = null;
             try
             {
                 var engine = _engine;
                 var events = engine != null ? engine.SnapshotRing(Math.Max(0, count)) : Array.Empty<EventData>();
-                return JsonSerializer.Serialize(events, EventJson.Options);
+                json = JsonSerializer.Serialize(events, EventJson.Options);
+                return true;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.DumpRecentEvents failed: " + ex.Message);
-                return "[]";
+                message = "DumpRecentEvents failed: " + ex.Message;
+                return false;
             }
         }
 
         /// <summary>
-        /// Non-blocking lookback: True if a window-created event matching
-        /// <paramref name="filterJson"/> was captured within the last
-        /// <paramref name="withinLastMs"/> milliseconds. Never throws.
+        /// Non-blocking lookback: reports in <paramref name="wasCreated"/>
+        /// whether a window-created event matching <paramref name="filterJson"/>
+        /// was captured within the last <paramref name="withinLastMs"/>
+        /// milliseconds. Returns True when the check succeeded;
+        /// <paramref name="message"/> is null on success and a human-readable
+        /// reason otherwise. Never throws.
         /// </summary>
-        public bool WasWindowCreated(string filterJson, int withinLastMs)
+        public bool WasWindowCreated(string filterJson, int withinLastMs, out bool wasCreated, out string message)
         {
+            wasCreated = false;
+            message = null;
             try
             {
                 var engine = _engine;
                 if (engine == null)
+                {
+                    message = "Engine not started; call Initialize() and Start() first.";
                     return false;
+                }
                 var filter = EventFilter.FromJson(filterJson) ?? EventFilter.Create();
                 long cutoff = DateTime.UtcNow.Ticks - TimeSpan.FromMilliseconds(Math.Max(0, withinLastMs)).Ticks;
                 foreach (var e in engine.SnapshotRing(500))
                 {
                     if (e.Category == "WindowCreated" && e.Timestamp >= cutoff && filter.Matches(e, _hostPid))
+                    {
+                        wasCreated = true;
                         return true;
+                    }
                 }
-                return false;
+                return true;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.WasWindowCreated failed: " + ex.Message);
+                message = "WasWindowCreated failed: " + ex.Message;
                 return false;
             }
         }
