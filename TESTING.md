@@ -198,22 +198,38 @@ dimensions, a missing image file, a missing OCR language pack), instead of an
 
 ### ScreenCaptureUtils (some cases need no live screen at all — see Phase 3)
 
+All methods here except `CaptureToClipboard` return `bool` with an
+`out string message` and never throw — for these, replace Phase 2's
+"exception condition on the invalid-input case" with an outcome condition
+asserting `false` plus a non-null `message` on the invalid-input case (bad
+dimensions, a missing image file, an invalid window handle), instead of an
+`Automation exception` condition. `WaitForRegionToChange`/
+`CompareRegionToBaseline` additionally need a case that distinguishes a real
+failure (`message` set) from a normal not-changed/exceeds-tolerance result
+(`message == null`).
+
 - `CaptureScreenToFile`, `CaptureRegionToFile`, `CaptureWindowToFile`,
   `CaptureActiveWindowToFile`, `CaptureAroundPointToFile` (assert file exists,
-  non-zero size, correct pixel dimensions)
+  non-zero size, correct pixel dimensions; bad dimensions/invalid handle →
+  `false` + message)
 - `CaptureToClipboard` (assert `Clipboard.ContainsImage()` — note: STA thread
   requirement)
 - `CaptureStepEvidence` (assert filename pattern
   `{counter}_{step}_{timestamp}.png` and that the counter increments across
-  calls on the same instance)
+  calls on the same instance; blank step name/folder path → `false` + message)
 - `GetRegionHash` (assert same region → same hash twice; assert changed region
-  → different hash)
-- `WaitForRegionToChange` (change-in-time and timeout cases)
+  → different hash; bad dimensions → `false` + message)
+- `WaitForRegionToChange` (change-in-time and timeout cases; bad dimensions →
+  `false` + non-null message, distinct from the timeout case's `false` +
+  `message == null`)
 - `CompareRegionToBaseline` (within-tolerance and exceeds-tolerance cases,
-  using fixture baseline images; exception case for mismatched dimensions)
+  using fixture baseline images; missing file/mismatched dimensions → `false`
+  + non-null message, distinct from the exceeds-tolerance case's `false` +
+  `message == null`)
 - `DrawHighlightBox`, `DrawArrowToPoint`, `RedactRegion` (assert output file's
   pixels changed as expected — spot-check specific pixel colors, or diff
-  against a pre-rendered "expected annotated" fixture)
+  against a pre-rendered "expected annotated" fixture; missing image file →
+  `false` + message)
 
 ### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, and tree; Cleanup: close it)
 

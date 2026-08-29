@@ -58,15 +58,19 @@ namespace ScreenCaptureAutomation
         /// Captures the entire virtual screen (all monitors) to an image file.
         /// </summary>
         /// <param name="filePath">Destination file path. The format is inferred from the extension (.png, .jpg/.jpeg, .bmp, .gif); unrecognized extensions are saved as PNG.</param>
-        /// <exception cref="ArgumentException"><paramref name="filePath"/> is null, empty, or whitespace.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="filePath"/> is null, empty, or whitespace. Never throws.</returns>
         [Category("Capture - Core")]
-        [Description("Captures the entire virtual screen (all monitors) to an image file.")]
-        public void CaptureScreenToFile(string filePath)
+        [Description("Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws.")]
+        public bool CaptureScreenToFile(string filePath, out string message)
         {
             Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-            using (Bitmap bmp = CaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height))
+            if (!TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out message))
+                return false;
+
+            using (bmp)
             {
-                SaveBitmap(bmp, filePath);
+                return TrySaveBitmap(bmp, filePath, out message);
             }
         }
 
@@ -78,14 +82,18 @@ namespace ScreenCaptureAutomation
         /// <param name="width">Region width in pixels.</param>
         /// <param name="height">Region height in pixels.</param>
         /// <param name="filePath">Destination file path. The format is inferred from the extension.</param>
-        /// <exception cref="ArgumentException"><paramref name="width"/> or <paramref name="height"/> is not positive, or <paramref name="filePath"/> is invalid.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are not positive, or <paramref name="filePath"/> is invalid. Never throws.</returns>
         [Category("Capture - Core")]
-        [Description("Captures a specific screen region to an image file.")]
-        public void CaptureRegionToFile(int left, int top, int width, int height, string filePath)
+        [Description("Captures a specific screen region to an image file. Returns True on success; never throws.")]
+        public bool CaptureRegionToFile(int left, int top, int width, int height, string filePath, out string message)
         {
-            using (Bitmap bmp = CaptureRegionToBitmap(left, top, width, height))
+            if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bmp, out message))
+                return false;
+
+            using (bmp)
             {
-                SaveBitmap(bmp, filePath);
+                return TrySaveBitmap(bmp, filePath, out message);
             }
         }
 
@@ -95,24 +103,30 @@ namespace ScreenCaptureAutomation
         /// </summary>
         /// <param name="hWnd">Handle of the window to capture.</param>
         /// <param name="filePath">Destination file path. The format is inferred from the extension.</param>
-        /// <exception cref="ArgumentException">The window's bounding rectangle is empty, or <paramref name="filePath"/> is invalid.</exception>
-        /// <exception cref="Win32Exception">GetWindowRect or PrintWindow failed (e.g. an invalid handle).</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the window's bounding rectangle is empty, <paramref name="filePath"/> is invalid, or GetWindowRect/PrintWindow failed (e.g. an invalid handle). Never throws.</returns>
         /// <remarks>
         /// Uses <c>PW_RENDERFULLCONTENT</c> so modern (DirectComposition/DirectX-backed)
         /// windows render correctly; some exclusive-fullscreen or protected-content
         /// windows may still capture as black.
         /// </remarks>
         [Category("Capture - Core")]
-        [Description("Captures a window to an image file via PrintWindow - works even if the window is covered by other windows.")]
-        public void CaptureWindowToFile(IntPtr hWnd, string filePath)
+        [Description("Captures a window to an image file via PrintWindow - works even if the window is covered by other windows. Returns True on success; never throws.")]
+        public bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)
         {
             if (!GetWindowRect(hWnd, out RECT rc))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.").Message;
+                return false;
+            }
 
             int width = rc.Right - rc.Left;
             int height = rc.Bottom - rc.Top;
             if (width <= 0 || height <= 0)
-                throw new ArgumentException("Target window has an empty or invalid bounding rectangle.", nameof(hWnd));
+            {
+                message = "Target window has an empty or invalid bounding rectangle.";
+                return false;
+            }
 
             using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
             {
@@ -122,7 +136,10 @@ namespace ScreenCaptureAutomation
                     try
                     {
                         if (!PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT))
-                            throw new Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow failed.");
+                        {
+                            message = new Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow failed.").Message;
+                            return false;
+                        }
                     }
                     finally
                     {
@@ -130,7 +147,7 @@ namespace ScreenCaptureAutomation
                     }
                 }
 
-                SaveBitmap(bmp, filePath);
+                return TrySaveBitmap(bmp, filePath, out message);
             }
         }
 
@@ -138,17 +155,20 @@ namespace ScreenCaptureAutomation
         /// Captures the current foreground window to an image file.
         /// </summary>
         /// <param name="filePath">Destination file path. The format is inferred from the extension.</param>
-        /// <exception cref="InvalidOperationException">No foreground window is currently available.</exception>
-        /// <exception cref="Win32Exception">GetWindowRect or PrintWindow failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if no foreground window is currently available, or GetWindowRect/PrintWindow failed. Never throws.</returns>
         [Category("Capture - Core")]
-        [Description("Captures the current foreground window to an image file.")]
-        public void CaptureActiveWindowToFile(string filePath)
+        [Description("Captures the current foreground window to an image file. Returns True on success; never throws.")]
+        public bool CaptureActiveWindowToFile(string filePath, out string message)
         {
             IntPtr hWnd = GetForegroundWindow();
             if (hWnd == IntPtr.Zero)
-                throw new InvalidOperationException("No foreground window is currently available.");
+            {
+                message = "No foreground window is currently available.";
+                return false;
+            }
 
-            CaptureWindowToFile(hWnd, filePath);
+            return CaptureWindowToFile(hWnd, filePath, out message);
         }
 
         /// <summary>
@@ -161,12 +181,13 @@ namespace ScreenCaptureAutomation
         /// <param name="width">Capture width in pixels.</param>
         /// <param name="height">Capture height in pixels.</param>
         /// <param name="filePath">Destination file path. The format is inferred from the extension.</param>
-        /// <exception cref="ArgumentException"><paramref name="width"/> or <paramref name="height"/> is not positive.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are not positive. Never throws.</returns>
         [Category("Capture - Core")]
-        [Description("Captures a region centered on the given point (e.g. MouseUtils.GetX/GetY) to an image file.")]
-        public void CaptureAroundPointToFile(int x, int y, int width, int height, string filePath)
+        [Description("Captures a region centered on the given point (e.g. MouseUtils.GetX/GetY) to an image file. Returns True on success; never throws.")]
+        public bool CaptureAroundPointToFile(int x, int y, int width, int height, string filePath, out string message)
         {
-            CaptureRegionToFile(x - width / 2, y - height / 2, width, height, filePath);
+            return CaptureRegionToFile(x - width / 2, y - height / 2, width, height, filePath, out message);
         }
 
         /// <summary>
@@ -179,7 +200,8 @@ namespace ScreenCaptureAutomation
         public void CaptureToClipboard()
         {
             Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-            using (Bitmap bmp = CaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height))
+            TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out _);
+            using (bmp)
             {
                 System.Windows.Forms.Clipboard.SetImage(bmp);
             }
@@ -192,29 +214,40 @@ namespace ScreenCaptureAutomation
         /// </summary>
         /// <param name="stepName">A short, human-readable name for the step being evidenced (invalid file-name characters are replaced with underscores).</param>
         /// <param name="folderPath">Folder to save the evidence file into; created if it doesn't exist.</param>
-        /// <returns>The full path of the file that was written.</returns>
-        /// <exception cref="ArgumentException"><paramref name="stepName"/> or <paramref name="folderPath"/> is null, empty, or whitespace.</exception>
+        /// <param name="fullPath">The full path of the file that was written, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="stepName"/>/<paramref name="folderPath"/> are null, empty, or whitespace. Never throws.</returns>
         /// <remarks>
         /// The sequence counter is per component instance and resets when the
         /// automation creates a new instance of this component (e.g. at the start of
         /// each run), so evidence from a single run sorts in step order by filename.
         /// </remarks>
         [Category("Capture - Core")]
-        [Description("Captures the screen to an auto-named, sequentially-numbered evidence file: 001_StepName_20260826_143201.png.")]
-        public string CaptureStepEvidence(string stepName, string folderPath)
+        [Description("Captures the screen to an auto-named, sequentially-numbered evidence file: 001_StepName_20260826_143201.png. Returns True on success; never throws.")]
+        public bool CaptureStepEvidence(string stepName, string folderPath, out string fullPath, out string message)
         {
+            fullPath = null;
             if (string.IsNullOrWhiteSpace(stepName))
-                throw new ArgumentException("A step name is required.", nameof(stepName));
+            {
+                message = "A step name is required.";
+                return false;
+            }
             if (string.IsNullOrWhiteSpace(folderPath))
-                throw new ArgumentException("A folder path is required.", nameof(folderPath));
+            {
+                message = "A folder path is required.";
+                return false;
+            }
 
             Directory.CreateDirectory(folderPath);
             _evidenceCounter++;
 
             string fileName = $"{_evidenceCounter:D3}_{SanitizeFileNameSegment(stepName)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-            string fullPath = Path.Combine(folderPath, fileName);
-            CaptureScreenToFile(fullPath);
-            return fullPath;
+            string candidatePath = Path.Combine(folderPath, fileName);
+            if (!CaptureScreenToFile(candidatePath, out message))
+                return false;
+
+            fullPath = candidatePath;
+            return true;
         }
 
         #endregion
@@ -230,18 +263,23 @@ namespace ScreenCaptureAutomation
         /// <param name="top">Top edge of the region in screen pixels.</param>
         /// <param name="width">Region width in pixels.</param>
         /// <param name="height">Region height in pixels.</param>
-        /// <returns>A 16-character hex string identifying the region's coarse appearance.</returns>
-        /// <exception cref="ArgumentException"><paramref name="width"/> or <paramref name="height"/> is not positive.</exception>
+        /// <param name="hash">A 16-character hex string identifying the region's coarse appearance, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are not positive. Never throws.</returns>
         /// <remarks>
         /// Two regions with the same hash almost certainly look the same at a glance;
         /// two regions with different hashes definitely differ. It is not a
         /// cryptographic hash and is intentionally tolerant of tiny rendering noise.
         /// </remarks>
         [Category("Capture - Verification")]
-        [Description("Computes a lightweight perceptual hash of a screen region, for cheap 'did this change' checks.")]
-        public string GetRegionHash(int left, int top, int width, int height)
+        [Description("Computes a lightweight perceptual hash of a screen region, for cheap 'did this change' checks. Returns True on success; never throws.")]
+        public bool GetRegionHash(int left, int top, int width, int height, out string hash, out string message)
         {
-            using (Bitmap region = CaptureRegionToBitmap(left, top, width, height))
+            hash = null;
+            if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap region, out message))
+                return false;
+
+            using (region)
             using (Bitmap small = new Bitmap(region, new Size(8, 8)))
             {
                 long[] luminance = new long[64];
@@ -260,14 +298,16 @@ namespace ScreenCaptureAutomation
                     average += luminance[p];
                 average /= luminance.Length;
 
-                ulong hash = 0;
+                ulong h = 0;
                 for (int b = 0; b < 64; b++)
                 {
                     if (luminance[b] >= average)
-                        hash |= (1UL << b);
+                        h |= (1UL << b);
                 }
 
-                return hash.ToString("X16");
+                hash = h.ToString("X16");
+                message = null;
+                return true;
             }
         }
 
@@ -281,22 +321,34 @@ namespace ScreenCaptureAutomation
         /// <param name="height">Region height in pixels.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <returns>True if the region changed before the timeout; false if it timed out.</returns>
+        /// <param name="message"><c>null</c> if the poll completed (changed or genuinely timed out); otherwise a human-readable reason a real failure (bad dimensions) aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the region changed before the timeout; <c>false</c> if it timed out, or if a real failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("Capture - Verification")]
-        [Description("Polls a screen region until its appearance changes, or the timeout elapses. Returns True if it changed in time.")]
-        public bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs)
+        [Description("Polls a screen region until its appearance changes, or the timeout elapses. Returns True if it changed in time; never throws.")]
+        public bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
-            string baseline = GetRegionHash(left, top, width, height);
+            if (!GetRegionHash(left, top, width, height, out string baseline, out message))
+                return false;
+
             int start = Environment.TickCount;
-            while (GetRegionHash(left, top, width, height) == baseline)
+            while (true)
             {
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                if (!GetRegionHash(left, top, width, height, out string current, out message))
                     return false;
+                if (current != baseline)
+                {
+                    message = null;
+                    return true;
+                }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    message = null;
+                    return false;
+                }
                 Thread.Sleep(pollIntervalMs);
             }
-            return true;
         }
 
         /// <summary>
@@ -310,31 +362,38 @@ namespace ScreenCaptureAutomation
         /// <param name="height">Region height in pixels; must match the baseline image's height.</param>
         /// <param name="baselineImagePath">Path to the reference image to compare against.</param>
         /// <param name="tolerancePercent">Maximum percentage of differing pixels still considered a match (0-100).</param>
-        /// <param name="actualDifferencePercent">Receives the actual percentage of differing pixels found.</param>
-        /// <returns>True if the actual difference is within <paramref name="tolerancePercent"/>.</returns>
-        /// <exception cref="FileNotFoundException"><paramref name="baselineImagePath"/> does not exist.</exception>
-        /// <exception cref="ArgumentException">The baseline image's dimensions do not match <paramref name="width"/>/<paramref name="height"/>.</exception>
+        /// <param name="actualDifferencePercent">Receives the actual percentage of differing pixels found, or <c>0</c> if this method returns <c>false</c> due to a real failure (check <paramref name="message"/>).</param>
+        /// <param name="message"><c>null</c> if the comparison completed (within or outside tolerance); otherwise a human-readable reason a real failure (missing baseline, size mismatch) prevented the comparison (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the actual difference is within <paramref name="tolerancePercent"/>; <c>false</c> if it isn't, or if a real failure prevented the comparison (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         /// <remarks>
         /// Per-pixel comparison uses a small per-channel tolerance internally to absorb
         /// anti-aliasing/font-rendering noise, so it is not thrown off by single-pixel
         /// rendering jitter the way an exact byte-for-byte comparison would be.
         /// </remarks>
         [Category("Capture - Verification")]
-        [Description("Compares a screen region against a saved baseline image and reports whether the difference is within tolerance.")]
-        public bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent)
+        [Description("Compares a screen region against a saved baseline image and reports whether the difference is within tolerance. Never throws.")]
+        public bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)
         {
-            if (!File.Exists(baselineImagePath))
-                throw new FileNotFoundException("Baseline image not found.", baselineImagePath);
+            actualDifferencePercent = 0;
 
-            using (Bitmap baseline = LoadBitmapWithoutLockingFile(baselineImagePath))
+            if (!TryLoadBitmapWithoutLockingFile(baselineImagePath, out Bitmap baseline, out message))
+                return false;
+
+            using (baseline)
             {
                 if (baseline.Width != width || baseline.Height != height)
-                    throw new ArgumentException(
-                        $"Baseline image size ({baseline.Width}x{baseline.Height}) does not match the requested region size ({width}x{height}).");
+                {
+                    message = $"Baseline image size ({baseline.Width}x{baseline.Height}) does not match the requested region size ({width}x{height}).";
+                    return false;
+                }
 
-                using (Bitmap current = CaptureRegionToBitmap(left, top, width, height))
+                if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap current, out message))
+                    return false;
+
+                using (current)
                 {
                     actualDifferencePercent = ComputeDifferencePercent(baseline, current);
+                    message = null;
                     return actualDifferencePercent <= tolerancePercent;
                 }
             }
@@ -355,18 +414,24 @@ namespace ScreenCaptureAutomation
         /// <param name="right">Right edge of the box in image pixels.</param>
         /// <param name="bottom">Bottom edge of the box in image pixels.</param>
         /// <param name="colorRef">Box color as a 0x00BBGGRR value (same format as MouseUtils' colorRef parameters).</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the annotation failed.</param>
         /// <param name="lineWidth">Line thickness in pixels; values below 1 are treated as 1.</param>
-        /// <exception cref="ArgumentException">The rectangle is empty or inverted.</exception>
-        /// <exception cref="FileNotFoundException"><paramref name="imagePath"/> does not exist.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if the rectangle is empty/inverted, or <paramref name="imagePath"/> does not exist. Never throws.</returns>
         [Category("Capture - Annotation")]
-        [Description("Draws a rectangular highlight box onto a saved screenshot and overwrites it in place.")]
-        public void DrawHighlightBox(string imagePath, int left, int top, int right, int bottom, int colorRef, int lineWidth = 3)
+        [Description("Draws a rectangular highlight box onto a saved screenshot and overwrites it in place. Returns True on success; never throws.")]
+        public bool DrawHighlightBox(string imagePath, int left, int top, int right, int bottom, int colorRef, out string message, int lineWidth = 3)
         {
             if (right <= left || bottom <= top)
-                throw new ArgumentException("Rectangle must be non-empty: right > left and bottom > top.");
+            {
+                message = "Rectangle must be non-empty: right > left and bottom > top.";
+                return false;
+            }
             if (lineWidth < 1) lineWidth = 1;
 
-            using (Bitmap bmp = LoadBitmapWithoutLockingFile(imagePath))
+            if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
+                return false;
+
+            using (bmp)
             {
                 using (Graphics g = Graphics.FromImage(bmp))
                 using (Pen pen = new Pen(ColorFromColorRef(colorRef), lineWidth))
@@ -374,7 +439,7 @@ namespace ScreenCaptureAutomation
                     g.DrawRectangle(pen, left, top, right - left, bottom - top);
                 }
 
-                SaveBitmap(bmp, imagePath);
+                return TrySaveBitmap(bmp, imagePath, out message);
             }
         }
 
@@ -386,18 +451,22 @@ namespace ScreenCaptureAutomation
         /// <param name="x">X coordinate the arrow points to, in image pixels.</param>
         /// <param name="y">Y coordinate the arrow points to, in image pixels.</param>
         /// <param name="colorRef">Arrow color as a 0x00BBGGRR value.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the annotation failed.</param>
         /// <param name="length">Arrow shaft length in pixels; values below 1 are treated as 1.</param>
         /// <param name="lineWidth">Shaft thickness in pixels; values below 1 are treated as 1.</param>
-        /// <exception cref="FileNotFoundException"><paramref name="imagePath"/> does not exist.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="imagePath"/> does not exist. Never throws.</returns>
         /// <remarks>The arrow approaches from the upper-left at a 45-degree angle; its tip lands exactly on (x, y).</remarks>
         [Category("Capture - Annotation")]
-        [Description("Draws an arrow pointing at the given coordinates onto a saved screenshot and overwrites it in place.")]
-        public void DrawArrowToPoint(string imagePath, int x, int y, int colorRef, int length = 40, int lineWidth = 3)
+        [Description("Draws an arrow pointing at the given coordinates onto a saved screenshot and overwrites it in place. Returns True on success; never throws.")]
+        public bool DrawArrowToPoint(string imagePath, int x, int y, int colorRef, out string message, int length = 40, int lineWidth = 3)
         {
             if (length < 1) length = 1;
             if (lineWidth < 1) lineWidth = 1;
 
-            using (Bitmap bmp = LoadBitmapWithoutLockingFile(imagePath))
+            if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
+                return false;
+
+            using (bmp)
             {
                 using (Graphics g = Graphics.FromImage(bmp))
                 using (Pen pen = new Pen(ColorFromColorRef(colorRef), lineWidth))
@@ -406,7 +475,7 @@ namespace ScreenCaptureAutomation
                     g.DrawLine(pen, x - length, y - length, x, y);
                 }
 
-                SaveBitmap(bmp, imagePath);
+                return TrySaveBitmap(bmp, imagePath, out message);
             }
         }
 
@@ -419,9 +488,9 @@ namespace ScreenCaptureAutomation
         /// <param name="top">Top edge of the region to redact, in image pixels.</param>
         /// <param name="width">Width of the region to redact, in pixels.</param>
         /// <param name="height">Height of the region to redact, in pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the redaction failed.</param>
         /// <param name="colorRef">Fill color as a 0x00BBGGRR value; defaults to solid black.</param>
-        /// <exception cref="ArgumentException"><paramref name="width"/> or <paramref name="height"/> is not positive.</exception>
-        /// <exception cref="FileNotFoundException"><paramref name="imagePath"/> does not exist.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are not positive, or <paramref name="imagePath"/> does not exist. Never throws.</returns>
         /// <remarks>
         /// Uses an opaque solid fill rather than a blur, deliberately: blurred text or
         /// numbers can sometimes be partially reconstructed, whereas a solid fill
@@ -429,13 +498,19 @@ namespace ScreenCaptureAutomation
         /// redacting PII (SSNs, account numbers) in retained evidence screenshots.
         /// </remarks>
         [Category("Capture - Annotation")]
-        [Description("Fills a rectangular region of a saved screenshot with a solid color (default black) to redact PII, overwriting the file in place.")]
-        public void RedactRegion(string imagePath, int left, int top, int width, int height, int colorRef = 0x000000)
+        [Description("Fills a rectangular region of a saved screenshot with a solid color (default black) to redact PII, overwriting the file in place. Returns True on success; never throws.")]
+        public bool RedactRegion(string imagePath, int left, int top, int width, int height, out string message, int colorRef = 0x000000)
         {
             if (width <= 0 || height <= 0)
-                throw new ArgumentException("Redaction width and height must both be positive.");
+            {
+                message = "Redaction width and height must both be positive.";
+                return false;
+            }
 
-            using (Bitmap bmp = LoadBitmapWithoutLockingFile(imagePath))
+            if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
+                return false;
+
+            using (bmp)
             {
                 using (Graphics g = Graphics.FromImage(bmp))
                 using (SolidBrush brush = new SolidBrush(ColorFromColorRef(colorRef)))
@@ -443,7 +518,7 @@ namespace ScreenCaptureAutomation
                     g.FillRectangle(brush, left, top, width, height);
                 }
 
-                SaveBitmap(bmp, imagePath);
+                return TrySaveBitmap(bmp, imagePath, out message);
             }
         }
 
@@ -451,23 +526,32 @@ namespace ScreenCaptureAutomation
 
         #region Internal Helpers
 
-        private static Bitmap CaptureRegionToBitmap(int left, int top, int width, int height)
+        private static bool TryCaptureRegionToBitmap(int left, int top, int width, int height, out Bitmap bitmap, out string message)
         {
+            bitmap = null;
             if (width <= 0 || height <= 0)
-                throw new ArgumentException("Capture width and height must both be positive.");
+            {
+                message = "Capture width and height must both be positive.";
+                return false;
+            }
 
             Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(bmp))
             {
                 g.CopyFromScreen(left, top, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
             }
-            return bmp;
+            bitmap = bmp;
+            message = null;
+            return true;
         }
 
-        private static void SaveBitmap(Bitmap bmp, string filePath)
+        private static bool TrySaveBitmap(Bitmap bmp, string filePath, out string message)
         {
             if (string.IsNullOrWhiteSpace(filePath))
-                throw new ArgumentException("A file path is required.", nameof(filePath));
+            {
+                message = "A file path is required.";
+                return false;
+            }
 
             string fullPath = Path.GetFullPath(filePath);
             string directory = Path.GetDirectoryName(fullPath);
@@ -475,6 +559,8 @@ namespace ScreenCaptureAutomation
                 Directory.CreateDirectory(directory);
 
             bmp.Save(fullPath, GetImageFormatFromExtension(fullPath));
+            message = null;
+            return true;
         }
 
         private static ImageFormat GetImageFormatFromExtension(string filePath)
@@ -511,17 +597,23 @@ namespace ScreenCaptureAutomation
         /// source file is not left locked and can be immediately overwritten
         /// (annotation/redaction methods load, modify, then save back in place).
         /// </summary>
-        private static Bitmap LoadBitmapWithoutLockingFile(string filePath)
+        private static bool TryLoadBitmapWithoutLockingFile(string filePath, out Bitmap bitmap, out string message)
         {
+            bitmap = null;
             if (!File.Exists(filePath))
-                throw new FileNotFoundException("Image file not found.", filePath);
+            {
+                message = $"Image file not found: '{filePath}'.";
+                return false;
+            }
 
             byte[] bytes = File.ReadAllBytes(filePath);
             using (MemoryStream ms = new MemoryStream(bytes))
             using (Bitmap decoded = new Bitmap(ms))
             {
-                return new Bitmap(decoded);
+                bitmap = new Bitmap(decoded);
             }
+            message = null;
+            return true;
         }
 
         private static Color ColorFromColorRef(int colorRef)
