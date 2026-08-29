@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>EventAutomation</AssemblyName>
+    <RootNamespace>EventAutomation</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <!-- Emit EventAutomation.xml next to the DLL so the XML doc comments are consumable -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Expose internals to the unit-test project; exclude test sources from the DLL. -->
+    <InternalsVisibleTo Include="EventUtils.Tests" />
+    <Compile Remove="EventUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
+</Project>
