@@ -3,9 +3,9 @@ param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
 
-    [string]$ArchivePath = "AwesomeRpaUtils.zip",
+    [string]$ArchivePath = "artifacts/AwesomeRpaUtils.zip",
 
-    [string]$SupportArchivePath = "AwesomeRpaUtils-SupportLibraries.zip",
+    [string]$SupportArchivePath = "artifacts/AwesomeRpaUtils-SupportLibraries.zip",
 
     [switch]$NoBuild
 )

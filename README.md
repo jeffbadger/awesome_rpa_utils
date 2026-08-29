@@ -57,9 +57,9 @@ this repository, run from PowerShell:
 
 The command creates two archives:
 
-- `AwesomeRpaUtils.zip` contains the ten project DLLs.
-- `AwesomeRpaUtils-SupportLibraries.zip` contains the three NuGet runtime DLLs
-  needed by ServiceUtils.
+- `artifacts/AwesomeRpaUtils.zip` contains the ten project DLLs.
+- `artifacts/AwesomeRpaUtils-SupportLibraries.zip` contains the three NuGet runtime
+  DLLs needed by ServiceUtils.
 
 Both exclude test infrastructure, PDBs, and XML documentation. To package an
 existing Release build or choose other output paths, use:
