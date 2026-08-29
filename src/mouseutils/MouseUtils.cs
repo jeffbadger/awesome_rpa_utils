@@ -78,7 +78,7 @@ namespace MouseAutomation
 
     /// <summary>
     /// Modifier keys that can be held during a click with
-    /// <see cref="MouseUtils.ClickWithModifiers(MouseButton, ModifierKeys)"/>. Combinable flags.
+    /// <see cref="MouseUtils.ClickWithModifiers(MouseButton, ModifierKeys, out string)"/>. Combinable flags.
     /// </summary>
     [Flags]
     public enum ModifierKeys
@@ -167,38 +167,46 @@ namespace MouseAutomation
         /// <summary>
         /// Gets the current X coordinate of the cursor.
         /// </summary>
-        /// <returns>The X coordinate in screen pixels.</returns>
-        /// <exception cref="Win32Exception">The underlying GetCursorPos call failed.</exception>
+        /// <param name="x">The X coordinate in screen pixels, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the cursor position could not be read.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the underlying GetCursorPos call failed. Never throws.</returns>
         [Category("Mouse - Position")]
-        [Description("Gets the current X coordinate of the cursor (screen pixels).")]
-        public int GetX()
+        [Description("Gets the current X coordinate of the cursor (screen pixels). Returns True on success; never throws.")]
+        public bool GetX(out int x, out string message)
         {
-            return GetPoint().X;
+            bool ok = TryGetPoint(out POINT p, out message);
+            x = ok ? p.X : 0;
+            return ok;
         }
 
         /// <summary>
         /// Gets the current Y coordinate of the cursor.
         /// </summary>
-        /// <returns>The Y coordinate in screen pixels.</returns>
-        /// <exception cref="Win32Exception">The underlying GetCursorPos call failed.</exception>
+        /// <param name="y">The Y coordinate in screen pixels, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the cursor position could not be read.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the underlying GetCursorPos call failed. Never throws.</returns>
         [Category("Mouse - Position")]
-        [Description("Gets the current Y coordinate of the cursor (screen pixels).")]
-        public int GetY()
+        [Description("Gets the current Y coordinate of the cursor (screen pixels). Returns True on success; never throws.")]
+        public bool GetY(out int y, out string message)
         {
-            return GetPoint().Y;
+            bool ok = TryGetPoint(out POINT p, out message);
+            y = ok ? p.Y : 0;
+            return ok;
         }
 
         /// <summary>
         /// Gets the current cursor position.
         /// </summary>
-        /// <returns>A <see cref="System.Drawing.Point"/> with the cursor's screen coordinates.</returns>
-        /// <exception cref="Win32Exception">The underlying GetCursorPos call failed.</exception>
+        /// <param name="position">The cursor's screen coordinates, or <c>default</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the cursor position could not be read.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the underlying GetCursorPos call failed. Never throws.</returns>
         [Category("Mouse - Position")]
-        [Description("Gets the current cursor position as a System.Drawing.Point.")]
-        public System.Drawing.Point GetPosition()
+        [Description("Gets the current cursor position as a System.Drawing.Point. Returns True on success; never throws.")]
+        public bool GetPosition(out System.Drawing.Point position, out string message)
         {
-            POINT p = GetPoint();
-            return new System.Drawing.Point(p.X, p.Y);
+            bool ok = TryGetPoint(out POINT p, out message);
+            position = ok ? new System.Drawing.Point(p.X, p.Y) : default;
+            return ok;
         }
 
         /// <summary>
@@ -206,13 +214,13 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <exception cref="Win32Exception">SetCursorPos failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if SetCursorPos failed. Never throws.</returns>
         [Category("Mouse - Position")]
-        [Description("Instantly moves the cursor to the given screen coordinates.")]
-        public void MoveTo(int x, int y)
+        [Description("Instantly moves the cursor to the given screen coordinates. Returns True on success; never throws.")]
+        public bool MoveTo(int x, int y, out string message)
         {
-            if (!SetCursorPos(x, y))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "SetCursorPos failed.");
+            return TrySetCursorPos(x, y, out message);
         }
 
         /// <summary>
@@ -220,13 +228,15 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="deltaX">Horizontal offset in pixels (positive = right).</param>
         /// <param name="deltaY">Vertical offset in pixels (positive = down).</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Position")]
-        [Description("Moves the cursor by the given offsets relative to its current position.")]
-        public void MoveBy(int deltaX, int deltaY)
+        [Description("Moves the cursor by the given offsets relative to its current position. Returns True on success; never throws.")]
+        public bool MoveBy(int deltaX, int deltaY, out string message)
         {
-            POINT p = GetPoint();
-            MoveTo(p.X + deltaX, p.Y + deltaY);
+            if (!TryGetPoint(out POINT p, out message))
+                return false;
+            return MoveTo(p.X + deltaX, p.Y + deltaY, out message);
         }
 
         /// <summary>
@@ -235,12 +245,13 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Position")]
-        [Description("Smoothly moves the cursor to the target position (25 steps, 5 ms per step) to simulate human movement.")]
-        public void SmoothMoveTo(int x, int y)
+        [Description("Smoothly moves the cursor to the target position (25 steps, 5 ms per step) to simulate human movement. Returns True on success; never throws.")]
+        public bool SmoothMoveTo(int x, int y, out string message)
         {
-            SmoothMoveTo(x, y, 25, 5);
+            return SmoothMoveTo(x, y, 25, 5, out message);
         }
 
         /// <summary>
@@ -251,43 +262,49 @@ namespace MouseAutomation
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="steps">Number of intermediate move events; values below 1 are treated as 1.</param>
         /// <param name="delayMilliseconds">Delay between steps in milliseconds; 0 moves without pausing.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Position")]
-        [Description("Smoothly moves the cursor to the target position using the given number of steps and delay between steps.")]
-        public void SmoothMoveTo(int x, int y, int steps, int delayMilliseconds)
+        [Description("Smoothly moves the cursor to the target position using the given number of steps and delay between steps. Returns True on success; never throws.")]
+        public bool SmoothMoveTo(int x, int y, int steps, int delayMilliseconds, out string message)
         {
             if (steps < 1) steps = 1;
 
-            POINT start = GetPoint();
+            if (!TryGetPoint(out POINT start, out message))
+                return false;
+
             for (int i = 1; i <= steps; i++)
             {
                 int nx = start.X + (int)((x - start.X) * (double)i / steps);
                 int ny = start.Y + (int)((y - start.Y) * (double)i / steps);
-                MoveTo(nx, ny);
+                if (!MoveTo(nx, ny, out message))
+                    return false;
                 if (delayMilliseconds > 0)
                     Thread.Sleep(delayMilliseconds);
             }
-            MoveTo(x, y);
+            return MoveTo(x, y, out message);
         }
 
         /// <summary>
         /// Nudges the cursor by a tiny amount and immediately back, leaving its
         /// position unchanged but generating real mouse-move input.
         /// </summary>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the nudge failed.</param>
         /// <param name="pixels">Distance to nudge in each direction; values below 1 are treated as 1.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call failed.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call failed. Never throws.</returns>
         /// <remarks>
         /// Intended to be called periodically (e.g. from a Robot Studio loop) during a
         /// long unattended run to reset idle timers and prevent the screen from locking
         /// or a screensaver from starting, without visibly disturbing anything on screen.
         /// </remarks>
         [Category("Mouse - Position")]
-        [Description("Nudges the cursor by a tiny amount and back, to reset idle/screensaver timers without disturbing its position.")]
-        public void JiggleMouse(int pixels = 1)
+        [Description("Nudges the cursor by a tiny amount and back, to reset idle/screensaver timers without disturbing its position. Returns True on success; never throws.")]
+        public bool JiggleMouse(out string message, int pixels = 1)
         {
             if (pixels < 1) pixels = 1;
-            MoveBy(pixels, 0);
-            MoveBy(-pixels, 0);
+            if (!MoveBy(pixels, 0, out message))
+                return false;
+            return MoveBy(-pixels, 0, out message);
         }
 
         #endregion
@@ -299,15 +316,16 @@ namespace MouseAutomation
         /// (a short press/release cycle of ~20 ms).
         /// </summary>
         /// <param name="button">The mouse button to click.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">Input injection failed (locked desktop, UAC/secure desktop, or integrity level).</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection (locked desktop, UAC/secure desktop, or integrity level). Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Clicks the given button at the current cursor position.")]
-        public void Click(MouseButton button)
+        [Description("Clicks the given button at the current cursor position. Returns True on success; never throws.")]
+        public bool Click(MouseButton button, out string message)
         {
-            MouseDown(button);
+            if (!MouseDown(button, out message))
+                return false;
             Thread.Sleep(20);
-            MouseUp(button);
+            return MouseUp(button, out message);
         }
 
         /// <summary>
@@ -316,15 +334,16 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to click.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Moves the cursor to the coordinates and clicks the given button.")]
-        public void ClickAt(int x, int y, MouseButton button)
+        [Description("Moves the cursor to the coordinates and clicks the given button. Returns True on success; never throws.")]
+        public bool ClickAt(int x, int y, MouseButton button, out string message)
         {
-            MoveTo(x, y);
+            if (!MoveTo(x, y, out message))
+                return false;
             Thread.Sleep(30);
-            Click(button);
+            return Click(button, out message);
         }
 
         /// <summary>
@@ -332,15 +351,16 @@ namespace MouseAutomation
         /// The 50 ms gap between clicks stays within the system double-click time.
         /// </summary>
         /// <param name="button">The mouse button to double-click.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Double-clicks the given button at the current cursor position.")]
-        public void DoubleClick(MouseButton button)
+        [Description("Double-clicks the given button at the current cursor position. Returns True on success; never throws.")]
+        public bool DoubleClick(MouseButton button, out string message)
         {
-            Click(button);
+            if (!Click(button, out message))
+                return false;
             Thread.Sleep(50);
-            Click(button);
+            return Click(button, out message);
         }
 
         /// <summary>
@@ -349,135 +369,120 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to double-click.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Moves the cursor to the coordinates and double-clicks the given button.")]
-        public void DoubleClickAt(int x, int y, MouseButton button)
+        [Description("Moves the cursor to the coordinates and double-clicks the given button. Returns True on success; never throws.")]
+        public bool DoubleClickAt(int x, int y, MouseButton button, out string message)
         {
-            MoveTo(x, y);
+            if (!MoveTo(x, y, out message))
+                return false;
             Thread.Sleep(30);
-            DoubleClick(button);
+            return DoubleClick(button, out message);
         }
 
         /// <summary>
         /// Left-clicks at the current cursor position.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Left-clicks at the current cursor position.")]
-        public void LeftClick()
-        {
-            Click(MouseButton.Left);
-        }
+        [Description("Left-clicks at the current cursor position. Returns True on success; never throws.")]
+        public bool LeftClick(out string message) => Click(MouseButton.Left, out message);
 
         /// <summary>
         /// Right-clicks at the current cursor position.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Right-clicks at the current cursor position.")]
-        public void RightClick()
-        {
-            Click(MouseButton.Right);
-        }
+        [Description("Right-clicks at the current cursor position. Returns True on success; never throws.")]
+        public bool RightClick(out string message) => Click(MouseButton.Right, out message);
 
         /// <summary>
         /// Middle-clicks at the current cursor position.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Middle-clicks at the current cursor position.")]
-        public void MiddleClick()
-        {
-            Click(MouseButton.Middle);
-        }
+        [Description("Middle-clicks at the current cursor position. Returns True on success; never throws.")]
+        public bool MiddleClick(out string message) => Click(MouseButton.Middle, out message);
 
         /// <summary>
         /// Left-clicks at the given screen coordinates.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Left-clicks at the given screen coordinates.")]
-        public void LeftClickAt(int x, int y)
-        {
-            ClickAt(x, y, MouseButton.Left);
-        }
+        [Description("Left-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool LeftClickAt(int x, int y, out string message) => ClickAt(x, y, MouseButton.Left, out message);
 
         /// <summary>
         /// Right-clicks at the given screen coordinates.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Right-clicks at the given screen coordinates.")]
-        public void RightClickAt(int x, int y)
-        {
-            ClickAt(x, y, MouseButton.Right);
-        }
+        [Description("Right-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool RightClickAt(int x, int y, out string message) => ClickAt(x, y, MouseButton.Right, out message);
 
         /// <summary>
         /// Double left-clicks at the current cursor position.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Double left-clicks at the current cursor position.")]
-        public void LeftDoubleClick()
-        {
-            DoubleClick(MouseButton.Left);
-        }
+        [Description("Double left-clicks at the current cursor position. Returns True on success; never throws.")]
+        public bool LeftDoubleClick(out string message) => DoubleClick(MouseButton.Left, out message);
 
         /// <summary>
         /// Double right-clicks at the current cursor position.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Double right-clicks at the current cursor position.")]
-        public void RightDoubleClick()
-        {
-            DoubleClick(MouseButton.Right);
-        }
+        [Description("Double right-clicks at the current cursor position. Returns True on success; never throws.")]
+        public bool RightDoubleClick(out string message) => DoubleClick(MouseButton.Right, out message);
 
         /// <summary>
         /// Double left-clicks at the given screen coordinates.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Double left-clicks at the given screen coordinates.")]
-        public void LeftDoubleClickAt(int x, int y)
-        {
-            DoubleClickAt(x, y, MouseButton.Left);
-        }
+        [Description("Double left-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool LeftDoubleClickAt(int x, int y, out string message) => DoubleClickAt(x, y, MouseButton.Left, out message);
 
         /// <summary>
         /// Presses and holds the given mouse button. Pair with <see cref="MouseUp"/>.
         /// </summary>
         /// <param name="button">The mouse button to press.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the press failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Presses and holds the given mouse button (pair with MouseUp).")]
-        public void MouseDown(MouseButton button)
+        [Description("Presses and holds the given mouse button (pair with MouseUp). Returns True on success; never throws.")]
+        public bool MouseDown(MouseButton button, out string message)
         {
-            SendMouseButton(button, true);
+            return TrySendMouseButton(button, true, out message);
         }
 
         /// <summary>
         /// Releases the given mouse button.
         /// </summary>
         /// <param name="button">The mouse button to release.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the release failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Releases the given mouse button.")]
-        public void MouseUp(MouseButton button)
+        [Description("Releases the given mouse button. Returns True on success; never throws.")]
+        public bool MouseUp(MouseButton button, out string message)
         {
-            SendMouseButton(button, false);
+            return TrySendMouseButton(button, false, out message);
         }
 
         /// <summary>
@@ -485,15 +490,16 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="button">The mouse button to hold.</param>
         /// <param name="holdMilliseconds">How long to hold the button; values below 0 are treated as 0.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the hold failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Holds the given button down for the specified time, then releases it.")]
-        public void ClickAndHold(MouseButton button, int holdMilliseconds)
+        [Description("Holds the given button down for the specified time, then releases it. Returns True on success; never throws.")]
+        public bool ClickAndHold(MouseButton button, int holdMilliseconds, out string message)
         {
-            MouseDown(button);
+            if (!MouseDown(button, out message))
+                return false;
             Thread.Sleep(Math.Max(0, holdMilliseconds));
-            MouseUp(button);
+            return MouseUp(button, out message);
         }
 
         /// <summary>
@@ -504,16 +510,16 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="button">The mouse button to click.</param>
         /// <param name="modifiers">Modifier keys to hold during the click; combinable flags.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">Input injection failed (locked desktop, UAC/secure desktop, or integrity level).</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection (locked desktop, UAC/secure desktop, or integrity level). Never throws.</returns>
         /// <remarks>
         /// The click happens at the current cursor position - call <see cref="MoveTo"/> first
         /// to target it. Caveat: Alt+Click activates the menu bar in some classic Win32
         /// applications.
         /// </remarks>
         [Category("Mouse - Click")]
-        [Description("Clicks a button while holding modifier keys (Control/Shift/Alt, combinable), injected as one atomic batch.")]
-        public void ClickWithModifiers(MouseButton button, ModifierKeys modifiers)
+        [Description("Clicks a button while holding modifier keys (Control/Shift/Alt, combinable), injected as one atomic batch. Returns True on success; never throws.")]
+        public bool ClickWithModifiers(MouseButton button, ModifierKeys modifiers, out string message)
         {
             List<INPUT> batch = new List<INPUT>();
 
@@ -521,8 +527,9 @@ namespace MouseAutomation
             if ((modifiers & ModifierKeys.Shift)   != 0) batch.Add(MakeKeyInput(VK_SHIFT, false));
             if ((modifiers & ModifierKeys.Alt)     != 0) batch.Add(MakeKeyInput(VK_MENU, false));
 
-            GetButtonFlags(button, true, out uint downFlags, out int data);
-            GetButtonFlags(button, false, out uint upFlags, out _);
+            if (!TryGetButtonFlags(button, true, out uint downFlags, out int data, out message))
+                return false;
+            TryGetButtonFlags(button, false, out uint upFlags, out _, out _);
             batch.Add(MakeMouseInput(downFlags, data));
             batch.Add(MakeMouseInput(upFlags, data));
 
@@ -531,7 +538,7 @@ namespace MouseAutomation
             if ((modifiers & ModifierKeys.Shift)   != 0) batch.Add(MakeKeyInput(VK_SHIFT, true));
             if ((modifiers & ModifierKeys.Control) != 0) batch.Add(MakeKeyInput(VK_CONTROL, true));
 
-            SendInputs(batch.ToArray());
+            return TrySendInputs(batch.ToArray(), out message);
         }
 
         /// <summary>
@@ -543,64 +550,75 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to click.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed Win32 cursor/input-injection call. Never throws.</returns>
         /// <remarks>
         /// The cursor is restored even if the click is refused (locked desktop, UIPI), so
         /// the operator is never stranded. The brief visit still raises hover events at the
         /// target, which can trigger tooltips.
         /// </remarks>
         [Category("Mouse - Click")]
-        [Description("Clicks at the given coordinates, then immediately returns the cursor to its original position.")]
-        public void ClickAndRestore(int x, int y, MouseButton button)
+        [Description("Clicks at the given coordinates, then immediately returns the cursor to its original position. Returns True on success; never throws.")]
+        public bool ClickAndRestore(int x, int y, MouseButton button, out string message)
         {
-            POINT original = GetPoint();
+            if (!TryGetPoint(out POINT original, out message))
+                return false;
+
+            bool moved;
+            bool clicked = false;
+            string failureMessage = null;
             try
             {
-                MoveTo(x, y);
-                Thread.Sleep(30);
-                Click(button);
+                moved = MoveTo(x, y, out failureMessage);
+                if (moved)
+                {
+                    Thread.Sleep(30);
+                    clicked = Click(button, out failureMessage);
+                }
             }
             finally
             {
-                // Restore even when the click threw - never strand the operator's cursor.
+                // Restore even when the click failed - never strand the operator's cursor.
                 SetCursorPos(original.X, original.Y);
             }
+
+            message = clicked ? null : failureMessage;
+            return clicked;
         }
 
         /// <summary>
         /// Clicks at the given coordinates, retrying on transient input-injection
-        /// failures instead of throwing immediately.
+        /// failures instead of giving up immediately.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to click.</param>
         /// <param name="maxAttempts">Maximum number of attempts; values below 1 are treated as 1.</param>
         /// <param name="retryDelayMilliseconds">Delay between attempts in milliseconds.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">Every attempt failed; the exception from the final attempt is rethrown.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise the last attempt's failure reason.</param>
+        /// <returns><c>true</c> if any attempt succeeded; <c>false</c> if every attempt failed. Never throws.</returns>
         /// <remarks>
         /// Useful for unattended runs where a momentary UAC flicker or timing hiccup can
         /// cause a single click attempt to fail even though the desktop is otherwise usable.
         /// </remarks>
         [Category("Mouse - Click")]
-        [Description("Clicks at the given coordinates, retrying on transient Win32Exception failures up to maxAttempts times.")]
-        public void ClickWithRetry(int x, int y, MouseButton button, int maxAttempts, int retryDelayMilliseconds)
+        [Description("Clicks at the given coordinates, retrying on failure up to maxAttempts times. Returns True if any attempt succeeded; never throws.")]
+        public bool ClickWithRetry(int x, int y, MouseButton button, int maxAttempts, int retryDelayMilliseconds, out string message)
         {
             if (maxAttempts < 1) maxAttempts = 1;
 
+            message = null;
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                try
+                if (ClickAt(x, y, button, out message))
                 {
-                    ClickAt(x, y, button);
-                    return;
+                    message = null;
+                    return true;
                 }
-                catch (Win32Exception) when (attempt < maxAttempts)
-                {
+                if (attempt < maxAttempts)
                     Thread.Sleep(Math.Max(0, retryDelayMilliseconds));
-                }
             }
+            return false;
         }
 
         /// <summary>
@@ -608,17 +626,17 @@ namespace MouseAutomation
         /// select-whole-line/paragraph gesture recognized by most text editors.
         /// </summary>
         /// <param name="button">The mouse button to triple-click.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection. Never throws.</returns>
         [Category("Mouse - Click")]
-        [Description("Triple-clicks the given button at the current cursor position (select-line/paragraph gesture).")]
-        public void TripleClick(MouseButton button)
+        [Description("Triple-clicks the given button at the current cursor position (select-line/paragraph gesture). Returns True on success; never throws.")]
+        public bool TripleClick(MouseButton button, out string message)
         {
-            Click(button);
+            if (!Click(button, out message)) return false;
             Thread.Sleep(50);
-            Click(button);
+            if (!Click(button, out message)) return false;
             Thread.Sleep(50);
-            Click(button);
+            return Click(button, out message);
         }
 
         #endregion
@@ -633,12 +651,13 @@ namespace MouseAutomation
         /// <param name="startY">Drag start Y coordinate in screen pixels.</param>
         /// <param name="endX">Drag end X coordinate in screen pixels.</param>
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Drag")]
-        [Description("Performs a left-button drag from the start coordinates to the end coordinates (30 steps, 10 ms per step).")]
-        public void DragAndDrop(int startX, int startY, int endX, int endY)
+        [Description("Performs a left-button drag from the start coordinates to the end coordinates (30 steps, 10 ms per step). Returns True on success; never throws.")]
+        public bool DragAndDrop(int startX, int startY, int endX, int endY, out string message)
         {
-            DragAndDrop(startX, startY, endX, endY, 30, 10);
+            return DragAndDrop(startX, startY, endX, endY, 30, 10, out message);
         }
 
         /// <summary>
@@ -651,18 +670,19 @@ namespace MouseAutomation
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
         /// <param name="steps">Number of intermediate move events during the drag.</param>
         /// <param name="stepDelayMilliseconds">Delay between drag steps in milliseconds.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Drag")]
-        [Description("Performs a left-button drag from the start coordinates to the end coordinates, moving smoothly in the given number of steps.")]
-        public void DragAndDrop(int startX, int startY, int endX, int endY, int steps, int stepDelayMilliseconds)
+        [Description("Performs a left-button drag from the start coordinates to the end coordinates, moving smoothly in the given number of steps. Returns True on success; never throws.")]
+        public bool DragAndDrop(int startX, int startY, int endX, int endY, int steps, int stepDelayMilliseconds, out string message)
         {
-            MoveTo(startX, startY);
+            if (!MoveTo(startX, startY, out message)) return false;
             Thread.Sleep(50);
-            MouseDown(MouseButton.Left);
+            if (!MouseDown(MouseButton.Left, out message)) return false;
             Thread.Sleep(50);
-            SmoothMoveTo(endX, endY, steps, stepDelayMilliseconds);
+            if (!SmoothMoveTo(endX, endY, steps, stepDelayMilliseconds, out message)) return false;
             Thread.Sleep(50);
-            MouseUp(MouseButton.Left);
+            return MouseUp(MouseButton.Left, out message);
         }
 
         /// <summary>
@@ -675,12 +695,13 @@ namespace MouseAutomation
         /// <param name="endX">Drag end X coordinate in screen pixels.</param>
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
         /// <param name="modifiers">Modifier keys to hold during the drag; combinable flags.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Drag")]
-        [Description("Performs a left-button rubber-band drag while holding modifier keys (e.g. Ctrl-drag to add to a selection).")]
-        public void RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers)
+        [Description("Performs a left-button rubber-band drag while holding modifier keys (e.g. Ctrl-drag to add to a selection). Returns True on success; never throws.")]
+        public bool RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers, out string message)
         {
-            RubberBandSelect(startX, startY, endX, endY, modifiers, 30, 10);
+            return RubberBandSelect(startX, startY, endX, endY, modifiers, 30, 10, out message);
         }
 
         /// <summary>
@@ -694,24 +715,28 @@ namespace MouseAutomation
         /// <param name="modifiers">Modifier keys to hold during the drag; combinable flags.</param>
         /// <param name="steps">Number of intermediate move events during the drag.</param>
         /// <param name="stepDelayMilliseconds">Delay between drag steps in milliseconds.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         /// <remarks>
-        /// Modifier keys are released in a Finally block, so a failed drag never leaves
-        /// Ctrl/Shift/Alt stuck down.
+        /// Modifier keys are released in a Finally block (best-effort), so a failed drag
+        /// never leaves Ctrl/Shift/Alt stuck down.
         /// </remarks>
         [Category("Mouse - Drag")]
-        [Description("Performs a left-button rubber-band drag while holding modifier keys, using a custom step count and delay.")]
-        public void RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers, int steps, int stepDelayMilliseconds)
+        [Description("Performs a left-button rubber-band drag while holding modifier keys, using a custom step count and delay. Returns True on success; never throws.")]
+        public bool RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers, int steps, int stepDelayMilliseconds, out string message)
         {
             List<INPUT> downBatch = new List<INPUT>();
             if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
             if ((modifiers & ModifierKeys.Shift)   != 0) downBatch.Add(MakeKeyInput(VK_SHIFT, false));
             if ((modifiers & ModifierKeys.Alt)     != 0) downBatch.Add(MakeKeyInput(VK_MENU, false));
-            if (downBatch.Count > 0) SendInputs(downBatch.ToArray());
+            if (downBatch.Count > 0 && !TrySendInputs(downBatch.ToArray(), out message))
+                return false;
 
+            bool dragOk;
+            string dragMessage = null;
             try
             {
-                DragAndDrop(startX, startY, endX, endY, steps, stepDelayMilliseconds);
+                dragOk = DragAndDrop(startX, startY, endX, endY, steps, stepDelayMilliseconds, out dragMessage);
             }
             finally
             {
@@ -719,8 +744,13 @@ namespace MouseAutomation
                 if ((modifiers & ModifierKeys.Alt)     != 0) upBatch.Add(MakeKeyInput(VK_MENU, true));
                 if ((modifiers & ModifierKeys.Shift)   != 0) upBatch.Add(MakeKeyInput(VK_SHIFT, true));
                 if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
-                if (upBatch.Count > 0) SendInputs(upBatch.ToArray());
+                // Best-effort modifier release - don't let a cleanup failure mask the
+                // primary drag outcome already captured above.
+                if (upBatch.Count > 0) TrySendInputs(upBatch.ToArray(), out _);
             }
+
+            message = dragMessage;
+            return dragOk;
         }
 
         /// <summary>
@@ -734,18 +764,19 @@ namespace MouseAutomation
         /// <param name="endX">Drag end X coordinate in screen pixels.</param>
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
         /// <param name="holdMilliseconds">How long to hold the button at the destination before releasing; values below 0 are treated as 0.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Drag")]
-        [Description("Drags from start to end, then holds the button down at the destination before releasing (for hover-to-expand drop targets).")]
-        public void DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds)
+        [Description("Drags from start to end, then holds the button down at the destination before releasing (for hover-to-expand drop targets). Returns True on success; never throws.")]
+        public bool DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds, out string message)
         {
-            MoveTo(startX, startY);
+            if (!MoveTo(startX, startY, out message)) return false;
             Thread.Sleep(50);
-            MouseDown(MouseButton.Left);
+            if (!MouseDown(MouseButton.Left, out message)) return false;
             Thread.Sleep(50);
-            SmoothMoveTo(endX, endY, 30, 10);
+            if (!SmoothMoveTo(endX, endY, 30, 10, out message)) return false;
             Thread.Sleep(Math.Max(0, holdMilliseconds));
-            MouseUp(MouseButton.Left);
+            return MouseUp(MouseButton.Left, out message);
         }
 
         #endregion
@@ -756,117 +787,103 @@ namespace MouseAutomation
         /// Scrolls vertically at the current cursor position.
         /// </summary>
         /// <param name="wheelDelta">Scroll amount; positive scrolls up, negative scrolls down. 120 = one wheel notch.</param>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls vertically. Positive values scroll up, negative scroll down. 120 = one wheel notch.")]
-        public void Scroll(int wheelDelta)
+        [Description("Scrolls vertically. Positive values scroll up, negative scroll down. 120 = one wheel notch. Returns True on success; never throws.")]
+        public bool Scroll(int wheelDelta, out string message)
         {
-            SendMouseEvent(MOUSEEVENTF_WHEEL, wheelDelta);
+            return TrySendMouseEvent(MOUSEEVENTF_WHEEL, wheelDelta, out message);
         }
 
         /// <summary>
         /// Scrolls up one wheel notch.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls up one wheel notch.")]
-        public void ScrollUp()
-        {
-            ScrollUp(1);
-        }
+        [Description("Scrolls up one wheel notch. Returns True on success; never throws.")]
+        public bool ScrollUp(out string message) => ScrollUp(1, out message);
 
         /// <summary>
         /// Scrolls up the given number of wheel notches.
         /// </summary>
         /// <param name="notches">Number of notches; the absolute value is used.</param>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls up the given number of wheel notches.")]
-        public void ScrollUp(int notches)
-        {
-            Scroll(WHEEL_DELTA * Math.Abs(notches));
-        }
+        [Description("Scrolls up the given number of wheel notches. Returns True on success; never throws.")]
+        public bool ScrollUp(int notches, out string message) => Scroll(WHEEL_DELTA * Math.Abs(notches), out message);
 
         /// <summary>
         /// Scrolls down one wheel notch.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls down one wheel notch.")]
-        public void ScrollDown()
-        {
-            ScrollDown(1);
-        }
+        [Description("Scrolls down one wheel notch. Returns True on success; never throws.")]
+        public bool ScrollDown(out string message) => ScrollDown(1, out message);
 
         /// <summary>
         /// Scrolls down the given number of wheel notches.
         /// </summary>
         /// <param name="notches">Number of notches; the absolute value is used.</param>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls down the given number of wheel notches.")]
-        public void ScrollDown(int notches)
-        {
-            Scroll(-WHEEL_DELTA * Math.Abs(notches));
-        }
+        [Description("Scrolls down the given number of wheel notches. Returns True on success; never throws.")]
+        public bool ScrollDown(int notches, out string message) => Scroll(-WHEEL_DELTA * Math.Abs(notches), out message);
 
         /// <summary>
         /// Scrolls horizontally at the current cursor position.
         /// </summary>
         /// <param name="wheelDelta">Scroll amount; positive scrolls right, negative scrolls left. 120 = one notch.</param>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls horizontally. Positive values scroll right, negative scroll left. 120 = one notch.")]
-        public void ScrollHorizontal(int wheelDelta)
+        [Description("Scrolls horizontally. Positive values scroll right, negative scroll left. 120 = one notch. Returns True on success; never throws.")]
+        public bool ScrollHorizontal(int wheelDelta, out string message)
         {
-            SendMouseEvent(MOUSEEVENTF_HWHEEL, wheelDelta);
+            return TrySendMouseEvent(MOUSEEVENTF_HWHEEL, wheelDelta, out message);
         }
 
         /// <summary>
         /// Scrolls right one wheel notch.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls right one wheel notch.")]
-        public void ScrollRight()
-        {
-            ScrollRight(1);
-        }
+        [Description("Scrolls right one wheel notch. Returns True on success; never throws.")]
+        public bool ScrollRight(out string message) => ScrollRight(1, out message);
 
         /// <summary>
         /// Scrolls right the given number of wheel notches.
         /// </summary>
         /// <param name="notches">Number of notches; the absolute value is used.</param>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls right the given number of wheel notches.")]
-        public void ScrollRight(int notches)
-        {
-            ScrollHorizontal(WHEEL_DELTA * Math.Abs(notches));
-        }
+        [Description("Scrolls right the given number of wheel notches. Returns True on success; never throws.")]
+        public bool ScrollRight(int notches, out string message) => ScrollHorizontal(WHEEL_DELTA * Math.Abs(notches), out message);
 
         /// <summary>
         /// Scrolls left one wheel notch.
         /// </summary>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls left one wheel notch.")]
-        public void ScrollLeft()
-        {
-            ScrollLeft(1);
-        }
+        [Description("Scrolls left one wheel notch. Returns True on success; never throws.")]
+        public bool ScrollLeft(out string message) => ScrollLeft(1, out message);
 
         /// <summary>
         /// Scrolls left the given number of wheel notches.
         /// </summary>
         /// <param name="notches">Number of notches; the absolute value is used.</param>
-        /// <exception cref="Win32Exception">Input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
-        [Description("Scrolls left the given number of wheel notches.")]
-        public void ScrollLeft(int notches)
-        {
-            ScrollHorizontal(-WHEEL_DELTA * Math.Abs(notches));
-        }
+        [Description("Scrolls left the given number of wheel notches. Returns True on success; never throws.")]
+        public bool ScrollLeft(int notches, out string message) => ScrollHorizontal(-WHEEL_DELTA * Math.Abs(notches), out message);
 
         /// <summary>
         /// Moves the cursor to the coordinates and scrolls horizontally there. Wheel
@@ -876,15 +893,17 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="wheelDelta">Scroll amount; positive scrolls right, negative scrolls left. 120 = one notch.</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         /// <remarks>Some applications invert or ignore horizontal wheel input.</remarks>
         [Category("Mouse - Wheel")]
-        [Description("Moves the cursor to the coordinates and scrolls horizontally there (positive = right, negative = left; 120 = one notch).")]
-        public void ScrollHorizontalAt(int x, int y, int wheelDelta)
+        [Description("Moves the cursor to the coordinates and scrolls horizontally there (positive = right, negative = left; 120 = one notch). Returns True on success; never throws.")]
+        public bool ScrollHorizontalAt(int x, int y, int wheelDelta, out string message)
         {
-            MoveTo(x, y);
+            if (!MoveTo(x, y, out message))
+                return false;
             Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
-            ScrollHorizontal(wheelDelta);
+            return ScrollHorizontal(wheelDelta, out message);
         }
 
         #endregion
@@ -897,7 +916,8 @@ namespace MouseAutomation
         /// Equivalent to ReplaceSystemCursor(SystemCursorType.Arrow, cursor).
         /// </summary>
         /// <param name="cursor">The system cursor to show in place of the normal arrow.</param>
-        /// <exception cref="Win32Exception">Loading or replacing the system cursor failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the change failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if loading or replacing the system cursor failed. Never throws.</returns>
         /// <remarks>
         /// This replaces the cursor <b>system-wide for the current session</b> (all
         /// applications), and it persists until <see cref="ResetSystemCursors"/> is called,
@@ -907,10 +927,10 @@ namespace MouseAutomation
         /// (ideally in a Finally block) so the user's cursors are restored.
         /// </remarks>
         [Category("Mouse - Cursor")]
-        [Description("Changes the normal arrow cursor to the given system cursor (e.g. Wait while the automation runs). Call ResetSystemCursors afterwards.")]
-        public void SetCursor(SystemCursorType cursor)
+        [Description("Changes the normal arrow cursor to the given system cursor (e.g. Wait while the automation runs). Call ResetSystemCursors afterwards. Returns True on success; never throws.")]
+        public bool SetCursor(SystemCursorType cursor, out string message)
         {
-            ReplaceSystemCursor(SystemCursorType.Arrow, cursor);
+            return ReplaceSystemCursor(SystemCursorType.Arrow, cursor, out message);
         }
 
         /// <summary>
@@ -919,16 +939,20 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="slotToReplace">Which system cursor slot to overwrite.</param>
         /// <param name="newCursor">The standard cursor whose image is placed into that slot.</param>
-        /// <exception cref="Win32Exception">Loading or replacing the system cursor failed.</exception>
-        /// <inheritdoc cref="SetCursor(SystemCursorType)" select="remarks"/>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the change failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if loading or replacing the system cursor failed. Never throws.</returns>
+        /// <inheritdoc cref="SetCursor(SystemCursorType, out string)" select="remarks"/>
         [Category("Mouse - Cursor")]
-        [Description("Replaces a specific system cursor slot with another standard system cursor. Call ResetSystemCursors afterwards.")]
-        public void ReplaceSystemCursor(SystemCursorType slotToReplace, SystemCursorType newCursor)
+        [Description("Replaces a specific system cursor slot with another standard system cursor. Call ResetSystemCursors afterwards. Returns True on success; never throws.")]
+        public bool ReplaceSystemCursor(SystemCursorType slotToReplace, SystemCursorType newCursor, out string message)
         {
             IntPtr hSource = LoadCursor(IntPtr.Zero, (int)newCursor); // shared system cursor - must NOT be destroyed
             if (hSource == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "LoadCursor failed for system cursor " + newCursor + ".");
-            ApplySystemCursor(slotToReplace, hSource);
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "LoadCursor failed for system cursor " + newCursor + ".").Message;
+                return false;
+            }
+            return TryApplySystemCursor(slotToReplace, hSource, out message);
         }
 
         /// <summary>
@@ -937,27 +961,35 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="slotToReplace">Which system cursor slot to overwrite (usually <see cref="SystemCursorType.Arrow"/>).</param>
         /// <param name="filePath">Full path to a .cur or .ani file. The file is copied at load time, so it can be deleted afterwards.</param>
-        /// <exception cref="ArgumentException"><paramref name="filePath"/> is null, empty, or whitespace.</exception>
-        /// <exception cref="FileNotFoundException"><paramref name="filePath"/> does not exist.</exception>
-        /// <exception cref="Win32Exception">The file could not be loaded as a cursor, or replacing the system cursor failed.</exception>
-        /// <inheritdoc cref="SetCursor(SystemCursorType)" select="remarks"/>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the change failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for a missing/invalid <paramref name="filePath"/>, or if loading/replacing the system cursor failed. Never throws.</returns>
+        /// <inheritdoc cref="SetCursor(SystemCursorType, out string)" select="remarks"/>
         [Category("Mouse - Cursor")]
-        [Description("Loads a cursor from a .cur/.ani file into the given system cursor slot (usually Arrow). Call ResetSystemCursors afterwards.")]
-        public void SetCursorFromFile(SystemCursorType slotToReplace, string filePath)
+        [Description("Loads a cursor from a .cur/.ani file into the given system cursor slot (usually Arrow). Call ResetSystemCursors afterwards. Returns True on success; never throws.")]
+        public bool SetCursorFromFile(SystemCursorType slotToReplace, string filePath, out string message)
         {
             if (string.IsNullOrWhiteSpace(filePath))
-                throw new ArgumentException("A cursor file path is required.", nameof(filePath));
+            {
+                message = "A cursor file path is required.";
+                return false;
+            }
             if (!File.Exists(filePath))
-                throw new FileNotFoundException("Cursor file not found.", filePath);
+            {
+                message = $"Cursor file not found: '{filePath}'.";
+                return false;
+            }
 
             IntPtr hFile = LoadCursorFromFile(filePath); // we own this handle
             if (hFile == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "LoadCursorFromFile failed for '" + filePath + "'. Expected a valid .cur or .ani file.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(),
+                    "LoadCursorFromFile failed for '" + filePath + "'. Expected a valid .cur or .ani file.").Message;
+                return false;
+            }
 
             try
             {
-                ApplySystemCursor(slotToReplace, hFile);
+                return TryApplySystemCursor(slotToReplace, hFile, out message);
             }
             finally
             {
@@ -969,13 +1001,19 @@ namespace MouseAutomation
         /// Restores all system cursors to the user's configured Windows defaults,
         /// undoing every SetCursor / ReplaceSystemCursor / SetCursorFromFile change.
         /// </summary>
-        /// <exception cref="Win32Exception">The SystemParametersInfo(SPI_SETCURSORS) call failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the reset failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the SystemParametersInfo(SPI_SETCURSORS) call failed. Never throws.</returns>
         [Category("Mouse - Cursor")]
-        [Description("Restores all system cursors to the Windows defaults, undoing any SetCursor/SetCursorFromFile changes.")]
-        public void ResetSystemCursors()
+        [Description("Restores all system cursors to the Windows defaults, undoing any SetCursor/SetCursorFromFile changes. Returns True on success; never throws.")]
+        public bool ResetSystemCursors(out string message)
         {
             if (!SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, SPIF_SENDCHANGE))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETCURSORS) failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETCURSORS) failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -1034,51 +1072,72 @@ namespace MouseAutomation
         /// <param name="top">Top edge of the confinement rectangle in screen pixels.</param>
         /// <param name="right">Right edge of the confinement rectangle in screen pixels.</param>
         /// <param name="bottom">Bottom edge of the confinement rectangle in screen pixels.</param>
-        /// <exception cref="ArgumentException">The rectangle is empty or inverted (right &lt;= left or bottom &lt;= top).</exception>
-        /// <exception cref="Win32Exception">The ClipCursor call failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the confinement failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the rectangle is empty/inverted (right &lt;= left or bottom &lt;= top), or the ClipCursor call failed. Never throws.</returns>
         /// <remarks>
         /// Useful for demos/kiosks or to keep a script's clicks inside one monitor.
         /// The clip is released automatically by Windows when the session locks, but
         /// always pair with <see cref="ReleaseCursorClip"/> (ideally in a Finally block).
         /// </remarks>
         [Category("Mouse - Cursor")]
-        [Description("Confines the cursor to the given screen rectangle until ReleaseCursorClip is called.")]
-        public void ClipCursor(int left, int top, int right, int bottom)
+        [Description("Confines the cursor to the given screen rectangle until ReleaseCursorClip is called. Returns True on success; never throws.")]
+        public bool ClipCursor(int left, int top, int right, int bottom, out string message)
         {
             if (right <= left || bottom <= top)
-                throw new ArgumentException("Clip rectangle must be non-empty: right > left and bottom > top.");
+            {
+                message = "Clip rectangle must be non-empty: right > left and bottom > top.";
+                return false;
+            }
 
             RECT rc = new RECT { Left = left, Top = top, Right = right, Bottom = bottom };
             if (!ClipCursorRect(ref rc))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
         /// Removes any cursor confinement set by <see cref="ClipCursor"/>, allowing the
         /// cursor to move freely over all monitors again.
         /// </summary>
-        /// <exception cref="Win32Exception">The ClipCursor call failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the release failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the ClipCursor call failed. Never throws.</returns>
         [Category("Mouse - Cursor")]
-        [Description("Removes cursor confinement set by ClipCursor.")]
-        public void ReleaseCursorClip()
+        [Description("Removes cursor confinement set by ClipCursor. Returns True on success; never throws.")]
+        public bool ReleaseCursorClip(out string message)
         {
             if (!ClipCursorNull(IntPtr.Zero))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor(NULL) failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor(NULL) failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
         /// Gets the rectangle the cursor is currently confined to (the full virtual
         /// screen when no clip is active).
         /// </summary>
-        /// <returns>The current clip rectangle as a <see cref="System.Drawing.Rectangle"/>.</returns>
-        /// <exception cref="Win32Exception">The GetClipCursor call failed.</exception>
+        /// <param name="clip">The current clip rectangle, or <c>default</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the GetClipCursor call failed. Never throws.</returns>
         [Category("Mouse - Cursor")]
-        [Description("Gets the rectangle the cursor is currently confined to (full virtual screen when unclipped).")]
-        public System.Drawing.Rectangle GetCursorClip()
+        [Description("Gets the rectangle the cursor is currently confined to (full virtual screen when unclipped). Returns True on success; never throws.")]
+        public bool GetCursorClip(out System.Drawing.Rectangle clip, out string message)
         {
             if (!GetClipCursor(out RECT rc))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetClipCursor failed.");
-            return new System.Drawing.Rectangle(rc.Left, rc.Top, rc.Right - rc.Left, rc.Bottom - rc.Top);
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClipCursor failed.").Message;
+                clip = default;
+                return false;
+            }
+            clip = new System.Drawing.Rectangle(rc.Left, rc.Top, rc.Right - rc.Left, rc.Bottom - rc.Top);
+            message = null;
+            return true;
         }
 
         #endregion
@@ -1133,8 +1192,8 @@ namespace MouseAutomation
         /// Sets the system double-click time in milliseconds.
         /// </summary>
         /// <param name="milliseconds">The new double-click time: 1..5000 ms, or 0 to restore the 500 ms Windows default.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="milliseconds"/> is negative or greater than 5000.</exception>
-        /// <exception cref="Win32Exception">The SystemParametersInfo(SPI_SETDOUBLECLICKTIME) call failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the change failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="milliseconds"/> is out of range, or the SystemParametersInfo(SPI_SETDOUBLECLICKTIME) call failed. Never throws.</returns>
         /// <remarks>
         /// Attended-session tip: if the operator tightened their double-click time, widen
         /// it temporarily to make <see cref="DoubleClickAt"/> deterministic. Capture
@@ -1142,15 +1201,22 @@ namespace MouseAutomation
         /// (ideally in a Finally block). The change applies immediately, per user session.
         /// </remarks>
         [Category("Mouse - State")]
-        [Description("Sets the system double-click time in milliseconds (0 restores the 500 ms default; max 5000). Restore the previous value afterwards.")]
-        public void SetDoubleClickTimeMs(int milliseconds)
+        [Description("Sets the system double-click time in milliseconds (0 restores the 500 ms default; max 5000). Restore the previous value afterwards. Returns True on success; never throws.")]
+        public bool SetDoubleClickTimeMs(int milliseconds, out string message)
         {
             if (milliseconds < 0 || milliseconds > 5000)
-                throw new ArgumentOutOfRangeException(nameof(milliseconds), milliseconds,
-                    "Double-click time must be 0 (Windows default) or 1..5000 milliseconds.");
+            {
+                message = "Double-click time must be 0 (Windows default) or 1..5000 milliseconds.";
+                return false;
+            }
 
             if (!SystemParametersInfo(SPI_SETDOUBLECLICKTIME, (uint)milliseconds, IntPtr.Zero, SPIF_SENDCHANGE))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETDOUBLECLICKTIME) failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETDOUBLECLICKTIME) failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -1252,10 +1318,12 @@ namespace MouseAutomation
         /// component (SendInput/SetCursorPos based actions) is NOT affected - which is the
         /// point: wrap critical click sequences so the human cannot interleave mid-action.
         /// </summary>
-        /// <exception cref="Win32Exception">
-        /// Windows refused the block - input is already blocked by another thread, or the
-        /// active desktop is secure (UAC prompt, lock screen).
-        /// </exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the block was refused.</param>
+        /// <returns>
+        /// <c>true</c> on success; <c>false</c> if Windows refused the block - input is
+        /// already blocked by another thread, or the active desktop is secure (UAC prompt,
+        /// lock screen). Never throws.
+        /// </returns>
         /// <remarks>
         /// Rules of engagement:
         ///  - ALWAYS pair with <see cref="UnblockUserInput"/> in a Finally block. Only the
@@ -1266,12 +1334,16 @@ namespace MouseAutomation
         ///    higher-integrity desktops (UIPI).
         /// </remarks>
         [Category("Mouse - Input Blocking")]
-        [Description("Blocks all real keyboard/mouse input system-wide until UnblockUserInput (injected input still works). MUST be paired with UnblockUserInput in a Finally block.")]
-        public void BlockUserInput()
+        [Description("Blocks all real keyboard/mouse input system-wide until UnblockUserInput (injected input still works). MUST be paired with UnblockUserInput in a Finally block. Returns True on success; never throws.")]
+        public bool BlockUserInput(out string message)
         {
             if (!BlockInputNative(true))
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "BlockInput was refused - input is already blocked, or the desktop is secure/locked.");
+            {
+                message = "BlockInput was refused - input is already blocked, or the desktop is secure/locked.";
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -1303,23 +1375,24 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="hWnd">Handle of the target window (ideally the raw child control, not the root).</param>
         /// <param name="button">The mouse button to simulate.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">PostMessage failed (e.g. UIPI blocked the message to a higher-integrity target).</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed PostMessage/GetWindowRect call (e.g. UIPI blocked the message to a higher-integrity target). Never throws.</returns>
         /// <remarks>
         /// Caveats:
         ///  - UIPI blocks messages to windows at a higher integrity level (elevated apps);
-        ///    this surfaces as a <see cref="Win32Exception"/> rather than silent failure.
+        ///    this surfaces as a <c>false</c> return with a message rather than silent failure.
         ///  - Browsers, DirectX games, and some modern frameworks often ignore posted
         ///    mouse messages because they read raw input or use a different input pipeline.
         ///  - For best results, target the raw child control handle (from Spy++ or
         ///    WindowFromPoint), not the top-level root window.
         /// </remarks>
         [Category("Mouse - Background Click")]
-        [Description("Posts a click directly to a window handle without moving the cursor or stealing focus.")]
-        public void ClickWindow(IntPtr hWnd, MouseButton button)
+        [Description("Posts a click directly to a window handle without moving the cursor or stealing focus. Returns True on success; never throws.")]
+        public bool ClickWindow(IntPtr hWnd, MouseButton button, out string message)
         {
-            GetWindowRectHelper(hWnd, out int left, out int top, out int width, out int height);
-            ClickWindowAtClientPoint(hWnd, width / 2, height / 2, button);
+            if (!TryGetWindowRect(hWnd, out int left, out int top, out int width, out int height, out message))
+                return false;
+            return ClickWindowAtClientPoint(hWnd, width / 2, height / 2, button, out message);
         }
 
         /// <summary>
@@ -1330,17 +1403,21 @@ namespace MouseAutomation
         /// <param name="screenX">Screen-space X coordinate.</param>
         /// <param name="screenY">Screen-space Y coordinate.</param>
         /// <param name="button">The mouse button to simulate.</param>
-        /// <exception cref="Win32Exception"><c>ScreenToClient</c> or <c>PostMessage</c> failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if ScreenToClient or PostMessage failed. Never throws.</returns>
         /// <inheritdoc cref="ClickWindow"/>
         [Category("Mouse - Background Click")]
-        [Description("Posts a click to a window at the given screen coordinates (converted to client coords).")]
-        public void ClickWindowAtPoint(IntPtr hWnd, int screenX, int screenY, MouseButton button)
+        [Description("Posts a click to a window at the given screen coordinates (converted to client coords). Returns True on success; never throws.")]
+        public bool ClickWindowAtPoint(IntPtr hWnd, int screenX, int screenY, MouseButton button, out string message)
         {
             POINT screenPt = new POINT { X = screenX, Y = screenY };
             if (!ScreenToClient(hWnd, ref screenPt))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
+                return false;
+            }
 
-            ClickWindowAtClientPoint(hWnd, screenPt.X, screenPt.Y, button);
+            return ClickWindowAtClientPoint(hWnd, screenPt.X, screenPt.Y, button, out message);
         }
 
         /// <summary>
@@ -1352,26 +1429,24 @@ namespace MouseAutomation
         /// <param name="clientX">Client-space X coordinate.</param>
         /// <param name="clientY">Client-space Y coordinate.</param>
         /// <param name="button">The mouse button to simulate.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">PostMessage failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed PostMessage. Never throws.</returns>
         /// <inheritdoc cref="ClickWindow"/>
         [Category("Mouse - Background Click")]
-        [Description("Posts a click to a window at client-area coordinates (Spy++ style). Supports all buttons.")]
-        public void ClickWindowAtClientPoint(IntPtr hWnd, int clientX, int clientY, MouseButton button)
+        [Description("Posts a click to a window at client-area coordinates (Spy++ style). Supports all buttons. Returns True on success; never throws.")]
+        public bool ClickWindowAtClientPoint(IntPtr hWnd, int clientX, int clientY, MouseButton button, out string message)
         {
-            GetWindowMessageParams(button, out uint downMsg, out uint upMsg, out uint wParam);
+            if (!TryGetWindowMessageParams(button, out uint downMsg, out uint upMsg, out uint wParam, out message))
+                return false;
 
             IntPtr lParam = MAKELPARAM(clientX, clientY);
 
-            if (!PostMessage(hWnd, downMsg, (IntPtr)wParam, lParam))
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "PostMessage(WM_*BUTTONDOWN) failed. The target may be elevated (UIPI), or the handle is invalid.");
+            if (!TryPostMessage(hWnd, downMsg, wParam, lParam, out message))
+                return false;
 
             Thread.Sleep(20);
 
-            if (!PostMessage(hWnd, upMsg, (IntPtr)wParam, lParam))
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "PostMessage(WM_*BUTTONUP) failed. The target may be elevated (UIPI), or the handle is invalid.");
+            return TryPostMessage(hWnd, upMsg, wParam, lParam, out message);
         }
 
         /// <summary>
@@ -1381,30 +1456,32 @@ namespace MouseAutomation
         /// <param name="hWnd">Handle of the target window.</param>
         /// <param name="clientX">Client-space X coordinate.</param>
         /// <param name="clientY">Client-space Y coordinate.</param>
-        /// <exception cref="Win32Exception">PostMessage failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if any PostMessage in the sequence failed. Never throws.</returns>
         /// <remarks>
         /// The target must have <c>CS_DBLCLKS</c> in its window class style for the
         /// DBLCLK message to register; most standard Win32 controls do.
         /// </remarks>
         [Category("Mouse - Background Click")]
-        [Description("Posts a double-click sequence (DOWN/UP/DBLCLK/UP) to a window at client coordinates.")]
-        public void DoubleClickWindowAtClientPoint(IntPtr hWnd, int clientX, int clientY)
+        [Description("Posts a double-click sequence (DOWN/UP/DBLCLK/UP) to a window at client coordinates. Returns True on success; never throws.")]
+        public bool DoubleClickWindowAtClientPoint(IntPtr hWnd, int clientX, int clientY, out string message)
         {
             IntPtr lParam = MAKELPARAM(clientX, clientY);
 
-            PostMessageOrThrow(hWnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam);
+            if (!TryPostMessage(hWnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam, out message)) return false;
             Thread.Sleep(20);
-            PostMessageOrThrow(hWnd, WM_LBUTTONUP, MK_LBUTTON, lParam);
+            if (!TryPostMessage(hWnd, WM_LBUTTONUP, MK_LBUTTON, lParam, out message)) return false;
             Thread.Sleep(20);
-            PostMessageOrThrow(hWnd, WM_LBUTTONDBLCLK, MK_LBUTTON, lParam);
+            if (!TryPostMessage(hWnd, WM_LBUTTONDBLCLK, MK_LBUTTON, lParam, out message)) return false;
             Thread.Sleep(20);
-            PostMessageOrThrow(hWnd, WM_LBUTTONUP, MK_LBUTTON, lParam);
+            return TryPostMessage(hWnd, WM_LBUTTONUP, MK_LBUTTON, lParam, out message);
         }
 
         // ---- Background-click helpers ----
 
-        private static void GetWindowMessageParams(MouseButton button, out uint downMsg, out uint upMsg, out uint wParam)
+        private static bool TryGetWindowMessageParams(MouseButton button, out uint downMsg, out uint upMsg, out uint wParam, out string message)
         {
+            downMsg = upMsg = wParam = 0;
             switch (button)
             {
                 case MouseButton.Left:
@@ -1418,26 +1495,40 @@ namespace MouseAutomation
                 case MouseButton.XButton2:
                     downMsg = WM_XBUTTONDOWN; upMsg = WM_XBUTTONUP; wParam = MAKEWPARAM(MK_XBUTTON2, XBUTTON2_HI); break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(button), button, "Unsupported mouse button.");
+                    message = $"Unsupported mouse button: {button}.";
+                    return false;
             }
+            message = null;
+            return true;
         }
 
-        private static void PostMessageOrThrow(IntPtr hWnd, uint msg, uint wParam, IntPtr lParam)
+        private static bool TryPostMessage(IntPtr hWnd, uint msg, uint wParam, IntPtr lParam, out string message)
         {
             if (!PostMessage(hWnd, msg, (IntPtr)wParam, lParam))
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(),
                     "PostMessage failed for message 0x" + msg.ToString("X") +
-                    ". The target may be elevated (UIPI), or the handle is invalid.");
+                    ". The target may be elevated (UIPI), or the handle is invalid.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
-        private static void GetWindowRectHelper(IntPtr hWnd, out int left, out int top, out int width, out int height)
+        private static bool TryGetWindowRect(IntPtr hWnd, out int left, out int top, out int width, out int height, out string message)
         {
+            left = top = width = height = 0;
             if (!GetWindowRect(hWnd, out RECT rc))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.").Message;
+                return false;
+            }
             left = rc.Left;
             top = rc.Top;
             width = rc.Right - rc.Left;
             height = rc.Bottom - rc.Top;
+            message = null;
+            return true;
         }
 
         private static IntPtr MAKELPARAM(int low, int high)
@@ -1462,14 +1553,16 @@ namespace MouseAutomation
         /// Gets the screen-space bounding rectangle of a window.
         /// </summary>
         /// <param name="hWnd">Handle of the window to measure.</param>
-        /// <returns>The window's bounds as a <see cref="System.Drawing.Rectangle"/>.</returns>
-        /// <exception cref="Win32Exception">GetWindowRect failed (e.g. an invalid handle).</exception>
+        /// <param name="bounds">The window's bounds, or <c>default</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetWindowRect failed (e.g. an invalid handle). Never throws.</returns>
         [Category("Mouse - Window Targeting")]
-        [Description("Gets the screen-space bounding rectangle of a window.")]
-        public System.Drawing.Rectangle GetWindowBounds(IntPtr hWnd)
+        [Description("Gets the screen-space bounding rectangle of a window. Returns True on success; never throws.")]
+        public bool GetWindowBounds(IntPtr hWnd, out System.Drawing.Rectangle bounds, out string message)
         {
-            GetWindowRectHelper(hWnd, out int left, out int top, out int width, out int height);
-            return new System.Drawing.Rectangle(left, top, width, height);
+            bool ok = TryGetWindowRect(hWnd, out int left, out int top, out int width, out int height, out message);
+            bounds = ok ? new System.Drawing.Rectangle(left, top, width, height) : default;
+            return ok;
         }
 
         /// <summary>
@@ -1478,18 +1571,26 @@ namespace MouseAutomation
         /// <param name="hWnd">Handle of the window the client point is relative to.</param>
         /// <param name="clientX">Client-space X coordinate.</param>
         /// <param name="clientY">Client-space Y coordinate.</param>
-        /// <param name="screenX">Receives the equivalent screen-space X coordinate.</param>
-        /// <param name="screenY">Receives the equivalent screen-space Y coordinate.</param>
-        /// <exception cref="Win32Exception">ClientToScreen failed.</exception>
+        /// <param name="screenX">Receives the equivalent screen-space X coordinate, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="screenY">Receives the equivalent screen-space Y coordinate, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the conversion failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if ClientToScreen failed. Never throws.</returns>
         [Category("Mouse - Window Targeting")]
-        [Description("Converts a point in a window's client area to screen coordinates.")]
-        public void ClientPointToScreen(IntPtr hWnd, int clientX, int clientY, out int screenX, out int screenY)
+        [Description("Converts a point in a window's client area to screen coordinates. Returns True on success; never throws.")]
+        public bool ClientPointToScreen(IntPtr hWnd, int clientX, int clientY, out int screenX, out int screenY, out string message)
         {
             POINT pt = new POINT { X = clientX, Y = clientY };
             if (!ClientToScreen(hWnd, ref pt))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "ClientToScreen failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "ClientToScreen failed.").Message;
+                screenX = 0;
+                screenY = 0;
+                return false;
+            }
             screenX = pt.X;
             screenY = pt.Y;
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -1498,18 +1599,26 @@ namespace MouseAutomation
         /// <param name="hWnd">Handle of the window the result is relative to.</param>
         /// <param name="screenX">Screen-space X coordinate.</param>
         /// <param name="screenY">Screen-space Y coordinate.</param>
-        /// <param name="clientX">Receives the equivalent client-space X coordinate.</param>
-        /// <param name="clientY">Receives the equivalent client-space Y coordinate.</param>
-        /// <exception cref="Win32Exception">ScreenToClient failed.</exception>
+        /// <param name="clientX">Receives the equivalent client-space X coordinate, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="clientY">Receives the equivalent client-space Y coordinate, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the conversion failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if ScreenToClient failed. Never throws.</returns>
         [Category("Mouse - Window Targeting")]
-        [Description("Converts a screen coordinate to a point relative to a window's client area.")]
-        public void ScreenPointToClient(IntPtr hWnd, int screenX, int screenY, out int clientX, out int clientY)
+        [Description("Converts a screen coordinate to a point relative to a window's client area. Returns True on success; never throws.")]
+        public bool ScreenPointToClient(IntPtr hWnd, int screenX, int screenY, out int clientX, out int clientY, out string message)
         {
             POINT pt = new POINT { X = screenX, Y = screenY };
             if (!ScreenToClient(hWnd, ref pt))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
+                clientX = 0;
+                clientY = 0;
+                return false;
+            }
             clientX = pt.X;
             clientY = pt.Y;
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -1522,19 +1631,20 @@ namespace MouseAutomation
         /// <param name="clientX">Client-space X coordinate.</param>
         /// <param name="clientY">Client-space Y coordinate.</param>
         /// <param name="button">The mouse button to click.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">ClientToScreen or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, or if ClientToScreen/input injection failed. Never throws.</returns>
         /// <remarks>
         /// Because this moves the real cursor, the target window does not need to be
         /// covered or minimized (unlike the PostMessage variants), but it must be
         /// visible and unobstructed at the computed screen point.
         /// </remarks>
         [Category("Mouse - Window Targeting")]
-        [Description("Moves the real cursor to a window-relative client point and clicks there (works where PostMessage-based clicks are ignored).")]
-        public void ClickAtClientPoint(IntPtr hWnd, int clientX, int clientY, MouseButton button)
+        [Description("Moves the real cursor to a window-relative client point and clicks there (works where PostMessage-based clicks are ignored). Returns True on success; never throws.")]
+        public bool ClickAtClientPoint(IntPtr hWnd, int clientX, int clientY, MouseButton button, out string message)
         {
-            ClientPointToScreen(hWnd, clientX, clientY, out int screenX, out int screenY);
-            ClickAt(screenX, screenY, button);
+            if (!ClientPointToScreen(hWnd, clientX, clientY, out int screenX, out int screenY, out message))
+                return false;
+            return ClickAt(screenX, screenY, button, out message);
         }
 
         /// <summary>
@@ -1546,21 +1656,29 @@ namespace MouseAutomation
         /// <param name="xFraction">Horizontal position as a fraction of the window's width, from 0.0 (left edge) to 1.0 (right edge).</param>
         /// <param name="yFraction">Vertical position as a fraction of the window's height, from 0.0 (top edge) to 1.0 (bottom edge).</param>
         /// <param name="button">The mouse button to click.</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="xFraction"/> or <paramref name="yFraction"/> is outside [0.0, 1.0], or <paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">GetWindowRect or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="xFraction"/>/<paramref name="yFraction"/> are outside [0.0, 1.0], <paramref name="button"/> is undefined, or GetWindowRect/input injection failed. Never throws.</returns>
         [Category("Mouse - Window Targeting")]
-        [Description("Clicks at a fractional position within a window (e.g. 0.5, 0.9), resilient to minor resizes across machines.")]
-        public void ClickAtRelativePosition(IntPtr hWnd, double xFraction, double yFraction, MouseButton button)
+        [Description("Clicks at a fractional position within a window (e.g. 0.5, 0.9), resilient to minor resizes across machines. Returns True on success; never throws.")]
+        public bool ClickAtRelativePosition(IntPtr hWnd, double xFraction, double yFraction, MouseButton button, out string message)
         {
             if (xFraction < 0.0 || xFraction > 1.0)
-                throw new ArgumentOutOfRangeException(nameof(xFraction), xFraction, "xFraction must be between 0.0 and 1.0.");
+            {
+                message = "xFraction must be between 0.0 and 1.0.";
+                return false;
+            }
             if (yFraction < 0.0 || yFraction > 1.0)
-                throw new ArgumentOutOfRangeException(nameof(yFraction), yFraction, "yFraction must be between 0.0 and 1.0.");
+            {
+                message = "yFraction must be between 0.0 and 1.0.";
+                return false;
+            }
 
-            System.Drawing.Rectangle bounds = GetWindowBounds(hWnd);
+            if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+                return false;
+
             int x = bounds.Left + (int)Math.Round(bounds.Width * xFraction);
             int y = bounds.Top + (int)Math.Round(bounds.Height * yFraction);
-            ClickAt(x, y, button);
+            return ClickAt(x, y, button, out message);
         }
 
         /// <summary>
@@ -1585,20 +1703,21 @@ namespace MouseAutomation
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to click.</param>
         /// <param name="expectedWindowHandle">The window handle expected to own the point (its top-level/root window).</param>
-        /// <exception cref="InvalidOperationException">The window under the point is not <paramref name="expectedWindowHandle"/> or one of its descendants.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click was refused or failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the window under the point is not <paramref name="expectedWindowHandle"/> or one of its descendants (the misclick guard), <paramref name="button"/> is undefined, or a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Window Targeting")]
-        [Description("Clicks only if the window under the point matches the expected window (or a descendant) - guards against misclicks from a shifted layout.")]
-        public void SafeClickAt(int x, int y, MouseButton button, IntPtr expectedWindowHandle)
+        [Description("Clicks only if the window under the point matches the expected window (or a descendant) - guards against misclicks from a shifted layout. Returns True on success; never throws.")]
+        public bool SafeClickAt(int x, int y, MouseButton button, IntPtr expectedWindowHandle, out string message)
         {
             IntPtr actual = GetWindowAtPoint(x, y);
             if (actual != expectedWindowHandle && GetAncestor(actual, GA_ROOT) != expectedWindowHandle)
-                throw new InvalidOperationException(
-                    $"Refusing to click ({x},{y}): the window under that point (handle {actual}) " +
-                    $"is not the expected window (handle {expectedWindowHandle}) or one of its descendants.");
+            {
+                message = $"Refusing to click ({x},{y}): the window under that point (handle {actual}) " +
+                          $"is not the expected window (handle {expectedWindowHandle}) or one of its descendants.";
+                return false;
+            }
 
-            ClickAt(x, y, button);
+            return ClickAt(x, y, button, out message);
         }
 
         #endregion
@@ -1615,26 +1734,32 @@ namespace MouseAutomation
         /// coordinate (from <see cref="GetX"/>) is scaled, this returns the true
         /// hardware pixel position.
         /// </summary>
-        /// <returns>The cursor X in physical screen pixels.</returns>
-        /// <exception cref="Win32Exception">GetPhysicalCursorPos failed.</exception>
+        /// <param name="x">The cursor X in physical screen pixels, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetPhysicalCursorPos failed. Never throws.</returns>
         [Category("Mouse - DPI")]
-        [Description("Gets the cursor X in physical pixels (unaffected by DPI scaling).")]
-        public int GetPhysicalCursorX()
+        [Description("Gets the cursor X in physical pixels (unaffected by DPI scaling). Returns True on success; never throws.")]
+        public bool GetPhysicalCursorX(out int x, out string message)
         {
-            return GetPhysicalPoint().X;
+            bool ok = TryGetPhysicalPoint(out POINT p, out message);
+            x = ok ? p.X : 0;
+            return ok;
         }
 
         /// <summary>
         /// Gets the current cursor Y coordinate in physical pixels, regardless of the
         /// process's DPI-awareness setting.
         /// </summary>
-        /// <returns>The cursor Y in physical screen pixels.</returns>
-        /// <exception cref="Win32Exception">GetPhysicalCursorPos failed.</exception>
+        /// <param name="y">The cursor Y in physical screen pixels, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetPhysicalCursorPos failed. Never throws.</returns>
         [Category("Mouse - DPI")]
-        [Description("Gets the cursor Y in physical pixels (unaffected by DPI scaling).")]
-        public int GetPhysicalCursorY()
+        [Description("Gets the cursor Y in physical pixels (unaffected by DPI scaling). Returns True on success; never throws.")]
+        public bool GetPhysicalCursorY(out int y, out string message)
         {
-            return GetPhysicalPoint().Y;
+            bool ok = TryGetPhysicalPoint(out POINT p, out message);
+            y = ok ? p.Y : 0;
+            return ok;
         }
 
         /// <summary>
@@ -1661,11 +1786,15 @@ namespace MouseAutomation
             return !AreDpiAwarenessContextsEqual(ctx, DPI_AWARENESS_CONTEXT_UNAWARE);
         }
 
-        private static POINT GetPhysicalPoint()
+        private static bool TryGetPhysicalPoint(out POINT p, out string message)
         {
-            if (!GetPhysicalCursorPos(out POINT p))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetPhysicalCursorPos failed.");
-            return p;
+            if (!GetPhysicalCursorPos(out p))
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetPhysicalCursorPos failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         #endregion
@@ -1699,19 +1828,25 @@ namespace MouseAutomation
         ///  - Does not draw over exclusive fullscreen (DirectX) applications.
         ///  - The XOR blend means the apparent color varies by background.
         /// </remarks>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the highlight failed.</param>
         [Category("Mouse - Highlight")]
-        [Description("Flashes an inverting ring around the cursor for demos/recordings. Erases itself exactly via XOR drawing.")]
-        public void FlashCursorHighlight(int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)
+        [Description("Flashes an inverting ring around the cursor for demos/recordings. Erases itself exactly via XOR drawing. Returns True on success; never throws.")]
+        public bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)
         {
             if (radius < 1) radius = 1;
             if (flashes < 1) flashes = 1;
             if (flashMs < 1) flashMs = 1;
             if (ringWidth < 1) ringWidth = 1;
 
-            POINT pos = GetPhysicalPoint();
+            if (!TryGetPhysicalPoint(out POINT pos, out message))
+                return false;
+
             IntPtr hdc = GetDC(IntPtr.Zero);
             if (hdc == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.").Message;
+                return false;
+            }
 
             IntPtr hPen = CreatePen(PS_SOLID, ringWidth, (uint)colorRef);
             IntPtr hOldPen = IntPtr.Zero;
@@ -1742,6 +1877,9 @@ namespace MouseAutomation
                 if (hdc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdc);
                 if (hPen != IntPtr.Zero) DeleteObject(hPen);
             }
+
+            message = null;
+            return true;
         }
 
         #endregion
@@ -1769,13 +1907,16 @@ namespace MouseAutomation
         /// making demo recordings look natural. The endpoint is always exact (no
         /// jitter on the final step), so the click lands precisely where intended.
         /// </remarks>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
         [Category("Mouse - Movement")]
-        [Description("Moves the cursor to the target along a randomized Bezier curve with ease-in-out timing (human-like).")]
-        public void MoveMouseBezier(int x, int y, int durationMs = 500)
+        [Description("Moves the cursor to the target along a randomized Bezier curve with ease-in-out timing (human-like). Returns True on success; never throws.")]
+        public bool MoveMouseBezier(int x, int y, out string message, int durationMs = 500)
         {
             if (durationMs < 1) durationMs = 1;
 
-            POINT start = GetPoint();
+            if (!TryGetPoint(out POINT start, out message))
+                return false;
+
             Random rng = new Random();
 
             // Direction of the start→end line.
@@ -1786,8 +1927,7 @@ namespace MouseAutomation
             if (dist < 2.0)
             {
                 // Already there (or very close) — just snap.
-                MoveTo(x, y);
-                return;
+                return MoveTo(x, y, out message);
             }
 
             // Perpendicular unit vector to the line.
@@ -1830,14 +1970,15 @@ namespace MouseAutomation
                     py += rng.Next(-1, 2);
                 }
 
-                MoveTo(px, py);
+                if (!MoveTo(px, py, out message))
+                    return false;
 
                 if (stepDelay > 0 && i < steps)
                     Thread.Sleep(stepDelay);
             }
 
             // Guarantee exact endpoint.
-            MoveTo(x, y);
+            return MoveTo(x, y, out message);
         }
 
         /// <summary>
@@ -1847,16 +1988,17 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to click.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
         /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, or if a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Movement")]
-        [Description("Moves along a randomized Bezier curve to the target, then clicks - the human-like counterpart to ClickAt.")]
-        public void BezierClickAt(int x, int y, MouseButton button, int durationMs = 500)
+        [Description("Moves along a randomized Bezier curve to the target, then clicks - the human-like counterpart to ClickAt. Returns True on success; never throws.")]
+        public bool BezierClickAt(int x, int y, MouseButton button, out string message, int durationMs = 500)
         {
-            MoveMouseBezier(x, y, durationMs);
+            if (!MoveMouseBezier(x, y, out message, durationMs))
+                return false;
             Thread.Sleep(30);
-            Click(button);
+            return Click(button, out message);
         }
 
         /// <summary>
@@ -1866,40 +2008,42 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to double-click.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
         /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="button"/> is not a defined value.</exception>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, or if a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Movement")]
-        [Description("Moves along a randomized Bezier curve to the target, then double-clicks.")]
-        public void BezierDoubleClickAt(int x, int y, MouseButton button, int durationMs = 500)
+        [Description("Moves along a randomized Bezier curve to the target, then double-clicks. Returns True on success; never throws.")]
+        public bool BezierDoubleClickAt(int x, int y, MouseButton button, out string message, int durationMs = 500)
         {
-            MoveMouseBezier(x, y, durationMs);
+            if (!MoveMouseBezier(x, y, out message, durationMs))
+                return false;
             Thread.Sleep(30);
-            DoubleClick(button);
+            return DoubleClick(button, out message);
         }
 
         /// <summary>
         /// Performs a left-button drag from the start coordinates to the end
         /// coordinates, moving along a randomized Bezier curve instead of a
-        /// straight/eased line - the human-like counterpart to <see cref="DragAndDrop(int, int, int, int)"/>.
+        /// straight/eased line - the human-like counterpart to <see cref="DragAndDrop(int, int, int, int, out string)"/>.
         /// </summary>
         /// <param name="startX">Drag start X coordinate in screen pixels.</param>
         /// <param name="startY">Drag start Y coordinate in screen pixels.</param>
         /// <param name="endX">Drag end X coordinate in screen pixels.</param>
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
         /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call or input injection failed.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         [Category("Mouse - Movement")]
-        [Description("Performs a left-button drag along a randomized Bezier curve instead of a straight line - the human-like counterpart to DragAndDrop.")]
-        public void BezierDragAndDrop(int startX, int startY, int endX, int endY, int durationMs = 500)
+        [Description("Performs a left-button drag along a randomized Bezier curve instead of a straight line - the human-like counterpart to DragAndDrop. Returns True on success; never throws.")]
+        public bool BezierDragAndDrop(int startX, int startY, int endX, int endY, out string message, int durationMs = 500)
         {
-            MoveTo(startX, startY);
+            if (!MoveTo(startX, startY, out message)) return false;
             Thread.Sleep(50);
-            MouseDown(MouseButton.Left);
+            if (!MouseDown(MouseButton.Left, out message)) return false;
             Thread.Sleep(50);
-            MoveMouseBezier(endX, endY, durationMs);
+            if (!MoveMouseBezier(endX, endY, out message, durationMs)) return false;
             Thread.Sleep(50);
-            MouseUp(MouseButton.Left);
+            return MouseUp(MouseButton.Left, out message);
         }
 
         #endregion
@@ -1915,26 +2059,36 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">X coordinate in screen pixels.</param>
         /// <param name="y">Y coordinate in screen pixels.</param>
-        /// <returns>The pixel color as a COLORREF (0x00BBGGRR), the same format used by <see cref="FlashCursorHighlight"/>'s colorRef parameter.</returns>
-        /// <exception cref="Win32Exception">GetDC or GetPixel failed (e.g. the coordinates are outside every monitor's clipping region).</exception>
+        /// <param name="color">The pixel color as a COLORREF (0x00BBGGRR), the same format used by <see cref="FlashCursorHighlight"/>'s colorRef parameter, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the read failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetDC or GetPixel failed (e.g. the coordinates are outside every monitor's clipping region). Never throws.</returns>
         /// <remarks>
         /// A lightweight verification primitive for flows that can't use full OCR/image
         /// recognition - e.g. confirming a button changed color after being clicked.
         /// </remarks>
         [Category("Mouse - Verification")]
-        [Description("Reads the color of the screen pixel at the given coordinates, as a 0x00BBGGRR COLORREF value.")]
-        public int GetPixelColor(int x, int y)
+        [Description("Reads the color of the screen pixel at the given coordinates, as a 0x00BBGGRR COLORREF value. Returns True on success; never throws.")]
+        public bool GetPixelColor(int x, int y, out int color, out string message)
         {
+            color = 0;
             IntPtr hdc = GetDC(IntPtr.Zero);
             if (hdc == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.").Message;
+                return false;
+            }
 
             try
             {
                 uint colorRef = GetPixel(hdc, x, y);
                 if (colorRef == CLR_INVALID)
-                    throw new Win32Exception("GetPixel failed - the coordinates may be outside every monitor's clipping region.");
-                return unchecked((int)colorRef);
+                {
+                    message = "GetPixel failed - the coordinates may be outside every monitor's clipping region.";
+                    return false;
+                }
+                color = unchecked((int)colorRef);
+                message = null;
+                return true;
             }
             finally
             {
@@ -1950,22 +2104,31 @@ namespace MouseAutomation
         /// <param name="expectedColorRef">The color to wait for, as a 0x00BBGGRR COLORREF (see <see cref="GetPixelColor"/>).</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <returns>True if the pixel matched before the timeout; false if it timed out.</returns>
-        /// <exception cref="Win32Exception">GetDC or GetPixel failed.</exception>
+        /// <param name="message"><c>null</c> if the poll completed (matched or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the pixel matched before the timeout; <c>false</c> if it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("Mouse - Verification")]
-        [Description("Polls a screen pixel until it matches the expected COLORREF or the timeout elapses. Returns True if it matched in time.")]
-        public bool WaitForPixelColor(int x, int y, int expectedColorRef, int timeoutMs, int pollIntervalMs)
+        [Description("Polls a screen pixel until it matches the expected COLORREF or the timeout elapses. Returns True if it matched in time; never throws.")]
+        public bool WaitForPixelColor(int x, int y, int expectedColorRef, int timeoutMs, int pollIntervalMs, out string message)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
-            while (GetPixelColor(x, y) != expectedColorRef)
+            while (true)
             {
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                if (!GetPixelColor(x, y, out int color, out message))
                     return false;
+                if (color == expectedColorRef)
+                {
+                    message = null;
+                    return true;
+                }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    message = null;
+                    return false;
+                }
                 Thread.Sleep(pollIntervalMs);
             }
-            return true;
         }
 
         /// <summary>
@@ -1976,31 +2139,42 @@ namespace MouseAutomation
         /// <param name="y">Y coordinate in screen pixels.</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <returns>True if the pixel changed before the timeout; false if it timed out.</returns>
-        /// <exception cref="Win32Exception">GetDC or GetPixel failed.</exception>
+        /// <param name="message"><c>null</c> if the poll completed (changed or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the pixel changed before the timeout; <c>false</c> if it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("Mouse - Verification")]
-        [Description("Polls a screen pixel until its color changes from its value at call time, or the timeout elapses.")]
-        public bool WaitForPixelChange(int x, int y, int timeoutMs, int pollIntervalMs)
+        [Description("Polls a screen pixel until its color changes from its value at call time, or the timeout elapses. Returns True if it changed in time; never throws.")]
+        public bool WaitForPixelChange(int x, int y, int timeoutMs, int pollIntervalMs, out string message)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
-            int baseline = GetPixelColor(x, y);
+            if (!GetPixelColor(x, y, out int baseline, out message))
+                return false;
+
             int start = Environment.TickCount;
-            while (GetPixelColor(x, y) == baseline)
+            while (true)
             {
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                if (!GetPixelColor(x, y, out int color, out message))
                     return false;
+                if (color != baseline)
+                {
+                    message = null;
+                    return true;
+                }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    message = null;
+                    return false;
+                }
                 Thread.Sleep(pollIntervalMs);
             }
-            return true;
         }
 
         /// <summary>
         /// Indicates whether the system is currently showing a busy cursor (the Wait
         /// hourglass or the AppStarting "working in background" arrow).
         /// </summary>
-        /// <returns>True if the current cursor is the Wait or AppStarting system cursor.</returns>
-        /// <exception cref="Win32Exception">GetCursorInfo failed.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely non-busy cursor).</param>
+        /// <returns><c>true</c> if the current cursor is the Wait or AppStarting system cursor; <c>false</c> if it isn't, or if GetCursorInfo failed (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         /// <remarks>
         /// Many applications show one of these cursors while processing, so this is a
         /// more reliable "is the app still working" signal than a fixed delay. It is
@@ -2008,16 +2182,20 @@ namespace MouseAutomation
         /// or another window under the cursor can show it for unrelated reasons.
         /// </remarks>
         [Category("Mouse - Verification")]
-        [Description("Returns True if the current system cursor is the Wait or AppStarting busy indicator.")]
-        public bool IsBusyCursorActive()
+        [Description("Returns True if the current system cursor is the Wait or AppStarting busy indicator. Never throws.")]
+        public bool IsBusyCursorActive(out string message)
         {
             CURSORINFO info = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
             if (!GetCursorInfo(out info))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetCursorInfo failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetCursorInfo failed.").Message;
+                return false;
+            }
 
             IntPtr waitCursor = LoadCursor(IntPtr.Zero, (int)SystemCursorType.Wait);
             IntPtr appStartingCursor = LoadCursor(IntPtr.Zero, (int)SystemCursorType.AppStarting);
 
+            message = null;
             return info.hCursor == waitCursor || info.hCursor == appStartingCursor;
         }
 
@@ -2027,34 +2205,57 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <returns>True if the cursor became idle before the timeout; false if it timed out still busy.</returns>
-        /// <exception cref="Win32Exception">GetCursorInfo failed.</exception>
+        /// <param name="message"><c>null</c> if the poll completed (idle or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the cursor became idle before the timeout; <c>false</c> if it timed out still busy, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         /// <inheritdoc cref="IsBusyCursorActive" select="remarks"/>
         [Category("Mouse - Verification")]
-        [Description("Waits until the busy cursor (Wait/AppStarting) clears, or the timeout elapses. Returns True if it became idle in time.")]
-        public bool WaitForIdleCursor(int timeoutMs, int pollIntervalMs)
+        [Description("Waits until the busy cursor (Wait/AppStarting) clears, or the timeout elapses. Returns True if it became idle in time; never throws.")]
+        public bool WaitForIdleCursor(int timeoutMs, int pollIntervalMs, out string message)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
-            while (IsBusyCursorActive())
+            while (true)
             {
+                if (!IsBusyCursorActive(out message))
+                {
+                    if (message != null)
+                        return false; // aborted due to a Win32 failure
+                    return true; // not busy - idle
+                }
                 if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    message = null;
                     return false;
+                }
                 Thread.Sleep(pollIntervalMs);
             }
-            return true;
         }
 
         #endregion
 
         #region Internal Helpers
 
-        private static POINT GetPoint()
+        private static bool TryGetPoint(out POINT p, out string message)
         {
-            if (!GetCursorPos(out POINT p))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetCursorPos failed.");
-            return p;
+            if (!GetCursorPos(out p))
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetCursorPos failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
+        }
+
+        private static bool TrySetCursorPos(int x, int y, out string message)
+        {
+            if (!SetCursorPos(x, y))
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "SetCursorPos failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -2062,31 +2263,39 @@ namespace MouseAutomation
         /// following the ownership rules of SetSystemCursor (which destroys the handle
         /// it is given - hence the copy; the caller keeps ownership of hSource).
         /// </summary>
-        private static void ApplySystemCursor(SystemCursorType slot, IntPtr hSource)
+        private static bool TryApplySystemCursor(SystemCursorType slot, IntPtr hSource, out string message)
         {
             IntPtr hCopy = CopyIcon(hSource); // CopyCursor is a macro for CopyIcon
             if (hCopy == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "CopyIcon/CopyCursor of the cursor failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "CopyIcon/CopyCursor of the cursor failed.").Message;
+                return false;
+            }
 
             if (!SetSystemCursor(hCopy, (uint)slot))
             {
+                int err = Marshal.GetLastWin32Error();
                 DestroyCursor(hCopy);
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "SetSystemCursor failed for slot " + slot + ".");
+                message = new Win32Exception(err, "SetSystemCursor failed for slot " + slot + ".").Message;
+                return false;
             }
             // hCopy is now owned by the system - do not destroy it.
+            message = null;
+            return true;
         }
 
-        private static void SendMouseButton(MouseButton button, bool isDown)
+        private static bool TrySendMouseButton(MouseButton button, bool isDown, out string message)
         {
-            GetButtonFlags(button, isDown, out uint flags, out int data);
-            SendMouseEvent(flags, data);
+            if (!TryGetButtonFlags(button, isDown, out uint flags, out int data, out message))
+                return false;
+            return TrySendMouseEvent(flags, data, out message);
         }
 
         /// <summary>
         /// Maps a button + direction to the matching MOUSEEVENTF_* flags and mouseData
         /// value. The X buttons share XDOWN/XUP and identify themselves via mouseData.
         /// </summary>
-        private static void GetButtonFlags(MouseButton button, bool isDown, out uint flags, out int data)
+        private static bool TryGetButtonFlags(MouseButton button, bool isDown, out uint flags, out int data, out string message)
         {
             flags = 0;
             data = 0;
@@ -2111,8 +2320,11 @@ namespace MouseAutomation
                     data = XBUTTON2;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(button), button, "Unsupported mouse button.");
+                    message = $"Unsupported mouse button: {button}.";
+                    return false;
             }
+            message = null;
+            return true;
         }
 
         /// <summary>Builds a single INPUT structure for a mouse event.</summary>
@@ -2148,22 +2360,27 @@ namespace MouseAutomation
             return input;
         }
 
-        private static void SendMouseEvent(uint flags, int data)
+        private static bool TrySendMouseEvent(uint flags, int data, out string message)
         {
-            SendInputs(new INPUT[] { MakeMouseInput(flags, data) });
+            return TrySendInputs(new INPUT[] { MakeMouseInput(flags, data) }, out message);
         }
 
         /// <summary>
-        /// Injects a batch of input events atomically (in order) and fails loudly when
+        /// Injects a batch of input events atomically (in order) and reports when
         /// Windows refuses them (locked / secure desktop, UAC prompt, or a target app
         /// running at a higher integrity level - UIPI blocks the injection).
         /// </summary>
-        private static void SendInputs(INPUT[] inputs)
+        private static bool TrySendInputs(INPUT[] inputs, out string message)
         {
             uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
             if (sent != (uint)inputs.Length)
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "SendInput failed to inject the input event(s). (Desktop locked, UAC/secure desktop, or insufficient privileges?)");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(),
+                    "SendInput failed to inject the input event(s). (Desktop locked, UAC/secure desktop, or insufficient privileges?)").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         #endregion
