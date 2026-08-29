@@ -4,12 +4,12 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using Windows.Globalization;
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
-using Windows.Storage.Streams;
 
 namespace OcrAutomation
 {
@@ -71,6 +71,27 @@ namespace OcrAutomation
             container?.Add(this);
         }
 
+        /// <summary>
+        /// Releases the resources used by the component. OcrUtils holds no unmanaged
+        /// handles of its own (bitmaps, streams, and the WinRT objects are all released
+        /// in using blocks on each call), so this override exists to give you a cleanup
+        /// hook and to follow the standard designer-component teardown pattern used by
+        /// the other components in this repo.
+        /// </summary>
+        /// <param name="disposing">
+        /// True when called from the public Dispose() method during teardown;
+        /// false when called from the finalizer.
+        /// </param>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // No managed or unmanaged resources to release.
+            }
+
+            base.Dispose(disposing);
+        }
+
         #region Region/Image to Plain Text
 
         /// <summary>Captures a screen region and returns its recognized text.</summary>
@@ -81,7 +102,13 @@ namespace OcrAutomation
         /// <param name="text">The recognized text, or <c>null</c> if this method returns <c>false</c>.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason recognition failed.</param>
         /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if width/height are not positive, or no matching OCR language pack is installed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if width/height are not positive, the region lies entirely outside the virtual screen, or no matching OCR language pack is installed. Never throws.</returns>
+        /// <remarks>
+        /// In a DPI-unaware automation process the OS virtualizes screen coordinates, so
+        /// the region captured here can be the wrong physical area on scaled displays -
+        /// check <c>MouseUtils.IsProcessDpiAware</c> (in the MouseAutomation component)
+        /// when results look shifted or cropped on high-DPI monitors.
+        /// </remarks>
         [Category("OCR - Plain Text")]
         [Description("Captures a screen region and returns its recognized text. Returns True on success; never throws.")]
         public bool GetTextFromRegion(int left, int top, int width, int height, out string text, out string message, string languageTag = null)
@@ -152,8 +179,11 @@ namespace OcrAutomation
         /// <summary>
         /// Searches a screen region for text matching <paramref name="searchText"/> (a
         /// case-insensitive substring match — e.g. searching for "OK" also matches inside
-        /// "BOOK" — a line match is preferred; falls back to a single-word match) and
-        /// returns its bounding rectangle in screen coordinates via <paramref name="location"/>.
+        /// "BOOK") and returns its bounding rectangle in screen coordinates via
+        /// <paramref name="location"/>. Matches are reported in reading order: per line,
+        /// a match of the whole line's text wins (returning the line's bounds); otherwise
+        /// the first matching word within that line is used. The first line containing
+        /// the text in either form is the match — earlier lines win over later ones.
         /// </summary>
         /// <param name="searchText">The text to search for (case-insensitive substring match).</param>
         /// <param name="left">The X-coordinate of the top-left corner of the region to search.</param>
@@ -168,6 +198,11 @@ namespace OcrAutomation
         public bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)
         {
             location = Rectangle.Empty;
+            if (string.IsNullOrEmpty(searchText))
+            {
+                message = "Search text must not be null or empty.";
+                return false;
+            }
             if (!GetStructuredTextFromRegion(left, top, width, height, out OcrResult result, out message))
                 return false;
 
@@ -226,6 +261,11 @@ namespace OcrAutomation
         [Description("Polls a screen region until it contains the expected text, or the timeout elapses. Returns True if found in time; never throws.")]
         public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)
         {
+            if (string.IsNullOrEmpty(expectedText))
+            {
+                message = "Expected text must not be null or empty.";
+                return false;
+            }
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
@@ -260,14 +300,28 @@ namespace OcrAutomation
                 return false;
             }
 
-            Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-            using (Graphics g = Graphics.FromImage(bmp))
+            if (!TryEnsureRegionOnScreen(left, top, width, height, out message))
+                return false;
+
+            try
             {
-                g.CopyFromScreen(left, top, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
+                Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    // CopyFromScreen throws (Win32Exception) when the desktop is
+                    // inaccessible - locked session, secure desktop, service context -
+                    // which would otherwise break the documented never-throws contract.
+                    g.CopyFromScreen(left, top, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
+                }
+                bitmap = bmp;
+                message = null;
+                return true;
             }
-            bitmap = bmp;
-            message = null;
-            return true;
+            catch (Exception ex)
+            {
+                message = $"Screen region capture failed at ({left},{top}) {width}x{height}: {ex.Message}";
+                return false;
+            }
         }
 
         private static bool TryLoadBitmapWithoutLockingFile(string filePath, out Bitmap bitmap, out string message)
@@ -279,37 +333,69 @@ namespace OcrAutomation
                 return false;
             }
 
-            byte[] bytes = File.ReadAllBytes(filePath);
-            using (MemoryStream ms = new MemoryStream(bytes))
-            using (Bitmap decoded = new Bitmap(ms))
+            try
             {
-                bitmap = new Bitmap(decoded);
+                byte[] bytes = File.ReadAllBytes(filePath);
+                using (MemoryStream ms = new MemoryStream(bytes))
+                using (Bitmap decoded = new Bitmap(ms))
+                {
+                    // new Bitmap can throw ArgumentException for a file that exists
+                    // but is not a valid/corrupt image - surfaces as false + message
+                    // instead of an exception (never-throws contract).
+                    bitmap = new Bitmap(decoded);
+                }
+                message = null;
+                return true;
             }
-            message = null;
-            return true;
+            catch (Exception ex)
+            {
+                message = $"Failed to load image file '{filePath}': {ex.Message}. Expected a valid image file.";
+                return false;
+            }
         }
 
         /// <summary>
         /// Converts a GDI+ <see cref="Bitmap"/> to a WinRT <see cref="SoftwareBitmap"/> in
         /// Bgra8/Premultiplied format, the format <see cref="OcrEngine.RecognizeAsync"/>
-        /// requires, via a PNG-encode round trip (the standard .NET/WinRT image interop path).
+        /// requires, via a direct pixel-buffer copy: GDI+ Format32bppArgb is BGRA in
+        /// memory with straight alpha, so the copy is copy-only (no encode/decode round
+        /// trip through PNG, which dominated the cost of every OCR call), and the alpha
+        /// premultiplication is done in one pass by <c>SoftwareBitmap.Convert</c>.
         /// </summary>
         private static SoftwareBitmap BitmapToSoftwareBitmap(Bitmap bitmap)
         {
-            using (var stream = new InMemoryRandomAccessStream())
+            BitmapData data = bitmap.LockBits(
+                new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
             {
-                using (var writeStream = stream.AsStreamForWrite())
-                {
-                    bitmap.Save(writeStream, ImageFormat.Png);
-                }
-                stream.Seek(0);
+                // A 32bpp bitmap's stride is always Width * 4 (no padding needed), so
+                // the locked rows form a tightly packed Bgra8 buffer with no waste.
+                int stride = Math.Abs(data.Stride);
+                int height = bitmap.Height;
+                byte[] buffer = new byte[stride * height];
 
-                BitmapDecoder decoder = BitmapDecoder.CreateAsync(stream).AsTask().GetAwaiter().GetResult();
-                SoftwareBitmap decoded = decoder.GetSoftwareBitmapAsync().AsTask().GetAwaiter().GetResult();
-                using (decoded)
+                if (data.Stride > 0)
                 {
-                    return SoftwareBitmap.Convert(decoded, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+                    Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
                 }
+                else
+                {
+                    // Negative stride = bottom-up rows; copy them flipped.
+                    for (int y = 0; y < height; y++)
+                        Marshal.Copy(data.Scan0 + (height - 1 - y) * data.Stride, buffer, y * stride, stride);
+                }
+
+                SoftwareBitmap straight = SoftwareBitmap.CreateCopyFromBuffer(
+                    buffer.AsBuffer(), BitmapPixelFormat.Bgra8, bitmap.Width, height, BitmapAlphaMode.Straight);
+                using (straight)
+                {
+                    return SoftwareBitmap.Convert(straight, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+                }
+            }
+            finally
+            {
+                bitmap.UnlockBits(data);
             }
         }
 
@@ -368,6 +454,31 @@ namespace OcrAutomation
         }
 
         /// <summary>
+        /// Rejects capture regions that lie entirely outside the virtual screen (all
+        /// monitors). A partially overlapping region is allowed - Windows copies the
+        /// on-screen part and the off-screen part comes back black - but a region
+        /// entirely off-screen would OCR a solid black rectangle into empty text,
+        /// so it surfaces as false + message instead.
+        /// </summary>
+        private static bool TryEnsureRegionOnScreen(int left, int top, int width, int height, out string message)
+        {
+            int vsLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            int vsTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            int vsRight = vsLeft + GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            int vsBottom = vsTop + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+            if (left + width <= vsLeft || left >= vsRight || top + height <= vsTop || top >= vsBottom)
+            {
+                message = $"Capture region ({left},{top}) {width}x{height} lies entirely outside the " +
+                          $"virtual screen ({vsLeft},{vsTop}) {vsRight - vsLeft}x{vsBottom - vsTop}; nothing can be recognized there." +
+                          " Note the coordinates are virtualized in a DPI-unaware process (see MouseUtils.IsProcessDpiAware).";
+                return false;
+            }
+            message = null;
+            return true;
+        }
+
+        /// <summary>
         /// Runs OCR on a bitmap and returns our structured <see cref="OcrResult"/>, with
         /// bounding rectangles offset by (<paramref name="offsetX"/>, <paramref name="offsetY"/>)
         /// so region-capture results come back in screen coordinates.
@@ -380,28 +491,48 @@ namespace OcrAutomation
 
             using (SoftwareBitmap softwareBitmap = BitmapToSoftwareBitmap(bitmap))
             {
-                Windows.Media.Ocr.OcrResult native = engine.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
-
-                var ocrResult = new OcrResult { Text = native.Text };
-                foreach (Windows.Media.Ocr.OcrLine nativeLine in native.Lines)
+                try
                 {
-                    var line = new OcrLine { Text = nativeLine.Text };
-                    foreach (Windows.Media.Ocr.OcrWord nativeWord in nativeLine.Words)
+                    Windows.Media.Ocr.OcrResult native = engine.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
+
+                    var ocrResult = new OcrResult { Text = native.Text };
+                    foreach (Windows.Media.Ocr.OcrLine nativeLine in native.Lines)
                     {
-                        line.Words.Add(new OcrWord
+                        var line = new OcrLine { Text = nativeLine.Text };
+                        foreach (Windows.Media.Ocr.OcrWord nativeWord in nativeLine.Words)
                         {
-                            Text = nativeWord.Text,
-                            Bounds = ToScreenRectangle(nativeWord.BoundingRect, offsetX, offsetY)
-                        });
+                            line.Words.Add(new OcrWord
+                            {
+                                Text = nativeWord.Text,
+                                Bounds = ToScreenRectangle(nativeWord.BoundingRect, offsetX, offsetY)
+                            });
+                        }
+                        line.Bounds = UnionBounds(line.Words);
+                        ocrResult.Lines.Add(line);
                     }
-                    line.Bounds = UnionBounds(line.Words);
-                    ocrResult.Lines.Add(line);
+                    result = ocrResult;
+                    message = null;
+                    return true;
                 }
-                result = ocrResult;
-                message = null;
-                return true;
+                catch (Exception ex)
+                {
+                    message = "OCR recognition failed: " + ex.Message;
+                    return false;
+                }
             }
         }
+
+        #endregion
+
+        #region Win32 Interop
+
+        private const int SM_XVIRTUALSCREEN  = 76;
+        private const int SM_YVIRTUALSCREEN  = 77;
+        private const int SM_CXVIRTUALSCREEN = 78;
+        private const int SM_CYVIRTUALSCREEN = 79;
+
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
 
         #endregion
     }
