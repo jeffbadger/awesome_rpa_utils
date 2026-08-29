@@ -34,22 +34,22 @@ the process was killed for exceeding the requested timeout, in which case
 
 ### Run
 
-| Method | Description |
-|---|---|
-| `bool Run(string fileName, out CommandResult result, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null)` | Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr. Returns True if the process ran (regardless of exit code/timeout); never throws. |
-| `bool RunShellCommand(string command, out CommandResult result, out string message, string workingDirectory = null, int timeoutMs = -1)` | Runs a command through `cmd.exe /c`, waits for it to exit, and captures its exit code, stdout, and stderr. Use for pipes, redirection, shell built-ins, or `.bat`/`.cmd` files. Returns True if the command ran; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `Run` | `bool Run(string fileName, out CommandResult result, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null)` | Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr. Returns True if the process ran (regardless of exit code/timeout); never throws. |
+| `RunShellCommand` | `bool RunShellCommand(string command, out CommandResult result, out string message, string workingDirectory = null, int timeoutMs = -1)` | Runs a command through `cmd.exe /c`, waits for it to exit, and captures its exit code, stdout, and stderr. Use for pipes, redirection, shell built-ins, or `.bat`/`.cmd` files. Returns True if the command ran; never throws. |
 
 ### Elevated
 
-| Method | Description |
-|---|---|
-| `bool RunElevated(string fileName, out int exitCode, out bool timedOut, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1)` | Runs an executable elevated (UAC prompt) and waits for it to exit. Output cannot be captured for an elevated process. Check `timedOut`, not `exitCode`, to detect a timeout. Returns True if the process ran; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `RunElevated` | `bool RunElevated(string fileName, out int exitCode, out bool timedOut, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1)` | Runs an executable elevated (UAC prompt) and waits for it to exit. Output cannot be captured for an elevated process. Check `timedOut`, not `exitCode`, to detect a timeout. Returns True if the process ran; never throws. |
 
 ### Fire and Forget
 
-| Method | Description |
-|---|---|
-| `bool StartFireAndForget(string fileName, out int processId, out string message, string arguments = null, string workingDirectory = null)` | Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately. Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `StartFireAndForget` | `bool StartFireAndForget(string fileName, out int processId, out string message, string arguments = null, string workingDirectory = null)` | Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately. Returns True on success; never throws. |
 
 ## Notes & Caveats
 

@@ -45,35 +45,35 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
 
 ### Core Press/Hold/Combo
 
-| Method | Description |
-|---|---|
-| `bool KeyDown(VirtualKey key, out string message)` | Presses and holds a key. Pair with `KeyUp`. Returns True on success; never throws. |
-| `bool KeyUp(VirtualKey key, out string message)` | Releases a key previously pressed with `KeyDown`. Returns True on success; never throws. |
-| `bool PressKey(VirtualKey key, out string message)` | Presses and releases a key (~20 ms between down and up). Returns True on success; never throws. |
-| `bool PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers, out string message)` | Presses a key while holding modifier keys, injected as one atomic batch. Returns True on success; never throws. |
-| `bool PressKeyCombo(out string message, params VirtualKey[] keys)` | Presses all keys down in order, then releases in reverse order, as one atomic batch (e.g. Ctrl+Shift+Esc). Returns True on success; never throws. |
-| `bool HoldKey(VirtualKey key, int holdMilliseconds, out string message)` | Holds a key down for the given duration, then releases it. Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `KeyDown` | `bool KeyDown(VirtualKey key, out string message)` | Presses and holds a key. Pair with `KeyUp`. Returns True on success; never throws. |
+| `KeyUp` | `bool KeyUp(VirtualKey key, out string message)` | Releases a key previously pressed with `KeyDown`. Returns True on success; never throws. |
+| `PressKey` | `bool PressKey(VirtualKey key, out string message)` | Presses and releases a key (~20 ms between down and up). Returns True on success; never throws. |
+| `PressKeyWithModifiers` | `bool PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers, out string message)` | Presses a key while holding modifier keys, injected as one atomic batch. Returns True on success; never throws. |
+| `PressKeyCombo` | `bool PressKeyCombo(out string message, params VirtualKey[] keys)` | Presses all keys down in order, then releases in reverse order, as one atomic batch (e.g. Ctrl+Shift+Esc). Returns True on success; never throws. |
+| `HoldKey` | `bool HoldKey(VirtualKey key, int holdMilliseconds, out string message)` | Holds a key down for the given duration, then releases it. Returns True on success; never throws. |
 
 ### Text Typing
 
-| Method | Description |
-|---|---|
-| `bool TypeText(string text, out string message)` | Types a string via `KEYEVENTF_UNICODE` (default ~10 ms/character). Returns True on success; never throws. |
-| `bool TypeText(string text, int delayMilliseconds, out string message)` | Types a string with a custom per-character delay; handles surrogate pairs for non-BMP characters (e.g. emoji). Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `TypeText` | `bool TypeText(string text, out string message)` | Types a string via `KEYEVENTF_UNICODE` (default ~10 ms/character). Returns True on success; never throws. |
+| `TypeText` | `bool TypeText(string text, int delayMilliseconds, out string message)` | Types a string with a custom per-character delay; handles surrogate pairs for non-BMP characters (e.g. emoji). Returns True on success; never throws. |
 
 ### Clipboard-Paste Fallback
 
-| Method | Description |
-|---|---|
-| `bool PasteText(string text, out string message)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, then restores the original clipboard contents. Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `PasteText` | `bool PasteText(string text, out string message)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, then restores the original clipboard contents. Returns True on success; never throws. |
 
 ### State Query & Modifiers
 
-| Method | Description |
-|---|---|
-| `bool IsKeyDown(VirtualKey key)` | Returns `true` while the given key is currently held down. |
-| `bool IsModifierDown(ModifierKeys modifier)` | Returns `true` if every modifier flag set in the argument is currently held down. |
-| `ModifierKeys GetActiveModifiers()` | Returns the combination of Ctrl/Shift/Alt/Win currently held, as flags. |
+| Method | Signature | Description |
+|---|---|---|
+| `IsKeyDown` | `bool IsKeyDown(VirtualKey key)` | Returns `true` while the given key is currently held down. |
+| `IsModifierDown` | `bool IsModifierDown(ModifierKeys modifier)` | Returns `true` if every modifier flag set in the argument is currently held down. |
+| `GetActiveModifiers` | `ModifierKeys GetActiveModifiers()` | Returns the combination of Ctrl/Shift/Alt/Win currently held, as flags. |
 
 ## Notes & Caveats
 

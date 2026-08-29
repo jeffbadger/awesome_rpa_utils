@@ -41,29 +41,29 @@ internal screen capture, though, so it has no project reference to either.
 
 ### Region/Image to Plain Text
 
-| Method | Description |
-|---|---|
-| `bool GetTextFromRegion(int left, int top, int width, int height, out string text, out string message, string languageTag = null)` | Captures a screen region and returns its recognized text. Returns True on success; never throws. |
-| `bool GetTextFromImageFile(string filePath, out string text, out string message, string languageTag = null)` | Loads an image file and returns its recognized text. Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `GetTextFromRegion` | `bool GetTextFromRegion(int left, int top, int width, int height, out string text, out string message, string languageTag = null)` | Captures a screen region and returns its recognized text. Returns True on success; never throws. |
+| `GetTextFromImageFile` | `bool GetTextFromImageFile(string filePath, out string text, out string message, string languageTag = null)` | Loads an image file and returns its recognized text. Returns True on success; never throws. |
 
 ### Structured Results
 
-| Method | Description |
-|---|---|
-| `bool GetStructuredTextFromRegion(int left, int top, int width, int height, out OcrResult result, out string message, string languageTag = null)` | Captures a screen region and returns its recognized text as lines/words with screen-space bounding rectangles. Returns True on success; never throws. |
-| `bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)` | Searches a region for matching text and returns its screen-space bounding rectangle. Returns True if found; `location` is `Rectangle.Empty` both when not found and on a real failure — check `message` to tell them apart. Never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `GetStructuredTextFromRegion` | `bool GetStructuredTextFromRegion(int left, int top, int width, int height, out OcrResult result, out string message, string languageTag = null)` | Captures a screen region and returns its recognized text as lines/words with screen-space bounding rectangles. Returns True on success; never throws. |
+| `FindTextLocation` | `bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)` | Searches a region for matching text and returns its screen-space bounding rectangle. Returns True if found; `location` is `Rectangle.Empty` both when not found and on a real failure — check `message` to tell them apart. Never throws. |
 
 ### Language
 
-| Method | Description |
-|---|---|
-| `List<string> GetAvailableLanguages()` | Gets the BCP-47 language tags of every OCR language pack currently installed. |
+| Method | Signature | Description |
+|---|---|---|
+| `GetAvailableLanguages` | `List<string> GetAvailableLanguages()` | Gets the BCP-47 language tags of every OCR language pack currently installed. |
 
 ### Wait-for-Text Polling
 
-| Method | Description |
-|---|---|
-| `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains matching text, or the timeout elapses. `message` is only set if a real failure aborted the poll early. Never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `WaitForTextToAppear` | `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains matching text, or the timeout elapses. `message` is only set if a real failure aborted the poll early. Never throws. |
 
 ## Notes & Caveats
 

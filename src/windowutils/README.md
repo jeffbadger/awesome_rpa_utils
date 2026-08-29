@@ -36,46 +36,46 @@ The window-state command applied by `SetWindowState`, wrapping the Win32
 
 ### Enumeration & Lookup
 
-| Method | Description |
-|---|---|
-| `List<IntPtr> GetTopLevelWindows()` | Gets all top-level windows via `EnumWindows`. |
-| `IntPtr FindWindowByTitle(string title, bool exactMatch = true)` | Finds a top-level window by title (exact or substring match). Returns `IntPtr.Zero` if none matches. |
-| `IntPtr FindWindowByClass(string className)` | Finds the first top-level window of the given window class. |
-| `List<IntPtr> FindWindowsByProcessId(int processId)` | Finds all top-level windows owned by the given process ID. |
-| `IntPtr GetForegroundWindow()` | Gets the handle of the current foreground (active) window. |
+| Method | Signature | Description |
+|---|---|---|
+| `GetTopLevelWindows` | `List<IntPtr> GetTopLevelWindows()` | Gets all top-level windows via `EnumWindows`. |
+| `FindWindowByTitle` | `IntPtr FindWindowByTitle(string title, bool exactMatch = true)` | Finds a top-level window by title (exact or substring match). Returns `IntPtr.Zero` if none matches. |
+| `FindWindowByClass` | `IntPtr FindWindowByClass(string className)` | Finds the first top-level window of the given window class. |
+| `FindWindowsByProcessId` | `List<IntPtr> FindWindowsByProcessId(int processId)` | Finds all top-level windows owned by the given process ID. |
+| `GetForegroundWindow` | `IntPtr GetForegroundWindow()` | Gets the handle of the current foreground (active) window. |
 
 ### State & Geometry
 
-| Method | Description |
-|---|---|
-| `bool GetWindowBounds(IntPtr hWnd, out Rectangle bounds, out string message)` | Gets the screen-space bounding rectangle of a window. Returns True on success; never throws. |
-| `bool SetWindowBounds(IntPtr hWnd, int left, int top, int width, int height, out string message)` | Moves and/or resizes a window to the given rectangle. Returns True on success; never throws. |
-| `bool MoveWindow(IntPtr hWnd, int left, int top, out string message)` | Moves a window without changing its size. Returns True on success; never throws. |
-| `bool ResizeWindow(IntPtr hWnd, int width, int height, out string message)` | Resizes a window without changing its position. Returns True on success; never throws. |
-| `string GetWindowTitle(IntPtr hWnd)` | Gets a window's title text. |
-| `string GetWindowClassName(IntPtr hWnd)` | Gets a window's window-class name. |
-| `int GetWindowProcessId(IntPtr hWnd)` | Gets the process ID that owns a window. |
-| `bool IsWindowVisible(IntPtr hWnd)` | Returns `true` if the window is visible. |
-| `bool IsWindowResponding(IntPtr hWnd)` | Returns `true` if the window is responding to messages (inverse of `IsHungAppWindow`). |
-| `void SetWindowState(IntPtr hWnd, ShowWindowCommand command)` | Applies a show/hide/minimize/maximize/restore state to a window. |
-| `bool CloseWindow(IntPtr hWnd, out string message)` | Asks a window to close by posting `WM_CLOSE`. Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `GetWindowBounds` | `bool GetWindowBounds(IntPtr hWnd, out Rectangle bounds, out string message)` | Gets the screen-space bounding rectangle of a window. Returns True on success; never throws. |
+| `SetWindowBounds` | `bool SetWindowBounds(IntPtr hWnd, int left, int top, int width, int height, out string message)` | Moves and/or resizes a window to the given rectangle. Returns True on success; never throws. |
+| `MoveWindow` | `bool MoveWindow(IntPtr hWnd, int left, int top, out string message)` | Moves a window without changing its size. Returns True on success; never throws. |
+| `ResizeWindow` | `bool ResizeWindow(IntPtr hWnd, int width, int height, out string message)` | Resizes a window without changing its position. Returns True on success; never throws. |
+| `GetWindowTitle` | `string GetWindowTitle(IntPtr hWnd)` | Gets a window's title text. |
+| `GetWindowClassName` | `string GetWindowClassName(IntPtr hWnd)` | Gets a window's window-class name. |
+| `GetWindowProcessId` | `int GetWindowProcessId(IntPtr hWnd)` | Gets the process ID that owns a window. |
+| `IsWindowVisible` | `bool IsWindowVisible(IntPtr hWnd)` | Returns `true` if the window is visible. |
+| `IsWindowResponding` | `bool IsWindowResponding(IntPtr hWnd)` | Returns `true` if the window is responding to messages (inverse of `IsHungAppWindow`). |
+| `SetWindowState` | `void SetWindowState(IntPtr hWnd, ShowWindowCommand command)` | Applies a show/hide/minimize/maximize/restore state to a window. |
+| `CloseWindow` | `bool CloseWindow(IntPtr hWnd, out string message)` | Asks a window to close by posting `WM_CLOSE`. Returns True on success; never throws. |
 
 ### Activation & Z-Order
 
-| Method | Description |
-|---|---|
-| `bool ActivateWindow(IntPtr hWnd, out string message)` | Brings a window to the foreground and gives it input focus. Returns True on success; never throws. |
-| `bool SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop, out string message)` | Makes a window always-on-top (or removes that state). Returns True on success; never throws. |
-| `bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)` | Polls for a window matching the title (substring, case-insensitive) until it appears or the timeout elapses. |
-| `bool WaitForWindowToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until a window handle is no longer valid, or the timeout elapses. |
-| `bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until the given window becomes the foreground window, or the timeout elapses. |
+| Method | Signature | Description |
+|---|---|---|
+| `ActivateWindow` | `bool ActivateWindow(IntPtr hWnd, out string message)` | Brings a window to the foreground and gives it input focus. Returns True on success; never throws. |
+| `SetAlwaysOnTop` | `bool SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop, out string message)` | Makes a window always-on-top (or removes that state). Returns True on success; never throws. |
+| `WaitForWindow` | `bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)` | Polls for a window matching the title (substring, case-insensitive) until it appears or the timeout elapses. |
+| `WaitForWindowToClose` | `bool WaitForWindowToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until a window handle is no longer valid, or the timeout elapses. |
+| `WaitForWindowActive` | `bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until the given window becomes the foreground window, or the timeout elapses. |
 
 ### Child / Multi-Window Enumeration
 
-| Method | Description |
-|---|---|
-| `List<IntPtr> GetChildWindows(IntPtr hWndParent)` | Gets all descendant windows/controls of a parent window (recursively, not just immediate children). |
-| `IntPtr FindChildWindow(IntPtr hWndParent, string title, string className)` | Finds a child window matching the given title and/or class name. |
+| Method | Signature | Description |
+|---|---|---|
+| `GetChildWindows` | `List<IntPtr> GetChildWindows(IntPtr hWndParent)` | Gets all descendant windows/controls of a parent window (recursively, not just immediate children). |
+| `FindChildWindow` | `IntPtr FindChildWindow(IntPtr hWndParent, string title, string className)` | Finds a child window matching the given title and/or class name. |
 
 ## Notes & Caveats
 

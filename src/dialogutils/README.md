@@ -44,31 +44,31 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
 
 ### Find & Click
 
-| Method | Description |
-|---|---|
-| `bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true)` | Finds a top-level dialog window by its title (exact or substring match), and reports whether it has a native `Button` control DialogUtils can click. Returns True if found; never throws. |
-| `bool CanDismissDialog(IntPtr hDialog)` | Checks whether a dialog has at least one native `Button` control that `ClickButton`/`ClickDialogButtonById`/`ClickDialogButtonByText` can target. |
-| `bool FindButtonByText(IntPtr hDialog, out IntPtr hButton, string buttonText, bool exactMatch = true)` | Finds a button on a dialog by its visible text (exact match, or substring when `exactMatch: false`). Returns True if found; never throws. |
-| `bool FindButtonById(IntPtr hDialog, out IntPtr hButton, int controlId)` | Finds a control on a dialog by its control ID. Returns True if found; never throws. |
-| `bool ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by sending it `BM_CLICK`, waiting briefly for the button to become enabled first. Returns True if it was enabled when clicked. |
-| `bool ClickDialogButtonById(IntPtr hDialog, int controlId, out bool wasEnabled, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by its control ID — a well-known `DialogButton` value cast to `int`, or a custom ID from `ListDialogControls`. Returns True if the control was found (and clicked); never throws. |
-| `bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)` | Finds a button by its visible text (exact match, or substring when `exactMatch: false`) and invokes it, verifying the dialog actually closed and re-clicking (up to `maxAttempts`) if it didn't. Returns whether it closed; `message` explains why when it returns False. Never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `FindDialog` | `bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true)` | Finds a top-level dialog window by its title (exact or substring match), and reports whether it has a native `Button` control DialogUtils can click. Returns True if found; never throws. |
+| `CanDismissDialog` | `bool CanDismissDialog(IntPtr hDialog)` | Checks whether a dialog has at least one native `Button` control that `ClickButton`/`ClickDialogButtonById`/`ClickDialogButtonByText` can target. |
+| `FindButtonByText` | `bool FindButtonByText(IntPtr hDialog, out IntPtr hButton, string buttonText, bool exactMatch = true)` | Finds a button on a dialog by its visible text (exact match, or substring when `exactMatch: false`). Returns True if found; never throws. |
+| `FindButtonById` | `bool FindButtonById(IntPtr hDialog, out IntPtr hButton, int controlId)` | Finds a control on a dialog by its control ID. Returns True if found; never throws. |
+| `ClickButton` | `bool ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by sending it `BM_CLICK`, waiting briefly for the button to become enabled first. Returns True if it was enabled when clicked. |
+| `ClickDialogButtonById` | `bool ClickDialogButtonById(IntPtr hDialog, int controlId, out bool wasEnabled, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by its control ID — a well-known `DialogButton` value cast to `int`, or a custom ID from `ListDialogControls`. Returns True if the control was found (and clicked); never throws. |
+| `ClickDialogButtonByText` | `bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300)` | Finds a button by its visible text (exact match, or substring when `exactMatch: false`) and invokes it, verifying the dialog actually closed and re-clicking (up to `maxAttempts`) if it didn't. Returns whether it closed; `message` explains why when it returns False. Never throws. |
 
 ### Read Text
 
-| Method | Description |
-|---|---|
-| `string GetDialogText(IntPtr hDialog)` | Gets a dialog's message body (the first `Static`-class child control with non-empty text — skips icon controls, which have no text). |
-| `string GetControlText(IntPtr hControl)` | Gets any control's text (buttons, labels, edit fields, title bars). |
-| `List<DialogControlInfo> ListDialogControls(IntPtr hDialog)` | Lists every control on a dialog (including nested controls) with its ID, text, and window class name. |
-| `bool HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around a control (e.g. a handle from `ListDialogControls`) to visually confirm which on-screen control it is. Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `GetDialogText` | `string GetDialogText(IntPtr hDialog)` | Gets a dialog's message body (the first `Static`-class child control with non-empty text — skips icon controls, which have no text). |
+| `GetControlText` | `string GetControlText(IntPtr hControl)` | Gets any control's text (buttons, labels, edit fields, title bars). |
+| `ListDialogControls` | `List<DialogControlInfo> ListDialogControls(IntPtr hDialog)` | Lists every control on a dialog (including nested controls) with its ID, text, and window class name. |
+| `HighlightControl` | `bool HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around a control (e.g. a handle from `ListDialogControls`) to visually confirm which on-screen control it is. Returns True on success; never throws. |
 
 ### Wait-for-Dialog Polling
 
-| Method | Description |
-|---|---|
-| `bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)` | Polls for a dialog matching the title until it appears or the timeout elapses. |
-| `bool WaitForDialogToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until a dialog handle is no longer valid, or the timeout elapses. |
+| Method | Signature | Description |
+|---|---|---|
+| `WaitForDialog` | `bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)` | Polls for a dialog matching the title until it appears or the timeout elapses. |
+| `WaitForDialogToClose` | `bool WaitForDialogToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until a dialog handle is no longer valid, or the timeout elapses. |
 
 ## Notes & Caveats
 

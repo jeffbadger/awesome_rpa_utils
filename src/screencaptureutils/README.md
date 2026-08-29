@@ -27,31 +27,31 @@ All coordinates are absolute screen pixels, consistent with MouseUtils.
 
 ### Core Capture
 
-| Method | Description |
-|---|---|
-| `bool CaptureScreenToFile(string filePath, out string message)` | Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws. |
-| `bool CaptureRegionToFile(int left, int top, int width, int height, string filePath, out string message)` | Captures a specific screen region to an image file. Returns True on success; never throws. |
-| `bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)` | Captures a window via `PrintWindow` — works even if the window is covered by other windows. Returns True on success; never throws. |
-| `bool CaptureActiveWindowToFile(string filePath, out string message)` | Captures the current foreground window to an image file. Returns True on success; never throws. |
-| `bool CaptureAroundPointToFile(int x, int y, int width, int height, string filePath, out string message)` | Captures a region centered on a point (e.g. `MouseUtils.GetX/GetY`) to an image file. Returns True on success; never throws. |
-| `void CaptureToClipboard()` | Captures the entire virtual screen and copies it to the clipboard as an image. |
-| `bool CaptureStepEvidence(string stepName, string folderPath, out string fullPath, out string message)` | Captures the screen to an auto-named, sequentially-numbered evidence file (`001_StepName_20260826_143201.png`). `fullPath` receives the file path written. Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `CaptureScreenToFile` | `bool CaptureScreenToFile(string filePath, out string message)` | Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws. |
+| `CaptureRegionToFile` | `bool CaptureRegionToFile(int left, int top, int width, int height, string filePath, out string message)` | Captures a specific screen region to an image file. Returns True on success; never throws. |
+| `CaptureWindowToFile` | `bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)` | Captures a window via `PrintWindow` — works even if the window is covered by other windows. Returns True on success; never throws. |
+| `CaptureActiveWindowToFile` | `bool CaptureActiveWindowToFile(string filePath, out string message)` | Captures the current foreground window to an image file. Returns True on success; never throws. |
+| `CaptureAroundPointToFile` | `bool CaptureAroundPointToFile(int x, int y, int width, int height, string filePath, out string message)` | Captures a region centered on a point (e.g. `MouseUtils.GetX/GetY`) to an image file. Returns True on success; never throws. |
+| `CaptureToClipboard` | `void CaptureToClipboard()` | Captures the entire virtual screen and copies it to the clipboard as an image. |
+| `CaptureStepEvidence` | `bool CaptureStepEvidence(string stepName, string folderPath, out string fullPath, out string message)` | Captures the screen to an auto-named, sequentially-numbered evidence file (`001_StepName_20260826_143201.png`). `fullPath` receives the file path written. Returns True on success; never throws. |
 
 ### Verification & Comparison
 
-| Method | Description |
-|---|---|
-| `bool GetRegionHash(int left, int top, int width, int height, out string hash, out string message)` | Computes a lightweight perceptual hash of a screen region, for cheap "did this change" checks. Returns True on success; never throws. |
-| `bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until its appearance changes, or the timeout elapses. `message` is only set if a real failure aborted the poll early. Never throws. |
-| `bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)` | Compares a screen region against a saved baseline image and reports whether the difference is within tolerance. `message` is only set if a real failure (missing baseline, size mismatch) prevented the comparison. Never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `GetRegionHash` | `bool GetRegionHash(int left, int top, int width, int height, out string hash, out string message)` | Computes a lightweight perceptual hash of a screen region, for cheap "did this change" checks. Returns True on success; never throws. |
+| `WaitForRegionToChange` | `bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until its appearance changes, or the timeout elapses. `message` is only set if a real failure aborted the poll early. Never throws. |
+| `CompareRegionToBaseline` | `bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)` | Compares a screen region against a saved baseline image and reports whether the difference is within tolerance. `message` is only set if a real failure (missing baseline, size mismatch) prevented the comparison. Never throws. |
 
 ### Annotation & Redaction
 
-| Method | Description |
-|---|---|
-| `bool DrawHighlightBox(string imagePath, int left, int top, int right, int bottom, int colorRef, out string message, int lineWidth = 3)` | Draws a rectangular highlight box onto a saved screenshot, overwriting it in place. Returns True on success; never throws. |
-| `bool DrawArrowToPoint(string imagePath, int x, int y, int colorRef, out string message, int length = 40, int lineWidth = 3)` | Draws an arrow pointing at the given coordinates onto a saved screenshot, overwriting it in place. Returns True on success; never throws. |
-| `bool RedactRegion(string imagePath, int left, int top, int width, int height, out string message, int colorRef = 0x000000)` | Fills a rectangular region of a saved screenshot with a solid color (default black), permanently redacting it in place. Returns True on success; never throws. |
+| Method | Signature | Description |
+|---|---|---|
+| `DrawHighlightBox` | `bool DrawHighlightBox(string imagePath, int left, int top, int right, int bottom, int colorRef, out string message, int lineWidth = 3)` | Draws a rectangular highlight box onto a saved screenshot, overwriting it in place. Returns True on success; never throws. |
+| `DrawArrowToPoint` | `bool DrawArrowToPoint(string imagePath, int x, int y, int colorRef, out string message, int length = 40, int lineWidth = 3)` | Draws an arrow pointing at the given coordinates onto a saved screenshot, overwriting it in place. Returns True on success; never throws. |
+| `RedactRegion` | `bool RedactRegion(string imagePath, int left, int top, int width, int height, out string message, int colorRef = 0x000000)` | Fills a rectangular region of a saved screenshot with a solid color (default black), permanently redacting it in place. Returns True on success; never throws. |
 
 ## Notes & Caveats
 

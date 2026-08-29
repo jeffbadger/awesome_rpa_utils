@@ -38,31 +38,31 @@ with the separate delayed-auto-start flag that mode doesn't expose:
 
 ### Query
 
-| Method | Description |
-|---|---|
-| `bool IsServiceInstalled(string serviceName)` | Returns True if a service with the given name is installed. |
-| `bool IsRunning(string serviceName)` | Returns True if a service with the given name is installed and currently running. Returns False (not an exception) for a nonexistent service. |
-| `ServiceControllerStatus GetStatus(string serviceName)` | Gets a service's current status. |
-| `ServiceStartType GetStartType(string serviceName)` | Gets a service's configured startup type. |
-| `List<string> ListServiceNames()` | Gets the service names of every installed service. |
-| `List<string> FindServiceNamesByDisplayName(string displayName, bool exactMatch = true)` | Finds the service name(s) of installed services matching a display name. |
+| Method | Signature | Description |
+|---|---|---|
+| `IsServiceInstalled` | `bool IsServiceInstalled(string serviceName)` | Returns True if a service with the given name is installed. |
+| `IsRunning` | `bool IsRunning(string serviceName)` | Returns True if a service with the given name is installed and currently running. Returns False (not an exception) for a nonexistent service. |
+| `GetStatus` | `ServiceControllerStatus GetStatus(string serviceName)` | Gets a service's current status. |
+| `GetStartType` | `ServiceStartType GetStartType(string serviceName)` | Gets a service's configured startup type. |
+| `ListServiceNames` | `List<string> ListServiceNames()` | Gets the service names of every installed service. |
+| `FindServiceNamesByDisplayName` | `List<string> FindServiceNamesByDisplayName(string displayName, bool exactMatch = true)` | Finds the service name(s) of installed services matching a display name. |
 
 ### Control
 
-| Method | Description |
-|---|---|
-| `bool StartService(string serviceName, int timeoutMs = 30000)` | Starts a service and waits for it to reach Running. Returns False (not an exception) if it times out. |
-| `bool StopService(string serviceName, int timeoutMs = 30000)` | Stops a service and waits for it to reach Stopped. Returns False (not an exception) if it times out. |
-| `bool RestartService(string serviceName, int timeoutMs = 30000)` | Stops then starts a service. Each phase gets its own timeoutMs budget. |
-| `void PauseService(string serviceName)` | Pauses a running service. |
-| `void ResumeService(string serviceName)` | Resumes a paused service. |
-| `bool WaitForServiceStatus(string serviceName, ServiceControllerStatus expectedStatus, int timeoutMs)` | Polls for a service to reach the given status until it does, or the timeout elapses. |
+| Method | Signature | Description |
+|---|---|---|
+| `StartService` | `bool StartService(string serviceName, int timeoutMs = 30000)` | Starts a service and waits for it to reach Running. Returns False (not an exception) if it times out. |
+| `StopService` | `bool StopService(string serviceName, int timeoutMs = 30000)` | Stops a service and waits for it to reach Stopped. Returns False (not an exception) if it times out. |
+| `RestartService` | `bool RestartService(string serviceName, int timeoutMs = 30000)` | Stops then starts a service. Each phase gets its own timeoutMs budget. |
+| `PauseService` | `void PauseService(string serviceName)` | Pauses a running service. |
+| `ResumeService` | `void ResumeService(string serviceName)` | Resumes a paused service. |
+| `WaitForServiceStatus` | `bool WaitForServiceStatus(string serviceName, ServiceControllerStatus expectedStatus, int timeoutMs)` | Polls for a service to reach the given status until it does, or the timeout elapses. |
 
 ### Configuration
 
-| Method | Description |
-|---|---|
-| `void SetStartType(string serviceName, ServiceStartType startType)` | Sets a service's startup type, including delayed-auto-start. |
+| Method | Signature | Description |
+|---|---|---|
+| `SetStartType` | `void SetStartType(string serviceName, ServiceStartType startType)` | Sets a service's startup type, including delayed-auto-start. |
 
 ## Notes & Caveats
 
