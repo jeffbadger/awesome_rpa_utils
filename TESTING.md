@@ -267,9 +267,27 @@ exception` condition.
 - `Run` (happy path against a known-good executable, asserting the `true`
   return and `out CommandResult`; timeout case against a deliberately slow
   command, assert `result.TimedOut = true` and that the child process is gone
-  afterward; nonexistent-executable case → `false` + message)
+  afterward; nonexistent-executable case → `false` + message; non-default
+  `outputEncoding` case — a child writing UTF-8 decoded with
+  `Encoding.UTF8` vs garbled under the default; a chatty child vs the
+  capture cap → `result.OutputTruncated = true`. Most of these already have
+  xunit coverage in `src/commandlineutils/CommandLineUtils.Tests` —
+  `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`)
 - `RunShellCommand` (happy path using a shell built-in like `dir`/`echo`;
-  same timeout and nonexistent-executable cases as `Run`)
+  same timeout and nonexistent-executable cases as `Run`; embedded-quote
+  quoting pin cases — a command with embedded `"` and one ending in a
+  trailing `\` must execute verbatim under `cmd /d /s /c`; allowlist cases —
+  allowed program → runs, disallowed or empty segment → `false` + message
+  naming the segment, compound command where only the *second* segment is
+  disallowed → still `false` before anything runs. The tokenizer and the
+  Windows quoting pins are covered by
+  `CommandLineUtils.Tests/CommandLineUtilsTests.cs`)
+- `StartFireAndForget` (assert the call returns quickly, `true`, and the
+  `out int processId` corresponds to a running process, via
+  `WindowUtils.FindWindowsByProcessId` or a direct process check; nonexistent
+  executable → `false` + message; also visually confirm **no console window
+  appears** for a console executable — `CreateNoWindow` is set, but it's a
+  desktop-visible behavior worth one manual look)
 - `RunElevated` (manual-only — triggers a real UAC prompt, so it can't run
   unattended in a batch; verify `out int exitCode` against a known elevated
   command, and separately verify `out bool timedOut` against a deliberately
