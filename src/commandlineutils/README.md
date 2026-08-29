@@ -36,23 +36,29 @@ the process was killed for exceeding the requested timeout, in which case
 
 | Method | Description |
 |---|---|
-| `CommandResult Run(string fileName, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null)` | Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr. |
-| `CommandResult RunShellCommand(string command, string workingDirectory = null, int timeoutMs = -1)` | Runs a command through `cmd.exe /c`, waits for it to exit, and captures its exit code, stdout, and stderr. Use for pipes, redirection, shell built-ins, or `.bat`/`.cmd` files. |
+| `bool Run(string fileName, out CommandResult result, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null)` | Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr. Returns True if the process ran (regardless of exit code/timeout); never throws. |
+| `bool RunShellCommand(string command, out CommandResult result, out string message, string workingDirectory = null, int timeoutMs = -1)` | Runs a command through `cmd.exe /c`, waits for it to exit, and captures its exit code, stdout, and stderr. Use for pipes, redirection, shell built-ins, or `.bat`/`.cmd` files. Returns True if the command ran; never throws. |
 
 ### Elevated
 
 | Method | Description |
 |---|---|
-| `int RunElevated(string fileName, out bool timedOut, string arguments = null, string workingDirectory = null, int timeoutMs = -1)` | Runs an executable elevated (UAC prompt) and waits for it to exit. Returns only the exit code — output cannot be captured for an elevated process. Check `timedOut`, not the exit code, to detect a timeout. |
+| `bool RunElevated(string fileName, out int exitCode, out bool timedOut, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1)` | Runs an executable elevated (UAC prompt) and waits for it to exit. Output cannot be captured for an elevated process. Check `timedOut`, not `exitCode`, to detect a timeout. Returns True if the process ran; never throws. |
 
 ### Fire and Forget
 
 | Method | Description |
 |---|---|
-| `int StartFireAndForget(string fileName, string arguments = null, string workingDirectory = null)` | Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately. |
+| `bool StartFireAndForget(string fileName, out int processId, out string message, string arguments = null, string workingDirectory = null)` | Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately. Returns True on success; never throws. |
 
 ## Notes & Caveats
 
+- **Every method returns `bool` with an `out string message`** rather than throwing —
+  bad arguments, a missing executable, `Process.Start` returning null, and a
+  cancelled UAC prompt are all reported this way, with `message` set to a
+  human-readable reason whenever the method returns `false`. A `false` return
+  means the process could not be run at all; a `true` return with `TimedOut`/
+  `timedOut` set means it ran but was killed for exceeding its timeout.
 - **`timeoutMs = -1`** means wait indefinitely, for every method that accepts it.
 - **On timeout**, `Run`/`RunShellCommand`/`RunElevated` kill the *entire process
   tree* (not just the launched process), so a timed-out batch script doesn't
@@ -80,6 +86,7 @@ the process was killed for exceeding the requested timeout, in which case
   (still running? exit code? kill it?) — that's out of scope for this
   component. Use `Run`/`RunShellCommand` if you need to wait for and inspect
   the result.
-- **A missing/not-found executable throws `Win32Exception`**, not a sentinel
-  return value — unlike this repo's window/dialog-finding components, "the
-  command doesn't exist" is treated as an error here, not a normal outcome.
+- **A missing/not-found executable returns `false` with a `message`**, not a
+  thrown exception — unlike this repo's window/dialog-finding components,
+  "the command doesn't exist" is still treated as an error condition here
+  (`false` + reason), not a silent not-found sentinel.

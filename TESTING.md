@@ -195,20 +195,29 @@ Note: this component needs a WinForms/WPF test harness with native `AutomationId
 
 ### CommandLineUtils (needs Setup: none — it launches its own target processes; Cleanup: none)
 
-- `Run` (happy path against a known-good executable; timeout case against a
-  deliberately slow command, assert `TimedOut = true` and that the child
-  process is gone afterward; exception case for a nonexistent executable)
+All four methods return `bool` with an `out string message` and never throw —
+for these, replace Phase 2's "exception condition on the invalid-input case"
+with an outcome condition asserting `false` plus a non-null `message` on the
+invalid-input case (a nonexistent executable), instead of an `Automation
+exception` condition.
+
+- `Run` (happy path against a known-good executable, asserting the `true`
+  return and `out CommandResult`; timeout case against a deliberately slow
+  command, assert `result.TimedOut = true` and that the child process is gone
+  afterward; nonexistent-executable case → `false` + message)
 - `RunShellCommand` (happy path using a shell built-in like `dir`/`echo`;
-  same timeout and not-found exception cases as `Run`)
+  same timeout and nonexistent-executable cases as `Run`)
 - `RunElevated` (manual-only — triggers a real UAC prompt, so it can't run
-  unattended in a batch; verify the returned exit code against a known
-  elevated command, and separately verify `timedOut` against a deliberately
+  unattended in a batch; verify `out int exitCode` against a known elevated
+  command, and separately verify `out bool timedOut` against a deliberately
   slow elevated command — note it may report `timedOut = true` while leaving
   the process running if the test session itself isn't elevated, since a
-  non-elevated caller can't always terminate an elevated child)
-- `StartFireAndForget` (assert the call returns quickly and the returned PID
-  corresponds to a running process, via `WindowUtils.FindWindowsByProcessId`
-  or a direct process check)
+  non-elevated caller can't always terminate an elevated child; nonexistent
+  executable/cancelled UAC prompt → `false` + message)
+- `StartFireAndForget` (assert the call returns quickly, `true`, and the
+  `out int processId` corresponds to a running process, via
+  `WindowUtils.FindWindowsByProcessId` or a direct process check; nonexistent
+  executable → `false` + message)
 
 ### ServiceUtils (needs Setup: install a small disposable test service — e.g. via `sc create ZZTestSvc binPath= ...` against a trivial do-nothing executable — never test against a real system service; Cleanup: stop and `sc delete` it)
 
