@@ -28,6 +28,20 @@ if (dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100,
 }
 ```
 
+## Wait for an exact title match
+
+`WaitForDialog` matches substrings by default (`exactMatch: false`), which differs from
+`FindDialog`'s default of `true`. Pass `exactMatch: true` when the title must match exactly
+(e.g. a dialog titled "Confirm" should not match a window titled "Confirm changes"):
+
+```csharp
+if (dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100,
+                         out IntPtr hWnd, exactMatch: true))
+{
+    dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _);
+}
+```
+
 ## Wait for a dialog to close after clicking its button
 
 ```csharp
