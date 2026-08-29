@@ -152,21 +152,31 @@ namespace UIAutomation
         /// </summary>
         /// <param name="parent">The element to search within.</param>
         /// <param name="automationId">The AutomationId to match (exact).</param>
+        /// <param name="element">The matching element, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if the search completed (found or genuinely not found); otherwise a human-readable reason a real argument error prevented the search.</param>
         /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
-        /// <returns>The matching element, or <c>null</c> if none matches.</returns>
-        /// <exception cref="ArgumentException"><paramref name="parent"/> is null, or <paramref name="automationId"/> is null/empty.</exception>
+        /// <returns><c>true</c> if a matching element was found; <c>false</c> if it wasn't found, or if a real argument error (null <paramref name="parent"/>, empty <paramref name="automationId"/>) prevented the search (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Find")]
-        [Description("Finds a descendant (or child) element by its AutomationId, or null if none matches.")]
-        public AutomationElement FindByAutomationId(AutomationElement parent, string automationId, bool descendantsOnly = true)
+        [Description("Finds a descendant (or child) element by its AutomationId. Returns True if found; never throws.")]
+        public bool FindByAutomationId(AutomationElement parent, string automationId, out AutomationElement element, out string message, bool descendantsOnly = true)
         {
+            element = null;
             if (parent == null)
-                throw new ArgumentException("A parent element is required.", nameof(parent));
+            {
+                message = "A parent element is required.";
+                return false;
+            }
             if (string.IsNullOrEmpty(automationId))
-                throw new ArgumentException("An automation ID is required.", nameof(automationId));
+            {
+                message = "An automation ID is required.";
+                return false;
+            }
 
             var condition = new PropertyCondition(AutomationElement.AutomationIdProperty, automationId);
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
-            return parent.FindFirst(scope, condition);
+            element = parent.FindFirst(scope, condition);
+            message = null;
+            return element != null;
         }
 
         /// <summary>
@@ -174,35 +184,48 @@ namespace UIAutomation
         /// </summary>
         /// <param name="parent">The element to search within.</param>
         /// <param name="name">The name to match.</param>
+        /// <param name="element">The matching element, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if the search completed (found or genuinely not found); otherwise a human-readable reason a real argument error prevented the search.</param>
         /// <param name="exactMatch">If <c>true</c> (default), requires an exact match. If <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
         /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
-        /// <returns>The matching element, or <c>null</c> if none matches.</returns>
-        /// <exception cref="ArgumentException"><paramref name="parent"/> is null, or <paramref name="name"/> is null/empty.</exception>
+        /// <returns><c>true</c> if a matching element was found; <c>false</c> if it wasn't found, or if a real argument error (null <paramref name="parent"/>, empty <paramref name="name"/>) prevented the search (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Find")]
-        [Description("Finds a descendant (or child) element by its Name (exact or substring match), or null if none matches.")]
-        public AutomationElement FindByName(AutomationElement parent, string name, bool exactMatch = true, bool descendantsOnly = true)
+        [Description("Finds a descendant (or child) element by its Name (exact or substring match). Returns True if found; never throws.")]
+        public bool FindByName(AutomationElement parent, string name, out AutomationElement element, out string message, bool exactMatch = true, bool descendantsOnly = true)
         {
+            element = null;
             if (parent == null)
-                throw new ArgumentException("A parent element is required.", nameof(parent));
+            {
+                message = "A parent element is required.";
+                return false;
+            }
             if (string.IsNullOrEmpty(name))
-                throw new ArgumentException("A name is required.", nameof(name));
+            {
+                message = "A name is required.";
+                return false;
+            }
 
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
 
             if (exactMatch)
             {
                 var condition = new PropertyCondition(AutomationElement.NameProperty, name);
-                return parent.FindFirst(scope, condition);
+                element = parent.FindFirst(scope, condition);
+            }
+            else
+            {
+                // PropertyCondition only supports exact-value matches - UIA has no built-in
+                // substring condition, so enumerate candidates ourselves and filter, the same
+                // way WindowUtils.FindWindowByTitle does for its exactMatch=false case.
+                element = FindFirstMatching(parent, scope, el =>
+                {
+                    string elementName = el.Current.Name;
+                    return elementName != null && elementName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
+                });
             }
 
-            // PropertyCondition only supports exact-value matches - UIA has no built-in
-            // substring condition, so enumerate candidates ourselves and filter, the same
-            // way WindowUtils.FindWindowByTitle does for its exactMatch=false case.
-            return FindFirstMatching(parent, scope, el =>
-            {
-                string elementName = el.Current.Name;
-                return elementName != null && elementName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
-            });
+            message = null;
+            return element != null;
         }
 
         /// <summary>
@@ -210,21 +233,31 @@ namespace UIAutomation
         /// </summary>
         /// <param name="parent">The element to search within.</param>
         /// <param name="className">The class name to match (exact).</param>
+        /// <param name="element">The matching element, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if the search completed (found or genuinely not found); otherwise a human-readable reason a real argument error prevented the search.</param>
         /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
-        /// <returns>The matching element, or <c>null</c> if none matches.</returns>
-        /// <exception cref="ArgumentException"><paramref name="parent"/> is null, or <paramref name="className"/> is null/empty.</exception>
+        /// <returns><c>true</c> if a matching element was found; <c>false</c> if it wasn't found, or if a real argument error (null <paramref name="parent"/>, empty <paramref name="className"/>) prevented the search (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Find")]
-        [Description("Finds a descendant (or child) element by its window class name, or null if none matches.")]
-        public AutomationElement FindByClassName(AutomationElement parent, string className, bool descendantsOnly = true)
+        [Description("Finds a descendant (or child) element by its window class name. Returns True if found; never throws.")]
+        public bool FindByClassName(AutomationElement parent, string className, out AutomationElement element, out string message, bool descendantsOnly = true)
         {
+            element = null;
             if (parent == null)
-                throw new ArgumentException("A parent element is required.", nameof(parent));
+            {
+                message = "A parent element is required.";
+                return false;
+            }
             if (string.IsNullOrEmpty(className))
-                throw new ArgumentException("A class name is required.", nameof(className));
+            {
+                message = "A class name is required.";
+                return false;
+            }
 
             var condition = new PropertyCondition(AutomationElement.ClassNameProperty, className);
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
-            return parent.FindFirst(scope, condition);
+            element = parent.FindFirst(scope, condition);
+            message = null;
+            return element != null;
         }
 
         /// <summary>
@@ -232,20 +265,28 @@ namespace UIAutomation
         /// </summary>
         /// <param name="parent">The element to search within.</param>
         /// <param name="controlType">The control type to match.</param>
+        /// <param name="element">The matching element, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if the search completed (found or genuinely not found); otherwise a human-readable reason a real argument error prevented the search.</param>
         /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
-        /// <returns>The matching element, or <c>null</c> if none matches.</returns>
-        /// <exception cref="ArgumentException"><paramref name="parent"/> is null.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="controlType"/> is not a defined value.</exception>
+        /// <returns><c>true</c> if a matching element was found; <c>false</c> if it wasn't found, or if a real argument error (null <paramref name="parent"/>, undefined <paramref name="controlType"/>) prevented the search (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Find")]
-        [Description("Finds the first descendant (or child) element of the given control type, or null if none matches.")]
-        public AutomationElement FindByControlType(AutomationElement parent, UiControlType controlType, bool descendantsOnly = true)
+        [Description("Finds the first descendant (or child) element of the given control type. Returns True if found; never throws.")]
+        public bool FindByControlType(AutomationElement parent, UiControlType controlType, out AutomationElement element, out string message, bool descendantsOnly = true)
         {
+            element = null;
             if (parent == null)
-                throw new ArgumentException("A parent element is required.", nameof(parent));
+            {
+                message = "A parent element is required.";
+                return false;
+            }
+            if (!TryToControlType(controlType, out ControlType nativeType, out message))
+                return false;
 
-            var condition = new PropertyCondition(AutomationElement.ControlTypeProperty, ToControlType(controlType));
+            var condition = new PropertyCondition(AutomationElement.ControlTypeProperty, nativeType);
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
-            return parent.FindFirst(scope, condition);
+            element = parent.FindFirst(scope, condition);
+            message = null;
+            return element != null;
         }
 
         /// <summary>
@@ -253,41 +294,56 @@ namespace UIAutomation
         /// </summary>
         /// <param name="parent">The element to search within.</param>
         /// <param name="controlType">The control type to match.</param>
+        /// <param name="elements">Every matching element, in tree order (empty if none match), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the search failed.</param>
         /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
-        /// <returns>Every matching element, in tree order (empty if none match).</returns>
-        /// <exception cref="ArgumentException"><paramref name="parent"/> is null.</exception>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="controlType"/> is not a defined value.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="parent"/> is null or <paramref name="controlType"/> is undefined. Never throws.</returns>
         [Category("UIAutomation - Find")]
-        [Description("Finds every descendant (or child) element of the given control type.")]
-        public List<AutomationElement> FindAllByControlType(AutomationElement parent, UiControlType controlType, bool descendantsOnly = true)
+        [Description("Finds every descendant (or child) element of the given control type. Returns True on success; never throws.")]
+        public bool FindAllByControlType(AutomationElement parent, UiControlType controlType, out List<AutomationElement> elements, out string message, bool descendantsOnly = true)
         {
+            elements = null;
             if (parent == null)
-                throw new ArgumentException("A parent element is required.", nameof(parent));
+            {
+                message = "A parent element is required.";
+                return false;
+            }
+            if (!TryToControlType(controlType, out ControlType nativeType, out message))
+                return false;
 
-            var condition = new PropertyCondition(AutomationElement.ControlTypeProperty, ToControlType(controlType));
+            var condition = new PropertyCondition(AutomationElement.ControlTypeProperty, nativeType);
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
 
             var results = new List<AutomationElement>();
             foreach (AutomationElement element in parent.FindAll(scope, condition))
                 results.Add(element);
-            return results;
+            elements = results;
+            message = null;
+            return true;
         }
 
         /// <summary>Gets all immediate children of an element.</summary>
         /// <param name="parent">The element whose children to enumerate.</param>
-        /// <returns>The element's immediate children, in tree order (empty if it has none).</returns>
-        /// <exception cref="ArgumentException"><paramref name="parent"/> is null.</exception>
+        /// <param name="children">The element's immediate children, in tree order (empty if it has none), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="parent"/> is null. Never throws.</returns>
         [Category("UIAutomation - Find")]
-        [Description("Gets all immediate children of an element.")]
-        public List<AutomationElement> GetChildren(AutomationElement parent)
+        [Description("Gets all immediate children of an element. Returns True on success; never throws.")]
+        public bool GetChildren(AutomationElement parent, out List<AutomationElement> children, out string message)
         {
+            children = null;
             if (parent == null)
-                throw new ArgumentException("A parent element is required.", nameof(parent));
+            {
+                message = "A parent element is required.";
+                return false;
+            }
 
             var results = new List<AutomationElement>();
             foreach (AutomationElement child in parent.FindAll(TreeScope.Children, Condition.TrueCondition))
                 results.Add(child);
-            return results;
+            children = results;
+            message = null;
+            return true;
         }
 
         #endregion
@@ -296,94 +352,144 @@ namespace UIAutomation
 
         /// <summary>Gets an element's <c>Name</c> property.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
+        /// <param name="name">The element's name, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null. Never throws.</returns>
         [Category("UIAutomation - Properties")]
-        [Description("Gets an element's Name property.")]
-        public string GetName(AutomationElement element)
+        [Description("Gets an element's Name property. Returns True on success; never throws.")]
+        public bool GetName(AutomationElement element, out string name, out string message)
         {
+            name = null;
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
-            return element.Current.Name;
+            {
+                message = "An element is required.";
+                return false;
+            }
+            name = element.Current.Name;
+            message = null;
+            return true;
         }
 
         /// <summary>Gets an element's <c>AutomationId</c> property.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
+        /// <param name="automationId">The element's AutomationId, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null. Never throws.</returns>
         [Category("UIAutomation - Properties")]
-        [Description("Gets an element's AutomationId property.")]
-        public string GetAutomationId(AutomationElement element)
+        [Description("Gets an element's AutomationId property. Returns True on success; never throws.")]
+        public bool GetAutomationId(AutomationElement element, out string automationId, out string message)
         {
+            automationId = null;
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
-            return element.Current.AutomationId;
+            {
+                message = "An element is required.";
+                return false;
+            }
+            automationId = element.Current.AutomationId;
+            message = null;
+            return true;
         }
 
         /// <summary>Gets an element's window class name.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
+        /// <param name="className">The element's window class name, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null. Never throws.</returns>
         [Category("UIAutomation - Properties")]
-        [Description("Gets an element's window class name.")]
-        public string GetClassName(AutomationElement element)
+        [Description("Gets an element's window class name. Returns True on success; never throws.")]
+        public bool GetClassName(AutomationElement element, out string className, out string message)
         {
+            className = null;
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
-            return element.Current.ClassName;
+            {
+                message = "An element is required.";
+                return false;
+            }
+            className = element.Current.ClassName;
+            message = null;
+            return true;
         }
 
         /// <summary>Gets a friendly name for an element's control type (e.g. <c>"Button"</c>).</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
+        /// <param name="controlTypeName">The friendly control-type name, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null. Never throws.</returns>
         [Category("UIAutomation - Properties")]
-        [Description("Gets a friendly name for an element's control type (e.g. \"Button\").")]
-        public string GetControlTypeName(AutomationElement element)
+        [Description("Gets a friendly name for an element's control type (e.g. \"Button\"). Returns True on success; never throws.")]
+        public bool GetControlTypeName(AutomationElement element, out string controlTypeName, out string message)
         {
+            controlTypeName = null;
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             // ProgrammaticName looks like "ControlType.Button" - strip the prefix so callers
             // get the same short form used by UiControlType (e.g. "Button").
             string programmaticName = element.Current.ControlType.ProgrammaticName;
             const string prefix = "ControlType.";
-            return programmaticName.StartsWith(prefix, StringComparison.Ordinal)
+            controlTypeName = programmaticName.StartsWith(prefix, StringComparison.Ordinal)
                 ? programmaticName.Substring(prefix.Length)
                 : programmaticName;
+            message = null;
+            return true;
         }
 
         /// <summary>Gets an element's screen-space bounding rectangle.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
+        /// <param name="bounds">The element's bounding rectangle, or <c>default</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null. Never throws.</returns>
         [Category("UIAutomation - Properties")]
-        [Description("Gets an element's screen-space bounding rectangle.")]
-        public System.Drawing.Rectangle GetBoundingRectangle(AutomationElement element)
+        [Description("Gets an element's screen-space bounding rectangle. Returns True on success; never throws.")]
+        public bool GetBoundingRectangle(AutomationElement element, out System.Drawing.Rectangle bounds, out string message)
         {
+            bounds = default;
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             System.Windows.Rect rect = element.Current.BoundingRectangle;
-            return new System.Drawing.Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
+            bounds = new System.Drawing.Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
+            message = null;
+            return true;
         }
 
         /// <summary>Returns <c>true</c> if the element is enabled.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely disabled element).</param>
+        /// <returns><c>true</c> if the element is enabled; <c>false</c> if it isn't, or if <paramref name="element"/> is null (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Properties")]
-        [Description("Returns True if the element is enabled.")]
-        public bool IsEnabled(AutomationElement element)
+        [Description("Returns True if the element is enabled. Never throws.")]
+        public bool IsEnabled(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
+            message = null;
             return element.Current.IsEnabled;
         }
 
         /// <summary>Returns <c>true</c> if the element is offscreen.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely onscreen element).</param>
+        /// <returns><c>true</c> if the element is offscreen; <c>false</c> if it isn't, or if <paramref name="element"/> is null (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Properties")]
-        [Description("Returns True if the element is offscreen.")]
-        public bool IsOffscreen(AutomationElement element)
+        [Description("Returns True if the element is offscreen. Never throws.")]
+        public bool IsOffscreen(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
+            message = null;
             return element.Current.IsOffscreen;
         }
 
@@ -421,157 +527,232 @@ namespace UIAutomation
 
         /// <summary>Invokes an element (click-equivalent for buttons/menu items) via <c>InvokePattern</c>.</summary>
         /// <param name="element">The element to invoke.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>InvokePattern</c>.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the invoke failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null, or it does not support InvokePattern. Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Invokes an element (click-equivalent for buttons/menu items) via InvokePattern.")]
-        public void Invoke(AutomationElement element)
+        [Description("Invokes an element (click-equivalent for buttons/menu items) via InvokePattern. Returns True on success; never throws.")]
+        public bool Invoke(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(InvokePattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support InvokePattern.");
+            {
+                message = "This element does not support InvokePattern.";
+                return false;
+            }
 
             ((InvokePattern)patternObj).Invoke();
+            message = null;
+            return true;
         }
 
         /// <summary>Sets an element's value via <c>ValuePattern</c>.</summary>
         /// <param name="element">The element to set.</param>
         /// <param name="value">The value to set.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null, or <paramref name="value"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>ValuePattern</c>.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the set failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/>/<paramref name="value"/> are null, or the element does not support ValuePattern. Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Sets an element's value via ValuePattern.")]
-        public void SetValue(AutomationElement element, string value)
+        [Description("Sets an element's value via ValuePattern. Returns True on success; never throws.")]
+        public bool SetValue(AutomationElement element, string value, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
             if (value == null)
-                throw new ArgumentException("A value is required.", nameof(value));
+            {
+                message = "A value is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support ValuePattern.");
+            {
+                message = "This element does not support ValuePattern.";
+                return false;
+            }
 
             ((ValuePattern)patternObj).SetValue(value);
+            message = null;
+            return true;
         }
 
         /// <summary>Gets an element's value via <c>ValuePattern</c>.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>ValuePattern</c>.</exception>
+        /// <param name="value">The element's value, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null, or it does not support ValuePattern. Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Gets an element's value via ValuePattern.")]
-        public string GetValue(AutomationElement element)
+        [Description("Gets an element's value via ValuePattern. Returns True on success; never throws.")]
+        public bool GetValue(AutomationElement element, out string value, out string message)
         {
+            value = null;
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support ValuePattern.");
+            {
+                message = "This element does not support ValuePattern.";
+                return false;
+            }
 
-            return ((ValuePattern)patternObj).Current.Value;
+            value = ((ValuePattern)patternObj).Current.Value;
+            message = null;
+            return true;
         }
 
         /// <summary>Toggles an element (e.g. a checkbox) via <c>TogglePattern</c>.</summary>
         /// <param name="element">The element to toggle.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>TogglePattern</c>.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the toggle failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null, or it does not support TogglePattern. Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Toggles an element (e.g. a checkbox) via TogglePattern.")]
-        public void Toggle(AutomationElement element)
+        [Description("Toggles an element (e.g. a checkbox) via TogglePattern. Returns True on success; never throws.")]
+        public bool Toggle(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(TogglePattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support TogglePattern.");
+            {
+                message = "This element does not support TogglePattern.";
+                return false;
+            }
 
             ((TogglePattern)patternObj).Toggle();
+            message = null;
+            return true;
         }
 
         /// <summary>Returns <c>true</c> if a toggleable element is currently On.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>TogglePattern</c>.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely Off/indeterminate element).</param>
+        /// <returns><c>true</c> if the element is On; <c>false</c> if it isn't, or if <paramref name="element"/> is null/does not support TogglePattern (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Returns True if a toggleable element is currently On.")]
-        public bool IsToggled(AutomationElement element)
+        [Description("Returns True if a toggleable element is currently On. Never throws.")]
+        public bool IsToggled(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(TogglePattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support TogglePattern.");
+            {
+                message = "This element does not support TogglePattern.";
+                return false;
+            }
 
+            message = null;
             return ((TogglePattern)patternObj).Current.ToggleState == ToggleState.On;
         }
 
         /// <summary>Expands an element (e.g. a combo box or tree node) via <c>ExpandCollapsePattern</c>.</summary>
         /// <param name="element">The element to expand.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>ExpandCollapsePattern</c>.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the expand failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null, or it does not support ExpandCollapsePattern. Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Expands an element (e.g. a combo box or tree node) via ExpandCollapsePattern.")]
-        public void Expand(AutomationElement element)
+        [Description("Expands an element (e.g. a combo box or tree node) via ExpandCollapsePattern. Returns True on success; never throws.")]
+        public bool Expand(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support ExpandCollapsePattern.");
+            {
+                message = "This element does not support ExpandCollapsePattern.";
+                return false;
+            }
 
             ((ExpandCollapsePattern)patternObj).Expand();
+            message = null;
+            return true;
         }
 
         /// <summary>Collapses an element via <c>ExpandCollapsePattern</c>.</summary>
         /// <param name="element">The element to collapse.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>ExpandCollapsePattern</c>.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the collapse failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null, or it does not support ExpandCollapsePattern. Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Collapses an element via ExpandCollapsePattern.")]
-        public void Collapse(AutomationElement element)
+        [Description("Collapses an element via ExpandCollapsePattern. Returns True on success; never throws.")]
+        public bool Collapse(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support ExpandCollapsePattern.");
+            {
+                message = "This element does not support ExpandCollapsePattern.";
+                return false;
+            }
 
             ((ExpandCollapsePattern)patternObj).Collapse();
+            message = null;
+            return true;
         }
 
         /// <summary>Selects an element (e.g. a list item) via <c>SelectionItemPattern</c>.</summary>
         /// <param name="element">The element to select.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>SelectionItemPattern</c>.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the selection failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null, or it does not support SelectionItemPattern. Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Selects an element (e.g. a list item) via SelectionItemPattern.")]
-        public void Select(AutomationElement element)
+        [Description("Selects an element (e.g. a list item) via SelectionItemPattern. Returns True on success; never throws.")]
+        public bool Select(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support SelectionItemPattern.");
+            {
+                message = "This element does not support SelectionItemPattern.";
+                return false;
+            }
 
             ((SelectionItemPattern)patternObj).Select();
+            message = null;
+            return true;
         }
 
         /// <summary>Returns <c>true</c> if a selectable element is currently selected.</summary>
         /// <param name="element">The element to read.</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="InvalidOperationException"><paramref name="element"/> does not support <c>SelectionItemPattern</c>.</exception>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely unselected element).</param>
+        /// <returns><c>true</c> if the element is selected; <c>false</c> if it isn't, or if <paramref name="element"/> is null/does not support SelectionItemPattern (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Actions")]
-        [Description("Returns True if a selectable element is currently selected.")]
-        public bool IsSelected(AutomationElement element)
+        [Description("Returns True if a selectable element is currently selected. Never throws.")]
+        public bool IsSelected(AutomationElement element, out string message)
         {
             if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            {
+                message = "An element is required.";
+                return false;
+            }
 
             if (!element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object patternObj))
-                throw new InvalidOperationException("This element does not support SelectionItemPattern.");
+            {
+                message = "This element does not support SelectionItemPattern.";
+                return false;
+            }
 
+            message = null;
             return ((SelectionItemPattern)patternObj).Current.IsSelected;
         }
 
@@ -584,26 +765,30 @@ namespace UIAutomation
         /// <param name="automationId">The AutomationId to match (exact).</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="element">The matching element, or <c>null</c> if not found in time.</param>
-        /// <returns><c>true</c> if a matching element was found before the timeout.</returns>
+        /// <param name="element">The matching element, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason a real argument error aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if a matching element was found before the timeout; <c>false</c> if it timed out, or if a real argument error aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Wait")]
-        [Description("Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses.")]
-        public bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element)
+        [Description("Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses. Never throws.")]
+        public bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
             while (true)
             {
-                AutomationElement found = FindByAutomationId(parent, automationId);
-                if (found != null)
+                if (FindByAutomationId(parent, automationId, out element, out message))
                 {
-                    element = found;
+                    message = null;
                     return true;
                 }
+                if (message != null)
+                    return false; // real argument error aborted the poll
+
                 if (unchecked(Environment.TickCount - start) >= timeoutMs)
                 {
                     element = null;
+                    message = null;
                     return false;
                 }
                 Thread.Sleep(pollIntervalMs);
@@ -616,26 +801,30 @@ namespace UIAutomation
         /// <param name="exactMatch">If <c>true</c>, requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="element">The matching element, or <c>null</c> if not found in time.</param>
-        /// <returns><c>true</c> if a matching element was found before the timeout.</returns>
+        /// <param name="element">The matching element, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason a real argument error aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if a matching element was found before the timeout; <c>false</c> if it timed out, or if a real argument error aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Wait")]
-        [Description("Polls for a descendant element matching the given Name until it appears or the timeout elapses.")]
-        public bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element)
+        [Description("Polls for a descendant element matching the given Name until it appears or the timeout elapses. Never throws.")]
+        public bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
             while (true)
             {
-                AutomationElement found = FindByName(parent, name, exactMatch);
-                if (found != null)
+                if (FindByName(parent, name, out element, out message, exactMatch))
                 {
-                    element = found;
+                    message = null;
                     return true;
                 }
+                if (message != null)
+                    return false; // real argument error aborted the poll
+
                 if (unchecked(Environment.TickCount - start) >= timeoutMs)
                 {
                     element = null;
+                    message = null;
                     return false;
                 }
                 Thread.Sleep(pollIntervalMs);
@@ -655,24 +844,25 @@ namespace UIAutomation
         /// <param name="flashes">Number of on/off flashes (default 3).</param>
         /// <param name="flashMs">Milliseconds each flash stays visible (default 200).</param>
         /// <param name="lineWidth">Pen width in pixels (default 3).</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the highlight failed.</param>
         /// <param name="colorRef">RGB color for the rectangle as a 0xBBGGRR value (default 0x0000FF = red).</param>
-        /// <exception cref="ArgumentException"><paramref name="element"/> is null.</exception>
-        /// <exception cref="Win32Exception"><c>GetDC</c> failed.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null, or the GetDC call failed. Never throws.</returns>
         [Category("UIAutomation - Visual")]
-        [Description("Flashes an inverting rectangle around an element to visually confirm which on-screen element it corresponds to.")]
-        public void HighlightElement(AutomationElement element, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
+        [Description("Flashes an inverting rectangle around an element to visually confirm which on-screen element it corresponds to. Returns True on success; never throws.")]
+        public bool HighlightElement(AutomationElement element, out string message, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
         {
-            if (element == null)
-                throw new ArgumentException("An element is required.", nameof(element));
+            if (!GetBoundingRectangle(element, out System.Drawing.Rectangle rc, out message))
+                return false;
             if (flashes < 1) flashes = 1;
             if (flashMs < 1) flashMs = 1;
             if (lineWidth < 1) lineWidth = 1;
 
-            System.Drawing.Rectangle rc = GetBoundingRectangle(element);
-
             IntPtr hdc = GetDC(IntPtr.Zero);
             if (hdc == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.").Message;
+                return false;
+            }
 
             IntPtr hPen = CreatePen(PS_SOLID, lineWidth, (uint)colorRef);
             IntPtr hOldPen = IntPtr.Zero;
@@ -703,6 +893,9 @@ namespace UIAutomation
                 if (hdc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdc);
                 if (hPen != IntPtr.Zero) DeleteObject(hPen);
             }
+
+            message = null;
+            return true;
         }
 
         #endregion
@@ -733,11 +926,15 @@ namespace UIAutomation
         };
 
         /// <summary>Maps our designer-friendly <see cref="UiControlType"/> to the real <see cref="ControlType"/>.</summary>
-        private static ControlType ToControlType(UiControlType controlType)
+        private static bool TryToControlType(UiControlType controlType, out ControlType result, out string message)
         {
-            if (ControlTypeMap.TryGetValue(controlType, out ControlType result))
-                return result;
-            throw new ArgumentOutOfRangeException(nameof(controlType), controlType, "Unrecognized control type.");
+            if (ControlTypeMap.TryGetValue(controlType, out result))
+            {
+                message = null;
+                return true;
+            }
+            message = $"Unrecognized control type: {controlType}.";
+            return false;
         }
 
         /// <summary>Enumerates every element in <paramref name="scope"/> under <paramref name="parent"/> and returns the first one matching <paramref name="predicate"/>, or null.</summary>
