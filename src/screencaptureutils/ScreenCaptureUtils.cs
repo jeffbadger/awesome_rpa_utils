@@ -22,7 +22,9 @@ namespace ScreenCaptureAutomation
     /// captures use <see cref="Graphics.CopyFromScreen(int, int, int, int, Size)"/> and
     /// therefore have the same requirements as any GDI screen read: an interactive,
     /// unlocked desktop, and results reflect logical (DPI-virtualized) pixels unless
-    /// the hosting process is DPI-aware.
+    /// the hosting process is DPI-aware (see MouseUtils.IsProcessDpiAware).
+    /// File format is inferred from the extension; note that .gif saves are lossy
+    /// (256 colors, no true alpha), so prefer .png for evidence screenshots.
     /// </remarks>
     [Description("Captures the screen, a region, or a window to a file/clipboard; compares captures for " +
                  "visual verification; and annotates/redacts saved screenshots. Drag this component onto " +
@@ -48,6 +50,27 @@ namespace ScreenCaptureAutomation
         public ScreenCaptureUtils(IContainer container)
         {
             container?.Add(this);
+        }
+
+        /// <summary>
+        /// Releases the resources used by the component. ScreenCaptureUtils holds no
+        /// unmanaged handles of its own (bitmaps and device contexts are released in
+        /// using blocks on each call), so this override exists to give you a cleanup
+        /// hook and to follow the standard designer-component teardown pattern used by
+        /// the other components in this repo.
+        /// </summary>
+        /// <param name="disposing">
+        /// True when called from the public Dispose() method during teardown;
+        /// false when called from the finalizer.
+        /// </param>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // No managed or unmanaged resources to release.
+            }
+
+            base.Dispose(disposing);
         }
 
         #endregion
@@ -194,17 +217,51 @@ namespace ScreenCaptureAutomation
         /// Captures the entire virtual screen and copies it to the Windows clipboard
         /// as an image, ready to paste into an email or ticket.
         /// </summary>
-        /// <remarks>Requires the calling thread to be STA, as with any Windows Forms clipboard access.</remarks>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture or clipboard copy failed.</param>
+        /// <returns><c>true</c> on success. Never throws.</returns>
+        /// <remarks>
+        /// Requires the calling thread to be STA, as with any Windows Forms clipboard access.
+        /// A capture failure (locked/secure desktop) or clipboard contention with another
+        /// process is reported via <paramref name="message"/> rather than thrown.
+        /// </remarks>
         [Category("Capture - Core")]
-        [Description("Captures the entire virtual screen and copies it to the clipboard as an image.")]
-        public void CaptureToClipboard()
+        [Description("Captures the entire virtual screen and copies it to the clipboard as an image. Returns True on success; never throws.")]
+        public bool CaptureToClipboard(out string message)
         {
             Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-            TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out _);
+            if (!TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out message))
+                return false;
+
             using (bmp)
             {
-                System.Windows.Forms.Clipboard.SetImage(bmp);
+                try
+                {
+                    System.Windows.Forms.Clipboard.SetImage(bmp);
+                    message = null;
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    message = "Could not copy to the clipboard: " + ex.Message +
+                              " (the clipboard may be held by another process, or the thread is not STA.)";
+                    return false;
+                }
             }
+        }
+
+        /// <summary>
+        /// Captures the entire virtual screen and copies it to the Windows clipboard
+        /// as an image. Legacy overload that cannot report failures: it throws an
+        /// <see cref="InvalidOperationException"/> if the capture or clipboard copy
+        /// fails. Prefer <see cref="CaptureToClipboard(out string)"/>.
+        /// </summary>
+        /// <remarks>Requires the calling thread to be STA, as with any Windows Forms clipboard access.</remarks>
+        [Category("Capture - Core")]
+        [Description("Captures the entire virtual screen and copies it to the clipboard as an image. Throws on failure - prefer the overload with a message parameter.")]
+        public void CaptureToClipboard()
+        {
+            if (!CaptureToClipboard(out string message))
+                throw new InvalidOperationException(message);
         }
 
         /// <summary>
@@ -238,8 +295,17 @@ namespace ScreenCaptureAutomation
                 return false;
             }
 
-            Directory.CreateDirectory(folderPath);
-            _evidenceCounter++;
+            try
+            {
+                Directory.CreateDirectory(folderPath);
+            }
+            catch (Exception ex)
+            {
+                message = $"Could not create evidence folder '{folderPath}': {ex.Message}";
+                return false;
+            }
+
+            Interlocked.Increment(ref _evidenceCounter);
 
             string fileName = $"{_evidenceCounter:D3}_{SanitizeFileNameSegment(stepName)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
             string candidatePath = Path.Combine(folderPath, fileName);
@@ -280,34 +346,45 @@ namespace ScreenCaptureAutomation
                 return false;
 
             using (region)
-            using (Bitmap small = new Bitmap(region, new Size(8, 8)))
             {
-                long[] luminance = new long[64];
-                int i = 0;
-                for (int y = 0; y < 8; y++)
+                try
                 {
-                    for (int x = 0; x < 8; x++)
+                    using (Bitmap small = new Bitmap(region, new Size(8, 8)))
                     {
-                        Color c = small.GetPixel(x, y);
-                        luminance[i++] = (c.R + c.G + c.B) / 3;
+                        long[] luminance = new long[64];
+                        int i = 0;
+                        for (int y = 0; y < 8; y++)
+                        {
+                            for (int x = 0; x < 8; x++)
+                            {
+                                Color c = small.GetPixel(x, y);
+                                luminance[i++] = (c.R + c.G + c.B) / 3;
+                            }
+                        }
+
+                        long average = 0;
+                        for (int p = 0; p < luminance.Length; p++)
+                            average += luminance[p];
+                        average /= luminance.Length;
+
+                        ulong h = 0;
+                        for (int b = 0; b < 64; b++)
+                        {
+                            if (luminance[b] >= average)
+                                h |= (1UL << b);
+                        }
+
+                        hash = h.ToString("X16");
+                        message = null;
+                        return true;
                     }
                 }
-
-                long average = 0;
-                for (int p = 0; p < luminance.Length; p++)
-                    average += luminance[p];
-                average /= luminance.Length;
-
-                ulong h = 0;
-                for (int b = 0; b < 64; b++)
+                catch (Exception ex)
                 {
-                    if (luminance[b] >= average)
-                        h |= (1UL << b);
+                    hash = null;
+                    message = "Region hash computation failed: " + ex.Message;
+                    return false;
                 }
-
-                hash = h.ToString("X16");
-                message = null;
-                return true;
             }
         }
 
@@ -535,14 +612,25 @@ namespace ScreenCaptureAutomation
                 return false;
             }
 
-            Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-            using (Graphics g = Graphics.FromImage(bmp))
+            try
             {
-                g.CopyFromScreen(left, top, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
+                Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    // CopyFromScreen throws (Win32Exception) when the desktop is
+                    // inaccessible - locked session, secure desktop, service context -
+                    // which would otherwise break the documented never-throws contract.
+                    g.CopyFromScreen(left, top, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
+                }
+                bitmap = bmp;
+                message = null;
+                return true;
             }
-            bitmap = bmp;
-            message = null;
-            return true;
+            catch (Exception ex)
+            {
+                message = $"Screen region capture failed at ({left},{top}) {width}x{height}: {ex.Message}";
+                return false;
+            }
         }
 
         private static bool TrySaveBitmap(Bitmap bmp, string filePath, out string message)
@@ -553,14 +641,24 @@ namespace ScreenCaptureAutomation
                 return false;
             }
 
-            string fullPath = Path.GetFullPath(filePath);
-            string directory = Path.GetDirectoryName(fullPath);
-            if (!string.IsNullOrEmpty(directory))
-                Directory.CreateDirectory(directory);
+            try
+            {
+                string fullPath = Path.GetFullPath(filePath);
+                string directory = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
 
-            bmp.Save(fullPath, GetImageFormatFromExtension(fullPath));
-            message = null;
-            return true;
+                // bmp.Save throws on IO failures (unauthorized access, locked target,
+                // disk full) - surfaces as false + message instead of an exception.
+                bmp.Save(fullPath, GetImageFormatFromExtension(fullPath));
+                message = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                message = $"Failed to save capture to '{filePath}': {ex.Message}";
+                return false;
+            }
         }
 
         private static ImageFormat GetImageFormatFromExtension(string filePath)
@@ -606,14 +704,25 @@ namespace ScreenCaptureAutomation
                 return false;
             }
 
-            byte[] bytes = File.ReadAllBytes(filePath);
-            using (MemoryStream ms = new MemoryStream(bytes))
-            using (Bitmap decoded = new Bitmap(ms))
+            try
             {
-                bitmap = new Bitmap(decoded);
+                byte[] bytes = File.ReadAllBytes(filePath);
+                using (MemoryStream ms = new MemoryStream(bytes))
+                using (Bitmap decoded = new Bitmap(ms))
+                {
+                    // new Bitmap can throw ArgumentException for a file that exists
+                    // but is corrupt/not an image - surfaces as false + message
+                    // instead of an exception (never-throws contract).
+                    bitmap = new Bitmap(decoded);
+                }
+                message = null;
+                return true;
             }
-            message = null;
-            return true;
+            catch (Exception ex)
+            {
+                message = $"Failed to load image file '{filePath}': {ex.Message}. Expected a valid image file.";
+                return false;
+            }
         }
 
         private static Color ColorFromColorRef(int colorRef)
