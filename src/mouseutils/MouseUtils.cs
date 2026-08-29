@@ -564,7 +564,14 @@ namespace MouseAutomation
             if ((modifiers & ModifierKeys.Shift)   != 0) upBatch.Add(MakeKeyInput(VK_SHIFT, true));
             if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
 
-            return TrySendInputs(upBatch.ToArray(), out message);
+            bool upOk = TrySendInputs(upBatch.ToArray(), out message);
+            if (!upOk)
+            {
+                // Best-effort retry: a transient SendInput failure must not leave the
+                // modifiers or button stuck down (mirrors RubberBandSelect's finally).
+                TrySendInputs(upBatch.ToArray(), out _);
+            }
+            return upOk;
         }
 
         /// <summary>
@@ -581,7 +588,8 @@ namespace MouseAutomation
         /// <remarks>
         /// The cursor is restored even if the click is refused (locked desktop, UIPI), so
         /// the operator is never stranded. The brief visit still raises hover events at the
-        /// target, which can trigger tooltips.
+        /// target, which can trigger tooltips. If the restore itself fails (e.g. the desktop
+        /// locked mid-click), the failure is reported in <paramref name="message"/>.
         /// </remarks>
         [Category("Mouse - Click")]
         [Description("Clicks at the given coordinates, then immediately returns the cursor to its original position. Returns True on success; never throws.")]
@@ -593,6 +601,7 @@ namespace MouseAutomation
             bool moved;
             bool clicked = false;
             string failureMessage = null;
+            bool restored = true;
             try
             {
                 moved = MoveTo(x, y, out failureMessage);
@@ -605,7 +614,13 @@ namespace MouseAutomation
             finally
             {
                 // Restore even when the click failed - never strand the operator's cursor.
-                SetCursorPos(original.X, original.Y);
+                restored = SetCursorPos(original.X, original.Y);
+            }
+
+            if (!restored)
+            {
+                message = "The cursor could not be restored to its original position after the click attempt.";
+                return clicked;
             }
 
             message = clicked ? null : failureMessage;
@@ -1362,6 +1377,8 @@ namespace MouseAutomation
         ///  - If this process exits while blocked, Windows releases the block with the thread.
         ///  - Requires an interactive desktop; fails on the secure desktop and against
         ///    higher-integrity desktops (UIPI).
+        ///  - Microsoft marks BlockInput as deprecated; use it only for short, critical
+        ///    sequences, never as a long-lived input lock.
         /// </remarks>
         [Category("Mouse - Input Blocking")]
         [Description("Blocks all real keyboard/mouse input system-wide until UnblockUserInput (injected input still works). MUST be paired with UnblockUserInput in a Finally block. Returns True on success; never throws.")]
@@ -1415,6 +1432,8 @@ namespace MouseAutomation
         ///    mouse messages because they read raw input or use a different input pipeline.
         ///  - For best results, target the raw child control handle (from Spy++ or
         ///    WindowFromPoint), not the top-level root window.
+        ///  - The center is computed from GetWindowRect, which returns the minimized
+        ///    position for minimized windows - restore the window before calling.
         /// </remarks>
         [Category("Mouse - Background Click")]
         [Description("Posts a click directly to a window handle without moving the cursor or stealing focus. Returns True on success; never throws.")]
@@ -1691,18 +1710,18 @@ namespace MouseAutomation
         }
 
         /// <summary>
-        /// Clicks at a position expressed as a fraction of a window's width/height -
+        /// Clicks at a position expressed as a fraction of a window's client area -
         /// e.g. (0.5, 0.9) for "horizontally centered, near the bottom" - so the click
         /// target survives minor resizes or resolution differences across machines.
         /// </summary>
         /// <param name="hWnd">Handle of the window to click within.</param>
-        /// <param name="xFraction">Horizontal position as a fraction of the window's width, from 0.0 (left edge) to 1.0 (right edge).</param>
-        /// <param name="yFraction">Vertical position as a fraction of the window's height, from 0.0 (top edge) to 1.0 (bottom edge).</param>
+        /// <param name="xFraction">Horizontal position as a fraction of the client area's width, from 0.0 (left edge) to 1.0 (right edge).</param>
+        /// <param name="yFraction">Vertical position as a fraction of the client area's height, from 0.0 (top edge) to 1.0 (bottom edge).</param>
         /// <param name="button">The mouse button to click.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="xFraction"/>/<paramref name="yFraction"/> are outside [0.0, 1.0], <paramref name="button"/> is undefined, or GetWindowRect/input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="xFraction"/>/<paramref name="yFraction"/> are outside [0.0, 1.0], <paramref name="button"/> is undefined, or GetClientRect/ClientToScreen/input injection failed. Never throws.</returns>
         [Category("Mouse - Window Targeting")]
-        [Description("Clicks at a fractional position within a window (e.g. 0.5, 0.9), resilient to minor resizes across machines. Returns True on success; never throws.")]
+        [Description("Clicks at a fractional position within a window's client area (e.g. 0.5, 0.9), resilient to minor resizes across machines. Returns True on success; never throws.")]
         public bool ClickAtRelativePosition(IntPtr hWnd, double xFraction, double yFraction, MouseButton button, out string message)
         {
             if (xFraction < 0.0 || xFraction > 1.0)
@@ -1716,12 +1735,26 @@ namespace MouseAutomation
                 return false;
             }
 
-            if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+            // Fractions are relative to the client area, not the full window rect (which
+            // includes the title bar/borders), so (0.5, 0.5) is the client center.
+            if (!GetClientRect(hWnd, out RECT client))
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClientRect failed.").Message;
                 return false;
+            }
 
-            int x = bounds.Left + (int)Math.Round(bounds.Width * xFraction);
-            int y = bounds.Top + (int)Math.Round(bounds.Height * yFraction);
-            return ClickAt(x, y, button, out message);
+            POINT pt = new POINT
+            {
+                X = client.Left + (int)Math.Round((client.Right - client.Left) * xFraction),
+                Y = client.Top + (int)Math.Round((client.Bottom - client.Top) * yFraction)
+            };
+            if (!ClientToScreen(hWnd, ref pt))
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "ClientToScreen failed.").Message;
+                return false;
+            }
+
+            return ClickAt(pt.X, pt.Y, button, out message);
         }
 
         /// <summary>
@@ -1817,13 +1850,24 @@ namespace MouseAutomation
         /// coordinates, so <see cref="MoveTo"/> targets the wrong physical location.
         /// Note that a <c>false</c> return can also mean the awareness query itself
         /// failed - <c>GetDpiAwarenessContext</c> requires Windows 10 1607 or later,
-        /// and on older systems this method reports false even for a DPI-aware process.
+        /// and on older systems this method reports false even for a DPI-aware process
+        /// (the missing entry point is caught, so the never-throws contract holds).
         /// </remarks>
         [Category("Mouse - DPI")]
         [Description("Returns True if the process is DPI-aware (any level); false if DPI-unaware.")]
         public bool IsProcessDpiAware()
         {
-            IntPtr ctx = GetDpiAwarenessContext();
+            IntPtr ctx;
+            try
+            {
+                ctx = GetDpiAwarenessContext();
+            }
+            catch (EntryPointNotFoundException)
+            {
+                // GetDpiAwarenessContext requires Windows 10 1607+; on older systems
+                // report DPI-unaware rather than throwing (never-throws contract).
+                return false;
+            }
             if (ctx == IntPtr.Zero)
                 return false;
 
@@ -1907,7 +1951,17 @@ namespace MouseAutomation
             try
             {
                 hOldPen = SelectObject(hdc, hPen);
+                if (hOldPen == IntPtr.Zero)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "SelectObject failed for the highlight pen.").Message;
+                    return false;
+                }
                 hOldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                if (hOldBrush == IntPtr.Zero)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "SelectObject failed for the highlight brush.").Message;
+                    return false;
+                }
                 SetROP2(hdc, R2_NOTXORPEN);
 
                 for (int i = 0; i < flashes; i++)
@@ -1952,7 +2006,6 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
-        /// <exception cref="Win32Exception">A Win32 cursor call failed (e.g. locked desktop).</exception>
         /// <remarks>
         /// The curve, timing, and jitter vary on every call, so repeated movements to
         /// the same target do not look identical — useful for anti-detection and for
@@ -1969,7 +2022,7 @@ namespace MouseAutomation
             if (!TryGetPoint(out POINT start, out message))
                 return false;
 
-            Random rng = new Random();
+            Random rng = Random.Shared;
 
             // Direction of the start→end line.
             double dx = x - start.X;
@@ -2117,6 +2170,8 @@ namespace MouseAutomation
         /// <remarks>
         /// A lightweight verification primitive for flows that can't use full OCR/image
         /// recognition - e.g. confirming a button changed color after being clicked.
+        /// On systems with GPU-accelerated compositing (DWM), GetPixel on the screen DC
+        /// can return stale or incorrect colors, so treat this as a best-effort heuristic.
         /// </remarks>
         [Category("Mouse - Verification")]
         [Description("Reads the color of the screen pixel at the given coordinates, as a 0x00BBGGRR COLORREF value. Returns True on success; never throws.")]
@@ -2244,11 +2299,8 @@ namespace MouseAutomation
                 return false;
             }
 
-            IntPtr waitCursor = LoadCursor(IntPtr.Zero, (int)SystemCursorType.Wait);
-            IntPtr appStartingCursor = LoadCursor(IntPtr.Zero, (int)SystemCursorType.AppStarting);
-
             message = null;
-            return info.hCursor == waitCursor || info.hCursor == appStartingCursor;
+            return info.hCursor == WaitCursorHandle.Value || info.hCursor == AppStartingCursorHandle.Value;
         }
 
         /// <summary>
@@ -2542,6 +2594,14 @@ namespace MouseAutomation
         // GetAncestor flag: retrieve the root (top-level) window.
         private const uint GA_ROOT = 2;
 
+        // Shared system-cursor handles for the busy-cursor check, loaded once and never
+        // destroyed (LoadCursor returns shared handles). Lazy so the type can be
+        // instantiated on non-Windows test hosts without touching user32.
+        private static readonly Lazy<IntPtr> WaitCursorHandle =
+            new Lazy<IntPtr>(() => LoadCursor(IntPtr.Zero, (int)SystemCursorType.Wait));
+        private static readonly Lazy<IntPtr> AppStartingCursorHandle =
+            new Lazy<IntPtr>(() => LoadCursor(IntPtr.Zero, (int)SystemCursorType.AppStarting));
+
         #endregion
 
         #region P/Invoke - Cursor Position
@@ -2624,6 +2684,10 @@ namespace MouseAutomation
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
