@@ -317,20 +317,23 @@ exception` condition.
 
 ### EventUtils (needs Setup: a real window to create/destroy — notepad.exe works; Cleanup: kill it)
 
-Every public method returns `bool` / uses `out` params and never throws — for
-these, replace Phase 2's "exception condition on the invalid-input case" with an
-outcome condition asserting `false` (or `null` + `timedOut = true` for waits),
-instead of an `Automation exception` condition. The engine is Windows-only:
-`Initialize()` returns `false` off-Windows, and the real-window cases below are
-the ones that prove the hook actually delivers events.
+Every public method returns `bool` and never throws — abnormal results are
+reported through an `out string message` (null on success), and timeouts through
+`out bool timedOut` / `out bool hasEvent`. For these, replace Phase 2's
+"exception condition on the invalid-input case" with an outcome condition
+asserting `false` (plus a non-null `message`), instead of an `Automation
+exception` condition. The engine is Windows-only: `Initialize()` returns `false`
+off-Windows, and the real-window cases below are the ones that prove the hook
+actually delivers events.
 
 - `Initialize`/`Start`/`Stop`/`Dispose` (idempotent: call `Start` twice, `Dispose`
   twice; `Initialize` after `Dispose` restarts the engine; `Stop` unhooks — no
   events arrive after it, and `Start` re-hooks; invalid category CSV → `Start`
   returns `false`)
-- `WaitForWindowCreated` (launch notepad → event with `ProcessName` "notepad" and
-  non-zero `Hwnd` within the timeout; no window → `null` + `timedOut = true`;
-  engine not started → immediate `timedOut = true`)
+- `WaitForWindowCreated` (launch notepad → `true` with an event whose
+  `ProcessName` is "notepad" and `Hwnd` is non-zero within the timeout; no
+  window → `false` + `timedOut = true` + a timeout message; engine not started →
+  immediate `false` + `timedOut = false` + a message)
 - `WaitForWindowDestroyed` (close the window → event whose `Title` was captured
   before destruction — proves enrichment-before-death; no close → timeout)
 - `WaitForWindowShown`, `WaitForForegroundChanged`, `WaitForTitleChanged` (drive
@@ -347,9 +350,10 @@ the ones that prove the hook actually delivers events.
   `timedOut = true`)
 - `Subscribe`/`Unsubscribe`/`GetNextEvent`/`GetNextEvents`/`HasEvents`/
   `ClearQueue` (two subscriptions with different filters/categories → independent
-  queues, no cross-feed; unknown subscription id → `GetNextEvent` returns `null`
-  with `hasEvent = false`; malformed filter JSON → `Subscribe` returns `false`,
-  unknown JSON keys are ignored; duplicate id → `false`)
+  queues, no cross-feed; unknown subscription id → `GetNextEvent` returns `false`
+  with a non-null `message`; malformed filter JSON → `Subscribe` returns `false`
+  with a non-null `message`, unknown JSON keys are ignored; duplicate id →
+  `false` with a non-null `message`)
 - `SetDebounce` (rapidly show/hide a window 10× → SHOW count after debounce ≤ 3;
   `SetDebounce("WindowShown", 0)` disables coalescing)
 - `SetQueueLimits` (limit 5 + "DropOldest", flood 50 events → `HasEvents` == 5,

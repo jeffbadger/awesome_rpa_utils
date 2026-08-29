@@ -24,12 +24,12 @@ utils act on them — `screencaptureutils` to capture, `dialogutils` to dismiss,
 
 ```csharp
 var events = new EventUtils();
-events.Initialize();
-events.Start("Windows,Foreground,Dialogs");   // which categories to watch
+events.Initialize(out _);
+events.Start("Windows,Foreground,Dialogs", out _);   // which categories to watch
 
 // Wait model: block until notepad's window appears.
-EventData created = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out bool timedOut);
-if (!timedOut)
+bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out bool timedOut, out _);
+if (ok && !timedOut)
     Console.WriteLine("notepad appeared: " + created.ToJson());
 ```
 
@@ -43,29 +43,29 @@ subscribed — see [Known limitations](#known-limitations).
 
 | Method | Signature | Description |
 |---|---|---|
-| `Initialize` | `bool Initialize()` | Starts the background hook thread (idempotent). Returns True on success; never throws. |
-| `Start` | `bool Start(string categoriesCsv)` | Activates the given categories (e.g. `"Windows,Foreground,Dialogs"`) and installs the hook. Returns True on success; never throws. |
-| `Stop` | `bool Stop()` | Unhooks; queues are preserved so they can still be drained. Returns True on success; never throws. |
+| `Initialize` | `bool Initialize(out string message)` | Starts the background hook thread (idempotent). Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
+| `Start` | `bool Start(string categoriesCsv, out string message)` | Activates the given categories (e.g. `"Windows,Foreground,Dialogs"`) and installs the hook. Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
+| `Stop` | `bool Stop(out string message)` | Unhooks; queues are preserved so they can still be drained. Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
 | `Dispose` | `void Dispose()` | Full teardown — unhooks, stops the thread, clears subscriptions/waiters. Safe to call multiple times; a later `Initialize()` restarts the component. |
 
 Call `Initialize()` then `Start(...)` before any `WaitForX` or `Subscribe` call.
-If the engine is not running, a wait returns immediately and reports a timeout.
+If the engine is not running, a wait returns False immediately with a message.
 
 ## Worked example 1 — Wait: wait for notepad, then click OK
 
 ```csharp
 var events = new EventUtils();
-events.Initialize();
-events.Start("Windows,Dialogs");
+events.Initialize(out _);
+events.Start("Windows,Dialogs", out _);
 
 // Launch notepad and wait for its window to appear.
 System.Diagnostics.Process.Start("notepad.exe");
-EventData created = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out bool timedOut);
-if (timedOut) { /* handle */ }
+bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out bool timedOut, out _);
+if (!ok || timedOut) { /* handle */ }
 
 // ... later, a Save dialog appears. Wait for it, then dismiss it with dialogUtils.
-EventData dialog = events.WaitForDialogAppeared("{\"process\":\"notepad\"}", 10000, out timedOut);
-if (!timedOut)
+ok = events.WaitForDialogAppeared("{\"process\":\"notepad\"}", 10000, out EventData dialog, out timedOut, out _);
+if (ok && !timedOut)
 {
     var dialogs = new DialogAutomation.DialogUtils();
     dialogs.ClickDialogButtonByText(new IntPtr(dialog.Hwnd), "OK", out _);
@@ -76,14 +76,14 @@ if (!timedOut)
 
 ```csharp
 var events = new EventUtils();
-events.Initialize();
-events.Start("Dialogs");
-events.Subscribe("Dialogs", "{\"process\":\"myapp\"}", "guardian");
+events.Initialize(out _);
+events.Start("Dialogs", out _);
+events.Subscribe("Dialogs", "{\"process\":\"myapp\"}", "guardian", out _);
 
 while (true)
 {
-    EventData dialog = events.GetNextEvent("guardian", 5000, out bool hasEvent);
-    if (!hasEvent) continue;
+    bool ok = events.GetNextEvent("guardian", 5000, out EventData dialog, out bool hasEvent, out _);
+    if (!ok || !hasEvent) continue;
 
     // Capture the dialog, then dismiss it.
     var capture = new ScreenCaptureAutomation.ScreenCaptureUtils();
@@ -102,7 +102,7 @@ try
 }
 catch (Exception ex)
 {
-    string recent = events.DumpRecentEvents(50);   // last 50 events as a JSON array
+    events.DumpRecentEvents(50, out string recent, out _);   // last 50 events as a JSON array
     Log.Write("Automation failed: " + ex.Message + "\nRecent events:\n" + recent);
 }
 ```
@@ -144,46 +144,50 @@ Supported JSON keys: `process`, `processes` (array), `class`, `titleContains`,
 
 | Method | Signature | Description |
 |---|---|---|
-| `WaitForWindowCreated` | `EventData WaitForWindowCreated(string filterJson, int timeoutMs, out bool timedOut)` | Matches `WindowCreated`. |
-| `WaitForWindowDestroyed` | `EventData WaitForWindowDestroyed(string filterJson, int timeoutMs, out bool timedOut)` | Matches `WindowDestroyed`. |
-| `WaitForWindowShown` | `EventData WaitForWindowShown(string filterJson, int timeoutMs, out bool timedOut)` | Matches `WindowShown`. |
-| `WaitForForegroundChanged` | `EventData WaitForForegroundChanged(string filterJson, int timeoutMs, out bool timedOut)` | Matches `ForegroundChanged`. |
-| `WaitForTitleChanged` | `EventData WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out bool timedOut)` | Matches `TitleChanged` + title regex. |
-| `WaitForDialogAppeared` | `EventData WaitForDialogAppeared(string filterJson, int timeoutMs, out bool timedOut)` | Matches `DialogAppeared`/`DialogClosed` + `#32770` heuristic. |
-| `WaitForStateChanged` | `EventData WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out bool timedOut)` | Matches `StateChanged` + state regex. |
-| `WaitForMenuOpened` | `EventData WaitForMenuOpened(string filterJson, int timeoutMs, out bool timedOut)` | Matches `MenuOpened`/`MenuPopupOpened`. |
-| `WasWindowCreated` | `bool WasWindowCreated(string filterJson, int withinLastMs)` | Non-blocking lookback over the ring buffer. |
-| `CancelWaits` | `void CancelWaits()` | Releases all pending waits (each reports a timeout). |
+| `WaitForWindowCreated` | `bool WaitForWindowCreated(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Matches `WindowCreated`. |
+| `WaitForWindowDestroyed` | `bool WaitForWindowDestroyed(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Matches `WindowDestroyed`. |
+| `WaitForWindowShown` | `bool WaitForWindowShown(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Matches `WindowShown`. |
+| `WaitForForegroundChanged` | `bool WaitForForegroundChanged(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Matches `ForegroundChanged`. |
+| `WaitForTitleChanged` | `bool WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Matches `TitleChanged` + title regex. |
+| `WaitForDialogAppeared` | `bool WaitForDialogAppeared(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Matches `DialogAppeared`/`DialogClosed` + `#32770` heuristic. |
+| `WaitForStateChanged` | `bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Matches `StateChanged` + state regex. |
+| `WaitForMenuOpened` | `bool WaitForMenuOpened(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Matches `MenuOpened`/`MenuPopupOpened`. |
+| `WasWindowCreated` | `bool WasWindowCreated(string filterJson, int withinLastMs, out bool wasCreated, out string message)` | Non-blocking lookback over the ring buffer. |
+| `CancelWaits` | `bool CancelWaits(out string message)` | Releases all pending waits (each reports a timeout). |
 
-A wait returns `null` with `timedOut = true` on timeout. **Do not use `WaitForX`
-for file or process waits** — these are UI-event waits; a process that never
-creates a window (or a file operation that never touches a window) will simply
-time out. Use `commandlineutils`/`serviceutils` for those.
+A wait returns False with `timedOut = true` on timeout (`eventData` is null and
+`message` explains the timeout); it returns False with `timedOut = false` on an
+error such as the engine not being started. **Do not use `WaitForX` for file or
+process waits** — these are UI-event waits; a process that never creates a window
+(or a file operation that never touches a window) will simply time out. Use
+`commandlineutils`/`serviceutils` for those.
 
 ## Subscribe methods
 
 | Method | Signature | Description |
 |---|---|---|
-| `Subscribe` | `bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId)` | Registers a subscription. Returns True on success; never throws. |
-| `Unsubscribe` | `bool Unsubscribe(string subscriptionId)` | Removes a subscription and drops its queue. |
-| `GetNextEvent` | `EventData GetNextEvent(string subscriptionId, int timeoutMs, out bool hasEvent)` | Blocks up to `timeoutMs` for the next queued event. |
-| `GetNextEvents` | `EventData[] GetNextEvents(string subscriptionId, int maxCount, int drainMs)` | Drains up to `maxCount` events. |
-| `HasEvents` | `bool HasEvents(string subscriptionId, out int count)` | Reports queued-event count. |
-| `ClearQueue` | `void ClearQueue(string subscriptionId)` | Drops all queued events. |
+| `Subscribe` | `bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId, out string message)` | Registers a subscription. Returns True on success; `message` is null on success, a reason otherwise (malformed filter JSON, duplicate id, invalid category). Never throws. |
+| `Unsubscribe` | `bool Unsubscribe(string subscriptionId, out string message)` | Removes a subscription and drops its queue. Returns True if it existed; `message` is null on success, a reason otherwise. |
+| `GetNextEvent` | `bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)` | Blocks up to `timeoutMs` for the next queued event. Returns True when the call succeeded; `hasEvent` is True when `eventData` holds an event (False on timeout). `message` is null on success, a reason otherwise (unknown subscription). |
+| `GetNextEvents` | `bool GetNextEvents(string subscriptionId, int maxCount, int drainMs, out EventData[] events, out string message)` | Drains up to `maxCount` events into `events`. Returns True on success; `message` is null on success, a reason otherwise. |
+| `HasEvents` | `bool HasEvents(string subscriptionId, out int count, out string message)` | Reports queued-event count. Returns True when the subscription exists; `message` is null on success, a reason otherwise (unknown subscription). |
+| `ClearQueue` | `bool ClearQueue(string subscriptionId, out string message)` | Drops all queued events. Returns True when the subscription exists; `message` is null on success, a reason otherwise. |
 
 ## Tuning / ops
 
 | Method | Signature | Description |
 |---|---|---|
-| `SetDebounce` | `void SetDebounce(string eventName, int debounceMs)` | Dedupes per (hwnd, event-name). Defaults: 150 ms for `WindowShown`/`WindowHidden`, 0 otherwise. Save dialogs fire 4-6 SHOWs in ~200 ms; debounce coalesces them to 1. |
-| `SetQueueLimits` | `void SetQueueLimits(int maxEvents, string overflowPolicy)` | Per-subscription queue bound + policy: `"DropOldest"` (default), `"DropNewest"`, `"Block"`. |
-| `DumpRecentEvents` | `string DumpRecentEvents(int count)` | Last N events as a JSON array (ring buffer, max 500). |
+| `SetDebounce` | `bool SetDebounce(string eventName, int debounceMs, out string message)` | Dedupes per (hwnd, event-name). Defaults: 150 ms for `WindowShown`/`WindowHidden`, 0 otherwise. Save dialogs fire 4-6 SHOWs in ~200 ms; debounce coalesces them to 1. Returns True on success; `message` is null on success, a reason otherwise. |
+| `SetQueueLimits` | `bool SetQueueLimits(int maxEvents, string overflowPolicy, out string message)` | Per-subscription queue bound + policy: `"DropOldest"` (default), `"DropNewest"`, `"Block"`. Returns True on success; `message` is null on success, a reason otherwise (invalid arguments). |
+| `DumpRecentEvents` | `bool DumpRecentEvents(int count, out string json, out string message)` | Last N events as a JSON array in `json` (ring buffer, max 500). Returns True on success; `message` is null on success, a reason otherwise. |
 
 ## Notes & Caveats
 
-- **Every public method returns `bool` / uses `out` params and never throws** —
-  failures (hook install failure, malformed filter JSON, unknown subscription)
-  are reported through the return value and logged at debug level via
+- **Every public method returns `bool` and never throws** — abnormal results
+  (hook install failure, malformed filter JSON, unknown subscription) are
+  reported through an `out string message` (null on success), and timeouts
+  through `out bool timedOut` / `out bool hasEvent` where a timeout is a normal
+  outcome. Failures are also logged at debug level via
   `System.Diagnostics.Debug.WriteLine`. Hook install failure logs the Win32
   error from `Marshal.GetLastWin32Error()`.
 - **`EVENT_OBJECT_VALUECHANGE` is opt-in only** — every keystroke fires it, so it
