@@ -34,7 +34,8 @@ All coordinates are absolute screen pixels, consistent with MouseUtils.
 | `CaptureWindowToFile` | `bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)` | Captures a window via `PrintWindow` — works even if the window is covered by other windows. Returns True on success; never throws. |
 | `CaptureActiveWindowToFile` | `bool CaptureActiveWindowToFile(string filePath, out string message)` | Captures the current foreground window to an image file. Returns True on success; never throws. |
 | `CaptureAroundPointToFile` | `bool CaptureAroundPointToFile(int x, int y, int width, int height, string filePath, out string message)` | Captures a region centered on a point (e.g. `MouseUtils.GetX/GetY`) to an image file. Returns True on success; never throws. |
-| `CaptureToClipboard` | `void CaptureToClipboard()` | Captures the entire virtual screen and copies it to the clipboard as an image. |
+| `CaptureToClipboard` | `bool CaptureToClipboard(out string message)` | Captures the entire virtual screen and copies it to the clipboard as an image. Returns True on success; never throws. |
+| `CaptureToClipboard` | `void CaptureToClipboard()` | Legacy overload that throws `InvalidOperationException` on failure — prefer the `bool` overload above. |
 | `CaptureStepEvidence` | `bool CaptureStepEvidence(string stepName, string folderPath, out string fullPath, out string message)` | Captures the screen to an auto-named, sequentially-numbered evidence file (`001_StepName_20260826_143201.png`). `fullPath` receives the file path written. Returns True on success; never throws. |
 
 ### Verification & Comparison
@@ -55,11 +56,15 @@ All coordinates are absolute screen pixels, consistent with MouseUtils.
 
 ## Notes & Caveats
 
-- **Every method except `CaptureToClipboard` returns `bool` with an `out string message`**
-  instead of throwing — bad dimensions, an invalid file path, a missing image file, and
-  Win32 failures (`GetWindowRect`/`PrintWindow`) are all reported this way, with `message`
-  set to a human-readable reason whenever the method returns `false`. `CaptureToClipboard`
-  has no failure-prone inputs (fixed virtual-screen bounds, no file path) and is unchanged.
+- **Every method except the legacy `void CaptureToClipboard()` returns `bool` with an
+  `out string message`** instead of throwing — bad dimensions, an invalid file path, a
+  missing image file, and Win32 failures (`GetWindowRect`/`PrintWindow`) are all reported
+  this way, with `message` set to a human-readable reason whenever the method returns
+  `false`. The legacy `void CaptureToClipboard()` overload throws
+  `InvalidOperationException` on failure and exists only for backward compatibility.
+- **Capture regions that lie entirely outside the virtual screen** (all monitors) are
+  rejected with a message rather than capturing a solid black rectangle; a partially
+  overlapping region is allowed, and the off-screen part comes back black.
 - **`WaitForRegionToChange`/`CompareRegionToBaseline`** overload the meaning of a `false`
   return: it covers both a normal "didn't change"/"outside tolerance" outcome
   (`message == null`) and a real failure that aborted the check early (`message` set) —
