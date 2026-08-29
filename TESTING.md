@@ -264,6 +264,14 @@ argument error (`false` + non-null `message`) from a normal not-found result
 - `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName`, `GetBoundingRectangle`, `IsEnabled`, `IsOffscreen` (assert against known harness control properties; null element → `false` + message)
 - `IsElementAvailable` (true for a live control; false after closing the harness window and re-checking a cached reference)
 - `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, → `false` + message instead of an exception)
+
+The platform-independent input guards, `UiControlType` mapping, and Wait
+abort-on-argument-error paths have xunit coverage in
+`src/uiautomationutils/UIAutomation.Tests` — run it with
+`dotnet test src/uiautomationutils/UIAutomation.Tests/UIAutomation.Tests.csproj`
+(Windows only: the component's UIA types cannot load on non-Windows hosts,
+so a solution-wide `dotnet test` on Linux reports this project's testhost
+as unable to start while every other project still runs).
 - `WaitForElementByAutomationId`, `WaitForElementByName` (found-in-time and timeout cases, e.g. a harness control that appears after a delay; null parent → `false` + non-null message, distinct from the timeout case's `false` + `message == null`)
 - `HighlightElement` (visual-only — verify manually/via screenshot, same as `DialogUtils.HighlightControl`; null element → `false` + message)
 

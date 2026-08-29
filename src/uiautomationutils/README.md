@@ -67,8 +67,8 @@ A common UI Automation control type, mapped internally to
 | `GetName` | `bool GetName(AutomationElement element, out string name, out string message)` | Gets an element's Name property. Returns True on success; never throws. |
 | `GetAutomationId` | `bool GetAutomationId(AutomationElement element, out string automationId, out string message)` | Gets an element's AutomationId property. Returns True on success; never throws. |
 | `GetClassName` | `bool GetClassName(AutomationElement element, out string className, out string message)` | Gets an element's window class name. Returns True on success; never throws. |
-| `GetControlTypeName` | `bool GetControlTypeName(AutomationElement element, out string controlTypeName, out string message)` | Gets a friendly name for an element's control type (e.g. "Button"). Returns True on success; never throws. |
-| `GetBoundingRectangle` | `bool GetBoundingRectangle(AutomationElement element, out Rectangle bounds, out string message)` | Gets an element's screen-space bounding rectangle. Returns True on success; never throws. |
+| `GetControlTypeName` | `bool GetControlTypeName(AutomationElement element, out string controlTypeName, out string message)` | Gets a friendly name for an element's control type (e.g. "Button"); `false` + message if the element reports no ControlType. |
+| `GetBoundingRectangle` | `bool GetBoundingRectangle(AutomationElement element, out Rectangle bounds, out string message)` | Gets an element's screen-space bounding rectangle; `false` (+ message) if the element has no on-screen bounding rectangle. |
 | `IsEnabled` | `bool IsEnabled(AutomationElement element, out string message)` | Returns True if the element is enabled. Never throws. |
 | `IsOffscreen` | `bool IsOffscreen(AutomationElement element, out string message)` | Returns True if the element is offscreen. Never throws. |
 | `IsElementAvailable` | `bool IsElementAvailable(AutomationElement element)` | Returns True if the element is still available (its underlying UI hasn't gone away). |
@@ -121,15 +121,20 @@ A common UI Automation control type, mapped internally to
   whether a reference is still good, and a null reference is definitionally
   not available. It was already never-throw and is unchanged.
 - **An element reference can go stale at any time** (the underlying UI
-  closed, its control was removed, etc.) - any property/action method can
-  throw `ElementNotAvailableException` for a stale element; re-find it
-  (or check `IsElementAvailable` first) rather than caching a reference
-  across a long-running automation step, the same caution `WindowUtils`
-  already gives for raw window handles.
+  closed, its control was removed, etc.) - property/action/take-lookup
+  calls on a stale element throw `ElementNotAvailableException`, so all
+  find/property/action methods catch it and report it via `message` (+ a
+  `false` return) instead of throwing. Re-find the element (or check
+  `IsElementAvailable` first) rather than caching a reference across a
+  long-running automation step, the same caution `WindowUtils` already
+  gives for raw window handles.
 - **`FindByControlType`/`FindAllByControlType` only cover the 19 control
   types in `UiControlType`** - advanced/rare UIA patterns (Grid, Table,
   Scroll, Text range, MultipleView) are out of scope for this component.
 - **This component cannot be exercised without a real Windows desktop
   session and a real target application** - unlike some other components
-  here, there is no way to smoke-test any part of this on a non-Windows
-  machine or without an actual UI to point it at.
+  here, almost no part of this can be exercised on a non-Windows
+  machine or without an actual UI to point it at. The `UIAutomation.Tests`
+  project covers only the platform-independent input guards and the
+  `UiControlType` mapping; live element behavior is covered by the Pega
+  Unit Test plan in the repo's TESTING.md.

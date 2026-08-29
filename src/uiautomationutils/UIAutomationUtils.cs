@@ -89,6 +89,25 @@ namespace UIAutomation
             container?.Add(this);
         }
 
+        /// <summary>
+        /// Standard component cleanup override. UIAutomationUtils holds no unmanaged
+        /// resources; implementing the pattern keeps the designer-generated teardown complete.
+        /// </summary>
+        /// <param name="disposing">
+        /// True when called from the public Dispose() method during teardown;
+        /// false when called from the finalizer.
+        /// </param>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // No managed or unmanaged resources to release.
+            }
+
+            // Base Component.Dispose detaches this component from its container's site.
+            base.Dispose(disposing);
+        }
+
         #region Find
 
         /// <summary>Gets the desktop root element.</summary>
@@ -145,6 +164,10 @@ namespace UIAutomation
             {
                 return null;
             }
+            catch (Exception ex) when (ex is ArgumentException || ex is InvalidCastException)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -174,7 +197,10 @@ namespace UIAutomation
 
             var condition = new PropertyCondition(AutomationElement.AutomationIdProperty, automationId);
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
-            element = parent.FindFirst(scope, condition);
+
+            if (!TryUia(() => parent.FindFirst(scope, condition), out element, out message))
+                return false; // TryUia already set element/message
+
             message = null;
             return element != null;
         }
@@ -210,18 +236,29 @@ namespace UIAutomation
             if (exactMatch)
             {
                 var condition = new PropertyCondition(AutomationElement.NameProperty, name);
-                element = parent.FindFirst(scope, condition);
+                if (!TryUia(() => parent.FindFirst(scope, condition), out element, out message))
+                    return false; // TryUia already set element/message
             }
             else
             {
                 // PropertyCondition only supports exact-value matches - UIA has no built-in
                 // substring condition, so enumerate candidates ourselves and filter, the same
                 // way WindowUtils.FindWindowByTitle does for its exactMatch=false case.
-                element = FindFirstMatching(parent, scope, el =>
+                if (!TryUia(() => FindFirstMatching(parent, scope, el =>
                 {
-                    string elementName = el.Current.Name;
+                    // A candidate whose UI died mid-enumeration is simply skipped.
+                    string elementName;
+                    try
+                    {
+                        elementName = el.Current.Name;
+                    }
+                    catch (ElementNotAvailableException)
+                    {
+                        return false;
+                    }
                     return elementName != null && elementName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
-                });
+                }), out element, out message))
+                    return false; // TryUia already set element/message
             }
 
             message = null;
@@ -255,7 +292,10 @@ namespace UIAutomation
 
             var condition = new PropertyCondition(AutomationElement.ClassNameProperty, className);
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
-            element = parent.FindFirst(scope, condition);
+
+            if (!TryUia(() => parent.FindFirst(scope, condition), out element, out message))
+                return false; // TryUia already set element/message
+
             message = null;
             return element != null;
         }
@@ -284,7 +324,10 @@ namespace UIAutomation
 
             var condition = new PropertyCondition(AutomationElement.ControlTypeProperty, nativeType);
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
-            element = parent.FindFirst(scope, condition);
+
+            if (!TryUia(() => parent.FindFirst(scope, condition), out element, out message))
+                return false; // TryUia already set element/message
+
             message = null;
             return element != null;
         }
@@ -314,10 +357,15 @@ namespace UIAutomation
             var condition = new PropertyCondition(AutomationElement.ControlTypeProperty, nativeType);
             var scope = descendantsOnly ? TreeScope.Descendants : TreeScope.Children;
 
-            var results = new List<AutomationElement>();
-            foreach (AutomationElement element in parent.FindAll(scope, condition))
-                results.Add(element);
-            elements = results;
+            if (!TryUia(() =>
+            {
+                var results = new List<AutomationElement>();
+                foreach (AutomationElement element in parent.FindAll(scope, condition))
+                    results.Add(element);
+                return results;
+            }, out elements, out message))
+                return false; // TryUia already set elements/message
+
             message = null;
             return true;
         }
@@ -338,10 +386,15 @@ namespace UIAutomation
                 return false;
             }
 
-            var results = new List<AutomationElement>();
-            foreach (AutomationElement child in parent.FindAll(TreeScope.Children, Condition.TrueCondition))
-                results.Add(child);
-            children = results;
+            if (!TryUia(() =>
+            {
+                var results = new List<AutomationElement>();
+                foreach (AutomationElement child in parent.FindAll(TreeScope.Children, Condition.TrueCondition))
+                    results.Add(child);
+                return results;
+            }, out children, out message))
+                return false; // TryUia already set children/message
+
             message = null;
             return true;
         }
@@ -365,7 +418,10 @@ namespace UIAutomation
                 message = "An element is required.";
                 return false;
             }
-            name = element.Current.Name;
+
+            if (!TryUia(() => element.Current.Name, out name, out message))
+                return false; // TryUia already set name/message
+
             message = null;
             return true;
         }
@@ -385,7 +441,9 @@ namespace UIAutomation
                 message = "An element is required.";
                 return false;
             }
-            automationId = element.Current.AutomationId;
+            if (!TryUia(() => element.Current.AutomationId, out automationId, out message))
+                return false; // TryUia already set automationId/message
+
             message = null;
             return true;
         }
@@ -405,7 +463,9 @@ namespace UIAutomation
                 message = "An element is required.";
                 return false;
             }
-            className = element.Current.ClassName;
+            if (!TryUia(() => element.Current.ClassName, out className, out message))
+                return false; // TryUia already set className/message
+
             message = null;
             return true;
         }
@@ -428,11 +488,23 @@ namespace UIAutomation
 
             // ProgrammaticName looks like "ControlType.Button" - strip the prefix so callers
             // get the same short form used by UiControlType (e.g. "Button").
-            string programmaticName = element.Current.ControlType.ProgrammaticName;
+            if (!TryUia(() =>
+            {
+                ControlType controlType = element.Current.ControlType;
+                return controlType?.ProgrammaticName;
+            }, out controlTypeName, out message))
+                return false; // TryUia already set controlTypeName/message
+
+            if (controlTypeName == null)
+            {
+                message = "This element does not report a ControlType.";
+                return false;
+            }
+
             const string prefix = "ControlType.";
-            controlTypeName = programmaticName.StartsWith(prefix, StringComparison.Ordinal)
-                ? programmaticName.Substring(prefix.Length)
-                : programmaticName;
+            controlTypeName = controlTypeName.StartsWith(prefix, StringComparison.Ordinal)
+                ? controlTypeName.Substring(prefix.Length)
+                : controlTypeName;
             message = null;
             return true;
         }
@@ -453,7 +525,18 @@ namespace UIAutomation
                 return false;
             }
 
-            System.Windows.Rect rect = element.Current.BoundingRectangle;
+            if (!TryUia(() => element.Current.BoundingRectangle, out System.Windows.Rect rect, out message))
+                return false; // TryUia already set bounds/message
+
+            // UIA reports an empty (infinite) rectangle for elements with no on-screen
+            // presence; the raw int casts would produce int.MinValue/MaxValue garbage.
+            if (rect.IsEmpty || double.IsInfinity(rect.X) || double.IsInfinity(rect.Y)
+                || double.IsInfinity(rect.Width) || double.IsInfinity(rect.Height))
+            {
+                bounds = default;
+                message = "The element has no on-screen bounding rectangle (it may be closed or not currently rendered).";
+                return false;
+            }
             bounds = new System.Drawing.Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
             message = null;
             return true;
@@ -472,8 +555,11 @@ namespace UIAutomation
                 message = "An element is required.";
                 return false;
             }
+            if (!TryUia(() => element.Current.IsEnabled, out bool enabled, out message))
+                return false; // stale element: reported via message, same as a disabled element
+
             message = null;
-            return element.Current.IsEnabled;
+            return enabled;
         }
 
         /// <summary>Returns <c>true</c> if the element is offscreen.</summary>
@@ -489,8 +575,11 @@ namespace UIAutomation
                 message = "An element is required.";
                 return false;
             }
+            if (!TryUia(() => element.Current.IsOffscreen, out bool offscreen, out message))
+                return false; // stale element: reported via message, same as a genuinely onscreen element
+
             message = null;
-            return element.Current.IsOffscreen;
+            return offscreen;
         }
 
         /// <summary>
@@ -519,6 +608,12 @@ namespace UIAutomation
             {
                 return false;
             }
+            catch (Exception)
+            {
+                // A provider that fails on any property read can't be treated as
+                // reliably available either.
+                return false;
+            }
         }
 
         #endregion
@@ -539,13 +634,18 @@ namespace UIAutomation
                 return false;
             }
 
-            if (!element.TryGetCurrentPattern(InvokePattern.Pattern, out object patternObj))
+            if (!TryUia(() => element.TryGetCurrentPattern(InvokePattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object invokeObj, out message))
+                return false; // TryUia already set message
+            if (invokeObj == null)
             {
                 message = "This element does not support InvokePattern.";
                 return false;
             }
 
-            ((InvokePattern)patternObj).Invoke();
+            if (!TryUiaAction(() => ((InvokePattern)invokeObj).Invoke(), out message))
+                return false; // element died between the pattern lookup and the invoke
+
             message = null;
             return true;
         }
@@ -570,13 +670,18 @@ namespace UIAutomation
                 return false;
             }
 
-            if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj))
+            if (!TryUia(() => element.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object setValueObj, out message))
+                return false; // TryUia already set message
+            if (setValueObj == null)
             {
                 message = "This element does not support ValuePattern.";
                 return false;
             }
 
-            ((ValuePattern)patternObj).SetValue(value);
+            if (!TryUiaAction(() => ((ValuePattern)setValueObj).SetValue(value), out message))
+                return false; // e.g. the element died or is disabled (ElementNotEnabledException)
+
             message = null;
             return true;
         }
@@ -597,13 +702,18 @@ namespace UIAutomation
                 return false;
             }
 
-            if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj))
+            if (!TryUia(() => element.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object getValueObj, out message))
+                return false; // TryUia already set message
+            if (getValueObj == null)
             {
                 message = "This element does not support ValuePattern.";
                 return false;
             }
 
-            value = ((ValuePattern)patternObj).Current.Value;
+            if (!TryUia(() => ((ValuePattern)getValueObj).Current.Value, out value, out message))
+                return false; // TryUia already set value/message
+
             message = null;
             return true;
         }
@@ -622,13 +732,18 @@ namespace UIAutomation
                 return false;
             }
 
-            if (!element.TryGetCurrentPattern(TogglePattern.Pattern, out object patternObj))
+            if (!TryUia(() => element.TryGetCurrentPattern(TogglePattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object toggleObj, out message))
+                return false; // TryUia already set message
+            if (toggleObj == null)
             {
                 message = "This element does not support TogglePattern.";
                 return false;
             }
 
-            ((TogglePattern)patternObj).Toggle();
+            if (!TryUiaAction(() => ((TogglePattern)toggleObj).Toggle(), out message))
+                return false; // element died between the pattern lookup and the toggle
+
             message = null;
             return true;
         }
@@ -647,14 +762,20 @@ namespace UIAutomation
                 return false;
             }
 
-            if (!element.TryGetCurrentPattern(TogglePattern.Pattern, out object patternObj))
+            if (!TryUia(() => element.TryGetCurrentPattern(TogglePattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object toggleStateObj, out message))
+                return false; // TryUia already set message
+            if (toggleStateObj == null)
             {
                 message = "This element does not support TogglePattern.";
                 return false;
             }
 
+            if (!TryUia(() => ((TogglePattern)toggleStateObj).Current.ToggleState == ToggleState.On, out bool isOn, out message))
+                return false; // TryUia already set message
+
             message = null;
-            return ((TogglePattern)patternObj).Current.ToggleState == ToggleState.On;
+            return isOn;
         }
 
         /// <summary>Expands an element (e.g. a combo box or tree node) via <c>ExpandCollapsePattern</c>.</summary>
@@ -671,13 +792,18 @@ namespace UIAutomation
                 return false;
             }
 
-            if (!element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object patternObj))
+            if (!TryUia(() => element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object expandObj, out message))
+                return false; // TryUia already set message
+            if (expandObj == null)
             {
                 message = "This element does not support ExpandCollapsePattern.";
                 return false;
             }
 
-            ((ExpandCollapsePattern)patternObj).Expand();
+            if (!TryUiaAction(() => ((ExpandCollapsePattern)expandObj).Expand(), out message))
+                return false; // element died between the pattern lookup and the expand
+
             message = null;
             return true;
         }
@@ -696,13 +822,18 @@ namespace UIAutomation
                 return false;
             }
 
-            if (!element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object patternObj))
+            if (!TryUia(() => element.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object collapseObj, out message))
+                return false; // TryUia already set message
+            if (collapseObj == null)
             {
                 message = "This element does not support ExpandCollapsePattern.";
                 return false;
             }
 
-            ((ExpandCollapsePattern)patternObj).Collapse();
+            if (!TryUiaAction(() => ((ExpandCollapsePattern)collapseObj).Collapse(), out message))
+                return false; // element died between the pattern lookup and the collapse
+
             message = null;
             return true;
         }
@@ -721,13 +852,18 @@ namespace UIAutomation
                 return false;
             }
 
-            if (!element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object patternObj))
+            if (!TryUia(() => element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object selectObj, out message))
+                return false; // TryUia already set message
+            if (selectObj == null)
             {
                 message = "This element does not support SelectionItemPattern.";
                 return false;
             }
 
-            ((SelectionItemPattern)patternObj).Select();
+            if (!TryUiaAction(() => ((SelectionItemPattern)selectObj).Select(), out message))
+                return false; // element died between the pattern lookup and the select
+
             message = null;
             return true;
         }
@@ -752,8 +888,20 @@ namespace UIAutomation
                 return false;
             }
 
+            if (!TryUia(() => element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object patternObj) ? patternObj : null,
+                        out object selectedStateObj, out message))
+                return false; // TryUia already set message
+            if (selectedStateObj == null)
+            {
+                message = "This element does not support SelectionItemPattern.";
+                return false;
+            }
+
+            if (!TryUia(() => ((SelectionItemPattern)selectedStateObj).Current.IsSelected, out bool isSelected, out message))
+                return false; // TryUia already set message
+
             message = null;
-            return ((SelectionItemPattern)patternObj).Current.IsSelected;
+            return isSelected;
         }
 
         #endregion
@@ -857,6 +1005,13 @@ namespace UIAutomation
             if (flashMs < 1) flashMs = 1;
             if (lineWidth < 1) lineWidth = 1;
 
+            // Expand outward so the ring is visible just outside the element's edge
+            // (drawing on the bounds hides half the pen under the element's own pixels).
+            int left = rc.Left - lineWidth;
+            int top = rc.Top - lineWidth;
+            int right = rc.Right + lineWidth;
+            int bottom = rc.Bottom + lineWidth;
+
             IntPtr hdc = GetDC(IntPtr.Zero);
             if (hdc == IntPtr.Zero)
             {
@@ -877,10 +1032,10 @@ namespace UIAutomation
                 for (int i = 0; i < flashes; i++)
                 {
                     // Draw (visible) - XOR
-                    DrawRectangle(hdc, rc.Left, rc.Top, rc.Right, rc.Bottom);
+                    DrawRectangle(hdc, left, top, right, bottom);
                     Thread.Sleep(flashMs);
                     // Draw again (erases) - XOR XOR = original pixels
-                    DrawRectangle(hdc, rc.Left, rc.Top, rc.Right, rc.Bottom);
+                    DrawRectangle(hdc, left, top, right, bottom);
 
                     if (i < flashes - 1)
                         Thread.Sleep(flashMs);
@@ -926,7 +1081,7 @@ namespace UIAutomation
         };
 
         /// <summary>Maps our designer-friendly <see cref="UiControlType"/> to the real <see cref="ControlType"/>.</summary>
-        private static bool TryToControlType(UiControlType controlType, out ControlType result, out string message)
+        internal static bool TryToControlType(UiControlType controlType, out ControlType result, out string message)
         {
             if (ControlTypeMap.TryGetValue(controlType, out result))
             {
@@ -935,6 +1090,49 @@ namespace UIAutomation
             }
             message = $"Unrecognized control type: {controlType}.";
             return false;
+        }
+
+        /// <summary>
+        /// Runs a UIA property/pattern read and converts UIA's runtime failure modes into the
+        /// never-throws contract. A UIA element whose underlying UI has died throws
+        /// <see cref="ElementNotAvailableException"/> on any <c>Current</c> access - the defining
+        /// failure mode of driving live UI, so actions/reads taken against a stale element
+        /// report <c>false</c> + <paramref name="message"/> rather than throwing. UIA providers
+        /// also throw <c>InvalidOperationException</c> subclasses for operations the target
+        /// rejects (e.g. <see cref="ElementNotEnabledException"/>).
+        /// </summary>
+        private static bool TryUia<T>(Func<T> read, out T value, out string message)
+        {
+            try
+            {
+                value = read();
+                message = null;
+                return true;
+            }
+            catch (ElementNotAvailableException ex)
+            {
+                value = default;
+                message = $"The element is no longer available (its underlying UI has gone away): {ex.Message}";
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                value = default;
+                message = $"The UI Automation provider rejected the operation: {ex.Message}";
+                return false;
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException)
+            {
+                value = default;
+                message = $"The UI Automation provider rejected the operation: {ex.Message}";
+                return false;
+            }
+        }
+
+        /// <summary>Void-action variant of <see cref="TryUia{T}"/> for pattern calls like <c>Invoke()</c>.</summary>
+        private static bool TryUiaAction(Action action, out string message)
+        {
+            return TryUia<object>(() => { action(); return null; }, out _, out message);
         }
 
         /// <summary>Enumerates every element in <paramref name="scope"/> under <paramref name="parent"/> and returns the first one matching <paramref name="predicate"/>, or null.</summary>

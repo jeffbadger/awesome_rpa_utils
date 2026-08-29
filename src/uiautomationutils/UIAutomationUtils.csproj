@@ -16,4 +16,14 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Lets UIAutomation.Tests cover the internal TryToControlType helper -->
+    <InternalsVisibleTo Include="UIAutomation.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="UIAutomation.Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>
