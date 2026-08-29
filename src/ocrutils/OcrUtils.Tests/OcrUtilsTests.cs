@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using OcrAutomation;
@@ -104,6 +105,17 @@ namespace OcrAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        [Fact]
+        public void WaitForTextToAppear_NegativeTimeout_ReturnsFalseWithMessage()
+        {
+            bool found = _ocr.WaitForTextToAppear(0, 0, 100, 100, "any text", timeoutMs: -1, pollIntervalMs: 10, out string message);
+
+            // A negative timeout is invalid input, not a clean timeout - it must abort
+            // with a message rather than silently returning false with message == null.
+            Assert.False(found);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         // --- GetTextFromImageFile: missing/corrupt files are false + message, never an exception ---
 
         [Theory]
@@ -150,6 +162,61 @@ namespace OcrAutomation.Tests
             {
                 File.Delete(path);
             }
+        }
+
+        // --- Language: malformed tags and the language list are never-throw paths ---
+
+        [Fact]
+        public void GetTextFromImageFile_InvalidLanguageTag_ReturnsFalseWithMessage()
+        {
+            string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".png");
+            try
+            {
+                using (var bmp = new System.Drawing.Bitmap(1, 1))
+                {
+                    bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                }
+
+                // "en_US" (underscore) is not valid BCP-47; the never-throws contract
+                // requires false + message rather than the ArgumentException the WinRT
+                // Language constructor would throw for it.
+                bool ok = _ocr.GetTextFromImageFile(path, out string text, out string message, languageTag: "en_US");
+
+                Assert.False(ok);
+                Assert.Null(text);
+                Assert.False(string.IsNullOrEmpty(message));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Fact]
+        public void TryGetAvailableLanguages_NeverThrows()
+        {
+            bool ok = _ocr.TryGetAvailableLanguages(out List<string> tags, out string message);
+
+            // Either the list is returned (ok=true, tags non-null) or a real failure is
+            // reported (ok=false, message set) - both are valid; it must never throw.
+            if (ok)
+            {
+                Assert.NotNull(tags);
+                Assert.Null(message);
+            }
+            else
+            {
+                Assert.Null(tags);
+                Assert.False(string.IsNullOrEmpty(message));
+            }
+        }
+
+        [Fact]
+        public void GetAvailableLanguages_NeverThrows()
+        {
+            List<string> tags = _ocr.GetAvailableLanguages();
+
+            Assert.NotNull(tags);
         }
 
         // --- Component lifecycle: construct + dispose is safe and side-effect free ---

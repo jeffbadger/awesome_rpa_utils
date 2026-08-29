@@ -2,8 +2,8 @@
 
 `WaitForTextToAppear` returns `bool` (found in time vs. not) with an
 `out string message` — never throws. `message` is only set if a real failure
-(bad dimensions, missing OCR language pack) aborted the poll early; it stays
-`null` for a genuine timeout.
+(bad dimensions, missing OCR language pack, negative timeout) aborted the poll
+early; it stays `null` for a genuine timeout.
 
 ## Wait for a confirmation message before continuing
 

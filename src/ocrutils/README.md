@@ -57,20 +57,23 @@ internal screen capture, though, so it has no project reference to either.
 
 | Method | Signature | Description |
 |---|---|---|
-| `GetAvailableLanguages` | `List<string> GetAvailableLanguages()` | Gets the BCP-47 language tags of every OCR language pack currently installed. |
+| `GetAvailableLanguages` | `List<string> GetAvailableLanguages()` | Gets the BCP-47 language tags of every OCR language pack currently installed. Never throws; returns an empty list if the language list cannot be queried. |
+| `TryGetAvailableLanguages` | `bool TryGetAvailableLanguages(out List<string> tags, out string message)` | Gets the BCP-47 language tags of every OCR language pack currently installed. Returns True on success; never throws. |
 
 ### Wait-for-Text Polling
 
 | Method | Signature | Description |
 |---|---|---|
-| `WaitForTextToAppear` | `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains matching text, or the timeout elapses. `message` is only set if a real failure aborted the poll early. Never throws. |
+| `WaitForTextToAppear` | `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains matching text, or the timeout elapses. `message` is only set if a real failure (bad dimensions, missing language pack, negative timeout) aborted the poll early. Never throws. |
 
 ## Notes & Caveats
 
 - **Every method that could previously throw now returns `bool` with an `out string message`**
-  instead — bad dimensions, a missing image file, and a missing OCR language pack are all
-  reported this way, with `message` set to a human-readable reason whenever the method
-  returns `false`. Only `GetAvailableLanguages` (never able to fail) is unchanged.
+  instead — bad dimensions, a missing image file, a malformed language tag, and a missing OCR
+  language pack are all reported this way, with `message` set to a human-readable reason
+  whenever the method returns `false`. `GetAvailableLanguages` never throws (it returns an
+  empty list if the language list can't be queried); `TryGetAvailableLanguages` reports such
+  failures via `out message`.
 - **`FindTextLocation`/`WaitForTextToAppear`** overload the meaning of a `false` return: it
   covers both a normal "not found"/"timed out" outcome (`message == null`) and a real failure
   that aborted the search/poll early (`message` set) — check `message` to tell them apart.
@@ -100,6 +103,6 @@ internal screen capture, though, so it has no project reference to either.
   UI/dispatcher thread — though this hasn't been verified against real Windows hardware, since this
   repo is developed on a non-Windows host.
 - **Guard tests.** `OcrUtils.Tests` (in this folder) covers the null/empty-text,
-  non-positive-dimension, missing/corrupt-file, and no-poll-stall never-throw paths.
-  It runs on Windows only (see `TESTING.md` at the repo root for why, and for the
-  live-OCR test plan).
+  non-positive-dimension, missing/corrupt-file, invalid-language-tag, negative-timeout,
+  and no-poll-stall never-throw paths. It runs on Windows only (see `TESTING.md` at the
+  repo root for why, and for the live-OCR test plan).
