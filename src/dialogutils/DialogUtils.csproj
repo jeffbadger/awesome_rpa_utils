@@ -12,4 +12,14 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Lets DialogUtils.Tests cover the internal StripAccessKeyMnemonic helper -->
+    <InternalsVisibleTo Include="DialogUtils.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="DialogUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>

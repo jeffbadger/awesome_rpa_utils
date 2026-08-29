@@ -52,7 +52,10 @@ where the method is documented to throw.
 - `FindDialog` (exact + substring match; not-found → returns `false`, `out`
   params zeroed; also assert `canDismiss` — `true` for the harness's native
   `Button` dialog, `false` if you can simulate a WinUI-style one, or document
-  that case as manual-only)
+  that case as manual-only. New: a null/empty `titlePattern` → `false`; hidden
+  windows never match (toggle the harness window's visibility and re-run);
+  `processId` scoping — pass the harness's real PID → found, a wrong PID →
+  not found)
 - `CanDismissDialog` (native `Button` dialog → true; simulate a WinUI-style
   dialog if you can, or just document as manual-only)
 - `FindButtonByText` (exact/substring; mnemonic-stripping case — button labeled
@@ -307,7 +310,10 @@ Isolate everything that doesn't strictly need a live screen/window into its own
 cases so they're fast and stable in CI:
 
 - Mnemonic stripping (via `FindButtonByText`/`ListDialogControls` against
-  harness labels you control)
+  harness labels you control) — also covered without a live desktop by the
+  xunit project `src/dialogutils/DialogUtils.Tests`
+  (`dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`;
+  the interop cases self-skip on non-Windows)
 - `GetRegionHash`/`CompareRegionToBaseline` against pre-saved fixture PNGs
   committed to the test project (round-trip these through the Lookup Table
   Data Editor's Import/Export if you want them driven from a data table)
