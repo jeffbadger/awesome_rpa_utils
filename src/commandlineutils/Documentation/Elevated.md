@@ -4,10 +4,15 @@
 `out int exitCode`, `out bool timedOut`, and `out string message` — never
 throws, including for a missing executable or a cancelled UAC prompt.
 
+Always pass an **absolute** `fileName` (e.g. `@"C:\tools\setup.exe"`, not
+`"setup.exe"`): a bare or relative name is resolved through PATH and the working
+directory before the UAC prompt, and that resolution runs with admin rights —
+a planted executable earlier in PATH would be the one that gets elevated.
+
 ## Run an installer that requires admin rights
 
 ```csharp
-cmd.RunElevated("setup.exe", out int exitCode, out bool timedOut, out string message, "/quiet", timeoutMs: 300000);
+cmd.RunElevated(@"C:\installers\setup.exe", out int exitCode, out bool timedOut, out string message, "/quiet", timeoutMs: 300000);
 if (timedOut)
 {
     // setup.exe (and any child processes) were killed after 300 seconds.
@@ -33,7 +38,7 @@ string output = System.IO.File.ReadAllText(@"C:\temp\priv.txt");
 ## Checking why an elevated run failed
 
 ```csharp
-if (!cmd.RunElevated("setup.exe", out int exitCode, out bool timedOut, out string message))
+if (!cmd.RunElevated(@"C:\installers\setup.exe", out int exitCode, out bool timedOut, out string message))
 {
     Console.WriteLine($"Could not run elevated: {message}");
 }

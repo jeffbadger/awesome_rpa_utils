@@ -41,6 +41,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceUtils", "serviceutil
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DialogUtils.Tests", "dialogutils\DialogUtils.Tests\DialogUtils.Tests.csproj", "{B69730C3-CC1F-4315-AA43-E1412AD96503}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CommandLineUtils.Tests", "commandlineutils\CommandLineUtils.Tests\CommandLineUtils.Tests.csproj", "{BCA33886-0BA9-4D63-ABB7-2108A97898EF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -171,6 +173,18 @@ Global
 		{B69730C3-CC1F-4315-AA43-E1412AD96503}.Release|x64.Build.0 = Release|Any CPU
 		{B69730C3-CC1F-4315-AA43-E1412AD96503}.Release|x86.ActiveCfg = Release|Any CPU
 		{B69730C3-CC1F-4315-AA43-E1412AD96503}.Release|x86.Build.0 = Release|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Debug|x64.Build.0 = Debug|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Debug|x86.Build.0 = Debug|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Release|x64.ActiveCfg = Release|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Release|x64.Build.0 = Release|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Release|x86.ActiveCfg = Release|Any CPU
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -186,5 +200,6 @@ Global
 		{44B95C46-1620-4A68-B77D-520366E144F7} = {FD25A030-B71C-C3CC-0692-32BE45236A50}
 		{22E872FB-D8ED-4E5E-A479-E88DB6134308} = {FC5EFD15-23E5-E65A-37A8-9140C32AFA2F}
 		{B69730C3-CC1F-4315-AA43-E1412AD96503} = {7BEF3866-56CB-05A0-E590-ECCDA1FD844B}
+		{BCA33886-0BA9-4D63-ABB7-2108A97898EF} = {FD25A030-B71C-C3CC-0692-32BE45236A50}
 	EndGlobalSection
 EndGlobal
