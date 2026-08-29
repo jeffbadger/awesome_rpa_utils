@@ -296,15 +296,30 @@ namespace MouseAutomation
         /// Intended to be called periodically (e.g. from a Robot Studio loop) during a
         /// long unattended run to reset idle timers and prevent the screen from locking
         /// or a screensaver from starting, without visibly disturbing anything on screen.
+        /// Windows clamps the nudge at the screen edges, so if the cursor was sitting
+        /// on an edge the round trip would leave it displaced; this method detects
+        /// that and puts the cursor back, keeping the "position unchanged" guarantee
+        /// unconditional.
         /// </remarks>
         [Category("Mouse - Position")]
         [Description("Nudges the cursor by a tiny amount and back, to reset idle/screensaver timers without disturbing its position. Returns True on success; never throws.")]
         public bool JiggleMouse(out string message, int pixels = 1)
         {
             if (pixels < 1) pixels = 1;
+            if (!TryGetPoint(out POINT original, out message))
+                return false;
             if (!MoveBy(pixels, 0, out message))
                 return false;
-            return MoveBy(-pixels, 0, out message);
+            if (!MoveBy(-pixels, 0, out message))
+                return false;
+
+            // Edge clamp: the first nudge may not have actually moved the cursor,
+            // so the reverse nudge can leave it off the original position - put it back.
+            if (!TryGetPoint(out POINT after, out message))
+                return false;
+            if (after.X != original.X || after.Y != original.Y)
+                return TrySetCursorPos(original.X, original.Y, out message);
+            return true;
         }
 
         #endregion
@@ -505,8 +520,10 @@ namespace MouseAutomation
         /// <summary>
         /// Clicks the given button while holding the given modifier keys - for example
         /// Control+Click to multi-select grid rows, or Shift+Click to extend a selection.
-        /// All events (modifier presses, click down/up, modifier releases) are injected as
-        /// a single SendInput batch, so real user input cannot interleave mid-sequence.
+        /// The modifier presses and click down are injected as one atomic SendInput batch
+        /// and the click up and modifier releases as a second, so real user input cannot
+        /// interleave before the click lands; the ~20 ms gap between down and up keeps
+        /// the click visible to applications that ignore zero-duration synthesized clicks.
         /// </summary>
         /// <param name="button">The mouse button to click.</param>
         /// <param name="modifiers">Modifier keys to hold during the click; combinable flags.</param>
@@ -518,27 +535,36 @@ namespace MouseAutomation
         /// applications.
         /// </remarks>
         [Category("Mouse - Click")]
-        [Description("Clicks a button while holding modifier keys (Control/Shift/Alt, combinable), injected as one atomic batch. Returns True on success; never throws.")]
+        [Description("Clicks a button while holding modifier keys (Control/Shift/Alt, combinable), injected as two atomic batches with a brief press duration. Returns True on success; never throws.")]
         public bool ClickWithModifiers(MouseButton button, ModifierKeys modifiers, out string message)
         {
-            List<INPUT> batch = new List<INPUT>();
+            // Batch 1: press the modifiers and the button down, atomically.
+            List<INPUT> downBatch = new List<INPUT>();
 
-            if ((modifiers & ModifierKeys.Control) != 0) batch.Add(MakeKeyInput(VK_CONTROL, false));
-            if ((modifiers & ModifierKeys.Shift)   != 0) batch.Add(MakeKeyInput(VK_SHIFT, false));
-            if ((modifiers & ModifierKeys.Alt)     != 0) batch.Add(MakeKeyInput(VK_MENU, false));
+            if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
+            if ((modifiers & ModifierKeys.Shift)   != 0) downBatch.Add(MakeKeyInput(VK_SHIFT, false));
+            if ((modifiers & ModifierKeys.Alt)     != 0) downBatch.Add(MakeKeyInput(VK_MENU, false));
 
             if (!TryGetButtonFlags(button, true, out uint downFlags, out int data, out message))
                 return false;
             TryGetButtonFlags(button, false, out uint upFlags, out _, out _);
-            batch.Add(MakeMouseInput(downFlags, data));
-            batch.Add(MakeMouseInput(upFlags, data));
+            downBatch.Add(MakeMouseInput(downFlags, data));
 
-            // Release in reverse press order, so every modifier is still held when the click lands.
-            if ((modifiers & ModifierKeys.Alt)     != 0) batch.Add(MakeKeyInput(VK_MENU, true));
-            if ((modifiers & ModifierKeys.Shift)   != 0) batch.Add(MakeKeyInput(VK_SHIFT, true));
-            if ((modifiers & ModifierKeys.Control) != 0) batch.Add(MakeKeyInput(VK_CONTROL, true));
+            if (!TrySendInputs(downBatch.ToArray(), out message))
+                return false;
 
-            return TrySendInputs(batch.ToArray(), out message);
+            Thread.Sleep(20); // press duration - see the summary; matches Click's press cycle
+
+            // Batch 2: release the button, then the modifiers in reverse press order.
+            List<INPUT> upBatch = new List<INPUT>
+            {
+                MakeMouseInput(upFlags, data)
+            };
+            if ((modifiers & ModifierKeys.Alt)     != 0) upBatch.Add(MakeKeyInput(VK_MENU, true));
+            if ((modifiers & ModifierKeys.Shift)   != 0) upBatch.Add(MakeKeyInput(VK_SHIFT, true));
+            if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
+
+            return TrySendInputs(upBatch.ToArray(), out message);
         }
 
         /// <summary>
@@ -808,12 +834,12 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls up the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used.</param>
+        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls up the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollUp(int notches, out string message) => Scroll(WHEEL_DELTA * Math.Abs(notches), out message);
+        public bool ScrollUp(int notches, out string message) => Scroll(WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
 
         /// <summary>
         /// Scrolls down one wheel notch.
@@ -827,12 +853,12 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls down the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used.</param>
+        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls down the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollDown(int notches, out string message) => Scroll(-WHEEL_DELTA * Math.Abs(notches), out message);
+        public bool ScrollDown(int notches, out string message) => Scroll(-WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
 
         /// <summary>
         /// Scrolls horizontally at the current cursor position.
@@ -859,12 +885,12 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls right the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used.</param>
+        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls right the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollRight(int notches, out string message) => ScrollHorizontal(WHEEL_DELTA * Math.Abs(notches), out message);
+        public bool ScrollRight(int notches, out string message) => ScrollHorizontal(WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
 
         /// <summary>
         /// Scrolls left one wheel notch.
@@ -878,12 +904,12 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls left the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used.</param>
+        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls left the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollLeft(int notches, out string message) => ScrollHorizontal(-WHEEL_DELTA * Math.Abs(notches), out message);
+        public bool ScrollLeft(int notches, out string message) => ScrollHorizontal(-WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
 
         /// <summary>
         /// Moves the cursor to the coordinates and scrolls horizontally there. Wheel
@@ -1022,8 +1048,10 @@ namespace MouseAutomation
         /// <remarks>
         /// Win32 ShowCursor uses an internal display counter rather than an on/off flag;
         /// this component tracks its own calls so repeated HideCursor calls here do not
-        /// unbalance the counter. If another application hides the cursor independently,
-        /// use <see cref="IsCursorVisible"/> only as an approximation.
+        /// unbalance the counter. The counter is per-thread, so a matching
+        /// <see cref="ShowCursor"/> call must be made on the same thread that hid the
+        /// cursor (typically the automation's main thread). If another application hides
+        /// the cursor independently, use <see cref="IsCursorVisible"/> only as an approximation.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Hides the cursor. Counterbalanced by ShowCursor.")]
@@ -1038,6 +1066,8 @@ namespace MouseAutomation
 
         /// <summary>
         /// Shows the cursor again after a <see cref="HideCursor"/> call made through this component.
+        /// Must be called on the same thread that called <see cref="HideCursor"/> (the native
+        /// display counter is per-thread); see that method's remarks.
         /// </summary>
         /// <inheritdoc cref="HideCursor" select="remarks"/>
         [Category("Mouse - Cursor")]
@@ -1392,7 +1422,20 @@ namespace MouseAutomation
         {
             if (!TryGetWindowRect(hWnd, out int left, out int top, out int width, out int height, out message))
                 return false;
-            return ClickWindowAtClientPoint(hWnd, width / 2, height / 2, button, out message);
+
+            // The window rect includes the non-client area (title bar, borders),
+            // but the posted message expects client coordinates - convert the
+            // window-rect center through ScreenToClient instead of using the
+            // window-relative center directly, which would land the click off
+            // target by the non-client offset.
+            POINT center = new POINT { X = left + width / 2, Y = top + height / 2 };
+            if (!ScreenToClient(hWnd, ref center))
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
+                return false;
+            }
+
+            return ClickWindowAtClientPoint(hWnd, center.X, center.Y, button, out message);
         }
 
         /// <summary>
@@ -1772,6 +1815,9 @@ namespace MouseAutomation
         /// This is the quick diagnostic for the classic "clicks land offset on scaled
         /// monitors" bug: a DPI-unaware automation process receives virtualized
         /// coordinates, so <see cref="MoveTo"/> targets the wrong physical location.
+        /// Note that a <c>false</c> return can also mean the awareness query itself
+        /// failed - <c>GetDpiAwarenessContext</c> requires Windows 10 1607 or later,
+        /// and on older systems this method reports false even for a DPI-aware process.
         /// </remarks>
         [Category("Mouse - DPI")]
         [Description("Returns True if the process is DPI-aware (any level); false if DPI-unaware.")]
@@ -1849,6 +1895,12 @@ namespace MouseAutomation
             }
 
             IntPtr hPen = CreatePen(PS_SOLID, ringWidth, (uint)colorRef);
+            if (hPen == IntPtr.Zero)
+            {
+                ReleaseDC(IntPtr.Zero, hdc);
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "CreatePen failed for the highlight ring.").Message;
+                return false;
+            }
             IntPtr hOldPen = IntPtr.Zero;
             IntPtr hOldBrush = IntPtr.Zero;
 
@@ -2360,6 +2412,16 @@ namespace MouseAutomation
             return input;
         }
 
+        /// <summary>
+        /// Clamps a notch count into a range where |notches| * WHEEL_DELTA cannot
+        /// overflow, so Math.Abs(int.MinValue) cannot throw and the computed wheel
+        /// delta cannot wrap into a garbage value.
+        /// </summary>
+        private static int ClampNotches(int notches)
+        {
+            return Math.Clamp(notches, -MAX_WHEEL_NOTCHES, MAX_WHEEL_NOTCHES);
+        }
+
         private static bool TrySendMouseEvent(uint flags, int data, out string message)
         {
             return TrySendInputs(new INPUT[] { MakeMouseInput(flags, data) }, out message);
@@ -2406,6 +2468,10 @@ namespace MouseAutomation
         private const uint KEYEVENTF_KEYUP        = 0x0002;
 
         private const int WHEEL_DELTA = 120;
+
+        // Largest |notches| whose WHEEL_DELTA product cannot overflow int.
+        private const int MAX_WHEEL_NOTCHES = int.MaxValue / WHEEL_DELTA;
+
         private const int XBUTTON1 = 0x0001;
         private const int XBUTTON2 = 0x0002;
 
