@@ -108,7 +108,7 @@ exception` condition.
   via `KeyDown` in the same test, then assert; unchanged by the API review,
   still plain `bool`/enum returns with no `message` parameter)
 
-### MouseUtils (needs Setup: harness with a click target and a scrollable list)
+### MouseUtils (Setup: run the test harness — it provides a click target with a button-detail label, a scrollable multi-select list, and a drag target)
 
 Nearly every method here (all except `HideCursor`/`ShowCursor`/`IsCursorVisible`,
 the button-state/screen-geometry queries, `UnblockUserInput`, `GetWindowAtPoint`,
@@ -125,7 +125,8 @@ genuine timeout case (`false` with `message == null`).
   position; for `SmoothMoveTo`, just assert the destination, not the path)
 - `JiggleMouse` (assert position unchanged before/after)
 - `Click`/`ClickAt`/`LeftClick`/`RightClick`/`MiddleClick` and the `*At`
-  variants (assert harness button fired)
+  variants (assert harness button fired; distinguish buttons via the harness's
+  last-button label, `lblClickDetail`)
 - `DoubleClick`/`DoubleClickAt`/`LeftDoubleClick`/`LeftDoubleClickAt`,
   `TripleClick` (assert harness's click-count label)
 - `MouseDown`/`MouseUp`/`ClickAndHold` (assert `IsLeftButtonDown` mid-hold)
@@ -136,9 +137,11 @@ genuine timeout case (`false` with `message == null`).
 - `ClickWithRetry` (hard to force a transient input-injection failure — cover
   the retry-count/delay logic path superficially, note as low-value automated
   coverage)
-- `DragAndDrop`, `DragAndHold`, `RubberBandSelect` (assert harness's
-  drag-result / multi-select state; assert modifiers are released even when the
-  drag fails — simulate by passing an invalid `MouseButton` cast)
+- `DragAndDrop`, `DragAndHold`, `RubberBandSelect` (assert the harness drag
+  target's status label, `lblDragStatus` — press/release coordinates — for
+  drag results, and the list's selection state for rubber-band; assert
+  modifiers are released even when the drag fails — simulate by passing an
+  invalid `MouseButton` cast)
 - `Scroll`/`ScrollUp`/`ScrollDown`/`ScrollHorizontal*` (assert harness list's
   scroll position changed)
 - `SetCursor`/`ReplaceSystemCursor`/`SetCursorFromFile`/`ResetSystemCursors`

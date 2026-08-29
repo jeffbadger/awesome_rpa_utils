@@ -17,6 +17,9 @@ namespace TestHarness
 
         public Button ClickButton;
         public Label ClickCountLabel;
+        public Label ClickDetailLabel;
+        public Panel DragTargetPanel;
+        public Label DragStatusLabel;
         public TextBox InputTextBox;
         public CheckBox OptionCheckBox;
         public ListBox ItemsListBox;
@@ -29,7 +32,7 @@ namespace TestHarness
             Name = "MainForm";
             Text = "Awesome RPA Utils - Test Harness";
             Width = 420;
-            Height = 480;
+            Height = 560;
 
             ClickButton = new Button
             {
@@ -43,6 +46,38 @@ namespace TestHarness
                 _clickCount++;
                 ClickCountLabel.Text = "Clicks: " + _clickCount;
             };
+            ClickButton.MouseDown += (s, e) =>
+            {
+                ClickDetailLabel.Text = "Last button: " + e.Button;
+            };
+
+            // Drag target for DragAndDrop/DragAndHold/RubberBandSelect: records the
+            // press and release points so a drag can be asserted programmatically.
+            DragTargetPanel = new Panel
+            {
+                Name = "pnlDragTarget",
+                Location = new Point(20, 260),
+                Width = 280,
+                Height = 60,
+                BackColor = Color.LightSteelBlue,
+                AllowDrop = false
+            };
+            DragStatusLabel = new Label
+            {
+                Name = "lblDragStatus",
+                Text = "Drag: (none)",
+                Location = new Point(5, 5),
+                AutoSize = true
+            };
+            DragTargetPanel.Controls.Add(DragStatusLabel);
+            DragTargetPanel.MouseDown += (s, e) =>
+            {
+                DragStatusLabel.Text = "Drag start " + e.Button + " at (" + e.X + "," + e.Y + ")";
+            };
+            DragTargetPanel.MouseUp += (s, e) =>
+            {
+                DragStatusLabel.Text = "Drag end " + e.Button + " at (" + e.X + "," + e.Y + ")";
+            };
 
             ClickCountLabel = new Label
             {
@@ -50,6 +85,17 @@ namespace TestHarness
                 Text = "Clicks: 0",
                 Location = new Point(150, 25),
                 Width = 150,
+                AutoSize = false
+            };
+
+            // Records which button last fired, so LeftClick/RightClick/MiddleClick
+            // (and the *At variants) can be distinguished programmatically.
+            ClickDetailLabel = new Label
+            {
+                Name = "lblClickDetail",
+                Text = "Last button: (none)",
+                Location = new Point(150, 45),
+                Width = 220,
                 AutoSize = false
             };
 
@@ -79,13 +125,17 @@ namespace TestHarness
             ItemsListBox.Items.AddRange(new object[]
             {
                 "Item 1", "Item 2", "Item 3", "Item 4", "Item 5",
-                "Item 6", "Item 7", "Item 8", "Item 9", "Item 10"
+                "Item 6", "Item 7", "Item 8", "Item 9", "Item 10",
+                "Item 11", "Item 12", "Item 13", "Item 14", "Item 15",
+                "Item 16", "Item 17", "Item 18", "Item 19", "Item 20",
+                "Item 21", "Item 22", "Item 23", "Item 24", "Item 25",
+                "Item 26", "Item 27", "Item 28", "Item 29", "Item 30"
             });
 
             SampleTreeView = new TreeView
             {
                 Name = "treeSample",
-                Location = new Point(20, 250),
+                Location = new Point(20, 330),
                 Width = 280,
                 Height = 100
             };
@@ -98,7 +148,7 @@ namespace TestHarness
             {
                 Name = "btnShowMessageBox",
                 Text = "Show MessageBox",
-                Location = new Point(20, 360),
+                Location = new Point(20, 440),
                 Width = 140
             };
             ShowMessageBoxButton.Click += (s, e) =>
@@ -111,7 +161,7 @@ namespace TestHarness
             {
                 Name = "btnOpenChildWindow",
                 Text = "Open Child Window",
-                Location = new Point(170, 360),
+                Location = new Point(170, 440),
                 Width = 140
             };
             OpenChildWindowButton.Click += (s, e) =>
@@ -122,8 +172,9 @@ namespace TestHarness
 
             Controls.AddRange(new Control[]
             {
-                ClickButton, ClickCountLabel, InputTextBox, OptionCheckBox,
-                ItemsListBox, SampleTreeView, ShowMessageBoxButton, OpenChildWindowButton
+                ClickButton, ClickCountLabel, ClickDetailLabel, InputTextBox,
+                OptionCheckBox, ItemsListBox, DragTargetPanel, SampleTreeView,
+                ShowMessageBoxButton, OpenChildWindowButton
             });
         }
     }
