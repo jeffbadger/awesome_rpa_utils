@@ -315,6 +315,48 @@ exception` condition.
   `WindowUtils.FindWindowsByProcessId` or a direct process check; nonexistent
   executable → `false` + message)
 
+### EventUtils (needs Setup: a real window to create/destroy — notepad.exe works; Cleanup: kill it)
+
+Every public method returns `bool` / uses `out` params and never throws — for
+these, replace Phase 2's "exception condition on the invalid-input case" with an
+outcome condition asserting `false` (or `null` + `timedOut = true` for waits),
+instead of an `Automation exception` condition. The engine is Windows-only:
+`Initialize()` returns `false` off-Windows, and the real-window cases below are
+the ones that prove the hook actually delivers events.
+
+- `Initialize`/`Start`/`Stop`/`Dispose` (idempotent: call `Start` twice, `Dispose`
+  twice; `Initialize` after `Dispose` restarts the engine; `Stop` unhooks — no
+  events arrive after it, and `Start` re-hooks; invalid category CSV → `Start`
+  returns `false`)
+- `WaitForWindowCreated` (launch notepad → event with `ProcessName` "notepad" and
+  non-zero `Hwnd` within the timeout; no window → `null` + `timedOut = true`;
+  engine not started → immediate `timedOut = true`)
+- `WaitForWindowDestroyed` (close the window → event whose `Title` was captured
+  before destruction — proves enrichment-before-death; no close → timeout)
+- `WaitForWindowShown`, `WaitForForegroundChanged`, `WaitForTitleChanged` (drive
+  the change — show/hide the window, switch foreground, rename — and assert the
+  matching event; `titleRegex` filters the title)
+- `WaitForDialogAppeared` (a `#32770` dialog — e.g. a `MessageBox` — matches via
+  the class heuristic; no dialog → timeout)
+- `WaitForStateChanged` (minimize/restore the window → `State` "Minimized"/
+  "Visible"; `stateRegex` filters)
+- `WaitForMenuOpened` (open a menu in the harness → event; no menu → timeout)
+- `WasWindowCreated` (non-blocking lookback: true right after a create, false
+  after the window is long gone or for a non-matching filter)
+- `CancelWaits` (start two waits, cancel → both return within 100 ms with
+  `timedOut = true`)
+- `Subscribe`/`Unsubscribe`/`GetNextEvent`/`GetNextEvents`/`HasEvents`/
+  `ClearQueue` (two subscriptions with different filters/categories → independent
+  queues, no cross-feed; unknown subscription id → `GetNextEvent` returns `null`
+  with `hasEvent = false`; malformed filter JSON → `Subscribe` returns `false`,
+  unknown JSON keys are ignored; duplicate id → `false`)
+- `SetDebounce` (rapidly show/hide a window 10× → SHOW count after debounce ≤ 3;
+  `SetDebounce("WindowShown", 0)` disables coalescing)
+- `SetQueueLimits` (limit 5 + "DropOldest", flood 50 events → `HasEvents` == 5,
+  oldest gone; "DropNewest" keeps oldest; "Block" never exceeds the limit)
+- `DumpRecentEvents` (returns valid JSON; bounded at 500 events regardless of
+  subscriptions)
+
 ### ServiceUtils (needs Setup: install a small disposable test service — e.g. via `sc create ZZTestSvc binPath= ...` against a trivial do-nothing executable — never test against a real system service; Cleanup: stop and `sc delete` it)
 
 - `IsServiceInstalled` (true for the test service; false for a made-up name)

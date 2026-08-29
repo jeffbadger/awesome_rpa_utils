@@ -41,12 +41,12 @@ subscribed — see [Known limitations](#known-limitations).
 
 ## Lifecycle
 
-| Method | Description |
-|---|---|
-| `Initialize()` | Starts the background hook thread (idempotent). Returns True on success; never throws. |
-| `Start(string categoriesCsv)` | Activates the given categories (e.g. `"Windows,Foreground,Dialogs"`) and installs the hook. Returns True on success; never throws. |
-| `Stop()` | Unhooks; queues are preserved so they can still be drained. Returns True on success; never throws. |
-| `Dispose()` | Full teardown — unhooks, stops the thread, clears subscriptions/waiters. Safe to call multiple times; a later `Initialize()` restarts the component. |
+| Method | Signature | Description |
+|---|---|---|
+| `Initialize` | `bool Initialize()` | Starts the background hook thread (idempotent). Returns True on success; never throws. |
+| `Start` | `bool Start(string categoriesCsv)` | Activates the given categories (e.g. `"Windows,Foreground,Dialogs"`) and installs the hook. Returns True on success; never throws. |
+| `Stop` | `bool Stop()` | Unhooks; queues are preserved so they can still be drained. Returns True on success; never throws. |
+| `Dispose` | `void Dispose()` | Full teardown — unhooks, stops the thread, clears subscriptions/waiters. Safe to call multiple times; a later `Initialize()` restarts the component. |
 
 Call `Initialize()` then `Start(...)` before any `WaitForX` or `Subscribe` call.
 If the engine is not running, a wait returns immediately and reports a timeout.
@@ -142,18 +142,18 @@ Supported JSON keys: `process`, `processes` (array), `class`, `titleContains`,
 
 ## Wait methods
 
-| Method | Matches |
-|---|---|
-| `WaitForWindowCreated(filterJson, timeoutMs, out timedOut)` | `WindowCreated` |
-| `WaitForWindowDestroyed(filterJson, timeoutMs, out timedOut)` | `WindowDestroyed` |
-| `WaitForWindowShown(filterJson, timeoutMs, out timedOut)` | `WindowShown` |
-| `WaitForForegroundChanged(filterJson, timeoutMs, out timedOut)` | `ForegroundChanged` |
-| `WaitForTitleChanged(filterJson, titleRegex, timeoutMs, out timedOut)` | `TitleChanged` + title regex |
-| `WaitForDialogAppeared(filterJson, timeoutMs, out timedOut)` | `DialogAppeared`/`DialogClosed` + `#32770` heuristic |
-| `WaitForStateChanged(filterJson, stateRegex, timeoutMs, out timedOut)` | `StateChanged` + state regex |
-| `WaitForMenuOpened(filterJson, timeoutMs, out timedOut)` | `MenuOpened`/`MenuPopupOpened` |
-| `WasWindowCreated(filterJson, withinLastMs)` | non-blocking lookback over the ring buffer |
-| `CancelWaits()` | releases all pending waits (each reports a timeout) |
+| Method | Signature | Description |
+|---|---|---|
+| `WaitForWindowCreated` | `EventData WaitForWindowCreated(string filterJson, int timeoutMs, out bool timedOut)` | Matches `WindowCreated`. |
+| `WaitForWindowDestroyed` | `EventData WaitForWindowDestroyed(string filterJson, int timeoutMs, out bool timedOut)` | Matches `WindowDestroyed`. |
+| `WaitForWindowShown` | `EventData WaitForWindowShown(string filterJson, int timeoutMs, out bool timedOut)` | Matches `WindowShown`. |
+| `WaitForForegroundChanged` | `EventData WaitForForegroundChanged(string filterJson, int timeoutMs, out bool timedOut)` | Matches `ForegroundChanged`. |
+| `WaitForTitleChanged` | `EventData WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out bool timedOut)` | Matches `TitleChanged` + title regex. |
+| `WaitForDialogAppeared` | `EventData WaitForDialogAppeared(string filterJson, int timeoutMs, out bool timedOut)` | Matches `DialogAppeared`/`DialogClosed` + `#32770` heuristic. |
+| `WaitForStateChanged` | `EventData WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out bool timedOut)` | Matches `StateChanged` + state regex. |
+| `WaitForMenuOpened` | `EventData WaitForMenuOpened(string filterJson, int timeoutMs, out bool timedOut)` | Matches `MenuOpened`/`MenuPopupOpened`. |
+| `WasWindowCreated` | `bool WasWindowCreated(string filterJson, int withinLastMs)` | Non-blocking lookback over the ring buffer. |
+| `CancelWaits` | `void CancelWaits()` | Releases all pending waits (each reports a timeout). |
 
 A wait returns `null` with `timedOut = true` on timeout. **Do not use `WaitForX`
 for file or process waits** — these are UI-event waits; a process that never
@@ -162,22 +162,22 @@ time out. Use `commandlineutils`/`serviceutils` for those.
 
 ## Subscribe methods
 
-| Method | Description |
-|---|---|
-| `Subscribe(categoriesCsv, filterJson, subscriptionId)` | Registers a subscription. Returns True on success; never throws. |
-| `Unsubscribe(subscriptionId)` | Removes a subscription and drops its queue. |
-| `GetNextEvent(subscriptionId, timeoutMs, out hasEvent)` | Blocks up to `timeoutMs` for the next queued event. |
-| `GetNextEvents(subscriptionId, maxCount, drainMs)` | Drains up to `maxCount` events. |
-| `HasEvents(subscriptionId, out count)` | Reports queued-event count. |
-| `ClearQueue(subscriptionId)` | Drops all queued events. |
+| Method | Signature | Description |
+|---|---|---|
+| `Subscribe` | `bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId)` | Registers a subscription. Returns True on success; never throws. |
+| `Unsubscribe` | `bool Unsubscribe(string subscriptionId)` | Removes a subscription and drops its queue. |
+| `GetNextEvent` | `EventData GetNextEvent(string subscriptionId, int timeoutMs, out bool hasEvent)` | Blocks up to `timeoutMs` for the next queued event. |
+| `GetNextEvents` | `EventData[] GetNextEvents(string subscriptionId, int maxCount, int drainMs)` | Drains up to `maxCount` events. |
+| `HasEvents` | `bool HasEvents(string subscriptionId, out int count)` | Reports queued-event count. |
+| `ClearQueue` | `void ClearQueue(string subscriptionId)` | Drops all queued events. |
 
 ## Tuning / ops
 
-| Method | Description |
-|---|---|
-| `SetDebounce(eventName, debounceMs)` | Dedupes per (hwnd, event-name). Defaults: 150 ms for `WindowShown`/`WindowHidden`, 0 otherwise. Save dialogs fire 4-6 SHOWs in ~200 ms; debounce coalesces them to 1. |
-| `SetQueueLimits(maxEvents, overflowPolicy)` | Per-subscription queue bound + policy: `"DropOldest"` (default), `"DropNewest"`, `"Block"`. |
-| `DumpRecentEvents(count)` | Last N events as a JSON array (ring buffer, max 500). |
+| Method | Signature | Description |
+|---|---|---|
+| `SetDebounce` | `void SetDebounce(string eventName, int debounceMs)` | Dedupes per (hwnd, event-name). Defaults: 150 ms for `WindowShown`/`WindowHidden`, 0 otherwise. Save dialogs fire 4-6 SHOWs in ~200 ms; debounce coalesces them to 1. |
+| `SetQueueLimits` | `void SetQueueLimits(int maxEvents, string overflowPolicy)` | Per-subscription queue bound + policy: `"DropOldest"` (default), `"DropNewest"`, `"Block"`. |
+| `DumpRecentEvents` | `string DumpRecentEvents(int count)` | Last N events as a JSON array (ring buffer, max 500). |
 
 ## Notes & Caveats
 

@@ -15,6 +15,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
 | [serviceutils](src/serviceutils/README.md) | `ServiceAutomation` | Queries, starts, stops, restarts, and configures the startup type of Windows services. |
+| [eventutils](src/eventutils/README.md) | `EventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
 
 Each component is fully standalone (no project references between them), but
 they're designed to complement each other: MouseUtils and KeyboardUtils own
@@ -59,19 +60,23 @@ Each component has its own README with the full method reference, plus a
 - [uiautomationutils/README.md](src/uiautomationutils/README.md) and [uiautomationutils/Documentation/](src/uiautomationutils/Documentation/README.md)
 - [commandlineutils/README.md](src/commandlineutils/README.md) and [commandlineutils/Documentation/](src/commandlineutils/Documentation/README.md)
 - [serviceutils/README.md](src/serviceutils/README.md) and [serviceutils/Documentation/](src/serviceutils/Documentation/README.md)
+- [eventutils/README.md](src/eventutils/README.md)
 
 ## Testing
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
-`CommandLineUtils`, and `KeyboardUtils` additionally have plain xunit projects —
+`CommandLineUtils`, `KeyboardUtils`, and `EventUtils` additionally have plain
+xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
+`dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
 and
-`dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj` —
+`dotnet test src/eventutils/EventUtils.Tests/EventUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
-and key-down/release batch ordering), argument validation, and the
+key-down/release batch ordering, and the event filter/JSON parsing, category
+map, debounce, queue-overflow, and waiter logic), argument validation, and the
 never-throw contract (Windows-only interop/process cases self-skip on
 non-Windows machines).
 
