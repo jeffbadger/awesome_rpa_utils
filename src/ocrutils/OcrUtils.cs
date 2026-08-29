@@ -232,15 +232,37 @@ namespace OcrAutomation
 
         #region Language
 
-        /// <summary>Gets the BCP-47 language tags of every OCR language pack currently installed.</summary>
+        /// <summary>Gets the BCP-47 language tags of every OCR language pack currently installed. Never throws; returns an empty list if the language list cannot be queried.</summary>
         [Category("OCR - Language")]
-        [Description("Gets the language tags of every OCR language pack currently installed.")]
+        [Description("Gets the language tags of every OCR language pack currently installed. Never throws.")]
         public List<string> GetAvailableLanguages()
         {
-            var tags = new List<string>();
-            foreach (Language language in OcrEngine.AvailableRecognizerLanguages)
-                tags.Add(language.LanguageTag);
-            return tags;
+            return TryGetAvailableLanguages(out List<string> tags, out _) ? tags : new List<string>();
+        }
+
+        /// <summary>Gets the BCP-47 language tags of every OCR language pack currently installed.</summary>
+        /// <param name="tags">The installed language tags, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the language list could not be queried.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the OCR language list could not be queried. Never throws.</returns>
+        [Category("OCR - Language")]
+        [Description("Gets the language tags of every OCR language pack currently installed. Returns True on success; never throws.")]
+        public bool TryGetAvailableLanguages(out List<string> tags, out string message)
+        {
+            tags = null;
+            try
+            {
+                var result = new List<string>();
+                foreach (Language language in OcrEngine.AvailableRecognizerLanguages)
+                    result.Add(language.LanguageTag);
+                tags = result;
+                message = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                message = "Failed to query installed OCR language packs: " + ex.Message;
+                return false;
+            }
         }
 
         #endregion
@@ -248,14 +270,18 @@ namespace OcrAutomation
         #region Wait-for-Text Polling
 
         /// <summary>Polls a screen region until it contains text matching <paramref name="expectedText"/> (case-insensitive substring), or the timeout elapses.</summary>
+        /// <remarks>
+        /// The actual wait can exceed <paramref name="timeoutMs"/> by up to one poll interval
+        /// plus the time of a single capture+OCR pass, since the timeout is checked between passes.
+        /// </remarks>
         /// <param name="left">The X-coordinate of the top-left corner of the region to poll.</param>
         /// <param name="top">The Y-coordinate of the top-left corner of the region to poll.</param>
         /// <param name="width">The width of the region to poll, in pixels.</param>
         /// <param name="height">The height of the region to poll, in pixels.</param>
         /// <param name="expectedText">The text to wait for (case-insensitive substring match).</param>
-        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds; must not be negative.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason a real failure (bad dimensions, missing language pack) aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason a real failure (bad dimensions, missing language pack, negative timeout) aborted the poll early (in which case this method also returns <c>false</c>).</param>
         /// <returns><c>true</c> if the expected text appeared before the timeout; <c>false</c> if it timed out, or if a real failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("OCR - Wait for Text")]
         [Description("Polls a screen region until it contains the expected text, or the timeout elapses. Returns True if found in time; never throws.")]
@@ -264,6 +290,11 @@ namespace OcrAutomation
             if (string.IsNullOrEmpty(expectedText))
             {
                 message = "Expected text must not be null or empty.";
+                return false;
+            }
+            if (timeoutMs < 0)
+            {
+                message = "Timeout must not be negative.";
                 return false;
             }
             if (pollIntervalMs < 1) pollIntervalMs = 1;
@@ -335,14 +366,14 @@ namespace OcrAutomation
 
             try
             {
-                byte[] bytes = File.ReadAllBytes(filePath);
-                using (MemoryStream ms = new MemoryStream(bytes))
-                using (Bitmap decoded = new Bitmap(ms))
+                using (MemoryStream ms = new MemoryStream(File.ReadAllBytes(filePath)))
                 {
-                    // new Bitmap can throw ArgumentException for a file that exists
-                    // but is not a valid/corrupt image - surfaces as false + message
-                    // instead of an exception (never-throws contract).
-                    bitmap = new Bitmap(decoded);
+                    // new Bitmap(Stream) fully decodes raster formats (PNG/JPEG/BMP/GIF)
+                    // into memory, so disposing the stream here is safe for the inputs OCR
+                    // supports; a file that exists but is not a valid image surfaces as
+                    // ArgumentException, which the catch below turns into false + message
+                    // (never-throws contract). No second copy is needed.
+                    bitmap = new Bitmap(ms);
                 }
                 message = null;
                 return true;
@@ -414,7 +445,20 @@ namespace OcrAutomation
             }
             else
             {
-                var language = new Language(languageTag);
+                // new Language throws ArgumentException for a tag that isn't valid BCP-47
+                // (e.g. "en_US" with an underscore) - surface it as false + message instead
+                // of breaking the documented never-throws contract.
+                Language language;
+                try
+                {
+                    language = new Language(languageTag);
+                }
+                catch (ArgumentException)
+                {
+                    message = $"'{languageTag}' is not a valid BCP-47 language tag.";
+                    return false;
+                }
+
                 if (!OcrEngine.IsLanguageSupported(language))
                 {
                     message = $"OCR language pack for '{languageTag}' is not installed. Install it via Windows Settings > Time & Language > Language & region.";
@@ -435,11 +479,13 @@ namespace OcrAutomation
 
         private static Rectangle ToScreenRectangle(Windows.Foundation.Rect rect, int offsetX, int offsetY)
         {
+            // AwayFromZero so .5-pixel bounds round to the nearest whole pixel rather than
+            // banker's rounding to even (which would bias coordinates on odd-sized words).
             return new Rectangle(
-                offsetX + (int)Math.Round(rect.X),
-                offsetY + (int)Math.Round(rect.Y),
-                (int)Math.Round(rect.Width),
-                (int)Math.Round(rect.Height));
+                offsetX + (int)Math.Round(rect.X, MidpointRounding.AwayFromZero),
+                offsetY + (int)Math.Round(rect.Y, MidpointRounding.AwayFromZero),
+                (int)Math.Round(rect.Width, MidpointRounding.AwayFromZero),
+                (int)Math.Round(rect.Height, MidpointRounding.AwayFromZero));
         }
 
         private static Rectangle UnionBounds(List<OcrWord> words)
@@ -467,7 +513,11 @@ namespace OcrAutomation
             int vsRight = vsLeft + GetSystemMetrics(SM_CXVIRTUALSCREEN);
             int vsBottom = vsTop + GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
-            if (left + width <= vsLeft || left >= vsRight || top + height <= vsTop || top >= vsBottom)
+            // long arithmetic so extreme left/width inputs can't overflow the bounds check.
+            long right = (long)left + width;
+            long bottom = (long)top + height;
+
+            if (right <= vsLeft || left >= vsRight || bottom <= vsTop || top >= vsBottom)
             {
                 message = $"Capture region ({left},{top}) {width}x{height} lies entirely outside the " +
                           $"virtual screen ({vsLeft},{vsTop}) {vsRight - vsLeft}x{vsBottom - vsTop}; nothing can be recognized there." +
@@ -489,10 +539,14 @@ namespace OcrAutomation
             if (!TryGetOcrEngine(languageTag, out OcrEngine engine, out message))
                 return false;
 
-            using (SoftwareBitmap softwareBitmap = BitmapToSoftwareBitmap(bitmap))
+            try
             {
-                try
+                // BitmapToSoftwareBitmap can throw (LockBits/OutOfMemory on a huge image),
+                // so it lives inside the try to keep the never-throws contract.
+                using (SoftwareBitmap softwareBitmap = BitmapToSoftwareBitmap(bitmap))
                 {
+                    // Sync-over-async: Pega robot flows run on MTA threads with no
+                    // SynchronizationContext, so blocking here cannot deadlock.
                     Windows.Media.Ocr.OcrResult native = engine.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
 
                     var ocrResult = new OcrResult { Text = native.Text };
@@ -514,11 +568,11 @@ namespace OcrAutomation
                     message = null;
                     return true;
                 }
-                catch (Exception ex)
-                {
-                    message = "OCR recognition failed: " + ex.Message;
-                    return false;
-                }
+            }
+            catch (Exception ex)
+            {
+                message = "OCR recognition failed: " + ex.Message;
+                return false;
             }
         }
 
