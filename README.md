@@ -46,6 +46,30 @@ collisions).
 Prebuilt DLLs for each tagged version are available on the
 [Releases](../../releases) page.
 
+## Packaging a release
+
+To build and create a ZIP containing only the ten automation DLLs produced by
+this repository, run from PowerShell:
+
+```powershell
+./scripts/Package-Release.ps1
+```
+
+The command creates two archives:
+
+- `AwesomeRpaUtils.zip` contains the ten project DLLs.
+- `AwesomeRpaUtils-SupportLibraries.zip` contains the three NuGet runtime DLLs
+  needed by ServiceUtils.
+
+Both exclude test infrastructure, PDBs, and XML documentation. To package an
+existing Release build or choose other output paths, use:
+
+```powershell
+./scripts/Package-Release.ps1 -NoBuild `
+  -ArchivePath artifacts/AwesomeRpaUtils-v1.0.0.zip `
+  -SupportArchivePath artifacts/AwesomeRpaUtils-SupportLibraries-v1.0.0.zip
+```
+
 ## Documentation
 
 Each component has its own README with the full method reference, plus a

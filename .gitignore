@@ -52,6 +52,8 @@ Thumbs.db
 
 # Git worktrees
 .worktrees/
+.claude/worktrees/
 
 # Internal AI-assisted design docs (kept locally, not shipped publicly)
 docs/superpowers/
+
