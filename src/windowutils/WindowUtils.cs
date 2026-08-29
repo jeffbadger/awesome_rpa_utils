@@ -49,9 +49,33 @@ namespace WindowAutomation
             container?.Add(this);
         }
 
+        /// <summary>
+        /// Standard component cleanup override. WindowUtils holds no unmanaged resources;
+        /// implementing the pattern keeps the designer-generated teardown complete.
+        /// </summary>
+        /// <param name="disposing">
+        /// True when called from the public Dispose() method during teardown;
+        /// false when called from the finalizer.
+        /// </param>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // No managed or unmanaged resources to release.
+            }
+
+            // Base Component.Dispose detaches this component from its container's site.
+            base.Dispose(disposing);
+        }
+
         #region Enumeration & Lookup
 
         /// <summary>Gets all top-level windows via <c>EnumWindows</c>.</summary>
+        /// <remarks>
+        /// <c>EnumWindows</c> returns hidden and cloaked (visually hidden UWP) windows as
+        /// well as visible ones; filter with <see cref="IsWindowVisible"/> if only visible
+        /// windows are wanted.
+        /// </remarks>
         [Category("Window - Enumeration & Lookup")]
         [Description("Gets all top-level windows currently open.")]
         public List<IntPtr> GetTopLevelWindows()
@@ -69,7 +93,15 @@ namespace WindowAutomation
         /// Finds a top-level window by its title. Returns <see cref="IntPtr.Zero"/> if no
         /// window matches (not found is a normal, checkable outcome, not an error).
         /// </summary>
-        /// <param name="title">The title to match.</param>
+        /// <remarks>
+        /// <para>
+        /// Matches hidden windows too; filter with <see cref="IsWindowVisible"/> if only
+        /// visible windows are wanted. A null or empty <paramref name="title"/> returns
+        /// <see cref="IntPtr.Zero"/> — an empty substring would otherwise match the first
+        /// window in enumeration order.
+        /// </para>
+        /// </remarks>
+        /// <param name="title">The title to match; may not be null or empty.</param>
         /// <param name="exactMatch">
         /// If <c>true</c> (default), requires an exact, case-sensitive title match.
         /// If <c>false</c>, matches any window whose title contains <paramref name="title"/>
@@ -79,6 +111,9 @@ namespace WindowAutomation
         [Description("Finds a top-level window by its title (exact or substring match).")]
         public IntPtr FindWindowByTitle(string title, bool exactMatch = true)
         {
+            if (string.IsNullOrEmpty(title))
+                return IntPtr.Zero;
+
             foreach (var hWnd in GetTopLevelWindows())
             {
                 string windowTitle = GetWindowTitle(hWnd);
@@ -95,6 +130,11 @@ namespace WindowAutomation
         /// Finds the first top-level window of the given window class. Returns
         /// <see cref="IntPtr.Zero"/> if none matches.
         /// </summary>
+        /// <remarks>
+        /// Match is case-insensitive (the Win32 <c>FindWindow</c> behavior), unlike
+        /// <see cref="FindWindowByTitle"/> with <c>exactMatch: true</c>, which is
+        /// case-sensitive.
+        /// </remarks>
         [Category("Window - Enumeration & Lookup")]
         [Description("Finds the first top-level window of the given window class.")]
         public IntPtr FindWindowByClass(string className)
@@ -208,6 +248,10 @@ namespace WindowAutomation
         }
 
         /// <summary>Gets a window's title text (empty string if it has none).</summary>
+        /// <remarks>
+        /// Reads the title once via the length-then-read pattern; a title that grows
+        /// between the two Win32 calls (rare) is truncated at the length observed first.
+        /// </remarks>
         [Category("Window - State & Geometry")]
         [Description("Gets a window's title text.")]
         public string GetWindowTitle(IntPtr hWnd)
@@ -340,15 +384,25 @@ namespace WindowAutomation
         /// Polls for a top-level window matching <paramref name="title"/> (substring,
         /// case-insensitive) until it appears or the timeout elapses.
         /// </summary>
-        /// <param name="title">The window title substring to match (case-insensitive).</param>
+        /// <param name="title">The window title substring to match (case-insensitive); may not be null or empty.</param>
         /// <param name="timeoutMs">Maximum time to poll, in milliseconds.</param>
-        /// <param name="pollIntervalMs">Time to sleep between polls, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Time to sleep between polls, in milliseconds; values below 1 are treated as 1.</param>
         /// <param name="hWnd">The matching window's handle, or <see cref="IntPtr.Zero"/> if not found in time.</param>
-        /// <returns><c>true</c> if a matching window was found before the timeout.</returns>
+        /// <returns>
+        /// <c>true</c> if a matching window was found before the timeout; <c>false</c> on
+        /// timeout or if <paramref name="title"/> is null or empty (an empty substring
+        /// would match the first window in enumeration order, so polling is refused).
+        /// </returns>
         [Category("Window - Activation & Z-Order")]
         [Description("Polls for a window matching the title until it appears or the timeout elapses.")]
         public bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
         {
+            if (string.IsNullOrEmpty(title))
+            {
+                hWnd = IntPtr.Zero;
+                return false;
+            }
+
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
@@ -416,6 +470,11 @@ namespace WindowAutomation
         #region Child / Multi-Window Enumeration
 
         /// <summary>Gets all descendant windows/controls of a parent window (recursively, not just immediate children) via <c>EnumChildWindows</c>.</summary>
+        /// <remarks>
+        /// Passing <see cref="IntPtr.Zero"/> enumerates all top-level windows (the Win32
+        /// <c>EnumChildWindows(NULL, ...)</c> special case) — usually not what a caller
+        /// wants, so validate the parent handle first when in doubt.
+        /// </remarks>
         [Category("Window - Child Windows")]
         [Description("Gets all descendant windows/controls of a parent window.")]
         public List<IntPtr> GetChildWindows(IntPtr hWndParent)
@@ -434,18 +493,38 @@ namespace WindowAutomation
         /// and/or class name (pass <c>null</c> for either to not filter on it). Returns
         /// <see cref="IntPtr.Zero"/> if none matches.
         /// </summary>
+        /// <param name="hWndParent">Handle of the parent window whose descendants are searched.</param>
+        /// <param name="title">
+        /// Exact title to match, case-sensitively; null (or empty) to not filter on title.
+        /// </param>
+        /// <param name="className">
+        /// Window class name to match, case-sensitively; null (or empty) to not filter on class.
+        /// </param>
+        /// <param name="exactMatch">
+        /// If <c>true</c> (default), the title/class filters require exact, case-sensitive matches.
+        /// If <c>false</c>, both filters match by case-insensitive substring.
+        /// </param>
         [Category("Window - Child Windows")]
-        [Description("Finds a child window matching the given title and/or class name.")]
-        public IntPtr FindChildWindow(IntPtr hWndParent, string title, string className)
+        [Description("Finds a child window matching the given title and/or class name (exact or substring match).")]
+        public IntPtr FindChildWindow(IntPtr hWndParent, string title, string className, bool exactMatch = true)
         {
             foreach (var child in GetChildWindows(hWndParent))
             {
-                bool titleMatches = title == null || GetWindowTitle(child) == title;
-                bool classMatches = className == null || GetWindowClassName(child) == className;
+                bool titleMatches = string.IsNullOrEmpty(title)
+                    || Matches(GetWindowTitle(child), title, exactMatch);
+                bool classMatches = string.IsNullOrEmpty(className)
+                    || Matches(GetWindowClassName(child), className, exactMatch);
                 if (titleMatches && classMatches)
                     return child;
             }
             return IntPtr.Zero;
+        }
+
+        private static bool Matches(string value, string filter, bool exactMatch)
+        {
+            return exactMatch
+                ? string.Equals(value, filter, StringComparison.Ordinal)
+                : value.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         #endregion

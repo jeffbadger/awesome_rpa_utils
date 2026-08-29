@@ -75,7 +75,7 @@ The window-state command applied by `SetWindowState`, wrapping the Win32
 | Method | Signature | Description |
 |---|---|---|
 | `GetChildWindows` | `List<IntPtr> GetChildWindows(IntPtr hWndParent)` | Gets all descendant windows/controls of a parent window (recursively, not just immediate children). |
-| `FindChildWindow` | `IntPtr FindChildWindow(IntPtr hWndParent, string title, string className)` | Finds a child window matching the given title and/or class name. |
+| `FindChildWindow` | `IntPtr FindChildWindow(IntPtr hWndParent, string title, string className, bool exactMatch = true)` | Finds a child window matching the given title and/or class name (exact and case-sensitive by default; `exactMatch: false` switches to case-insensitive substring). |
 
 ## Notes & Caveats
 
