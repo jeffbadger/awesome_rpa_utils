@@ -132,48 +132,79 @@ namespace WindowAutomation
         #region State & Geometry
 
         /// <summary>Gets the screen-space bounding rectangle of a window.</summary>
-        /// <exception cref="Win32Exception">GetWindowRect failed.</exception>
+        /// <param name="hWnd">Handle of the window to measure.</param>
+        /// <param name="bounds">The window's bounds, or <c>default</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetWindowRect failed (e.g. an invalid handle). Never throws.</returns>
         [Category("Window - State & Geometry")]
-        [Description("Gets the screen-space bounding rectangle of a window.")]
-        public System.Drawing.Rectangle GetWindowBounds(IntPtr hWnd)
+        [Description("Gets the screen-space bounding rectangle of a window. Returns True on success; never throws.")]
+        public bool GetWindowBounds(IntPtr hWnd, out System.Drawing.Rectangle bounds, out string message)
         {
             if (!GetWindowRect(hWnd, out RECT rect))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.");
-            return new System.Drawing.Rectangle(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.").Message;
+                bounds = default;
+                return false;
+            }
+            bounds = new System.Drawing.Rectangle(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+            message = null;
+            return true;
         }
 
         /// <summary>Moves and/or resizes a window to the given screen-space rectangle.</summary>
-        /// <exception cref="ArgumentException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
-        /// <exception cref="Win32Exception">MoveWindow failed.</exception>
+        /// <param name="hWnd">Handle of the window to move/resize.</param>
+        /// <param name="left">New left edge in screen pixels.</param>
+        /// <param name="top">New top edge in screen pixels.</param>
+        /// <param name="width">New width in pixels; must be non-negative.</param>
+        /// <param name="height">New height in pixels; must be non-negative.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move/resize failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are negative, or MoveWindow failed. Never throws.</returns>
         [Category("Window - State & Geometry")]
-        [Description("Moves and/or resizes a window to the given screen-space rectangle.")]
-        public void SetWindowBounds(IntPtr hWnd, int left, int top, int width, int height)
+        [Description("Moves and/or resizes a window to the given screen-space rectangle. Returns True on success; never throws.")]
+        public bool SetWindowBounds(IntPtr hWnd, int left, int top, int width, int height, out string message)
         {
             if (width < 0 || height < 0)
-                throw new ArgumentException("width and height must be non-negative.");
+            {
+                message = "width and height must be non-negative.";
+                return false;
+            }
             if (!MoveWindowNative(hWnd, left, top, width, height, true))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "MoveWindow failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "MoveWindow failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>Moves a window to a new position without changing its size.</summary>
-        /// <exception cref="Win32Exception">GetWindowRect or MoveWindow failed.</exception>
+        /// <param name="hWnd">Handle of the window to move.</param>
+        /// <param name="left">New left edge in screen pixels.</param>
+        /// <param name="top">New top edge in screen pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetWindowRect or MoveWindow failed. Never throws.</returns>
         [Category("Window - State & Geometry")]
-        [Description("Moves a window to a new position without changing its size.")]
-        public void MoveWindow(IntPtr hWnd, int left, int top)
+        [Description("Moves a window to a new position without changing its size. Returns True on success; never throws.")]
+        public bool MoveWindow(IntPtr hWnd, int left, int top, out string message)
         {
-            var bounds = GetWindowBounds(hWnd);
-            SetWindowBounds(hWnd, left, top, bounds.Width, bounds.Height);
+            if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+                return false;
+            return SetWindowBounds(hWnd, left, top, bounds.Width, bounds.Height, out message);
         }
 
         /// <summary>Resizes a window without changing its position.</summary>
-        /// <exception cref="ArgumentException"><paramref name="width"/> or <paramref name="height"/> is negative.</exception>
-        /// <exception cref="Win32Exception">GetWindowRect or MoveWindow failed.</exception>
+        /// <param name="hWnd">Handle of the window to resize.</param>
+        /// <param name="width">New width in pixels; must be non-negative.</param>
+        /// <param name="height">New height in pixels; must be non-negative.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the resize failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are negative, or GetWindowRect/MoveWindow failed. Never throws.</returns>
         [Category("Window - State & Geometry")]
-        [Description("Resizes a window without changing its position.")]
-        public void ResizeWindow(IntPtr hWnd, int width, int height)
+        [Description("Resizes a window without changing its position. Returns True on success; never throws.")]
+        public bool ResizeWindow(IntPtr hWnd, int width, int height, out string message)
         {
-            var bounds = GetWindowBounds(hWnd);
-            SetWindowBounds(hWnd, bounds.Left, bounds.Top, width, height);
+            if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+                return false;
+            return SetWindowBounds(hWnd, bounds.Left, bounds.Top, width, height, out message);
         }
 
         /// <summary>Gets a window's title text (empty string if it has none).</summary>
@@ -241,13 +272,20 @@ namespace WindowAutomation
         }
 
         /// <summary>Asks a window to close by posting <c>WM_CLOSE</c> to it.</summary>
-        /// <exception cref="Win32Exception">PostMessage failed.</exception>
+        /// <param name="hWnd">Handle of the window to close.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the request failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if PostMessage failed. Never throws.</returns>
         [Category("Window - State & Geometry")]
-        [Description("Asks a window to close by posting WM_CLOSE to it.")]
-        public void CloseWindow(IntPtr hWnd)
+        [Description("Asks a window to close by posting WM_CLOSE to it. Returns True on success; never throws.")]
+        public bool CloseWindow(IntPtr hWnd, out string message)
         {
             if (!PostMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "PostMessage(WM_CLOSE) failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "PostMessage(WM_CLOSE) failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         #endregion
@@ -255,31 +293,47 @@ namespace WindowAutomation
         #region Activation & Z-Order
 
         /// <summary>Brings a window to the foreground and gives it input focus.</summary>
-        /// <exception cref="Win32Exception">
-        /// SetForegroundWindow failed. Windows' foreground-lock rules can block activation
-        /// requested from a background process that isn't the user's currently active app.
-        /// </exception>
+        /// <param name="hWnd">Handle of the window to activate.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason activation failed.</param>
+        /// <returns>
+        /// <c>true</c> on success; <c>false</c> if SetForegroundWindow failed. Windows'
+        /// foreground-lock rules can block activation requested from a background process
+        /// that isn't the user's currently active app. Never throws.
+        /// </returns>
         [Category("Window - Activation & Z-Order")]
-        [Description("Brings a window to the foreground and gives it input focus.")]
-        public void ActivateWindow(IntPtr hWnd)
+        [Description("Brings a window to the foreground and gives it input focus. Returns True on success; never throws.")]
+        public bool ActivateWindow(IntPtr hWnd, out string message)
         {
             if (!SetForegroundWindowNative(hWnd))
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "SetForegroundWindow failed. (Windows' foreground-lock rules can block activation from a background process.)");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(),
+                    "SetForegroundWindow failed. (Windows' foreground-lock rules can block activation from a background process.)").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
         /// Makes a window always-on-top (or removes that state), system-wide and
         /// session-persistent until changed again.
         /// </summary>
-        /// <exception cref="Win32Exception">SetWindowPos failed.</exception>
+        /// <param name="hWnd">Handle of the window to change.</param>
+        /// <param name="alwaysOnTop"><c>true</c> to make the window always-on-top; <c>false</c> to remove that state.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the change failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if SetWindowPos failed. Never throws.</returns>
         [Category("Window - Activation & Z-Order")]
-        [Description("Makes a window always-on-top (or removes that state).")]
-        public void SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop)
+        [Description("Makes a window always-on-top (or removes that state). Returns True on success; never throws.")]
+        public bool SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop, out string message)
         {
             IntPtr insertAfter = alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
             if (!SetWindowPos(hWnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "SetWindowPos failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "SetWindowPos failed.").Message;
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
