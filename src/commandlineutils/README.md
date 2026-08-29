@@ -92,15 +92,21 @@ exhaust memory — the tail is replaced with a truncation notice.
 - **A bare or relative `fileName` is resolved via PATH and the working
   directory**, both outside this component's control — an attacker able to
   plant files there can get a different executable run in place of the
-  intended one, and for `RunElevated` the lookup happens with admin rights.
-  Pass absolute paths everywhere; the methods deliberately stay permissive,
-  but treating bare names as a hazard to avoid.
+  intended one. `Run`/`StartFireAndForget` stay permissive (they accept bare
+  names) but treat them as a hazard to avoid; `RunElevated` rejects a
+  non-absolute `fileName` outright, because its resolution would happen with
+  admin rights.
 - **Captured output is capped** at ~4M characters (~8 MB) per stream so a runaway
   child can't exhaust memory; once the cap is hit the tail is replaced with a
-  truncation notice and `CommandResult.OutputTruncated` is `true`. Redirected
+  truncation notice and `CommandResult.OutputTruncated` is `true`. A single
+  line larger than the cap is itself truncated, so one giant newline-free
+  write can't blow past the limit either. Redirected
   streams are decoded with the system default encoding — pass `outputEncoding:`
   (e.g. `Encoding.UTF8`) when the child writes a known different encoding, or
   non-ASCII output comes back garbled.
+- **`environmentVariables` with a `null` key is rejected** (`false` + message)
+  rather than throwing — a `Dictionary<string,string>` can't hold a null key,
+  but a custom dictionary built from untrusted data can.
 - **`StartFireAndForget` starts console executables with `CreateNoWindow`**, so no
   console window flashes on the robot's desktop.
 - **If the caller isn't itself running elevated, `RunElevated` may be unable

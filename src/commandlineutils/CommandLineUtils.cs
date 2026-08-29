@@ -116,7 +116,14 @@ namespace CommandLineAutomation
             if (environmentVariables != null)
             {
                 foreach (var pair in environmentVariables)
+                {
+                    if (pair.Key == null)
+                    {
+                        message = "environmentVariables contains a null key.";
+                        return false;
+                    }
                     psi.Environment[pair.Key] = pair.Value;
+                }
             }
             if (outputEncoding != null)
             {
@@ -217,7 +224,14 @@ namespace CommandLineAutomation
             if (environmentVariables != null)
             {
                 foreach (var pair in environmentVariables)
+                {
+                    if (pair.Key == null)
+                    {
+                        message = "environmentVariables contains a null key.";
+                        return false;
+                    }
                     psi.Environment[pair.Key] = pair.Value;
+                }
             }
             if (outputEncoding != null)
             {
@@ -257,12 +271,11 @@ namespace CommandLineAutomation
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
         /// <returns><c>true</c> if the process ran (regardless of its exit code or whether it timed out); <c>false</c> if it could not be run at all (bad arguments, executable not found, <c>Process.Start</c> returned null, or the UAC prompt was cancelled). Never throws.</returns>
         /// <remarks>
-        /// Always pass an <b>absolute</b> <paramref name="fileName"/>: a bare or relative
-        /// name is resolved through PATH and the working directory — the resolution an
-        /// attacker able to plant files there could subvert, and this method's resolution
-        /// happens with <i>admin</i> rights. The method stays permissive (it does not
-        /// refuse relative names) but the README's Notes &amp; Caveats treat them as a
-        /// hazard to avoid.
+        /// Only an <b>absolute</b> <paramref name="fileName"/> is accepted: a bare or
+        /// relative name would be resolved through PATH and the working directory — the
+        /// resolution an attacker able to plant files there could subvert, and this
+        /// method's resolution happens with <i>admin</i> rights — so such a name is
+        /// rejected up front rather than resolved with elevation.
         /// </remarks>
         [Category("CommandLine - Elevated")]
         [Description("Runs an executable elevated (UAC prompt) and waits for it to exit. Returns True on success; never throws. Output cannot be captured for an elevated process.")]
@@ -279,6 +292,11 @@ namespace CommandLineAutomation
             if (timeoutMs < -1)
             {
                 message = "timeoutMs must be -1 (infinite) or non-negative.";
+                return false;
+            }
+            if (!Path.IsPathRooted(fileName))
+            {
+                message = "fileName must be an absolute path (a relative name would be resolved with admin rights).";
                 return false;
             }
 
@@ -410,7 +428,14 @@ namespace CommandLineAutomation
             if (environmentVariables != null)
             {
                 foreach (var pair in environmentVariables)
+                {
+                    if (pair.Key == null)
+                    {
+                        message = "environmentVariables contains a null key.";
+                        return false;
+                    }
                     psi.Environment[pair.Key] = pair.Value;
+                }
             }
 
             try
@@ -448,13 +473,25 @@ namespace CommandLineAutomation
         /// <summary>
         /// Appends one captured line to <paramref name="sb"/>, enforcing the capture limit:
         /// once the stream passes <see cref="MaxCapturedOutputChars"/> further lines are
-        /// dropped and <paramref name="truncated"/> stays true. A runaway child can grow
-        /// memory only to the cap, not without bound.
+        /// dropped and <paramref name="truncated"/> stays true. A single line larger than
+        /// the cap is itself truncated, so a runaway child can grow memory only to the cap,
+        /// not without bound.
         /// </summary>
         internal static void AppendCapped(StringBuilder sb, string data, ref bool truncated)
         {
             if (truncated || sb.Length >= MaxCapturedOutputChars)
             {
+                truncated = true;
+                return;
+            }
+
+            // A single line can be arbitrarily large (a child writing one giant
+            // newline-free blob); cap the line itself so the buffer can't grow
+            // past the limit by more than the truncation notice.
+            if (data.Length > MaxCapturedOutputChars)
+            {
+                sb.AppendLine(data.Substring(0, MaxCapturedOutputChars));
+                sb.AppendLine("... (line truncated)");
                 truncated = true;
                 return;
             }

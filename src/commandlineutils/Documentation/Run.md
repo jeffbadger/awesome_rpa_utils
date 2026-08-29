@@ -74,7 +74,8 @@ cmd.RunShellCommand("tool-writing-utf8.exe", out CommandResult result, out _, ou
 
 Captured output is capped (~8 MB per stream) so a runaway child can't exhaust memory;
 when the cap is hit the tail is replaced with a notice and `result.OutputTruncated`
-is `true`.
+is `true`. A single line larger than the cap is itself truncated, so one giant
+newline-free write can't blow past the limit either.
 
 ## Checking why a run failed
 
