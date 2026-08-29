@@ -91,14 +91,17 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
   succeeded, the key remains held down — pair with `KeyUp` in cleanup logic.
 - **`TypeText`** sends one `SendInput` call per UTF-16 code unit; characters outside the
   Basic Multilingual Plane (many emoji, some CJK extension characters) are sent as two
-  code units (a surrogate pair), each with its own key-down/up pair.
+  code units (a surrogate pair) in the canonical order — high surrogate down, low
+  surrogate down, low surrogate up, high surrogate up — so both code units are held
+  before either is released and the target composes a single character.
 - **PasteText** uses raw Win32 clipboard calls directly (not System.Windows.Forms.Clipboard),
   so it has no STA-thread requirement. `OpenClipboard` is retried every 25 ms for up to
   ~250 ms, so a clipboard manager briefly holding the clipboard open usually does not
   cause a failure. Restore semantics: a clipboard that was empty is restored empty and a
-  clipboard that held plain text has that text restored afterward. **Any other content
-  (an image, files) is destroyed when the paste text is set and cannot be restored** —
-  the clipboard is left holding the pasted text.
+  clipboard that held plain text — Unicode (`CF_UNICODETEXT`) or ANSI (`CF_TEXT`) — has
+  that text restored afterward. **Any other content (an image, files) is destroyed when
+  the paste text is set and cannot be restored** — the clipboard is left holding the
+  pasted text.
 - **Paste text briefly sits on the system clipboard**, so any process monitoring the
   clipboard can observe it while the paste is in flight; prefer `TypeText` for sensitive
   values.
@@ -108,4 +111,5 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
   and receive the *original* text; raise the delay for such targets.
 - **`IsKeyDown`/`IsModifierDown`/`GetActiveModifiers`** are point-in-time polls of real
   physical key state via `GetAsyncKeyState` — they do not distinguish real user input from
-  this component's own injected input.
+  this component's own injected input. `IsModifierDown(ModifierKeys.None)` returns `false`
+  (no modifier is "held" when none is requested).

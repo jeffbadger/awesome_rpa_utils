@@ -490,28 +490,9 @@ namespace KeyboardAutomation
 
             try
             {
-                Span<char> chars = stackalloc char[2];
                 foreach (var rune in text.EnumerateRunes())
                 {
-                    if (rune.Utf16SequenceLength == 1)
-                    {
-                        SendInputs(new[]
-                        {
-                            MakeUnicodeKeyInput((char)rune.Value, false),
-                            MakeUnicodeKeyInput((char)rune.Value, true)
-                        });
-                    }
-                    else
-                    {
-                        rune.EncodeToUtf16(chars);
-                        SendInputs(new[]
-                        {
-                            MakeUnicodeKeyInput(chars[0], false),
-                            MakeUnicodeKeyInput(chars[0], true),
-                            MakeUnicodeKeyInput(chars[1], false),
-                            MakeUnicodeKeyInput(chars[1], true)
-                        });
-                    }
+                    SendInputs(BuildUnicodeRuneBatch(rune));
 
                     if (delayMilliseconds > 0)
                         Thread.Sleep(delayMilliseconds);
@@ -552,7 +533,7 @@ namespace KeyboardAutomation
         /// other content (an image, files) is destroyed when the paste text is set and
         /// cannot be restored - the clipboard is left holding the pasted text. Note the
         /// text briefly sits on the system clipboard, where any process monitoring the
-        /// clipboard can observe it; prefer <see cref="TypeText"/> for sensitive values.
+        /// clipboard can observe it; prefer <see cref="TypeText(string, out string)"/> for sensitive values.
         /// If restoring the original clipboard contents afterward itself fails, that
         /// failure is swallowed rather than masking the primary outcome already captured
         /// in <paramref name="message"/>/the return value.
@@ -621,14 +602,24 @@ namespace KeyboardAutomation
 
         private static string GetClipboardText()
         {
-            if (!IsClipboardFormatAvailable(CF_UNICODETEXT))
-                return null;
+            // Prefer Unicode text; fall back to ANSI (CF_TEXT) so a clipboard that holds
+            // only ANSI text is still read and restored rather than treated as "no text"
+            // and destroyed by the paste. Windows normally provides CF_UNICODETEXT
+            // alongside CF_TEXT, so the fallback is rarely hit.
+            if (IsClipboardFormatAvailable(CF_UNICODETEXT))
+                return ReadClipboardText(CF_UNICODETEXT, unicode: true);
+            if (IsClipboardFormatAvailable(CF_TEXT))
+                return ReadClipboardText(CF_TEXT, unicode: false);
+            return null;
+        }
 
+        private static string ReadClipboardText(uint format, bool unicode)
+        {
             if (!OpenClipboardWithRetry())
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenClipboard failed.");
             try
             {
-                IntPtr handle = GetClipboardData(CF_UNICODETEXT);
+                IntPtr handle = GetClipboardData(format);
                 if (handle == IntPtr.Zero)
                     return null;
 
@@ -637,7 +628,7 @@ namespace KeyboardAutomation
                     return null;
                 try
                 {
-                    return Marshal.PtrToStringUni(pointer);
+                    return unicode ? Marshal.PtrToStringUni(pointer) : Marshal.PtrToStringAnsi(pointer);
                 }
                 finally
                 {
@@ -738,12 +729,15 @@ namespace KeyboardAutomation
 
         /// <summary>
         /// Returns <c>true</c> if every modifier flag set in <paramref name="modifier"/> is
-        /// currently held down (Win checks both LWin and RWin).
+        /// currently held down (Win checks both LWin and RWin). Returns <c>false</c> for
+        /// <see cref="ModifierKeys.None"/> — "no modifiers" is not a state that is "down".
         /// </summary>
         [Category("Keyboard - State Query")]
         [Description("Returns True if every given modifier flag is currently held down.")]
         public bool IsModifierDown(ModifierKeys modifier)
         {
+            if (modifier == ModifierKeys.None)
+                return false;
             return (GetActiveModifiers() & modifier) == modifier;
         }
 
@@ -752,11 +746,21 @@ namespace KeyboardAutomation
         [Description("Returns the combination of Ctrl/Shift/Alt/Win currently held, as flags.")]
         public ModifierKeys GetActiveModifiers()
         {
+            return ModifiersFromKeyStates(IsKeyDown);
+        }
+
+        /// <summary>
+        /// Combines the modifier flags from a per-key "is down" predicate — the pure logic
+        /// behind <see cref="GetActiveModifiers"/>, separated so it can be unit-tested
+        /// without touching real keyboard state. Win is set when either LWin or RWin is down.
+        /// </summary>
+        internal static ModifierKeys ModifiersFromKeyStates(Func<VirtualKey, bool> isDown)
+        {
             ModifierKeys result = ModifierKeys.None;
-            if (IsKeyDown(VirtualKey.Control)) result |= ModifierKeys.Control;
-            if (IsKeyDown(VirtualKey.Shift)) result |= ModifierKeys.Shift;
-            if (IsKeyDown(VirtualKey.Alt)) result |= ModifierKeys.Alt;
-            if (IsKeyDown(VirtualKey.LWin) || IsKeyDown(VirtualKey.RWin)) result |= ModifierKeys.Win;
+            if (isDown(VirtualKey.Control)) result |= ModifierKeys.Control;
+            if (isDown(VirtualKey.Shift)) result |= ModifierKeys.Shift;
+            if (isDown(VirtualKey.Alt)) result |= ModifierKeys.Alt;
+            if (isDown(VirtualKey.LWin) || isDown(VirtualKey.RWin)) result |= ModifierKeys.Win;
             return result;
         }
 
@@ -777,6 +781,7 @@ namespace KeyboardAutomation
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
 
+        private const uint CF_TEXT = 1;
         private const uint CF_UNICODETEXT = 13;
         private const uint GMEM_MOVEABLE = 0x0002;
 
@@ -891,6 +896,35 @@ namespace KeyboardAutomation
                 dwExtraInfo = UIntPtr.Zero
             };
             return input;
+        }
+
+        /// <summary>
+        /// Builds the atomic batch for one rune typed via <c>KEYEVENTF_UNICODE</c>: a single
+        /// code unit as down/up, or a surrogate pair as high-down, low-down, low-up, high-up —
+        /// both code units held before either is released, so the target composes one
+        /// character rather than two separate (invalid) code units.
+        /// </summary>
+        internal static INPUT[] BuildUnicodeRuneBatch(Rune rune)
+        {
+            Span<char> chars = stackalloc char[2];
+            rune.EncodeToUtf16(chars);
+
+            if (rune.Utf16SequenceLength == 1)
+            {
+                return new[]
+                {
+                    MakeUnicodeKeyInput(chars[0], false),
+                    MakeUnicodeKeyInput(chars[0], true)
+                };
+            }
+
+            return new[]
+            {
+                MakeUnicodeKeyInput(chars[0], false),
+                MakeUnicodeKeyInput(chars[1], false),
+                MakeUnicodeKeyInput(chars[1], true),
+                MakeUnicodeKeyInput(chars[0], true)
+            };
         }
 
         /// <summary>
