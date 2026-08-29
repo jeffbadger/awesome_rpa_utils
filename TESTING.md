@@ -233,13 +233,23 @@ failure (`message` set) from a normal not-changed/exceeds-tolerance result
 
 ### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, and tree; Cleanup: close it)
 
+All methods here except `GetRootElement`, `FromWindowHandle`, `FromPoint`, and
+`IsElementAvailable` return `bool` with an `out string message` and never
+throw — for these, replace Phase 2's "exception condition on the
+invalid-input case" with an outcome condition asserting `false` plus a
+non-null `message` on the invalid-input case (a null element/parent, an
+unsupported action pattern), instead of an `Automation exception` condition.
+The `FindBy*` methods additionally need a case that distinguishes a real
+argument error (`false` + non-null `message`) from a normal not-found result
+(`false` + `message == null`).
+
 - `GetRootElement`, `FromWindowHandle`, `FromPoint` (basic bridging sanity checks against the harness window)
-- `FindByAutomationId`, `FindByName`, `FindByClassName`, `FindByControlType`, `FindAllByControlType`, `GetChildren` (found and not-found cases against harness controls; `descendantsOnly` true/false cases)
-- `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName`, `GetBoundingRectangle`, `IsEnabled`, `IsOffscreen` (assert against known harness control properties)
+- `FindByAutomationId`, `FindByName`, `FindByClassName`, `FindByControlType`, `FindAllByControlType`, `GetChildren` (found and not-found cases against harness controls; `descendantsOnly` true/false cases; null parent → `false` + non-null message)
+- `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName`, `GetBoundingRectangle`, `IsEnabled`, `IsOffscreen` (assert against known harness control properties; null element → `false` + message)
 - `IsElementAvailable` (true for a live control; false after closing the harness window and re-checking a cached reference)
-- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; exception case calling the wrong action on the wrong control type, e.g. `Toggle` on a button)
-- `WaitForElementByAutomationId`, `WaitForElementByName` (found-in-time and timeout cases, e.g. a harness control that appears after a delay)
-- `HighlightElement` (visual-only — verify manually/via screenshot, same as `DialogUtils.HighlightControl`)
+- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, → `false` + message instead of an exception)
+- `WaitForElementByAutomationId`, `WaitForElementByName` (found-in-time and timeout cases, e.g. a harness control that appears after a delay; null parent → `false` + non-null message, distinct from the timeout case's `false` + `message == null`)
+- `HighlightElement` (visual-only — verify manually/via screenshot, same as `DialogUtils.HighlightControl`; null element → `false` + message)
 
 Note: this component needs a WinForms/WPF test harness with native `AutomationId`/`Name` values set explicitly (plain WinForms controls without explicit AutomationIds fall back to less predictable auto-generated ones) — reuse or extend the Test Harness from Phase 0 rather than building a second one.
 

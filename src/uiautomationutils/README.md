@@ -49,12 +49,12 @@ A common UI Automation control type, mapped internally to
 | `AutomationElement GetRootElement()` | Gets the desktop root element. |
 | `AutomationElement FromWindowHandle(IntPtr hWnd)` | Gets the UI Automation element for a window handle, or null if invalid. |
 | `AutomationElement FromPoint(int x, int y)` | Gets the UI Automation element at a screen point, or null on failure. |
-| `AutomationElement FindByAutomationId(AutomationElement parent, string automationId, bool descendantsOnly = true)` | Finds a descendant (or child) element by its AutomationId, or null if none matches. |
-| `AutomationElement FindByName(AutomationElement parent, string name, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant (or child) element by its Name (exact or substring match), or null if none matches. |
-| `AutomationElement FindByClassName(AutomationElement parent, string className, bool descendantsOnly = true)` | Finds a descendant (or child) element by its window class name, or null if none matches. |
-| `AutomationElement FindByControlType(AutomationElement parent, UiControlType controlType, bool descendantsOnly = true)` | Finds the first descendant (or child) element of the given control type, or null if none matches. |
-| `List<AutomationElement> FindAllByControlType(AutomationElement parent, UiControlType controlType, bool descendantsOnly = true)` | Finds every descendant (or child) element of the given control type. |
-| `List<AutomationElement> GetChildren(AutomationElement parent)` | Gets all immediate children of an element. |
+| `bool FindByAutomationId(AutomationElement parent, string automationId, out AutomationElement element, out string message, bool descendantsOnly = true)` | Finds a descendant (or child) element by its AutomationId. Returns True if found; never throws. |
+| `bool FindByName(AutomationElement parent, string name, out AutomationElement element, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant (or child) element by its Name (exact or substring match). Returns True if found; never throws. |
+| `bool FindByClassName(AutomationElement parent, string className, out AutomationElement element, out string message, bool descendantsOnly = true)` | Finds a descendant (or child) element by its window class name. Returns True if found; never throws. |
+| `bool FindByControlType(AutomationElement parent, UiControlType controlType, out AutomationElement element, out string message, bool descendantsOnly = true)` | Finds the first descendant (or child) element of the given control type. Returns True if found; never throws. |
+| `bool FindAllByControlType(AutomationElement parent, UiControlType controlType, out List<AutomationElement> elements, out string message, bool descendantsOnly = true)` | Finds every descendant (or child) element of the given control type. Returns True on success; never throws. |
+| `bool GetChildren(AutomationElement parent, out List<AutomationElement> children, out string message)` | Gets all immediate children of an element. Returns True on success; never throws. |
 
 `descendantsOnly = true` (the default) searches the full subtree
 (`TreeScope.Descendants`); `false` searches only immediate children
@@ -64,52 +64,62 @@ A common UI Automation control type, mapped internally to
 
 | Method | Description |
 |---|---|
-| `string GetName(AutomationElement element)` | Gets an element's Name property. |
-| `string GetAutomationId(AutomationElement element)` | Gets an element's AutomationId property. |
-| `string GetClassName(AutomationElement element)` | Gets an element's window class name. |
-| `string GetControlTypeName(AutomationElement element)` | Gets a friendly name for an element's control type (e.g. "Button"). |
-| `Rectangle GetBoundingRectangle(AutomationElement element)` | Gets an element's screen-space bounding rectangle. |
-| `bool IsEnabled(AutomationElement element)` | Returns True if the element is enabled. |
-| `bool IsOffscreen(AutomationElement element)` | Returns True if the element is offscreen. |
+| `bool GetName(AutomationElement element, out string name, out string message)` | Gets an element's Name property. Returns True on success; never throws. |
+| `bool GetAutomationId(AutomationElement element, out string automationId, out string message)` | Gets an element's AutomationId property. Returns True on success; never throws. |
+| `bool GetClassName(AutomationElement element, out string className, out string message)` | Gets an element's window class name. Returns True on success; never throws. |
+| `bool GetControlTypeName(AutomationElement element, out string controlTypeName, out string message)` | Gets a friendly name for an element's control type (e.g. "Button"). Returns True on success; never throws. |
+| `bool GetBoundingRectangle(AutomationElement element, out Rectangle bounds, out string message)` | Gets an element's screen-space bounding rectangle. Returns True on success; never throws. |
+| `bool IsEnabled(AutomationElement element, out string message)` | Returns True if the element is enabled. Never throws. |
+| `bool IsOffscreen(AutomationElement element, out string message)` | Returns True if the element is offscreen. Never throws. |
 | `bool IsElementAvailable(AutomationElement element)` | Returns True if the element is still available (its underlying UI hasn't gone away). |
 
 ### Actions
 
 | Method | Description |
 |---|---|
-| `void Invoke(AutomationElement element)` | Invokes an element (click-equivalent for buttons/menu items) via InvokePattern. |
-| `void SetValue(AutomationElement element, string value)` | Sets an element's value via ValuePattern. |
-| `string GetValue(AutomationElement element)` | Gets an element's value via ValuePattern. |
-| `void Toggle(AutomationElement element)` | Toggles an element (e.g. a checkbox) via TogglePattern. |
-| `bool IsToggled(AutomationElement element)` | Returns True if a toggleable element is currently On. |
-| `void Expand(AutomationElement element)` | Expands an element (e.g. a combo box or tree node) via ExpandCollapsePattern. |
-| `void Collapse(AutomationElement element)` | Collapses an element via ExpandCollapsePattern. |
-| `void Select(AutomationElement element)` | Selects an element (e.g. a list item) via SelectionItemPattern. |
-| `bool IsSelected(AutomationElement element)` | Returns True if a selectable element is currently selected. |
+| `bool Invoke(AutomationElement element, out string message)` | Invokes an element (click-equivalent for buttons/menu items) via InvokePattern. Returns True on success; never throws. |
+| `bool SetValue(AutomationElement element, string value, out string message)` | Sets an element's value via ValuePattern. Returns True on success; never throws. |
+| `bool GetValue(AutomationElement element, out string value, out string message)` | Gets an element's value via ValuePattern. Returns True on success; never throws. |
+| `bool Toggle(AutomationElement element, out string message)` | Toggles an element (e.g. a checkbox) via TogglePattern. Returns True on success; never throws. |
+| `bool IsToggled(AutomationElement element, out string message)` | Returns True if a toggleable element is currently On. Never throws. |
+| `bool Expand(AutomationElement element, out string message)` | Expands an element (e.g. a combo box or tree node) via ExpandCollapsePattern. Returns True on success; never throws. |
+| `bool Collapse(AutomationElement element, out string message)` | Collapses an element via ExpandCollapsePattern. Returns True on success; never throws. |
+| `bool Select(AutomationElement element, out string message)` | Selects an element (e.g. a list item) via SelectionItemPattern. Returns True on success; never throws. |
+| `bool IsSelected(AutomationElement element, out string message)` | Returns True if a selectable element is currently selected. Never throws. |
 
 ### Wait
 
 | Method | Description |
 |---|---|
-| `bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element)` | Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses. |
-| `bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element)` | Polls for a descendant element matching the given Name until it appears or the timeout elapses. |
+| `bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)` | Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses. `message` is only set if a real argument error aborted the poll early. Never throws. |
+| `bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)` | Polls for a descendant element matching the given Name until it appears or the timeout elapses. `message` is only set if a real argument error aborted the poll early. Never throws. |
 
 ### Visual
 
 | Method | Description |
 |---|---|
-| `void HighlightElement(AutomationElement element, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around an element to visually confirm which on-screen element it corresponds to. |
+| `bool HighlightElement(AutomationElement element, out string message, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around an element to visually confirm which on-screen element it corresponds to. Returns True on success; never throws. |
 
 ## Notes & Caveats
 
-- **Action methods throw `InvalidOperationException` if the element doesn't
-  support the required pattern** (e.g. calling `Toggle` on a plain button) -
-  this is a caller mistake, not a normal/expected outcome, so it's a real
-  exception rather than a sentinel return.
+- **Every method that could previously throw for a null element or unsupported pattern
+  now returns `bool` with an `out string message`** instead — a null `element`/`parent`,
+  an unsupported action pattern (e.g. calling `Toggle` on a plain button), and Win32
+  failures (`HighlightElement`'s `GetDC`) are all reported this way, with `message` set
+  to a human-readable reason whenever the method returns `false`.
+- **`FindBy*` methods overload the meaning of a `false` return**: it covers both a normal
+  "not found" outcome (`message == null`) and a real argument error that prevented the
+  search (`message` set) — check `message` to tell them apart. `FindAllByControlType`/
+  `GetChildren` don't have this ambiguity since an empty list is an unambiguous "no
+  results," so their `bool` means only "no argument error occurred."
+- **`IsEnabled`/`IsOffscreen`/`IsToggled`/`IsSelected` keep their original `bool` meaning**
+  (the property's actual value) rather than gaining a separate success flag — a `false`
+  return can mean either the genuine state or a real error (null element, unsupported
+  pattern); check `message` to tell them apart.
 - **`IsElementAvailable` is the one method that accepts `null` without
-  throwing** (returning `false` instead) - its entire purpose is checking
+  needing an `out message`** (returning `false` instead) - its entire purpose is checking
   whether a reference is still good, and a null reference is definitionally
-  not available.
+  not available. It was already never-throw and is unchanged.
 - **An element reference can go stale at any time** (the underlying UI
   closed, its control was removed, etc.) - any property/action method can
   throw `ElementNotAvailableException` for a stale element; re-find it
