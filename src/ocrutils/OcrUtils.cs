@@ -78,31 +78,47 @@ namespace OcrAutomation
         /// <param name="top">The Y-coordinate of the top-left corner of the region to capture.</param>
         /// <param name="width">The width of the region to capture, in pixels.</param>
         /// <param name="height">The height of the region to capture, in pixels.</param>
+        /// <param name="text">The recognized text, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason recognition failed.</param>
         /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
-        /// <exception cref="ArgumentException">Width or height is not positive.</exception>
-        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if width/height are not positive, or no matching OCR language pack is installed. Never throws.</returns>
         [Category("OCR - Plain Text")]
-        [Description("Captures a screen region and returns its recognized text.")]
-        public string GetTextFromRegion(int left, int top, int width, int height, string languageTag = null)
+        [Description("Captures a screen region and returns its recognized text. Returns True on success; never throws.")]
+        public bool GetTextFromRegion(int left, int top, int width, int height, out string text, out string message, string languageTag = null)
         {
-            using (Bitmap bitmap = CaptureRegionToBitmap(left, top, width, height))
+            text = null;
+            if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bitmap, out message))
+                return false;
+
+            using (bitmap)
             {
-                return RecognizeText(bitmap, languageTag, left, top).Text;
+                if (!TryRecognizeText(bitmap, languageTag, out OcrResult result, out message, left, top))
+                    return false;
+                text = result.Text;
+                return true;
             }
         }
 
         /// <summary>Loads an image file and returns its recognized text.</summary>
         /// <param name="filePath">Path to the image file to recognize.</param>
+        /// <param name="text">The recognized text, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason recognition failed.</param>
         /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
-        /// <exception cref="FileNotFoundException"><paramref name="filePath"/> does not exist.</exception>
-        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="filePath"/> does not exist, or no matching OCR language pack is installed. Never throws.</returns>
         [Category("OCR - Plain Text")]
-        [Description("Loads an image file and returns its recognized text.")]
-        public string GetTextFromImageFile(string filePath, string languageTag = null)
+        [Description("Loads an image file and returns its recognized text. Returns True on success; never throws.")]
+        public bool GetTextFromImageFile(string filePath, out string text, out string message, string languageTag = null)
         {
-            using (Bitmap bitmap = LoadBitmapWithoutLockingFile(filePath))
+            text = null;
+            if (!TryLoadBitmapWithoutLockingFile(filePath, out Bitmap bitmap, out message))
+                return false;
+
+            using (bitmap)
             {
-                return RecognizeText(bitmap, languageTag).Text;
+                if (!TryRecognizeText(bitmap, languageTag, out OcrResult result, out message))
+                    return false;
+                text = result.Text;
+                return true;
             }
         }
 
@@ -116,15 +132,20 @@ namespace OcrAutomation
         /// <param name="width">The width of the region to capture, in pixels.</param>
         /// <param name="height">The height of the region to capture, in pixels.</param>
         /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
-        /// <exception cref="ArgumentException">Width or height is not positive.</exception>
-        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        /// <param name="result">The recognized text as positioned lines and words, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason recognition failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if width/height are not positive, or no matching OCR language pack is installed. Never throws.</returns>
         [Category("OCR - Structured Results")]
-        [Description("Captures a screen region and returns its recognized text as positioned lines and words.")]
-        public OcrResult GetStructuredTextFromRegion(int left, int top, int width, int height, string languageTag = null)
+        [Description("Captures a screen region and returns its recognized text as positioned lines and words. Returns True on success; never throws.")]
+        public bool GetStructuredTextFromRegion(int left, int top, int width, int height, out OcrResult result, out string message, string languageTag = null)
         {
-            using (Bitmap bitmap = CaptureRegionToBitmap(left, top, width, height))
+            result = null;
+            if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bitmap, out message))
+                return false;
+
+            using (bitmap)
             {
-                return RecognizeText(bitmap, languageTag, left, top);
+                return TryRecognizeText(bitmap, languageTag, out result, out message, left, top);
             }
         }
 
@@ -132,34 +153,44 @@ namespace OcrAutomation
         /// Searches a screen region for text matching <paramref name="searchText"/> (a
         /// case-insensitive substring match — e.g. searching for "OK" also matches inside
         /// "BOOK" — a line match is preferred; falls back to a single-word match) and
-        /// returns its bounding rectangle in screen coordinates, or
-        /// <see cref="Rectangle.Empty"/> if not found (not found is a normal, checkable
-        /// outcome, not an error).
+        /// returns its bounding rectangle in screen coordinates via <paramref name="location"/>.
         /// </summary>
         /// <param name="searchText">The text to search for (case-insensitive substring match).</param>
         /// <param name="left">The X-coordinate of the top-left corner of the region to search.</param>
         /// <param name="top">The Y-coordinate of the top-left corner of the region to search.</param>
         /// <param name="width">The width of the region to search, in pixels.</param>
         /// <param name="height">The height of the region to search, in pixels.</param>
-        /// <exception cref="ArgumentException">Width or height is not positive.</exception>
-        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        /// <param name="location">The matched text's bounding rectangle, or <see cref="Rectangle.Empty"/> if this method returns <c>false</c> (both for "not found" and for a real failure — check <paramref name="message"/> to tell them apart).</param>
+        /// <param name="message"><c>null</c> if the search completed (found or genuinely not found); otherwise a human-readable reason a real failure (bad dimensions, missing language pack) prevented the search.</param>
+        /// <returns><c>true</c> if matching text was found; <c>false</c> if it wasn't found, or if a real failure prevented the search (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("OCR - Structured Results")]
-        [Description("Searches a screen region for text and returns its bounding rectangle, or empty if not found.")]
-        public Rectangle FindTextLocation(string searchText, int left, int top, int width, int height)
+        [Description("Searches a screen region for text and returns its bounding rectangle. Returns True if found; never throws.")]
+        public bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)
         {
-            OcrResult result = GetStructuredTextFromRegion(left, top, width, height);
+            location = Rectangle.Empty;
+            if (!GetStructuredTextFromRegion(left, top, width, height, out OcrResult result, out message))
+                return false;
+
             foreach (var line in result.Lines)
             {
                 if (line.Text.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return line.Bounds;
+                {
+                    location = line.Bounds;
+                    return true;
+                }
 
                 foreach (var word in line.Words)
                 {
                     if (word.Text.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
-                        return word.Bounds;
+                    {
+                        location = word.Bounds;
+                        return true;
+                    }
                 }
             }
-            return Rectangle.Empty;
+
+            message = null;
+            return false;
         }
 
         #endregion
@@ -189,23 +220,29 @@ namespace OcrAutomation
         /// <param name="expectedText">The text to wait for (case-insensitive substring match).</param>
         /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <returns><c>true</c> if the expected text appeared before the timeout; <c>false</c> if it timed out.</returns>
-        /// <exception cref="ArgumentException">Width or height is not positive.</exception>
-        /// <exception cref="InvalidOperationException">No matching OCR language pack is installed.</exception>
+        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason a real failure (bad dimensions, missing language pack) aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the expected text appeared before the timeout; <c>false</c> if it timed out, or if a real failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("OCR - Wait for Text")]
-        [Description("Polls a screen region until it contains the expected text, or the timeout elapses.")]
-        public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs)
+        [Description("Polls a screen region until it contains the expected text, or the timeout elapses. Returns True if found in time; never throws.")]
+        public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
             int start = Environment.TickCount;
             while (true)
             {
-                string text = GetTextFromRegion(left, top, width, height);
-                if (text.IndexOf(expectedText, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return true;
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                if (!GetTextFromRegion(left, top, width, height, out string text, out message))
                     return false;
+                if (text.IndexOf(expectedText, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    message = null;
+                    return true;
+                }
+                if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                {
+                    message = null;
+                    return false;
+                }
                 Thread.Sleep(pollIntervalMs);
             }
         }
@@ -214,30 +251,42 @@ namespace OcrAutomation
 
         #region Internal Helpers
 
-        private static Bitmap CaptureRegionToBitmap(int left, int top, int width, int height)
+        private static bool TryCaptureRegionToBitmap(int left, int top, int width, int height, out Bitmap bitmap, out string message)
         {
+            bitmap = null;
             if (width <= 0 || height <= 0)
-                throw new ArgumentException("Capture width and height must both be positive.");
+            {
+                message = "Capture width and height must both be positive.";
+                return false;
+            }
 
             Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(bmp))
             {
                 g.CopyFromScreen(left, top, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
             }
-            return bmp;
+            bitmap = bmp;
+            message = null;
+            return true;
         }
 
-        private static Bitmap LoadBitmapWithoutLockingFile(string filePath)
+        private static bool TryLoadBitmapWithoutLockingFile(string filePath, out Bitmap bitmap, out string message)
         {
+            bitmap = null;
             if (!File.Exists(filePath))
-                throw new FileNotFoundException("Image file not found.", filePath);
+            {
+                message = $"Image file not found: '{filePath}'.";
+                return false;
+            }
 
             byte[] bytes = File.ReadAllBytes(filePath);
             using (MemoryStream ms = new MemoryStream(bytes))
             using (Bitmap decoded = new Bitmap(ms))
             {
-                return new Bitmap(decoded);
+                bitmap = new Bitmap(decoded);
             }
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -264,13 +313,15 @@ namespace OcrAutomation
             }
         }
 
-        /// <exception cref="InvalidOperationException">
-        /// No matching OCR language pack is installed. Install one via Windows Settings >
-        /// Time &amp; Language > Language &amp; region.
-        /// </exception>
-        private static OcrEngine GetOcrEngine(string languageTag)
+        /// <summary>
+        /// Resolves an <see cref="OcrEngine"/> for the given language tag (or the user's
+        /// profile languages), returning <c>false</c> with a message instead of throwing
+        /// when no matching OCR language pack is installed. Install one via Windows
+        /// Settings &gt; Time &amp; Language &gt; Language &amp; region.
+        /// </summary>
+        private static bool TryGetOcrEngine(string languageTag, out OcrEngine engine, out string message)
         {
-            OcrEngine engine;
+            engine = null;
             if (string.IsNullOrEmpty(languageTag))
             {
                 engine = OcrEngine.TryCreateFromUserProfileLanguages();
@@ -279,16 +330,21 @@ namespace OcrAutomation
             {
                 var language = new Language(languageTag);
                 if (!OcrEngine.IsLanguageSupported(language))
-                    throw new InvalidOperationException(
-                        $"OCR language pack for '{languageTag}' is not installed. Install it via Windows Settings > Time & Language > Language & region.");
+                {
+                    message = $"OCR language pack for '{languageTag}' is not installed. Install it via Windows Settings > Time & Language > Language & region.";
+                    return false;
+                }
                 engine = OcrEngine.TryCreateFromLanguage(language);
             }
 
             if (engine == null)
-                throw new InvalidOperationException(
-                    "No OCR language pack is installed. Install one via Windows Settings > Time & Language > Language & region.");
+            {
+                message = "No OCR language pack is installed. Install one via Windows Settings > Time & Language > Language & region.";
+                return false;
+            }
 
-            return engine;
+            message = null;
+            return true;
         }
 
         private static Rectangle ToScreenRectangle(Windows.Foundation.Rect rect, int offsetX, int offsetY)
@@ -316,14 +372,17 @@ namespace OcrAutomation
         /// bounding rectangles offset by (<paramref name="offsetX"/>, <paramref name="offsetY"/>)
         /// so region-capture results come back in screen coordinates.
         /// </summary>
-        private static OcrResult RecognizeText(Bitmap bitmap, string languageTag, int offsetX = 0, int offsetY = 0)
+        private static bool TryRecognizeText(Bitmap bitmap, string languageTag, out OcrResult result, out string message, int offsetX = 0, int offsetY = 0)
         {
-            OcrEngine engine = GetOcrEngine(languageTag);
+            result = null;
+            if (!TryGetOcrEngine(languageTag, out OcrEngine engine, out message))
+                return false;
+
             using (SoftwareBitmap softwareBitmap = BitmapToSoftwareBitmap(bitmap))
             {
                 Windows.Media.Ocr.OcrResult native = engine.RecognizeAsync(softwareBitmap).AsTask().GetAwaiter().GetResult();
 
-                var result = new OcrResult { Text = native.Text };
+                var ocrResult = new OcrResult { Text = native.Text };
                 foreach (Windows.Media.Ocr.OcrLine nativeLine in native.Lines)
                 {
                     var line = new OcrLine { Text = nativeLine.Text };
@@ -336,9 +395,11 @@ namespace OcrAutomation
                         });
                     }
                     line.Bounds = UnionBounds(line.Words);
-                    result.Lines.Add(line);
+                    ocrResult.Lines.Add(line);
                 }
-                return result;
+                result = ocrResult;
+                message = null;
+                return true;
             }
         }
 

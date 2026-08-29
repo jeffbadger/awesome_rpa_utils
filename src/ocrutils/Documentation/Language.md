@@ -6,6 +6,6 @@
 var available = ocr.GetAvailableLanguages();
 if (available.Contains("de-DE"))
 {
-    string text = ocr.GetTextFromRegion(0, 0, 800, 200, languageTag: "de-DE");
+    ocr.GetTextFromRegion(0, 0, 800, 200, out string text, out _, languageTag: "de-DE");
 }
 ```
