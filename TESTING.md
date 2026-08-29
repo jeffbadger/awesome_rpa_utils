@@ -76,18 +76,27 @@ where the method is documented to throw.
 
 ### KeyboardUtils (needs Setup: harness with a focused text field)
 
+`KeyDown`/`KeyUp`/`PressKey`/`PressKeyWithModifiers`/`PressKeyCombo`/`HoldKey`/
+`TypeText`/`PasteText` all return `bool` with an `out string message` and never
+throw — for these, replace Phase 2's "exception condition on the invalid-input
+case" with an outcome condition asserting `false` plus a non-null `message` on
+the invalid-input case (e.g. a null `text`), instead of an `Automation
+exception` condition.
+
 - `KeyDown`/`KeyUp`/`PressKey` (assert via `IsKeyDown` mid-hold, or via harness
   field echoing the key)
 - `PressKeyWithModifiers`, `PressKeyCombo` (drive Ctrl+A/Ctrl+C in the harness
   field, verify effect)
 - `HoldKey` (duration-honored — combine with a stopwatch or `IsKeyDown` polling)
 - `TypeText` (both overloads — assert harness field's resulting text; include a
-  non-BMP character, e.g. an emoji, to test the surrogate-pair path)
+  non-BMP character, e.g. an emoji, to test the surrogate-pair path; null
+  `text` → `false` + message)
 - `PasteText` (assert field content; assert clipboard is restored to its
   pre-call value afterward — this is the one most worth a dedicated case, since
   the restore logic has three branches: had text, was empty, had non-text)
 - `IsKeyDown`, `IsModifierDown`, `GetActiveModifiers` (state query — hold a key
-  via `KeyDown` in the same test, then assert)
+  via `KeyDown` in the same test, then assert; unchanged by the API review,
+  still plain `bool`/enum returns with no `message` parameter)
 
 ### MouseUtils (needs Setup: harness with a click target and a scrollable list)
 
