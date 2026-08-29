@@ -47,25 +47,25 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
 
 | Method | Description |
 |---|---|
-| `void KeyDown(VirtualKey key)` | Presses and holds a key. Pair with `KeyUp`. |
-| `void KeyUp(VirtualKey key)` | Releases a key previously pressed with `KeyDown`. |
-| `void PressKey(VirtualKey key)` | Presses and releases a key (~20 ms between down and up). |
-| `void PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers)` | Presses a key while holding modifier keys, injected as one atomic batch. |
-| `void PressKeyCombo(params VirtualKey[] keys)` | Presses all keys down in order, then releases in reverse order, as one atomic batch (e.g. Ctrl+Shift+Esc). |
-| `void HoldKey(VirtualKey key, int holdMilliseconds)` | Holds a key down for the given duration, then releases it. |
+| `bool KeyDown(VirtualKey key, out string message)` | Presses and holds a key. Pair with `KeyUp`. Returns True on success; never throws. |
+| `bool KeyUp(VirtualKey key, out string message)` | Releases a key previously pressed with `KeyDown`. Returns True on success; never throws. |
+| `bool PressKey(VirtualKey key, out string message)` | Presses and releases a key (~20 ms between down and up). Returns True on success; never throws. |
+| `bool PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers, out string message)` | Presses a key while holding modifier keys, injected as one atomic batch. Returns True on success; never throws. |
+| `bool PressKeyCombo(out string message, params VirtualKey[] keys)` | Presses all keys down in order, then releases in reverse order, as one atomic batch (e.g. Ctrl+Shift+Esc). Returns True on success; never throws. |
+| `bool HoldKey(VirtualKey key, int holdMilliseconds, out string message)` | Holds a key down for the given duration, then releases it. Returns True on success; never throws. |
 
 ### Text Typing
 
 | Method | Description |
 |---|---|
-| `void TypeText(string text)` | Types a string via `KEYEVENTF_UNICODE` (default ~10 ms/character). |
-| `void TypeText(string text, int delayMilliseconds)` | Types a string with a custom per-character delay; handles surrogate pairs for non-BMP characters (e.g. emoji). |
+| `bool TypeText(string text, out string message)` | Types a string via `KEYEVENTF_UNICODE` (default ~10 ms/character). Returns True on success; never throws. |
+| `bool TypeText(string text, int delayMilliseconds, out string message)` | Types a string with a custom per-character delay; handles surrogate pairs for non-BMP characters (e.g. emoji). Returns True on success; never throws. |
 
 ### Clipboard-Paste Fallback
 
 | Method | Description |
 |---|---|
-| `void PasteText(string text)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, then restores the original clipboard contents. |
+| `bool PasteText(string text, out string message)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, then restores the original clipboard contents. Returns True on success; never throws. |
 
 ### State Query & Modifiers
 
@@ -77,6 +77,12 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
 
 ## Notes & Caveats
 
+- **Every input-injecting method returns `bool` with an `out string message`** rather than
+  throwing — `SendInput`/clipboard failures (locked desktop, UAC/secure desktop, UIPI
+  blocking a higher-integrity target) and invalid arguments (e.g. a null `text`) are both
+  reported this way, with `message` set to a human-readable reason whenever the method
+  returns `false`. Only the State Query & Modifiers methods (never able to fail) are plain
+  `bool`/enum returns with no `message` parameter.
 - **`PressKeyWithModifiers`/`PressKeyCombo`** inject their entire sequence as a single
   `SendInput` batch, so real user input cannot interleave mid-sequence.
 - **`TypeText`** sends one `SendInput` call per UTF-16 code unit; characters outside the
