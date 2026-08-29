@@ -373,15 +373,23 @@ actually delivers events.
 
 ### ServiceUtils (needs Setup: install a small disposable test service — e.g. via `sc create ZZTestSvc binPath= ...` against a trivial do-nothing executable — never test against a real system service; Cleanup: stop and `sc delete` it)
 
-- `IsServiceInstalled` (true for the test service; false for a made-up name)
-- `IsRunning` (true after `StartService`; false after `StopService`; false for a made-up name — confirm it never throws, unlike `GetStatus`)
-- `GetStatus` (assert against the test service's actual state after each Control method call below)
-- `GetStartType` (assert against each value set via `SetStartType`, including `AutomaticDelayedStart` specifically — this is the one case with no equivalent already-proven code elsewhere in the repo, so it deserves the most scrutiny)
-- `ListServiceNames`, `FindServiceNamesByDisplayName` (assert the test service's name/display name appear; exact vs substring cases)
-- `StartService`, `StopService`, `RestartService` (happy path; timeout case against a deliberately slow-starting test service if you can construct one, or note as difficult to force and rely on hand-traced logic instead)
-- `PauseService`/`ResumeService` (only if the test service is written to support `SERVICE_ACCEPT_PAUSE_CONTINUE` — otherwise this is exception-only coverage, which is still worth a test case)
-- `WaitForServiceStatus` (found-in-time and timeout cases)
-- `SetStartType` (all six `ServiceStartType` values against the test service; specifically verify switching from `AutomaticDelayedStart` back to `Automatic` actually clears the delayed flag — check via `sc qc <name>` or the registry, not just via `GetStartType` which is implemented by the same component under test)
+- `IsServiceInstalled` (true for the test service; false + message for a made-up name — never an exception)
+- `IsRunning` (true after `StartService`; false after `StopService`; false + message for a made-up name)
+- `TryGetStatus` (true + status against the test service's actual state after each Control method call below; false + message for a made-up name)
+- `TryGetStartType` (true + value asserting against each type set via `SetStartType`, including `AutomaticDelayedStart` specifically — this is the one case with no equivalent already-proven code elsewhere in the repo, so it deserves the most scrutiny)
+- `ListServiceNames`, `FindServiceNamesByDisplayName` (assert the test service's name/display name appear; exact vs substring cases; empty filter → empty list, not every service)
+- `StartService`, `StopService`, `RestartService` (happy path; idempotent cases — `StartService` on an already-running service and `StopService` on an already-stopped one both return `true` with an "already" note in the message; `RestartService` on a stop-phase failure must skip the start phase and report that failure in the message; timeout case against a deliberately slow-starting test service if you can construct one, or note as difficult to force and rely on hand-traced logic instead)
+- `PauseService`/`ResumeService` (only if the test service is written to support `SERVICE_ACCEPT_PAUSE_CONTINUE` — then also cover the idempotent already-paused/already-running `true` cases; otherwise this is exception-path-only coverage, which is still worth a test case)
+- `WaitForServiceStatus` (found-in-time and timeout cases; negative `timeoutMs` → `false` + message immediately)
+- `SetStartType` (all six `ServiceStartType` values against the test service; specifically verify switching from `AutomaticDelayedStart` back to `Automatic` actually clears the delayed flag — check via `sc qc <name>` or the registry, not just via `TryGetStartType` which is implemented by the same component under test; an undefined cast value → `false` + message, never an exception)
+
+The null/empty-name, negative-timeout, undefined-enum, and enum-to-Win32
+mapping guards already have Linux-runnable xunit coverage in
+`src/serviceutils/ServiceUtils.Tests`
+(`dotnet test src/serviceutils/ServiceUtils.Tests/ServiceUtils.Tests.csproj` —
+unlike `UIAutomation.Tests`, this project runs on non-Windows machines because
+`ServiceController` arrives as a NuGet package rather than a `UseWPF` framework
+reference, so no WindowsDesktop runtime requirement flows into the test project).
 
 **Never point any of this component's tests at a real system service** (a database engine, a network service, anything another process depends on) — a disposable, purpose-built test service is the only safe target, unlike every other component in this repo, which only ever touches a throwaway test-harness app.
 
