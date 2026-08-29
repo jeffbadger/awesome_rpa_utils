@@ -65,7 +65,7 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
 
 | Method | Signature | Description |
 |---|---|---|
-| `PasteText` | `bool PasteText(string text, out string message)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, then restores the original clipboard contents. Returns True on success; never throws. |
+| `PasteText` | `bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, waits `postPasteDelayMilliseconds`, then restores the original clipboard contents. Returns True on success; never throws. |
 
 ### State Query & Modifiers
 
@@ -84,16 +84,28 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
   returns `false`. Only the State Query & Modifiers methods (never able to fail) are plain
   `bool`/enum returns with no `message` parameter.
 - **`PressKeyWithModifiers`/`PressKeyCombo`** inject their entire sequence as a single
-  `SendInput` batch, so real user input cannot interleave mid-sequence.
+  `SendInput` batch, so real user input cannot interleave mid-sequence. If injection
+  fails partway through a batch (e.g. it is blocked after the modifier key-downs were
+  inserted), the keys already pressed remain held down.
+- **`PressKey`/`HoldKey`** press then release; if the release fails after the press
+  succeeded, the key remains held down — pair with `KeyUp` in cleanup logic.
 - **`TypeText`** sends one `SendInput` call per UTF-16 code unit; characters outside the
   Basic Multilingual Plane (many emoji, some CJK extension characters) are sent as two
   code units (a surrogate pair), each with its own key-down/up pair.
 - **PasteText** uses raw Win32 clipboard calls directly (not System.Windows.Forms.Clipboard),
-  so it has no STA-thread requirement; OpenClipboard can transiently fail if another process
-  briefly holds the clipboard open. It also only restores the original clipboard when that
-  original was plain text or genuinely empty — if the clipboard held other content (an image,
-  files), that content can't be restored and the pasted text is left in place instead of being
-  silently cleared.
+  so it has no STA-thread requirement. `OpenClipboard` is retried every 25 ms for up to
+  ~250 ms, so a clipboard manager briefly holding the clipboard open usually does not
+  cause a failure. Restore semantics: a clipboard that was empty is restored empty and a
+  clipboard that held plain text has that text restored afterward. **Any other content
+  (an image, files) is destroyed when the paste text is set and cannot be restored** —
+  the clipboard is left holding the pasted text.
+- **Paste text briefly sits on the system clipboard**, so any process monitoring the
+  clipboard can observe it while the paste is in flight; prefer `TypeText` for sensitive
+  values.
+- **Paste delivery is asynchronous at the target's pace** — `PasteText` waits
+  `postPasteDelayMilliseconds` (default 50) after sending Ctrl+V before restoring the
+  original clipboard. If a target reads the clipboard slowly, it can race the restore
+  and receive the *original* text; raise the delay for such targets.
 - **`IsKeyDown`/`IsModifierDown`/`GetActiveModifiers`** are point-in-time polls of real
   physical key state via `GetAsyncKeyState` — they do not distinguish real user input from
   this component's own injected input.

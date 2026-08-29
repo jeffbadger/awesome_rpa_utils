@@ -12,4 +12,10 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Expose internals to the unit-test project; exclude test sources from the DLL. -->
+    <InternalsVisibleTo Include="KeyboardUtils.Tests" />
+    <Compile Remove="KeyboardUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>

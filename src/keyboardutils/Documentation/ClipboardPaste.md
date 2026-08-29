@@ -11,4 +11,30 @@ if (!keyboard.PasteText("some-value-that-typed-badly", out string message))
 }
 ```
 
-The original clipboard contents are restored automatically afterward when they were plain text (or the clipboard was empty). If the clipboard held something else, such as an image, that content can't be restored — the pasted text is left in place instead. `PasteText` never throws, including if restoring the original clipboard afterward itself fails. See the main [README](../README.md)'s Notes & Caveats section for details.
+Restore behavior depends on what the clipboard held before the paste:
+
+- **Empty** — restored empty.
+- **Plain text** — the original text is restored afterward.
+- **Anything else (an image, files)** — destroyed when the paste text is set and cannot
+  be restored; the clipboard is left holding the pasted text. If you rely on the
+  clipboard holding an image or file list, snapshot it before calling `PasteText`.
+
+`PasteText` never throws, including if restoring the original clipboard afterward itself
+fails. Two more caveats:
+
+- **Security**: the pasted text briefly sits on the system clipboard, where any process
+  monitoring the clipboard can observe it. Prefer `TypeText` for sensitive values.
+- **Pace**: paste delivery is asynchronous at the target's pace. `PasteText` waits
+  `postPasteDelayMilliseconds` (default 50 ms) after sending Ctrl+V before restoring the
+  original clipboard; if a target reads the clipboard slowly it can race the restore and
+  receive the *original* text — raise the delay for such targets:
+
+```csharp
+// Give a slow target 250 ms to fetch the clipboard before the original is restored.
+if (!keyboard.PasteText("some-value", out string message, 250))
+{
+    Console.WriteLine($"Paste failed: {message}");
+}
+```
+
+See the main [README](../README.md)'s Notes & Caveats section for details.
