@@ -22,4 +22,14 @@
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets ServiceUtils.Tests cover the internal TryToWin32StartType helper -->
+    <InternalsVisibleTo Include="ServiceUtils.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="ServiceUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>
