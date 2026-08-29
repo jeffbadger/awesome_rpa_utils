@@ -2,6 +2,10 @@
 
 Polling physical button state, double-click timing, and screen geometry.
 
+All methods here are unchanged by the API review except `SetDoubleClickTimeMs`,
+which now returns `bool` (success) with an `out string message` instead of
+throwing.
+
 ## `IsLeftButtonDown()` / `IsRightButtonDown()` / `IsMiddleButtonDown()`
 
 **Scenario:** An attended-automation script waits for the operator to finish a
@@ -13,7 +17,7 @@ while (mouse.IsLeftButtonDown())
 {
     Thread.Sleep(50); // wait for the operator to release the button
 }
-mouse.LeftClickAt(400, 300);
+mouse.LeftClickAt(400, 300, out _);
 ```
 
 ## `GetDoubleClickTimeMs()`
@@ -35,14 +39,14 @@ for the duration of its run, then restores the original value.
 
 ```csharp
 int originalMs = mouse.GetDoubleClickTimeMs();
-mouse.SetDoubleClickTimeMs(800); // widen so synthetic double-clicks register
+mouse.SetDoubleClickTimeMs(800, out _); // widen so synthetic double-clicks register
 try
 {
-    mouse.DoubleClickAt(500, 400);
+    mouse.DoubleClickAt(500, 400, out _);
 }
 finally
 {
-    mouse.SetDoubleClickTimeMs(originalMs);
+    mouse.SetDoubleClickTimeMs(originalMs, out _);
 }
 ```
 
@@ -67,7 +71,7 @@ reads the real virtual-screen bounds instead of assuming (0,0).
 ```csharp
 mouse.GetVirtualScreenBounds(out int left, out int top, out int width, out int height);
 int farLeftEdge = left; // e.g. -1920 on this workstation, not 0
-mouse.MoveTo(farLeftEdge + 10, top + 10);
+mouse.MoveTo(farLeftEdge + 10, top + 10, out _);
 ```
 
 ## `IsPointOnScreen(int x, int y)`
@@ -82,7 +86,7 @@ int targetX = 2450, targetY = 300;
 if (!mouse.IsPointOnScreen(targetX, targetY))
     throw new InvalidOperationException($"OCR target ({targetX},{targetY}) is off-screen.");
 
-mouse.ClickAt(targetX, targetY, MouseButton.Left);
+mouse.ClickAt(targetX, targetY, MouseButton.Left, out _);
 ```
 
 ## `ClampToScreenX(int x)` / `ClampToScreenY(int y)`
@@ -94,5 +98,5 @@ keeps the automation from throwing on a harmless off-by-a-few-pixels case.
 ```csharp
 int safeX = mouse.ClampToScreenX(iconX + 20);
 int safeY = mouse.ClampToScreenY(iconY);
-mouse.ClickAt(safeX, safeY, MouseButton.Left);
+mouse.ClickAt(safeX, safeY, MouseButton.Left, out _);
 ```

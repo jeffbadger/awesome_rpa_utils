@@ -18,6 +18,6 @@ if (location != System.Drawing.Rectangle.Empty)
 {
     int centerX = location.X + location.Width / 2;
     int centerY = location.Y + location.Height / 2;
-    mouse.ClickAt(centerX, centerY, MouseButton.Left);
+    mouse.ClickAt(centerX, centerY, MouseButton.Left, out _);
 }
 ```

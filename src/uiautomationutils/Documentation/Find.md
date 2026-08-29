@@ -32,5 +32,7 @@ List<AutomationElement> checkboxes = uia.FindAllByControlType(settingsWindow, Ui
 ## Get the element under the mouse cursor
 
 ```csharp
-AutomationElement hovered = uia.FromPoint(mouse.GetX(), mouse.GetY());
+mouse.GetX(out int x, out _);
+mouse.GetY(out int y, out _);
+AutomationElement hovered = uia.FromPoint(x, y);
 ```

@@ -100,6 +100,17 @@ exception` condition.
 
 ### MouseUtils (needs Setup: harness with a click target and a scrollable list)
 
+Nearly every method here (all except `HideCursor`/`ShowCursor`/`IsCursorVisible`,
+the button-state/screen-geometry queries, `UnblockUserInput`, `GetWindowAtPoint`,
+and `IsProcessDpiAware`) returns `bool` with an `out string message` and never
+throws — for these, replace Phase 2's "exception condition on the invalid-input
+case" with an outcome condition asserting `false` plus a non-null `message` on
+the invalid-input case, instead of an `Automation exception` condition.
+`WaitForPixelColor`/`WaitForPixelChange`/`IsBusyCursorActive`/`WaitForIdleCursor`
+keep their original `bool` meaning (matched/idle vs. not); a Win32-failure case
+for these should assert `false` with a non-null `message`, distinct from a
+genuine timeout case (`false` with `message == null`).
+
 - `GetX`/`GetY`/`GetPosition`, `MoveTo`, `MoveBy`, `SmoothMoveTo` (assert final
   position; for `SmoothMoveTo`, just assert the destination, not the path)
 - `JiggleMouse` (assert position unchanged before/after)
@@ -112,12 +123,12 @@ exception` condition.
   selection count)
 - `ClickAndRestore` (assert cursor position unchanged after, and that the click
   still registered)
-- `ClickWithRetry` (hard to force a transient Win32 failure — cover the
-  retry-count/delay logic path superficially, note as low-value automated
+- `ClickWithRetry` (hard to force a transient input-injection failure — cover
+  the retry-count/delay logic path superficially, note as low-value automated
   coverage)
 - `DragAndDrop`, `DragAndHold`, `RubberBandSelect` (assert harness's
   drag-result / multi-select state; assert modifiers are released even when the
-  drag throws — simulate by passing an invalid coordinate)
+  drag fails — simulate by passing an invalid `MouseButton` cast)
 - `Scroll`/`ScrollUp`/`ScrollDown`/`ScrollHorizontal*` (assert harness list's
   scroll position changed)
 - `SetCursor`/`ReplaceSystemCursor`/`SetCursorFromFile`/`ResetSystemCursors`
@@ -128,7 +139,7 @@ exception` condition.
 - `ClipCursor`/`ReleaseCursorClip`/`GetCursorClip` (assert `GetCursorClip`
   reflects the rect you set, and reverts to full virtual screen after release)
 - `GetDoubleClickTimeMs`/`SetDoubleClickTimeMs` (set → get → restore original;
-  exception case for >5000ms)
+  out-of-range case → `false` + message instead of an exception)
 - `GetScreenWidth`/`GetScreenHeight` and remaining screen-info methods (sanity
   assert > 0)
 

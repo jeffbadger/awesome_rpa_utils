@@ -15,7 +15,7 @@ if (type == "Button" && uia.IsEnabled(element))
 
 ```csharp
 Rectangle bounds = uia.GetBoundingRectangle(element);
-mouse.MoveTo(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+mouse.MoveTo(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2, out _);
 ```
 
 ## Check whether a cached element reference is still good

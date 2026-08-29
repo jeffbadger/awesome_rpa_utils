@@ -2,13 +2,17 @@
 
 Vertical and horizontal scroll-wheel simulation.
 
+Every method here returns `bool` (success) with an `out string message` explaining
+why on failure — none of them throw. The examples below discard `message` via
+`out _` where the failure reason isn't needed.
+
 ## `Scroll(int wheelDelta)`
 
 **Scenario:** Scrolling a chat transcript up by a precise, non-standard amount
 to reveal a message that appeared two-thirds of a notch above the fold.
 
 ```csharp
-mouse.Scroll(80); // less than one full notch (120), fine-grained nudge up
+mouse.Scroll(80, out _); // less than one full notch (120), fine-grained nudge up
 ```
 
 ## `ScrollUp()` / `ScrollDown()`
@@ -19,7 +23,7 @@ until the target item becomes visible, checking after each notch.
 ```csharp
 while (!IsOptionVisible("Ohio"))
 {
-    mouse.ScrollDown();
+    mouse.ScrollDown(out _);
     Thread.Sleep(100);
 }
 ```
@@ -30,7 +34,7 @@ while (!IsOptionVisible("Ohio"))
 instead of looping notch-by-notch, when the automation already knows how far to go.
 
 ```csharp
-mouse.ScrollDown(25); // jump ~25 notches down the document
+mouse.ScrollDown(25, out _); // jump ~25 notches down the document
 ```
 
 ## `ScrollHorizontal(int wheelDelta)`
@@ -39,7 +43,7 @@ mouse.ScrollDown(25); // jump ~25 notches down the document
 task bar with a fixed click target, without a full horizontal wheel notch.
 
 ```csharp
-mouse.ScrollHorizontal(-40); // small nudge left
+mouse.ScrollHorizontal(-40, out _); // small nudge left
 ```
 
 ## `ScrollRight()` / `ScrollRight(int notches)` and `ScrollLeft()` / `ScrollLeft(int notches)`
@@ -49,9 +53,9 @@ scrolling right several notches to reach column AK, then back left to return
 to column A before starting the next row.
 
 ```csharp
-mouse.ScrollRight(10); // move right to reach column AK
+mouse.ScrollRight(10, out _); // move right to reach column AK
 // ... read/write cells ...
-mouse.ScrollLeft(10);  // return to column A
+mouse.ScrollLeft(10, out _);  // return to column A
 ```
 
 ## `ScrollHorizontalAt(int x, int y, int wheelDelta)`
@@ -62,5 +66,14 @@ requires the cursor to be over that control (wheel messages target whatever is
 under the cursor) rather than wherever it happened to be left.
 
 ```csharp
-mouse.ScrollHorizontalAt(x: 700, y: 480, wheelDelta: 120); // scroll the carousel under (700,480)
+mouse.ScrollHorizontalAt(x: 700, y: 480, wheelDelta: 120, out _); // scroll the carousel under (700,480)
+```
+
+## Checking why a scroll failed
+
+```csharp
+if (!mouse.ScrollDown(out string message))
+{
+    Logger.Warn($"Scroll failed: {message}");
+}
 ```
