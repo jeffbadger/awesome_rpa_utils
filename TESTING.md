@@ -66,12 +66,11 @@ where the method is documented to throw.
   `"&Yes"` should match input `"Yes"`; not-found → returns `false`, never throws)
 - `FindButtonById`, `ClickDialogButtonById` (happy path — assert `wasEnabled`;
   not-found case for an unknown ID → both return `false`, never throw)
-- `ClickDialogButtonByText` (verify dialog closes; retry path — button that
-  doesn't close the dialog should return `false` after `maxAttempts` with
-  `message` explaining why; not-found case → `false` with `message` set,
-  never throws; new `waitForEnabledMs`/`pollIntervalMs` — assert they flow
-  through to the click, e.g. a large `waitForEnabledMs` still clicks a
-  slow-enabling button)
+- `ClickDialogButtonByText` (happy path — assert `wasEnabled` and a single
+  click is sent, no retry/close verification; not-found case → `false` with
+  `message` set, never throws; `waitForEnabledMs`/`pollIntervalMs` — assert
+  they flow through to the click, e.g. a large `waitForEnabledMs` still
+  clicks a slow-enabling button)
 - `GetDialogText`, `GetControlText`, `ListDialogControls` (assert count/text/
   class/enabled state against harness's known controls)
 - `ClickButton` (assert the `bool` return matches whether the target was

@@ -88,7 +88,7 @@ namespace DialogAutomation
         /// Caveats).
         /// </param>
         /// <param name="exactMatch">
-        /// If <c>true</c> (default), requires an exact (case-insensitive) title match.
+        /// If <c>true</c>, requires an exact (case-insensitive) title match.
         /// If <c>false</c>, matches any window whose title contains
         /// <paramref name="titlePattern"/> (also case-insensitive).
         /// </param>
@@ -107,7 +107,7 @@ namespace DialogAutomation
         /// </remarks>
         [Category("Dialog - Find & Click")]
         [Description("Finds a visible top-level dialog window by its title (optionally scoped to a process ID), and reports whether DialogUtils can dismiss it via a native Button control. Returns True if found; never throws.")]
-        public bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true, int processId = 0)
+        public bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch, int processId = 0)
         {
             foreach (var hWnd in GetMatchingTopLevelWindows(titlePattern, exactMatch, processId))
             {
@@ -327,66 +327,40 @@ namespace DialogAutomation
         }
 
         /// <summary>
-        /// Finds a button by its visible text and invokes it, then verifies the dialog
-        /// actually closed and re-clicks if it didn't — up to <paramref name="maxAttempts"/>
-        /// times. Some apps' click handlers ignore the first click of a button for reasons
-        /// that aren't visible via Win32 (e.g. app-internal validation or state that isn't
-        /// reflected in <c>IsWindowEnabled</c>), so a single <c>BM_CLICK</c> can silently have
-        /// no effect even though the button was found and clicked correctly; this retries
-        /// past that instead of requiring you to detect and retry it yourself.
+        /// Finds a button by its visible text and invokes it once.
         /// </summary>
         /// <param name="hDialog">The dialog to search and click on.</param>
         /// <param name="buttonText">The button text to match.</param>
-        /// <param name="message">
-        /// <c>null</c> if this returns <c>true</c>. If this returns <c>false</c>, a
-        /// human-readable description of why: either that no button labeled
-        /// <paramref name="buttonText"/> was found, or that it was clicked
-        /// <paramref name="maxAttempts"/> time(s) but the dialog never closed.
-        /// </param>
+        /// <param name="wasEnabled"><c>true</c> if the button was enabled when the click was sent; otherwise <c>false</c>.</param>
+        /// <param name="message"><c>null</c> when the button was found; otherwise a human-readable reason it was not found.</param>
         /// <param name="exactMatch">
         /// If <c>true</c> (default), requires an exact (case-insensitive) text match.
         /// If <c>false</c>, matches any button whose text contains
         /// <paramref name="buttonText"/> (also case-insensitive) — see
         /// <see cref="FindButtonByText"/>.
         /// </param>
-        /// <param name="maxAttempts">Maximum number of click attempts (default 3).</param>
-        /// <param name="retryDelayMs">
-        /// How long to wait after each click for the dialog to close before deciding it
-        /// didn't work and re-clicking (default 300 ms).
-        /// </param>
         /// <param name="waitForEnabledMs">See <see cref="ClickButton"/>.</param>
         /// <param name="pollIntervalMs">See <see cref="ClickButton"/>.</param>
-        /// <returns><c>true</c> if the dialog closed within <paramref name="maxAttempts"/> clicks; <c>false</c> if no matching button was found, or it was still open after the last attempt. Never throws.</returns>
+        /// <returns><c>true</c> if a matching button was found and the click was sent; <c>false</c> if no matching button was found. Never throws.</returns>
         /// <remarks>
-        /// Retrying is only meaningful for a click that's expected to close
-        /// <paramref name="hDialog"/> — not for a button that intentionally keeps the dialog
-        /// open (e.g. "Apply"), which will always report <c>false</c> after using up every
-        /// attempt.
+        /// Windows does not provide a reliable signal that the target application acted
+        /// on <c>BM_CLICK</c>. Use <see cref="WaitForDialogToClose"/> separately when the
+        /// automation specifically needs to observe the original dialog handle closing.
         /// </remarks>
         [Category("Dialog - Find & Click")]
-        [Description("Finds a button by its visible text (exact or substring match) and invokes it, re-clicking (up to maxAttempts) if the dialog doesn't close. Never throws.")]
-        public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300, int waitForEnabledMs = 500, int pollIntervalMs = 25)
+        [Description("Finds a button by its visible text (exact or substring match) and invokes it once. Returns True if found and reports whether it was enabled; never throws.")]
+        public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out bool wasEnabled, out string message, bool exactMatch = true, int waitForEnabledMs = 500, int pollIntervalMs = 25)
         {
-            if (maxAttempts < 1) maxAttempts = 1;
-
-            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            wasEnabled = false;
+            if (!FindButtonByText(hDialog, out IntPtr hButton, buttonText, exactMatch))
             {
-                if (!FindButtonByText(hDialog, out IntPtr hButton, buttonText, exactMatch))
-                {
-                    message = $"Dialog has no button labeled '{buttonText}'.";
-                    return false;
-                }
-
-                ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
-                if (WaitForDialogToClose(hDialog, retryDelayMs, pollIntervalMs: 25))
-                {
-                    message = null;
-                    return true;
-                }
+                message = $"Dialog has no button labeled '{buttonText}'.";
+                return false;
             }
 
-            message = $"Button '{buttonText}' was clicked {maxAttempts} time(s) but the dialog did not close.";
-            return false;
+            wasEnabled = ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
+            message = null;
+            return true;
         }
 
         #endregion
@@ -496,10 +470,9 @@ namespace DialogAutomation
         /// <param name="flashes">Number of on/off flashes (default 3).</param>
         /// <param name="flashMs">Milliseconds each flash stays visible (default 200).</param>
         /// <param name="lineWidth">Pen width in pixels (default 3).</param>
-        /// <param name="colorRef">
-        /// RGB color for the rectangle as a 0xBBGGRR value (e.g. 0x0000FF = red).
-        /// Because the rectangle uses XOR drawing, the visible color depends on what
-        /// is under it. Default is 0x0000FF (red).
+        /// <param name="color">
+        /// Color of the rectangle. Because the rectangle uses XOR drawing, the visible
+        /// color depends on what is under it.
         /// </param>
         /// <returns><c>true</c> if the control was highlighted; <c>false</c> if <c>GetWindowRect</c>, <c>GetDC</c>, or pen creation failed (e.g. an invalid handle), or the first draw failed. Never throws.</returns>
         /// <remarks>
@@ -517,7 +490,7 @@ namespace DialogAutomation
         /// </remarks>
         [Category("Dialog - Discover & Highlight")]
         [Description("Flashes an inverting rectangle around a control to visually confirm which on-screen control a handle corresponds to. Returns True on success; never throws.")]
-        public bool HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)
+        public bool HighlightControl(IntPtr hControl, System.Drawing.Color color, int flashes = 3, int flashMs = 200, int lineWidth = 3)
         {
             if (flashes < 1) flashes = 1;
             if (flashMs < 1) flashMs = 1;
@@ -530,7 +503,8 @@ namespace DialogAutomation
             if (hdc == IntPtr.Zero)
                 return false;
 
-            IntPtr hPen = CreatePen(PS_SOLID, lineWidth, (uint)colorRef);
+            uint colorRef = (uint)(color.R | (color.G << 8) | (color.B << 16));
+            IntPtr hPen = CreatePen(PS_SOLID, lineWidth, colorRef);
             if (hPen == IntPtr.Zero)
             {
                 ReleaseDC(IntPtr.Zero, hdc);
@@ -589,15 +563,14 @@ namespace DialogAutomation
         /// </param>
         /// <param name="exactMatch">
         /// If <c>true</c>, requires an exact (case-insensitive) title match. If <c>false</c>
-        /// (default), matches any window whose title contains <paramref name="titlePattern"/>
-        /// (also case-insensitive). Note this default differs from <see cref="FindDialog"/>'s
-        /// (<c>true</c>) — pass it explicitly if you need the same matching as
-        /// <see cref="FindDialog"/>.
+        /// matches any window whose title contains <paramref name="titlePattern"/>
+        /// (also case-insensitive). This value is required so the matching behavior is
+        /// explicit at every call site.
         /// </param>
         /// <returns><c>true</c> if a matching dialog was found before the timeout.</returns>
         [Category("Dialog - Wait for Dialog")]
         [Description("Polls for a visible top-level dialog matching a title pattern (exact or substring, optionally scoped to a process ID) until it appears or the timeout elapses.")]
-        public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, int processId = 0, bool exactMatch = false)
+        public bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, bool exactMatch, int processId = 0)
         {
             if (pollIntervalMs < 1) pollIntervalMs = 1;
 
