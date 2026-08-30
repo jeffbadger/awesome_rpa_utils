@@ -69,8 +69,8 @@ namespace ServiceAutomation
         /// Returns <c>true</c> if a service with the given name is installed. Never throws.
         /// </summary>
         /// <param name="serviceName">The service name (not display name) to check.</param>
-        /// <param name="message"><c>null</c> or an "already installed" style note when the check succeeded;
-        /// otherwise a human-readable reason the check failed (invalid name, or the SCM couldn't be queried).</param>
+        /// <param name="message"><c>null</c> when the service is installed; otherwise a human-readable reason it
+        /// isn't - the "not installed" answer, an invalid name, or an SCM query failure.</param>
         /// <returns><c>true</c> if the service is installed; <c>false</c> if it isn't, the name is null/empty,
         /// or the Service Control Manager couldn't be queried. Never throws.</returns>
         [Category("Service - Query")]
@@ -102,7 +102,7 @@ namespace ServiceAutomation
         [Description("Returns True if a service with the given name is installed and currently running. Never throws.")]
         public bool IsRunning(string serviceName, out string message)
         {
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -126,7 +126,7 @@ namespace ServiceAutomation
         public bool TryGetStatus(string serviceName, out ServiceControllerStatus status, out string message)
         {
             status = ServiceControllerStatus.Stopped;
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -146,6 +146,14 @@ namespace ServiceAutomation
                 message = DescribeServiceException(ex, serviceName, "Reading the service status");
                 return false;
             }
+            catch (Win32Exception ex)
+            {
+                // sc.Status is documented to throw Win32Exception (e.g. access denied
+                // querying a protected service) - surfaces as false + message instead
+                // of an exception (never-throws contract).
+                message = $"Reading the service status failed for service '{serviceName}': {ex.Message}";
+                return false;
+            }
         }
 
         /// <summary>Gets a service's configured startup type. Never throws.</summary>
@@ -159,7 +167,7 @@ namespace ServiceAutomation
         public bool TryGetStartType(string serviceName, out ServiceStartType startType, out string message)
         {
             startType = ServiceStartType.Manual;
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -173,11 +181,16 @@ namespace ServiceAutomation
                     mode = sc.StartType;
                 }
 
-                if (mode == ServiceStartMode.Automatic && IsDelayedAutoStart(serviceName))
+                if (mode == ServiceStartMode.Automatic)
                 {
-                    startType = ServiceStartType.AutomaticDelayedStart;
-                    message = null;
-                    return true;
+                    if (!TryGetDelayedAutoStart(serviceName, out bool delayed, out message))
+                        return false;
+                    if (delayed)
+                    {
+                        startType = ServiceStartType.AutomaticDelayedStart;
+                        message = null;
+                        return true;
+                    }
                 }
 
                 switch (mode)
@@ -248,7 +261,7 @@ namespace ServiceAutomation
         public List<string> FindServiceNamesByDisplayName(string displayName, bool exactMatch = true)
         {
             var results = new List<string>();
-            if (StringOrEmpty(displayName))
+            if (IsNullOrEmpty(displayName))
                 return results; // a null/empty filter matches nothing - not every service
 
             try
@@ -292,7 +305,7 @@ namespace ServiceAutomation
         [Description("Starts a service and waits for it to reach Running. Idempotent; returns False with a message (not an exception) on failure or timeout.")]
         public bool StartService(string serviceName, int timeoutMs, out string message)
         {
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -339,7 +352,7 @@ namespace ServiceAutomation
         [Description("Stops a service and waits for it to reach Stopped. Idempotent; returns False with a message (not an exception) on failure or timeout.")]
         public bool StopService(string serviceName, int timeoutMs, out string message)
         {
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -387,7 +400,7 @@ namespace ServiceAutomation
         [Description("Stops then starts a service, skipping the start phase if the stop phase fails. Each phase gets its own timeoutMs budget. Never throws.")]
         public bool RestartService(string serviceName, int timeoutMs, out string message)
         {
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -441,7 +454,7 @@ namespace ServiceAutomation
         [Description("Pauses a running service. Idempotent; returns False with a message (not an exception) on failure.")]
         public bool PauseService(string serviceName, out string message)
         {
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -489,7 +502,7 @@ namespace ServiceAutomation
         [Description("Resumes a paused service. Idempotent; returns False with a message (not an exception) on failure.")]
         public bool ResumeService(string serviceName, out string message)
         {
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -538,7 +551,7 @@ namespace ServiceAutomation
         [Description("Polls for a service to reach the given status until it does, or the timeout elapses. Returns False with a message (not an exception) on timeout.")]
         public bool WaitForServiceStatus(string serviceName, ServiceControllerStatus expectedStatus, int timeoutMs, out string message)
         {
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -559,6 +572,13 @@ namespace ServiceAutomation
             catch (InvalidOperationException ex)
             {
                 message = DescribeServiceException(ex, serviceName, "Waiting for the service status");
+                return false;
+            }
+            catch (Win32Exception ex)
+            {
+                // WaitForStatus polls via Refresh()/Status internally, both of which can
+                // throw Win32Exception - surfaces as false + message (never-throws contract).
+                message = $"Waiting for the service status failed for service '{serviceName}': {ex.Message}";
                 return false;
             }
         }
@@ -584,7 +604,7 @@ namespace ServiceAutomation
         [Description("Sets a service's startup type, including delayed-auto-start. Returns False with a message (not an exception) on failure.")]
         public bool SetStartType(string serviceName, ServiceStartType startType, out string message)
         {
-            if (StringOrEmpty(serviceName))
+            if (IsNullOrEmpty(serviceName))
             {
                 message = "A service name is required.";
                 return false;
@@ -702,7 +722,7 @@ namespace ServiceAutomation
         private static extern bool ChangeServiceConfig2(IntPtr hService, uint dwInfoLevel, ref SERVICE_DELAYED_AUTO_START_INFO lpInfo);
 
         /// <summary>True for the null/empty input shapes every guard in this class rejects.</summary>
-        private static bool StringOrEmpty(string value)
+        private static bool IsNullOrEmpty(string value)
         {
             return string.IsNullOrEmpty(value);
         }
@@ -809,18 +829,29 @@ namespace ServiceAutomation
             return $"{operation} failed for service '{serviceName}': {ex.Message}";
         }
 
-        /// <summary>Reads the delayed-auto-start flag for a service via QueryServiceConfig2. Assumes the caller already confirmed the service exists.</summary>
-        private static bool IsDelayedAutoStart(string serviceName)
+        /// <summary>
+        /// Reads the delayed-auto-start flag for a service via QueryServiceConfig2. Assumes the
+        /// caller already confirmed the service exists. Never throws - a failed query reports
+        /// false with a message, matching the rest of this component.
+        /// </summary>
+        private static bool TryGetDelayedAutoStart(string serviceName, out bool delayed, out string message)
         {
+            delayed = false;
             IntPtr hScm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
             if (hScm == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenSCManager failed.");
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), "OpenSCManager failed.").Message;
+                return false;
+            }
 
             try
             {
                 IntPtr hService = OpenService(hScm, serviceName, SERVICE_QUERY_CONFIG);
                 if (hService == IntPtr.Zero)
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), $"OpenService failed for '{serviceName}'.");
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), $"OpenService failed for '{serviceName}'.").Message;
+                    return false;
+                }
 
                 try
                 {
@@ -829,10 +860,15 @@ namespace ServiceAutomation
                     try
                     {
                         if (!QueryServiceConfig2(hService, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, buffer, (uint)size, out _))
-                            throw new Win32Exception(Marshal.GetLastWin32Error(), "QueryServiceConfig2 failed.");
+                        {
+                            message = new Win32Exception(Marshal.GetLastWin32Error(), "QueryServiceConfig2 failed.").Message;
+                            return false;
+                        }
 
                         var info = Marshal.PtrToStructure<SERVICE_DELAYED_AUTO_START_INFO>(buffer);
-                        return info.fDelayedAutostart;
+                        delayed = info.fDelayedAutostart;
+                        message = null;
+                        return true;
                     }
                     finally
                     {
