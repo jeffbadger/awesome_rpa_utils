@@ -180,15 +180,26 @@ namespace WindowAutomation
         [Description("Gets the screen-space bounding rectangle of a window. Returns True on success; never throws.")]
         public bool GetWindowBounds(IntPtr hWnd, out System.Drawing.Rectangle bounds, out string message)
         {
-            if (!GetWindowRect(hWnd, out RECT rect))
+            bounds = default;
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.").Message;
-                bounds = default;
+                if (!GetWindowRect(hWnd, out RECT rect))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.").Message;
+                    bounds = default;
+                    return false;
+                }
+                bounds = new System.Drawing.Rectangle(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetWindowBounds", ex);
                 return false;
             }
-            bounds = new System.Drawing.Rectangle(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
-            message = null;
-            return true;
         }
 
         /// <summary>Moves and/or resizes a window to the given screen-space rectangle.</summary>
@@ -203,18 +214,28 @@ namespace WindowAutomation
         [Description("Moves and/or resizes a window to the given screen-space rectangle. Returns True on success; never throws.")]
         public bool SetWindowBounds(IntPtr hWnd, int left, int top, int width, int height, out string message)
         {
-            if (width < 0 || height < 0)
+            message = default;
+            try
             {
-                message = "width and height must be non-negative.";
+                if (width < 0 || height < 0)
+                {
+                    message = "width and height must be non-negative.";
+                    return false;
+                }
+                if (!MoveWindowNative(hWnd, left, top, width, height, true))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "MoveWindow failed.").Message;
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SetWindowBounds", ex);
                 return false;
             }
-            if (!MoveWindowNative(hWnd, left, top, width, height, true))
-            {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "MoveWindow failed.").Message;
-                return false;
-            }
-            message = null;
-            return true;
         }
 
         /// <summary>Moves a window to a new position without changing its size.</summary>
@@ -227,9 +248,19 @@ namespace WindowAutomation
         [Description("Moves a window to a new position without changing its size. Returns True on success; never throws.")]
         public bool MoveWindow(IntPtr hWnd, int left, int top, out string message)
         {
-            if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+            message = default;
+            try
+            {
+                if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+                    return false;
+                return SetWindowBounds(hWnd, left, top, bounds.Width, bounds.Height, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("MoveWindow", ex);
                 return false;
-            return SetWindowBounds(hWnd, left, top, bounds.Width, bounds.Height, out message);
+            }
         }
 
         /// <summary>Resizes a window without changing its position.</summary>
@@ -242,9 +273,19 @@ namespace WindowAutomation
         [Description("Resizes a window without changing its position. Returns True on success; never throws.")]
         public bool ResizeWindow(IntPtr hWnd, int width, int height, out string message)
         {
-            if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+            message = default;
+            try
+            {
+                if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+                    return false;
+                return SetWindowBounds(hWnd, bounds.Left, bounds.Top, width, height, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ResizeWindow", ex);
                 return false;
-            return SetWindowBounds(hWnd, bounds.Left, bounds.Top, width, height, out message);
+            }
         }
 
         /// <summary>Gets a window's title text (empty string if it has none).</summary>
@@ -323,13 +364,23 @@ namespace WindowAutomation
         [Description("Asks a window to close by posting WM_CLOSE to it. Returns True on success; never throws.")]
         public bool CloseWindow(IntPtr hWnd, out string message)
         {
-            if (!PostMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero))
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "PostMessage(WM_CLOSE) failed.").Message;
+                if (!PostMessage(hWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "PostMessage(WM_CLOSE) failed.").Message;
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CloseWindow", ex);
                 return false;
             }
-            message = null;
-            return true;
         }
 
         #endregion
@@ -348,14 +399,24 @@ namespace WindowAutomation
         [Description("Brings a window to the foreground and gives it input focus. Returns True on success; never throws.")]
         public bool ActivateWindow(IntPtr hWnd, out string message)
         {
-            if (!SetForegroundWindowNative(hWnd))
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(),
-                    "SetForegroundWindow failed. (Windows' foreground-lock rules can block activation from a background process.)").Message;
+                if (!SetForegroundWindowNative(hWnd))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(),
+                        "SetForegroundWindow failed. (Windows' foreground-lock rules can block activation from a background process.)").Message;
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ActivateWindow", ex);
                 return false;
             }
-            message = null;
-            return true;
         }
 
         /// <summary>
@@ -370,14 +431,24 @@ namespace WindowAutomation
         [Description("Makes a window always-on-top (or removes that state). Returns True on success; never throws.")]
         public bool SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop, out string message)
         {
-            IntPtr insertAfter = alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
-            if (!SetWindowPos(hWnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "SetWindowPos failed.").Message;
+                IntPtr insertAfter = alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
+                if (!SetWindowPos(hWnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "SetWindowPos failed.").Message;
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SetAlwaysOnTop", ex);
                 return false;
             }
-            message = null;
-            return true;
         }
 
         /// <summary>

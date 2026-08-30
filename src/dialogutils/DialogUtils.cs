@@ -367,26 +367,36 @@ namespace DialogAutomation
         [Description("Finds a button by its visible text (exact or substring match) and invokes it, re-clicking (up to maxAttempts) if the dialog doesn't close. Never throws.")]
         public bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300, int waitForEnabledMs = 500, int pollIntervalMs = 25)
         {
-            if (maxAttempts < 1) maxAttempts = 1;
-
-            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            message = default;
+            try
             {
-                if (!FindButtonByText(hDialog, out IntPtr hButton, buttonText, exactMatch))
+                if (maxAttempts < 1) maxAttempts = 1;
+
+                for (int attempt = 0; attempt < maxAttempts; attempt++)
                 {
-                    message = $"Dialog has no button labeled '{buttonText}'.";
-                    return false;
+                    if (!FindButtonByText(hDialog, out IntPtr hButton, buttonText, exactMatch))
+                    {
+                        message = $"Dialog has no button labeled '{buttonText}'.";
+                        return false;
+                    }
+
+                    ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
+                    if (WaitForDialogToClose(hDialog, retryDelayMs, pollIntervalMs: 25))
+                    {
+                        message = null;
+                        return true;
+                    }
                 }
 
-                ClickButton(hButton, waitForEnabledMs, pollIntervalMs);
-                if (WaitForDialogToClose(hDialog, retryDelayMs, pollIntervalMs: 25))
-                {
-                    message = null;
-                    return true;
-                }
+                message = $"Button '{buttonText}' was clicked {maxAttempts} time(s) but the dialog did not close.";
+                return false;
+
             }
-
-            message = $"Button '{buttonText}' was clicked {maxAttempts} time(s) but the dialog did not close.";
-            return false;
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickDialogButtonByText", ex);
+                return false;
+            }
         }
 
         #endregion

@@ -75,6 +75,11 @@ existing Release build or choose other output paths, use:
 Each component has its own README with the full method reference, plus a
 `Documentation/` folder with real-world usage examples organized by category:
 
+Public methods documented as never throwing follow the repository-wide
+[Never-Throws Standard](NEVER_THROWS_STANDARD.md). The current rollout and
+platform-verification status is recorded in
+[Never-Throws Implementation Record](NEVER_THROWS_IMPLEMENTATION.md).
+
 - [mouseutils/README.md](src/mouseutils/README.md) and [mouseutils/Documentation/](src/mouseutils/Documentation/README.md)
 - [screencaptureutils/README.md](src/screencaptureutils/README.md)
 - [keyboardutils/README.md](src/keyboardutils/README.md) and [keyboardutils/Documentation/](src/keyboardutils/Documentation/README.md)

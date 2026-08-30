@@ -174,9 +174,20 @@ namespace MouseAutomation
         [Description("Gets the current X coordinate of the cursor (screen pixels). Returns True on success; never throws.")]
         public bool GetX(out int x, out string message)
         {
-            bool ok = TryGetPoint(out POINT p, out message);
-            x = ok ? p.X : 0;
-            return ok;
+            x = default;
+            message = default;
+            try
+            {
+                bool ok = TryGetPoint(out POINT p, out message);
+                x = ok ? p.X : 0;
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetX", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -189,9 +200,20 @@ namespace MouseAutomation
         [Description("Gets the current Y coordinate of the cursor (screen pixels). Returns True on success; never throws.")]
         public bool GetY(out int y, out string message)
         {
-            bool ok = TryGetPoint(out POINT p, out message);
-            y = ok ? p.Y : 0;
-            return ok;
+            y = default;
+            message = default;
+            try
+            {
+                bool ok = TryGetPoint(out POINT p, out message);
+                y = ok ? p.Y : 0;
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetY", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -204,9 +226,20 @@ namespace MouseAutomation
         [Description("Gets the current cursor position as a System.Drawing.Point. Returns True on success; never throws.")]
         public bool GetPosition(out System.Drawing.Point position, out string message)
         {
-            bool ok = TryGetPoint(out POINT p, out message);
-            position = ok ? new System.Drawing.Point(p.X, p.Y) : default;
-            return ok;
+            position = default;
+            message = default;
+            try
+            {
+                bool ok = TryGetPoint(out POINT p, out message);
+                position = ok ? new System.Drawing.Point(p.X, p.Y) : default;
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetPosition", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -220,7 +253,17 @@ namespace MouseAutomation
         [Description("Instantly moves the cursor to the given screen coordinates. Returns True on success; never throws.")]
         public bool MoveTo(int x, int y, out string message)
         {
-            return TrySetCursorPos(x, y, out message);
+            message = default;
+            try
+            {
+                return TrySetCursorPos(x, y, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("MoveTo", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -234,9 +277,19 @@ namespace MouseAutomation
         [Description("Moves the cursor by the given offsets relative to its current position. Returns True on success; never throws.")]
         public bool MoveBy(int deltaX, int deltaY, out string message)
         {
-            if (!TryGetPoint(out POINT p, out message))
+            message = default;
+            try
+            {
+                if (!TryGetPoint(out POINT p, out message))
+                    return false;
+                return MoveTo(p.X + deltaX, p.Y + deltaY, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("MoveBy", ex);
                 return false;
-            return MoveTo(p.X + deltaX, p.Y + deltaY, out message);
+            }
         }
 
         /// <summary>
@@ -251,7 +304,17 @@ namespace MouseAutomation
         [Description("Smoothly moves the cursor to the target position (25 steps, 5 ms per step) to simulate human movement. Returns True on success; never throws.")]
         public bool SmoothMoveTo(int x, int y, out string message)
         {
-            return SmoothMoveTo(x, y, 25, 5, out message);
+            message = default;
+            try
+            {
+                return SmoothMoveTo(x, y, 25, 5, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SmoothMoveTo", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -268,21 +331,31 @@ namespace MouseAutomation
         [Description("Smoothly moves the cursor to the target position using the given number of steps and delay between steps. Returns True on success; never throws.")]
         public bool SmoothMoveTo(int x, int y, int steps, int delayMilliseconds, out string message)
         {
-            if (steps < 1) steps = 1;
-
-            if (!TryGetPoint(out POINT start, out message))
-                return false;
-
-            for (int i = 1; i <= steps; i++)
+            message = default;
+            try
             {
-                int nx = start.X + (int)((x - start.X) * (double)i / steps);
-                int ny = start.Y + (int)((y - start.Y) * (double)i / steps);
-                if (!MoveTo(nx, ny, out message))
+                if (steps < 1) steps = 1;
+
+                if (!TryGetPoint(out POINT start, out message))
                     return false;
-                if (delayMilliseconds > 0)
-                    Thread.Sleep(delayMilliseconds);
+
+                for (int i = 1; i <= steps; i++)
+                {
+                    int nx = start.X + (int)((x - start.X) * (double)i / steps);
+                    int ny = start.Y + (int)((y - start.Y) * (double)i / steps);
+                    if (!MoveTo(nx, ny, out message))
+                        return false;
+                    if (delayMilliseconds > 0)
+                        Thread.Sleep(delayMilliseconds);
+                }
+                return MoveTo(x, y, out message);
+
             }
-            return MoveTo(x, y, out message);
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SmoothMoveTo", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -305,21 +378,31 @@ namespace MouseAutomation
         [Description("Nudges the cursor by a tiny amount and back, to reset idle/screensaver timers without disturbing its position. Returns True on success; never throws.")]
         public bool JiggleMouse(out string message, int pixels = 1)
         {
-            if (pixels < 1) pixels = 1;
-            if (!TryGetPoint(out POINT original, out message))
-                return false;
-            if (!MoveBy(pixels, 0, out message))
-                return false;
-            if (!MoveBy(-pixels, 0, out message))
-                return false;
+            message = default;
+            try
+            {
+                if (pixels < 1) pixels = 1;
+                if (!TryGetPoint(out POINT original, out message))
+                    return false;
+                if (!MoveBy(pixels, 0, out message))
+                    return false;
+                if (!MoveBy(-pixels, 0, out message))
+                    return false;
 
-            // Edge clamp: the first nudge may not have actually moved the cursor,
-            // so the reverse nudge can leave it off the original position - put it back.
-            if (!TryGetPoint(out POINT after, out message))
+                // Edge clamp: the first nudge may not have actually moved the cursor,
+                // so the reverse nudge can leave it off the original position - put it back.
+                if (!TryGetPoint(out POINT after, out message))
+                    return false;
+                if (after.X != original.X || after.Y != original.Y)
+                    return TrySetCursorPos(original.X, original.Y, out message);
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("JiggleMouse", ex);
                 return false;
-            if (after.X != original.X || after.Y != original.Y)
-                return TrySetCursorPos(original.X, original.Y, out message);
-            return true;
+            }
         }
 
         #endregion
@@ -337,10 +420,37 @@ namespace MouseAutomation
         [Description("Clicks the given button at the current cursor position. Returns True on success; never throws.")]
         public bool Click(MouseButton button, out string message)
         {
-            if (!MouseDown(button, out message))
+            message = default;
+            try
+            {
+                if (!MouseDown(button, out message))
+                    return false;
+
+                bool primaryOk = false;
+                string primaryMessage = null;
+                string cleanupMessage = null;
+                try
+                {
+                    Thread.Sleep(20);
+                    primaryOk = true;
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    primaryMessage = NeverThrowsGuard.Failure("Click", ex);
+                }
+                finally
+                {
+                    if (!MouseUp(button, out cleanupMessage) && cleanupMessage == null)
+                        cleanupMessage = "The mouse button could not be released after the click.";
+                }
+                return CompleteCompoundOperation(primaryOk, primaryMessage, cleanupMessage, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("Click", ex);
                 return false;
-            Thread.Sleep(20);
-            return MouseUp(button, out message);
+            }
         }
 
         /// <summary>
@@ -355,10 +465,20 @@ namespace MouseAutomation
         [Description("Moves the cursor to the coordinates and clicks the given button. Returns True on success; never throws.")]
         public bool ClickAt(int x, int y, MouseButton button, out string message)
         {
-            if (!MoveTo(x, y, out message))
+            message = default;
+            try
+            {
+                if (!MoveTo(x, y, out message))
+                    return false;
+                Thread.Sleep(30);
+                return Click(button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickAt", ex);
                 return false;
-            Thread.Sleep(30);
-            return Click(button, out message);
+            }
         }
 
         /// <summary>
@@ -372,10 +492,20 @@ namespace MouseAutomation
         [Description("Double-clicks the given button at the current cursor position. Returns True on success; never throws.")]
         public bool DoubleClick(MouseButton button, out string message)
         {
-            if (!Click(button, out message))
+            message = default;
+            try
+            {
+                if (!Click(button, out message))
+                    return false;
+                Thread.Sleep(50);
+                return Click(button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("DoubleClick", ex);
                 return false;
-            Thread.Sleep(50);
-            return Click(button, out message);
+            }
         }
 
         /// <summary>
@@ -390,10 +520,20 @@ namespace MouseAutomation
         [Description("Moves the cursor to the coordinates and double-clicks the given button. Returns True on success; never throws.")]
         public bool DoubleClickAt(int x, int y, MouseButton button, out string message)
         {
-            if (!MoveTo(x, y, out message))
+            message = default;
+            try
+            {
+                if (!MoveTo(x, y, out message))
+                    return false;
+                Thread.Sleep(30);
+                return DoubleClick(button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("DoubleClickAt", ex);
                 return false;
-            Thread.Sleep(30);
-            return DoubleClick(button, out message);
+            }
         }
 
         /// <summary>
@@ -484,7 +624,17 @@ namespace MouseAutomation
         [Description("Presses and holds the given mouse button (pair with MouseUp). Returns True on success; never throws.")]
         public bool MouseDown(MouseButton button, out string message)
         {
-            return TrySendMouseButton(button, true, out message);
+            message = default;
+            try
+            {
+                return TrySendMouseButton(button, true, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("MouseDown", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -497,7 +647,17 @@ namespace MouseAutomation
         [Description("Releases the given mouse button. Returns True on success; never throws.")]
         public bool MouseUp(MouseButton button, out string message)
         {
-            return TrySendMouseButton(button, false, out message);
+            message = default;
+            try
+            {
+                return TrySendMouseButton(button, false, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("MouseUp", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -511,10 +671,37 @@ namespace MouseAutomation
         [Description("Holds the given button down for the specified time, then releases it. Returns True on success; never throws.")]
         public bool ClickAndHold(MouseButton button, int holdMilliseconds, out string message)
         {
-            if (!MouseDown(button, out message))
+            message = default;
+            try
+            {
+                if (!MouseDown(button, out message))
+                    return false;
+
+                bool primaryOk = false;
+                string primaryMessage = null;
+                string cleanupMessage = null;
+                try
+                {
+                    Thread.Sleep(Math.Max(0, holdMilliseconds));
+                    primaryOk = true;
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    primaryMessage = NeverThrowsGuard.Failure("ClickAndHold", ex);
+                }
+                finally
+                {
+                    if (!MouseUp(button, out cleanupMessage) && cleanupMessage == null)
+                        cleanupMessage = "The mouse button could not be released after the hold.";
+                }
+                return CompleteCompoundOperation(primaryOk, primaryMessage, cleanupMessage, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickAndHold", ex);
                 return false;
-            Thread.Sleep(Math.Max(0, holdMilliseconds));
-            return MouseUp(button, out message);
+            }
         }
 
         /// <summary>
@@ -538,40 +725,50 @@ namespace MouseAutomation
         [Description("Clicks a button while holding modifier keys (Control/Shift/Alt, combinable), injected as two atomic batches with a brief press duration. Returns True on success; never throws.")]
         public bool ClickWithModifiers(MouseButton button, ModifierKeys modifiers, out string message)
         {
-            // Batch 1: press the modifiers and the button down, atomically.
-            List<INPUT> downBatch = new List<INPUT>();
+            message = default;
+            try
+            {
+                // Batch 1: press the modifiers and the button down, atomically.
+                List<INPUT> downBatch = new List<INPUT>();
 
-            if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
-            if ((modifiers & ModifierKeys.Shift)   != 0) downBatch.Add(MakeKeyInput(VK_SHIFT, false));
-            if ((modifiers & ModifierKeys.Alt)     != 0) downBatch.Add(MakeKeyInput(VK_MENU, false));
+                if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
+                if ((modifiers & ModifierKeys.Shift) != 0) downBatch.Add(MakeKeyInput(VK_SHIFT, false));
+                if ((modifiers & ModifierKeys.Alt) != 0) downBatch.Add(MakeKeyInput(VK_MENU, false));
 
-            if (!TryGetButtonFlags(button, true, out uint downFlags, out int data, out message))
-                return false;
-            TryGetButtonFlags(button, false, out uint upFlags, out _, out _);
-            downBatch.Add(MakeMouseInput(downFlags, data));
+                if (!TryGetButtonFlags(button, true, out uint downFlags, out int data, out message))
+                    return false;
+                TryGetButtonFlags(button, false, out uint upFlags, out _, out _);
+                downBatch.Add(MakeMouseInput(downFlags, data));
 
-            if (!TrySendInputs(downBatch.ToArray(), out message))
-                return false;
+                if (!TrySendInputs(downBatch.ToArray(), out message))
+                    return false;
 
-            Thread.Sleep(20); // press duration - see the summary; matches Click's press cycle
+                Thread.Sleep(20); // press duration - see the summary; matches Click's press cycle
 
-            // Batch 2: release the button, then the modifiers in reverse press order.
-            List<INPUT> upBatch = new List<INPUT>
+                // Batch 2: release the button, then the modifiers in reverse press order.
+                List<INPUT> upBatch = new List<INPUT>
             {
                 MakeMouseInput(upFlags, data)
             };
-            if ((modifiers & ModifierKeys.Alt)     != 0) upBatch.Add(MakeKeyInput(VK_MENU, true));
-            if ((modifiers & ModifierKeys.Shift)   != 0) upBatch.Add(MakeKeyInput(VK_SHIFT, true));
-            if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
+                if ((modifiers & ModifierKeys.Alt) != 0) upBatch.Add(MakeKeyInput(VK_MENU, true));
+                if ((modifiers & ModifierKeys.Shift) != 0) upBatch.Add(MakeKeyInput(VK_SHIFT, true));
+                if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
 
-            bool upOk = TrySendInputs(upBatch.ToArray(), out message);
-            if (!upOk)
-            {
-                // Best-effort retry: a transient SendInput failure must not leave the
-                // modifiers or button stuck down (mirrors RubberBandSelect's finally).
-                TrySendInputs(upBatch.ToArray(), out _);
+                bool upOk = TrySendInputs(upBatch.ToArray(), out message);
+                if (!upOk)
+                {
+                    // Best-effort retry: a transient SendInput failure must not leave the
+                    // modifiers or button stuck down (mirrors RubberBandSelect's finally).
+                    TrySendInputs(upBatch.ToArray(), out _);
+                }
+                return upOk;
+
             }
-            return upOk;
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickWithModifiers", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -595,36 +792,46 @@ namespace MouseAutomation
         [Description("Clicks at the given coordinates, then immediately returns the cursor to its original position. Returns True on success; never throws.")]
         public bool ClickAndRestore(int x, int y, MouseButton button, out string message)
         {
-            if (!TryGetPoint(out POINT original, out message))
-                return false;
-
-            bool moved;
-            bool clicked = false;
-            string failureMessage = null;
-            bool restored = true;
+            message = default;
             try
             {
-                moved = MoveTo(x, y, out failureMessage);
-                if (moved)
+                if (!TryGetPoint(out POINT original, out message))
+                    return false;
+
+                bool moved;
+                bool clicked = false;
+                string failureMessage = null;
+                bool restored = true;
+                try
                 {
-                    Thread.Sleep(30);
-                    clicked = Click(button, out failureMessage);
+                    moved = MoveTo(x, y, out failureMessage);
+                    if (moved)
+                    {
+                        Thread.Sleep(30);
+                        clicked = Click(button, out failureMessage);
+                    }
                 }
-            }
-            finally
-            {
-                // Restore even when the click failed - never strand the operator's cursor.
-                restored = SetCursorPos(original.X, original.Y);
-            }
+                finally
+                {
+                    // Restore even when the click failed - never strand the operator's cursor.
+                    restored = SetCursorPos(original.X, original.Y);
+                }
 
-            if (!restored)
-            {
-                message = "The cursor could not be restored to its original position after the click attempt.";
+                if (!restored)
+                {
+                    message = "The cursor could not be restored to its original position after the click attempt.";
+                    return false;
+                }
+
+                message = clicked ? null : failureMessage;
                 return clicked;
-            }
 
-            message = clicked ? null : failureMessage;
-            return clicked;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickAndRestore", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -646,20 +853,30 @@ namespace MouseAutomation
         [Description("Clicks at the given coordinates, retrying on failure up to maxAttempts times. Returns True if any attempt succeeded; never throws.")]
         public bool ClickWithRetry(int x, int y, MouseButton button, int maxAttempts, int retryDelayMilliseconds, out string message)
         {
-            if (maxAttempts < 1) maxAttempts = 1;
-
-            message = null;
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            message = default;
+            try
             {
-                if (ClickAt(x, y, button, out message))
+                if (maxAttempts < 1) maxAttempts = 1;
+
+                message = null;
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
                 {
-                    message = null;
-                    return true;
+                    if (ClickAt(x, y, button, out message))
+                    {
+                        message = null;
+                        return true;
+                    }
+                    if (attempt < maxAttempts)
+                        Thread.Sleep(Math.Max(0, retryDelayMilliseconds));
                 }
-                if (attempt < maxAttempts)
-                    Thread.Sleep(Math.Max(0, retryDelayMilliseconds));
+                return false;
+
             }
-            return false;
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickWithRetry", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -673,11 +890,21 @@ namespace MouseAutomation
         [Description("Triple-clicks the given button at the current cursor position (select-line/paragraph gesture). Returns True on success; never throws.")]
         public bool TripleClick(MouseButton button, out string message)
         {
-            if (!Click(button, out message)) return false;
-            Thread.Sleep(50);
-            if (!Click(button, out message)) return false;
-            Thread.Sleep(50);
-            return Click(button, out message);
+            message = default;
+            try
+            {
+                if (!Click(button, out message)) return false;
+                Thread.Sleep(50);
+                if (!Click(button, out message)) return false;
+                Thread.Sleep(50);
+                return Click(button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("TripleClick", ex);
+                return false;
+            }
         }
 
         #endregion
@@ -698,7 +925,17 @@ namespace MouseAutomation
         [Description("Performs a left-button drag from the start coordinates to the end coordinates (30 steps, 10 ms per step). Returns True on success; never throws.")]
         public bool DragAndDrop(int startX, int startY, int endX, int endY, out string message)
         {
-            return DragAndDrop(startX, startY, endX, endY, 30, 10, out message);
+            message = default;
+            try
+            {
+                return DragAndDrop(startX, startY, endX, endY, 30, 10, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("DragAndDrop", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -717,13 +954,36 @@ namespace MouseAutomation
         [Description("Performs a left-button drag from the start coordinates to the end coordinates, moving smoothly in the given number of steps. Returns True on success; never throws.")]
         public bool DragAndDrop(int startX, int startY, int endX, int endY, int steps, int stepDelayMilliseconds, out string message)
         {
-            if (!MoveTo(startX, startY, out message)) return false;
-            Thread.Sleep(50);
-            if (!MouseDown(MouseButton.Left, out message)) return false;
-            Thread.Sleep(50);
-            if (!SmoothMoveTo(endX, endY, steps, stepDelayMilliseconds, out message)) return false;
-            Thread.Sleep(50);
-            return MouseUp(MouseButton.Left, out message);
+            message = default;
+            try
+            {
+                if (!MoveTo(startX, startY, out message)) return false;
+                Thread.Sleep(50);
+                if (!MouseDown(MouseButton.Left, out message)) return false;
+
+                bool primaryOk = false;
+                string primaryMessage = null;
+                string cleanupMessage = null;
+                try
+                {
+                    Thread.Sleep(50);
+                    primaryOk = SmoothMoveTo(endX, endY, steps, stepDelayMilliseconds, out primaryMessage);
+                    if (primaryOk)
+                        Thread.Sleep(50);
+                }
+                finally
+                {
+                    if (!MouseUp(MouseButton.Left, out cleanupMessage) && cleanupMessage == null)
+                        cleanupMessage = "The left mouse button could not be released after the drag.";
+                }
+                return CompleteCompoundOperation(primaryOk, primaryMessage, cleanupMessage, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("DragAndDrop", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -742,7 +1002,17 @@ namespace MouseAutomation
         [Description("Performs a left-button rubber-band drag while holding modifier keys (e.g. Ctrl-drag to add to a selection). Returns True on success; never throws.")]
         public bool RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers, out string message)
         {
-            return RubberBandSelect(startX, startY, endX, endY, modifiers, 30, 10, out message);
+            message = default;
+            try
+            {
+                return RubberBandSelect(startX, startY, endX, endY, modifiers, 30, 10, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RubberBandSelect", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -766,32 +1036,42 @@ namespace MouseAutomation
         [Description("Performs a left-button rubber-band drag while holding modifier keys, using a custom step count and delay. Returns True on success; never throws.")]
         public bool RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers, int steps, int stepDelayMilliseconds, out string message)
         {
-            List<INPUT> downBatch = new List<INPUT>();
-            if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
-            if ((modifiers & ModifierKeys.Shift)   != 0) downBatch.Add(MakeKeyInput(VK_SHIFT, false));
-            if ((modifiers & ModifierKeys.Alt)     != 0) downBatch.Add(MakeKeyInput(VK_MENU, false));
-            if (downBatch.Count > 0 && !TrySendInputs(downBatch.ToArray(), out message))
-                return false;
-
-            bool dragOk;
-            string dragMessage = null;
+            message = default;
             try
             {
-                dragOk = DragAndDrop(startX, startY, endX, endY, steps, stepDelayMilliseconds, out dragMessage);
-            }
-            finally
-            {
-                List<INPUT> upBatch = new List<INPUT>();
-                if ((modifiers & ModifierKeys.Alt)     != 0) upBatch.Add(MakeKeyInput(VK_MENU, true));
-                if ((modifiers & ModifierKeys.Shift)   != 0) upBatch.Add(MakeKeyInput(VK_SHIFT, true));
-                if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
-                // Best-effort modifier release - don't let a cleanup failure mask the
-                // primary drag outcome already captured above.
-                if (upBatch.Count > 0) TrySendInputs(upBatch.ToArray(), out _);
-            }
+                List<INPUT> downBatch = new List<INPUT>();
+                if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
+                if ((modifiers & ModifierKeys.Shift) != 0) downBatch.Add(MakeKeyInput(VK_SHIFT, false));
+                if ((modifiers & ModifierKeys.Alt) != 0) downBatch.Add(MakeKeyInput(VK_MENU, false));
+                if (downBatch.Count > 0 && !TrySendInputs(downBatch.ToArray(), out message))
+                    return false;
 
-            message = dragMessage;
-            return dragOk;
+                bool dragOk;
+                string dragMessage = null;
+                try
+                {
+                    dragOk = DragAndDrop(startX, startY, endX, endY, steps, stepDelayMilliseconds, out dragMessage);
+                }
+                finally
+                {
+                    List<INPUT> upBatch = new List<INPUT>();
+                    if ((modifiers & ModifierKeys.Alt) != 0) upBatch.Add(MakeKeyInput(VK_MENU, true));
+                    if ((modifiers & ModifierKeys.Shift) != 0) upBatch.Add(MakeKeyInput(VK_SHIFT, true));
+                    if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
+                    // Best-effort modifier release - don't let a cleanup failure mask the
+                    // primary drag outcome already captured above.
+                    if (upBatch.Count > 0) TrySendInputs(upBatch.ToArray(), out _);
+                }
+
+                message = dragMessage;
+                return dragOk;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RubberBandSelect", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -811,13 +1091,36 @@ namespace MouseAutomation
         [Description("Drags from start to end, then holds the button down at the destination before releasing (for hover-to-expand drop targets). Returns True on success; never throws.")]
         public bool DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds, out string message)
         {
-            if (!MoveTo(startX, startY, out message)) return false;
-            Thread.Sleep(50);
-            if (!MouseDown(MouseButton.Left, out message)) return false;
-            Thread.Sleep(50);
-            if (!SmoothMoveTo(endX, endY, 30, 10, out message)) return false;
-            Thread.Sleep(Math.Max(0, holdMilliseconds));
-            return MouseUp(MouseButton.Left, out message);
+            message = default;
+            try
+            {
+                if (!MoveTo(startX, startY, out message)) return false;
+                Thread.Sleep(50);
+                if (!MouseDown(MouseButton.Left, out message)) return false;
+
+                bool primaryOk = false;
+                string primaryMessage = null;
+                string cleanupMessage = null;
+                try
+                {
+                    Thread.Sleep(50);
+                    primaryOk = SmoothMoveTo(endX, endY, 30, 10, out primaryMessage);
+                    if (primaryOk)
+                        Thread.Sleep(Math.Max(0, holdMilliseconds));
+                }
+                finally
+                {
+                    if (!MouseUp(MouseButton.Left, out cleanupMessage) && cleanupMessage == null)
+                        cleanupMessage = "The left mouse button could not be released after the drag hold.";
+                }
+                return CompleteCompoundOperation(primaryOk, primaryMessage, cleanupMessage, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("DragAndHold", ex);
+                return false;
+            }
         }
 
         #endregion
@@ -834,7 +1137,17 @@ namespace MouseAutomation
         [Description("Scrolls vertically. Positive values scroll up, negative scroll down. 120 = one wheel notch. Returns True on success; never throws.")]
         public bool Scroll(int wheelDelta, out string message)
         {
-            return TrySendMouseEvent(MOUSEEVENTF_WHEEL, wheelDelta, out message);
+            message = default;
+            try
+            {
+                return TrySendMouseEvent(MOUSEEVENTF_WHEEL, wheelDelta, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("Scroll", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -885,7 +1198,17 @@ namespace MouseAutomation
         [Description("Scrolls horizontally. Positive values scroll right, negative scroll left. 120 = one notch. Returns True on success; never throws.")]
         public bool ScrollHorizontal(int wheelDelta, out string message)
         {
-            return TrySendMouseEvent(MOUSEEVENTF_HWHEEL, wheelDelta, out message);
+            message = default;
+            try
+            {
+                return TrySendMouseEvent(MOUSEEVENTF_HWHEEL, wheelDelta, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ScrollHorizontal", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -941,10 +1264,20 @@ namespace MouseAutomation
         [Description("Moves the cursor to the coordinates and scrolls horizontally there (positive = right, negative = left; 120 = one notch). Returns True on success; never throws.")]
         public bool ScrollHorizontalAt(int x, int y, int wheelDelta, out string message)
         {
-            if (!MoveTo(x, y, out message))
+            message = default;
+            try
+            {
+                if (!MoveTo(x, y, out message))
+                    return false;
+                Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
+                return ScrollHorizontal(wheelDelta, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ScrollHorizontalAt", ex);
                 return false;
-            Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
-            return ScrollHorizontal(wheelDelta, out message);
+            }
         }
 
         #endregion
@@ -971,7 +1304,17 @@ namespace MouseAutomation
         [Description("Changes the normal arrow cursor to the given system cursor (e.g. Wait while the automation runs). Call ResetSystemCursors afterwards. Returns True on success; never throws.")]
         public bool SetCursor(SystemCursorType cursor, out string message)
         {
-            return ReplaceSystemCursor(SystemCursorType.Arrow, cursor, out message);
+            message = default;
+            try
+            {
+                return ReplaceSystemCursor(SystemCursorType.Arrow, cursor, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SetCursor", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -987,13 +1330,23 @@ namespace MouseAutomation
         [Description("Replaces a specific system cursor slot with another standard system cursor. Call ResetSystemCursors afterwards. Returns True on success; never throws.")]
         public bool ReplaceSystemCursor(SystemCursorType slotToReplace, SystemCursorType newCursor, out string message)
         {
-            IntPtr hSource = LoadCursor(IntPtr.Zero, (int)newCursor); // shared system cursor - must NOT be destroyed
-            if (hSource == IntPtr.Zero)
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "LoadCursor failed for system cursor " + newCursor + ".").Message;
+                IntPtr hSource = LoadCursor(IntPtr.Zero, (int)newCursor); // shared system cursor - must NOT be destroyed
+                if (hSource == IntPtr.Zero)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "LoadCursor failed for system cursor " + newCursor + ".").Message;
+                    return false;
+                }
+                return TryApplySystemCursor(slotToReplace, hSource, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ReplaceSystemCursor", ex);
                 return false;
             }
-            return TryApplySystemCursor(slotToReplace, hSource, out message);
         }
 
         /// <summary>
@@ -1009,32 +1362,42 @@ namespace MouseAutomation
         [Description("Loads a cursor from a .cur/.ani file into the given system cursor slot (usually Arrow). Call ResetSystemCursors afterwards. Returns True on success; never throws.")]
         public bool SetCursorFromFile(SystemCursorType slotToReplace, string filePath, out string message)
         {
-            if (string.IsNullOrWhiteSpace(filePath))
-            {
-                message = "A cursor file path is required.";
-                return false;
-            }
-            if (!File.Exists(filePath))
-            {
-                message = $"Cursor file not found: '{filePath}'.";
-                return false;
-            }
-
-            IntPtr hFile = LoadCursorFromFile(filePath); // we own this handle
-            if (hFile == IntPtr.Zero)
-            {
-                message = new Win32Exception(Marshal.GetLastWin32Error(),
-                    "LoadCursorFromFile failed for '" + filePath + "'. Expected a valid .cur or .ani file.").Message;
-                return false;
-            }
-
+            message = default;
             try
             {
-                return TryApplySystemCursor(slotToReplace, hFile, out message);
+                if (string.IsNullOrWhiteSpace(filePath))
+                {
+                    message = "A cursor file path is required.";
+                    return false;
+                }
+                if (!File.Exists(filePath))
+                {
+                    message = $"Cursor file not found: '{filePath}'.";
+                    return false;
+                }
+
+                IntPtr hFile = LoadCursorFromFile(filePath); // we own this handle
+                if (hFile == IntPtr.Zero)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(),
+                        "LoadCursorFromFile failed for '" + filePath + "'. Expected a valid .cur or .ani file.").Message;
+                    return false;
+                }
+
+                try
+                {
+                    return TryApplySystemCursor(slotToReplace, hFile, out message);
+                }
+                finally
+                {
+                    DestroyCursor(hFile);
+                }
+
             }
-            finally
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                DestroyCursor(hFile);
+                message = NeverThrowsGuard.Failure("SetCursorFromFile", ex);
+                return false;
             }
         }
 
@@ -1048,13 +1411,23 @@ namespace MouseAutomation
         [Description("Restores all system cursors to the Windows defaults, undoing any SetCursor/SetCursorFromFile changes. Returns True on success; never throws.")]
         public bool ResetSystemCursors(out string message)
         {
-            if (!SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, SPIF_SENDCHANGE))
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETCURSORS) failed.").Message;
+                if (!SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, SPIF_SENDCHANGE))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETCURSORS) failed.").Message;
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ResetSystemCursors", ex);
                 return false;
             }
-            message = null;
-            return true;
         }
 
         /// <summary>
@@ -1128,20 +1501,30 @@ namespace MouseAutomation
         [Description("Confines the cursor to the given screen rectangle until ReleaseCursorClip is called. Returns True on success; never throws.")]
         public bool ClipCursor(int left, int top, int right, int bottom, out string message)
         {
-            if (right <= left || bottom <= top)
+            message = default;
+            try
             {
-                message = "Clip rectangle must be non-empty: right > left and bottom > top.";
-                return false;
-            }
+                if (right <= left || bottom <= top)
+                {
+                    message = "Clip rectangle must be non-empty: right > left and bottom > top.";
+                    return false;
+                }
 
-            RECT rc = new RECT { Left = left, Top = top, Right = right, Bottom = bottom };
-            if (!ClipCursorRect(ref rc))
+                RECT rc = new RECT { Left = left, Top = top, Right = right, Bottom = bottom };
+                if (!ClipCursorRect(ref rc))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor failed.").Message;
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor failed.").Message;
+                message = NeverThrowsGuard.Failure("ClipCursor", ex);
                 return false;
             }
-            message = null;
-            return true;
         }
 
         /// <summary>
@@ -1154,13 +1537,23 @@ namespace MouseAutomation
         [Description("Removes cursor confinement set by ClipCursor. Returns True on success; never throws.")]
         public bool ReleaseCursorClip(out string message)
         {
-            if (!ClipCursorNull(IntPtr.Zero))
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor(NULL) failed.").Message;
+                if (!ClipCursorNull(IntPtr.Zero))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor(NULL) failed.").Message;
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ReleaseCursorClip", ex);
                 return false;
             }
-            message = null;
-            return true;
         }
 
         /// <summary>
@@ -1174,15 +1567,26 @@ namespace MouseAutomation
         [Description("Gets the rectangle the cursor is currently confined to (full virtual screen when unclipped). Returns True on success; never throws.")]
         public bool GetCursorClip(out System.Drawing.Rectangle clip, out string message)
         {
-            if (!GetClipCursor(out RECT rc))
+            clip = default;
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClipCursor failed.").Message;
-                clip = default;
+                if (!GetClipCursor(out RECT rc))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClipCursor failed.").Message;
+                    clip = default;
+                    return false;
+                }
+                clip = new System.Drawing.Rectangle(rc.Left, rc.Top, rc.Right - rc.Left, rc.Bottom - rc.Top);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetCursorClip", ex);
                 return false;
             }
-            clip = new System.Drawing.Rectangle(rc.Left, rc.Top, rc.Right - rc.Left, rc.Bottom - rc.Top);
-            message = null;
-            return true;
         }
 
         #endregion
@@ -1249,19 +1653,29 @@ namespace MouseAutomation
         [Description("Sets the system double-click time in milliseconds (0 restores the 500 ms default; max 5000). Restore the previous value afterwards. Returns True on success; never throws.")]
         public bool SetDoubleClickTimeMs(int milliseconds, out string message)
         {
-            if (milliseconds < 0 || milliseconds > 5000)
+            message = default;
+            try
             {
-                message = "Double-click time must be 0 (Windows default) or 1..5000 milliseconds.";
-                return false;
-            }
+                if (milliseconds < 0 || milliseconds > 5000)
+                {
+                    message = "Double-click time must be 0 (Windows default) or 1..5000 milliseconds.";
+                    return false;
+                }
 
-            if (!SystemParametersInfo(SPI_SETDOUBLECLICKTIME, (uint)milliseconds, IntPtr.Zero, SPIF_SENDCHANGE))
+                if (!SystemParametersInfo(SPI_SETDOUBLECLICKTIME, (uint)milliseconds, IntPtr.Zero, SPIF_SENDCHANGE))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETDOUBLECLICKTIME) failed.").Message;
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETDOUBLECLICKTIME) failed.").Message;
+                message = NeverThrowsGuard.Failure("SetDoubleClickTimeMs", ex);
                 return false;
             }
-            message = null;
-            return true;
         }
 
         /// <summary>
@@ -1384,13 +1798,23 @@ namespace MouseAutomation
         [Description("Blocks all real keyboard/mouse input system-wide until UnblockUserInput (injected input still works). MUST be paired with UnblockUserInput in a Finally block. Returns True on success; never throws.")]
         public bool BlockUserInput(out string message)
         {
-            if (!BlockInputNative(true))
+            message = default;
+            try
             {
-                message = "BlockInput was refused - input is already blocked, or the desktop is secure/locked.";
+                if (!BlockInputNative(true))
+                {
+                    message = "BlockInput was refused - input is already blocked, or the desktop is secure/locked.";
+                    return false;
+                }
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("BlockUserInput", ex);
                 return false;
             }
-            message = null;
-            return true;
         }
 
         /// <summary>
@@ -1439,22 +1863,32 @@ namespace MouseAutomation
         [Description("Posts a click directly to a window handle without moving the cursor or stealing focus. Returns True on success; never throws.")]
         public bool ClickWindow(IntPtr hWnd, MouseButton button, out string message)
         {
-            if (!TryGetWindowRect(hWnd, out int left, out int top, out int width, out int height, out message))
-                return false;
-
-            // The window rect includes the non-client area (title bar, borders),
-            // but the posted message expects client coordinates - convert the
-            // window-rect center through ScreenToClient instead of using the
-            // window-relative center directly, which would land the click off
-            // target by the non-client offset.
-            POINT center = new POINT { X = left + width / 2, Y = top + height / 2 };
-            if (!ScreenToClient(hWnd, ref center))
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
+                if (!TryGetWindowRect(hWnd, out int left, out int top, out int width, out int height, out message))
+                    return false;
+
+                // The window rect includes the non-client area (title bar, borders),
+                // but the posted message expects client coordinates - convert the
+                // window-rect center through ScreenToClient instead of using the
+                // window-relative center directly, which would land the click off
+                // target by the non-client offset.
+                POINT center = new POINT { X = left + width / 2, Y = top + height / 2 };
+                if (!ScreenToClient(hWnd, ref center))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
+                    return false;
+                }
+
+                return ClickWindowAtClientPoint(hWnd, center.X, center.Y, button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickWindow", ex);
                 return false;
             }
-
-            return ClickWindowAtClientPoint(hWnd, center.X, center.Y, button, out message);
         }
 
         /// <summary>
@@ -1472,14 +1906,24 @@ namespace MouseAutomation
         [Description("Posts a click to a window at the given screen coordinates (converted to client coords). Returns True on success; never throws.")]
         public bool ClickWindowAtPoint(IntPtr hWnd, int screenX, int screenY, MouseButton button, out string message)
         {
-            POINT screenPt = new POINT { X = screenX, Y = screenY };
-            if (!ScreenToClient(hWnd, ref screenPt))
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
+                POINT screenPt = new POINT { X = screenX, Y = screenY };
+                if (!ScreenToClient(hWnd, ref screenPt))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
+                    return false;
+                }
+
+                return ClickWindowAtClientPoint(hWnd, screenPt.X, screenPt.Y, button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickWindowAtPoint", ex);
                 return false;
             }
-
-            return ClickWindowAtClientPoint(hWnd, screenPt.X, screenPt.Y, button, out message);
         }
 
         /// <summary>
@@ -1498,17 +1942,27 @@ namespace MouseAutomation
         [Description("Posts a click to a window at client-area coordinates (Spy++ style). Supports all buttons. Returns True on success; never throws.")]
         public bool ClickWindowAtClientPoint(IntPtr hWnd, int clientX, int clientY, MouseButton button, out string message)
         {
-            if (!TryGetWindowMessageParams(button, out uint downMsg, out uint upMsg, out uint wParam, out message))
+            message = default;
+            try
+            {
+                if (!TryGetWindowMessageParams(button, out uint downMsg, out uint upMsg, out uint wParam, out message))
+                    return false;
+
+                IntPtr lParam = MAKELPARAM(clientX, clientY);
+
+                if (!TryPostMessage(hWnd, downMsg, wParam, lParam, out message))
+                    return false;
+
+                Thread.Sleep(20);
+
+                return TryPostMessage(hWnd, upMsg, wParam, lParam, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickWindowAtClientPoint", ex);
                 return false;
-
-            IntPtr lParam = MAKELPARAM(clientX, clientY);
-
-            if (!TryPostMessage(hWnd, downMsg, wParam, lParam, out message))
-                return false;
-
-            Thread.Sleep(20);
-
-            return TryPostMessage(hWnd, upMsg, wParam, lParam, out message);
+            }
         }
 
         /// <summary>
@@ -1528,15 +1982,25 @@ namespace MouseAutomation
         [Description("Posts a double-click sequence (DOWN/UP/DBLCLK/UP) to a window at client coordinates. Returns True on success; never throws.")]
         public bool DoubleClickWindowAtClientPoint(IntPtr hWnd, int clientX, int clientY, out string message)
         {
-            IntPtr lParam = MAKELPARAM(clientX, clientY);
+            message = default;
+            try
+            {
+                IntPtr lParam = MAKELPARAM(clientX, clientY);
 
-            if (!TryPostMessage(hWnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam, out message)) return false;
-            Thread.Sleep(20);
-            if (!TryPostMessage(hWnd, WM_LBUTTONUP, MK_LBUTTON, lParam, out message)) return false;
-            Thread.Sleep(20);
-            if (!TryPostMessage(hWnd, WM_LBUTTONDBLCLK, MK_LBUTTON, lParam, out message)) return false;
-            Thread.Sleep(20);
-            return TryPostMessage(hWnd, WM_LBUTTONUP, MK_LBUTTON, lParam, out message);
+                if (!TryPostMessage(hWnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam, out message)) return false;
+                Thread.Sleep(20);
+                if (!TryPostMessage(hWnd, WM_LBUTTONUP, MK_LBUTTON, lParam, out message)) return false;
+                Thread.Sleep(20);
+                if (!TryPostMessage(hWnd, WM_LBUTTONDBLCLK, MK_LBUTTON, lParam, out message)) return false;
+                Thread.Sleep(20);
+                return TryPostMessage(hWnd, WM_LBUTTONUP, MK_LBUTTON, lParam, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("DoubleClickWindowAtClientPoint", ex);
+                return false;
+            }
         }
 
         // ---- Background-click helpers ----
@@ -1622,9 +2086,20 @@ namespace MouseAutomation
         [Description("Gets the screen-space bounding rectangle of a window. Returns True on success; never throws.")]
         public bool GetWindowBounds(IntPtr hWnd, out System.Drawing.Rectangle bounds, out string message)
         {
-            bool ok = TryGetWindowRect(hWnd, out int left, out int top, out int width, out int height, out message);
-            bounds = ok ? new System.Drawing.Rectangle(left, top, width, height) : default;
-            return ok;
+            bounds = default;
+            message = default;
+            try
+            {
+                bool ok = TryGetWindowRect(hWnd, out int left, out int top, out int width, out int height, out message);
+                bounds = ok ? new System.Drawing.Rectangle(left, top, width, height) : default;
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetWindowBounds", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -1641,18 +2116,30 @@ namespace MouseAutomation
         [Description("Converts a point in a window's client area to screen coordinates. Returns True on success; never throws.")]
         public bool ClientPointToScreen(IntPtr hWnd, int clientX, int clientY, out int screenX, out int screenY, out string message)
         {
-            POINT pt = new POINT { X = clientX, Y = clientY };
-            if (!ClientToScreen(hWnd, ref pt))
+            screenX = default;
+            screenY = default;
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "ClientToScreen failed.").Message;
-                screenX = 0;
-                screenY = 0;
+                POINT pt = new POINT { X = clientX, Y = clientY };
+                if (!ClientToScreen(hWnd, ref pt))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ClientToScreen failed.").Message;
+                    screenX = 0;
+                    screenY = 0;
+                    return false;
+                }
+                screenX = pt.X;
+                screenY = pt.Y;
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClientPointToScreen", ex);
                 return false;
             }
-            screenX = pt.X;
-            screenY = pt.Y;
-            message = null;
-            return true;
         }
 
         /// <summary>
@@ -1669,18 +2156,30 @@ namespace MouseAutomation
         [Description("Converts a screen coordinate to a point relative to a window's client area. Returns True on success; never throws.")]
         public bool ScreenPointToClient(IntPtr hWnd, int screenX, int screenY, out int clientX, out int clientY, out string message)
         {
-            POINT pt = new POINT { X = screenX, Y = screenY };
-            if (!ScreenToClient(hWnd, ref pt))
+            clientX = default;
+            clientY = default;
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
-                clientX = 0;
-                clientY = 0;
+                POINT pt = new POINT { X = screenX, Y = screenY };
+                if (!ScreenToClient(hWnd, ref pt))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ScreenToClient failed.").Message;
+                    clientX = 0;
+                    clientY = 0;
+                    return false;
+                }
+                clientX = pt.X;
+                clientY = pt.Y;
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ScreenPointToClient", ex);
                 return false;
             }
-            clientX = pt.X;
-            clientY = pt.Y;
-            message = null;
-            return true;
         }
 
         /// <summary>
@@ -1704,9 +2203,19 @@ namespace MouseAutomation
         [Description("Moves the real cursor to a window-relative client point and clicks there (works where PostMessage-based clicks are ignored). Returns True on success; never throws.")]
         public bool ClickAtClientPoint(IntPtr hWnd, int clientX, int clientY, MouseButton button, out string message)
         {
-            if (!ClientPointToScreen(hWnd, clientX, clientY, out int screenX, out int screenY, out message))
+            message = default;
+            try
+            {
+                if (!ClientPointToScreen(hWnd, clientX, clientY, out int screenX, out int screenY, out message))
+                    return false;
+                return ClickAt(screenX, screenY, button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ClickAtClientPoint", ex);
                 return false;
-            return ClickAt(screenX, screenY, button, out message);
+            }
         }
 
         /// <summary>
@@ -1724,37 +2233,47 @@ namespace MouseAutomation
         [Description("Clicks at a fractional position within a window's client area (e.g. 0.5, 0.9), resilient to minor resizes across machines. Returns True on success; never throws.")]
         public bool ClickAtRelativePosition(IntPtr hWnd, double xFraction, double yFraction, MouseButton button, out string message)
         {
-            if (xFraction < 0.0 || xFraction > 1.0)
+            message = default;
+            try
             {
-                message = "xFraction must be between 0.0 and 1.0.";
-                return false;
-            }
-            if (yFraction < 0.0 || yFraction > 1.0)
-            {
-                message = "yFraction must be between 0.0 and 1.0.";
-                return false;
-            }
+                if (xFraction < 0.0 || xFraction > 1.0)
+                {
+                    message = "xFraction must be between 0.0 and 1.0.";
+                    return false;
+                }
+                if (yFraction < 0.0 || yFraction > 1.0)
+                {
+                    message = "yFraction must be between 0.0 and 1.0.";
+                    return false;
+                }
 
-            // Fractions are relative to the client area, not the full window rect (which
-            // includes the title bar/borders), so (0.5, 0.5) is the client center.
-            if (!GetClientRect(hWnd, out RECT client))
+                // Fractions are relative to the client area, not the full window rect (which
+                // includes the title bar/borders), so (0.5, 0.5) is the client center.
+                if (!GetClientRect(hWnd, out RECT client))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClientRect failed.").Message;
+                    return false;
+                }
+
+                POINT pt = new POINT
+                {
+                    X = client.Left + (int)Math.Round((client.Right - client.Left) * xFraction),
+                    Y = client.Top + (int)Math.Round((client.Bottom - client.Top) * yFraction)
+                };
+                if (!ClientToScreen(hWnd, ref pt))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ClientToScreen failed.").Message;
+                    return false;
+                }
+
+                return ClickAt(pt.X, pt.Y, button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClientRect failed.").Message;
+                message = NeverThrowsGuard.Failure("ClickAtRelativePosition", ex);
                 return false;
             }
-
-            POINT pt = new POINT
-            {
-                X = client.Left + (int)Math.Round((client.Right - client.Left) * xFraction),
-                Y = client.Top + (int)Math.Round((client.Bottom - client.Top) * yFraction)
-            };
-            if (!ClientToScreen(hWnd, ref pt))
-            {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "ClientToScreen failed.").Message;
-                return false;
-            }
-
-            return ClickAt(pt.X, pt.Y, button, out message);
         }
 
         /// <summary>
@@ -1785,15 +2304,25 @@ namespace MouseAutomation
         [Description("Clicks only if the window under the point matches the expected window (or a descendant) - guards against misclicks from a shifted layout. Returns True on success; never throws.")]
         public bool SafeClickAt(int x, int y, MouseButton button, IntPtr expectedWindowHandle, out string message)
         {
-            IntPtr actual = GetWindowAtPoint(x, y);
-            if (actual != expectedWindowHandle && GetAncestor(actual, GA_ROOT) != expectedWindowHandle)
+            message = default;
+            try
             {
-                message = $"Refusing to click ({x},{y}): the window under that point (handle {actual}) " +
-                          $"is not the expected window (handle {expectedWindowHandle}) or one of its descendants.";
+                IntPtr actual = GetWindowAtPoint(x, y);
+                if (actual != expectedWindowHandle && GetAncestor(actual, GA_ROOT) != expectedWindowHandle)
+                {
+                    message = $"Refusing to click ({x},{y}): the window under that point (handle {actual}) " +
+                              $"is not the expected window (handle {expectedWindowHandle}) or one of its descendants.";
+                    return false;
+                }
+
+                return ClickAt(x, y, button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SafeClickAt", ex);
                 return false;
             }
-
-            return ClickAt(x, y, button, out message);
         }
 
         #endregion
@@ -1817,9 +2346,20 @@ namespace MouseAutomation
         [Description("Gets the cursor X in physical pixels (unaffected by DPI scaling). Returns True on success; never throws.")]
         public bool GetPhysicalCursorX(out int x, out string message)
         {
-            bool ok = TryGetPhysicalPoint(out POINT p, out message);
-            x = ok ? p.X : 0;
-            return ok;
+            x = default;
+            message = default;
+            try
+            {
+                bool ok = TryGetPhysicalPoint(out POINT p, out message);
+                x = ok ? p.X : 0;
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetPhysicalCursorX", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -1833,9 +2373,20 @@ namespace MouseAutomation
         [Description("Gets the cursor Y in physical pixels (unaffected by DPI scaling). Returns True on success; never throws.")]
         public bool GetPhysicalCursorY(out int y, out string message)
         {
-            bool ok = TryGetPhysicalPoint(out POINT p, out message);
-            y = ok ? p.Y : 0;
-            return ok;
+            y = default;
+            message = default;
+            try
+            {
+                bool ok = TryGetPhysicalPoint(out POINT p, out message);
+                y = ok ? p.Y : 0;
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetPhysicalCursorY", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -1923,69 +2474,79 @@ namespace MouseAutomation
         [Description("Flashes an inverting ring around the cursor for demos/recordings. Erases itself exactly via XOR drawing. Returns True on success; never throws.")]
         public bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)
         {
-            if (radius < 1) radius = 1;
-            if (flashes < 1) flashes = 1;
-            if (flashMs < 1) flashMs = 1;
-            if (ringWidth < 1) ringWidth = 1;
-
-            if (!TryGetPhysicalPoint(out POINT pos, out message))
-                return false;
-
-            IntPtr hdc = GetDC(IntPtr.Zero);
-            if (hdc == IntPtr.Zero)
-            {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.").Message;
-                return false;
-            }
-
-            IntPtr hPen = CreatePen(PS_SOLID, ringWidth, (uint)colorRef);
-            if (hPen == IntPtr.Zero)
-            {
-                ReleaseDC(IntPtr.Zero, hdc);
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "CreatePen failed for the highlight ring.").Message;
-                return false;
-            }
-            IntPtr hOldPen = IntPtr.Zero;
-            IntPtr hOldBrush = IntPtr.Zero;
-
+            message = default;
             try
             {
-                hOldPen = SelectObject(hdc, hPen);
-                if (hOldPen == IntPtr.Zero)
+                if (radius < 1) radius = 1;
+                if (flashes < 1) flashes = 1;
+                if (flashMs < 1) flashMs = 1;
+                if (ringWidth < 1) ringWidth = 1;
+
+                if (!TryGetPhysicalPoint(out POINT pos, out message))
+                    return false;
+
+                IntPtr hdc = GetDC(IntPtr.Zero);
+                if (hdc == IntPtr.Zero)
                 {
-                    message = new Win32Exception(Marshal.GetLastWin32Error(), "SelectObject failed for the highlight pen.").Message;
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.").Message;
                     return false;
                 }
-                hOldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-                if (hOldBrush == IntPtr.Zero)
+
+                IntPtr hPen = CreatePen(PS_SOLID, ringWidth, (uint)colorRef);
+                if (hPen == IntPtr.Zero)
                 {
-                    message = new Win32Exception(Marshal.GetLastWin32Error(), "SelectObject failed for the highlight brush.").Message;
+                    ReleaseDC(IntPtr.Zero, hdc);
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "CreatePen failed for the highlight ring.").Message;
                     return false;
                 }
-                SetROP2(hdc, R2_NOTXORPEN);
+                IntPtr hOldPen = IntPtr.Zero;
+                IntPtr hOldBrush = IntPtr.Zero;
 
-                for (int i = 0; i < flashes; i++)
+                try
                 {
-                    // Draw (visible) — XOR
-                    Ellipse(hdc, pos.X - radius, pos.Y - radius, pos.X + radius, pos.Y + radius);
-                    Thread.Sleep(flashMs);
-                    // Draw again (erases) — XOR XOR = original pixels
-                    Ellipse(hdc, pos.X - radius, pos.Y - radius, pos.X + radius, pos.Y + radius);
+                    hOldPen = SelectObject(hdc, hPen);
+                    if (hOldPen == IntPtr.Zero)
+                    {
+                        message = new Win32Exception(Marshal.GetLastWin32Error(), "SelectObject failed for the highlight pen.").Message;
+                        return false;
+                    }
+                    hOldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                    if (hOldBrush == IntPtr.Zero)
+                    {
+                        message = new Win32Exception(Marshal.GetLastWin32Error(), "SelectObject failed for the highlight brush.").Message;
+                        return false;
+                    }
+                    SetROP2(hdc, R2_NOTXORPEN);
 
-                    if (i < flashes - 1)
+                    for (int i = 0; i < flashes; i++)
+                    {
+                        // Draw (visible) — XOR
+                        Ellipse(hdc, pos.X - radius, pos.Y - radius, pos.X + radius, pos.Y + radius);
                         Thread.Sleep(flashMs);
-                }
-            }
-            finally
-            {
-                if (hOldPen != IntPtr.Zero) SelectObject(hdc, hOldPen);
-                if (hOldBrush != IntPtr.Zero) SelectObject(hdc, hOldBrush);
-                if (hdc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdc);
-                if (hPen != IntPtr.Zero) DeleteObject(hPen);
-            }
+                        // Draw again (erases) — XOR XOR = original pixels
+                        Ellipse(hdc, pos.X - radius, pos.Y - radius, pos.X + radius, pos.Y + radius);
 
-            message = null;
-            return true;
+                        if (i < flashes - 1)
+                            Thread.Sleep(flashMs);
+                    }
+                }
+                finally
+                {
+                    if (hOldPen != IntPtr.Zero) SelectObject(hdc, hOldPen);
+                    if (hOldBrush != IntPtr.Zero) SelectObject(hdc, hOldBrush);
+                    if (hdc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, hdc);
+                    if (hPen != IntPtr.Zero) DeleteObject(hPen);
+                }
+
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("FlashCursorHighlight", ex);
+                return false;
+            }
         }
 
         #endregion
@@ -2017,73 +2578,83 @@ namespace MouseAutomation
         [Description("Moves the cursor to the target along a randomized Bezier curve with ease-in-out timing (human-like). Returns True on success; never throws.")]
         public bool MoveMouseBezier(int x, int y, out string message, int durationMs = 500)
         {
-            if (durationMs < 1) durationMs = 1;
-
-            if (!TryGetPoint(out POINT start, out message))
-                return false;
-
-            Random rng = Random.Shared;
-
-            // Direction of the start→end line.
-            double dx = x - start.X;
-            double dy = y - start.Y;
-            double dist = Math.Sqrt(dx * dx + dy * dy);
-
-            if (dist < 2.0)
+            message = default;
+            try
             {
-                // Already there (or very close) — just snap.
-                return MoveTo(x, y, out message);
-            }
+                if (durationMs < 1) durationMs = 1;
 
-            // Perpendicular unit vector to the line.
-            double perpX = -dy / dist;
-            double perpY = dx / dist;
-
-            // Control points at 1/3 and 2/3 along the line, offset perpendicular.
-            double offset1 = (rng.NextDouble() * 2.0 - 1.0) * (dist * 0.3);
-            double offset2 = (rng.NextDouble() * 2.0 - 1.0) * (dist * 0.3);
-
-            double cp1x = start.X + dx / 3.0 + perpX * offset1;
-            double cp1y = start.Y + dy / 3.0 + perpY * offset1;
-            double cp2x = start.X + 2.0 * dx / 3.0 + perpX * offset2;
-            double cp2y = start.Y + 2.0 * dy / 3.0 + perpY * offset2;
-
-            int steps = Math.Max(10, durationMs / 10); // ~10 ms per step
-            int stepDelay = durationMs / steps;
-
-            for (int i = 1; i <= steps; i++)
-            {
-                // Normalize t to [0,1].
-                double t = (double)i / steps;
-
-                // Ease-in-out cubic: 3t² - 2t³ (smooth acceleration/deceleration).
-                double eased = t * t * (3.0 - 2.0 * t);
-
-                // Cubic Bezier: B(t) = (1-t)³P0 + 3(1-t)²tP1 + 3(1-t)t²P2 + t³P3
-                double u = 1.0 - eased;
-                double bx = u * u * u * start.X + 3.0 * u * u * eased * cp1x + 3.0 * u * eased * eased * cp2x + eased * eased * eased * x;
-                double by = u * u * u * start.Y + 3.0 * u * u * eased * cp1y + 3.0 * u * eased * eased * cp2y + eased * eased * eased * y;
-
-                int px = (int)Math.Round(bx);
-                int py = (int)Math.Round(by);
-
-                // Add ±1px jitter on intermediate steps for human-like noise.
-                // Skip jitter on the final step so the endpoint is exact.
-                if (i < steps)
-                {
-                    px += rng.Next(-1, 2);
-                    py += rng.Next(-1, 2);
-                }
-
-                if (!MoveTo(px, py, out message))
+                if (!TryGetPoint(out POINT start, out message))
                     return false;
 
-                if (stepDelay > 0 && i < steps)
-                    Thread.Sleep(stepDelay);
-            }
+                Random rng = Random.Shared;
 
-            // Guarantee exact endpoint.
-            return MoveTo(x, y, out message);
+                // Direction of the start→end line.
+                double dx = x - start.X;
+                double dy = y - start.Y;
+                double dist = Math.Sqrt(dx * dx + dy * dy);
+
+                if (dist < 2.0)
+                {
+                    // Already there (or very close) — just snap.
+                    return MoveTo(x, y, out message);
+                }
+
+                // Perpendicular unit vector to the line.
+                double perpX = -dy / dist;
+                double perpY = dx / dist;
+
+                // Control points at 1/3 and 2/3 along the line, offset perpendicular.
+                double offset1 = (rng.NextDouble() * 2.0 - 1.0) * (dist * 0.3);
+                double offset2 = (rng.NextDouble() * 2.0 - 1.0) * (dist * 0.3);
+
+                double cp1x = start.X + dx / 3.0 + perpX * offset1;
+                double cp1y = start.Y + dy / 3.0 + perpY * offset1;
+                double cp2x = start.X + 2.0 * dx / 3.0 + perpX * offset2;
+                double cp2y = start.Y + 2.0 * dy / 3.0 + perpY * offset2;
+
+                int steps = Math.Max(10, durationMs / 10); // ~10 ms per step
+                int stepDelay = durationMs / steps;
+
+                for (int i = 1; i <= steps; i++)
+                {
+                    // Normalize t to [0,1].
+                    double t = (double)i / steps;
+
+                    // Ease-in-out cubic: 3t² - 2t³ (smooth acceleration/deceleration).
+                    double eased = t * t * (3.0 - 2.0 * t);
+
+                    // Cubic Bezier: B(t) = (1-t)³P0 + 3(1-t)²tP1 + 3(1-t)t²P2 + t³P3
+                    double u = 1.0 - eased;
+                    double bx = u * u * u * start.X + 3.0 * u * u * eased * cp1x + 3.0 * u * eased * eased * cp2x + eased * eased * eased * x;
+                    double by = u * u * u * start.Y + 3.0 * u * u * eased * cp1y + 3.0 * u * eased * eased * cp2y + eased * eased * eased * y;
+
+                    int px = (int)Math.Round(bx);
+                    int py = (int)Math.Round(by);
+
+                    // Add ±1px jitter on intermediate steps for human-like noise.
+                    // Skip jitter on the final step so the endpoint is exact.
+                    if (i < steps)
+                    {
+                        px += rng.Next(-1, 2);
+                        py += rng.Next(-1, 2);
+                    }
+
+                    if (!MoveTo(px, py, out message))
+                        return false;
+
+                    if (stepDelay > 0 && i < steps)
+                        Thread.Sleep(stepDelay);
+                }
+
+                // Guarantee exact endpoint.
+                return MoveTo(x, y, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("MoveMouseBezier", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -2100,10 +2671,20 @@ namespace MouseAutomation
         [Description("Moves along a randomized Bezier curve to the target, then clicks - the human-like counterpart to ClickAt. Returns True on success; never throws.")]
         public bool BezierClickAt(int x, int y, MouseButton button, out string message, int durationMs = 500)
         {
-            if (!MoveMouseBezier(x, y, out message, durationMs))
+            message = default;
+            try
+            {
+                if (!MoveMouseBezier(x, y, out message, durationMs))
+                    return false;
+                Thread.Sleep(30);
+                return Click(button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("BezierClickAt", ex);
                 return false;
-            Thread.Sleep(30);
-            return Click(button, out message);
+            }
         }
 
         /// <summary>
@@ -2120,10 +2701,20 @@ namespace MouseAutomation
         [Description("Moves along a randomized Bezier curve to the target, then double-clicks. Returns True on success; never throws.")]
         public bool BezierDoubleClickAt(int x, int y, MouseButton button, out string message, int durationMs = 500)
         {
-            if (!MoveMouseBezier(x, y, out message, durationMs))
+            message = default;
+            try
+            {
+                if (!MoveMouseBezier(x, y, out message, durationMs))
+                    return false;
+                Thread.Sleep(30);
+                return DoubleClick(button, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("BezierDoubleClickAt", ex);
                 return false;
-            Thread.Sleep(30);
-            return DoubleClick(button, out message);
+            }
         }
 
         /// <summary>
@@ -2142,13 +2733,36 @@ namespace MouseAutomation
         [Description("Performs a left-button drag along a randomized Bezier curve instead of a straight line - the human-like counterpart to DragAndDrop. Returns True on success; never throws.")]
         public bool BezierDragAndDrop(int startX, int startY, int endX, int endY, out string message, int durationMs = 500)
         {
-            if (!MoveTo(startX, startY, out message)) return false;
-            Thread.Sleep(50);
-            if (!MouseDown(MouseButton.Left, out message)) return false;
-            Thread.Sleep(50);
-            if (!MoveMouseBezier(endX, endY, out message, durationMs)) return false;
-            Thread.Sleep(50);
-            return MouseUp(MouseButton.Left, out message);
+            message = default;
+            try
+            {
+                if (!MoveTo(startX, startY, out message)) return false;
+                Thread.Sleep(50);
+                if (!MouseDown(MouseButton.Left, out message)) return false;
+
+                bool primaryOk = false;
+                string primaryMessage = null;
+                string cleanupMessage = null;
+                try
+                {
+                    Thread.Sleep(50);
+                    primaryOk = MoveMouseBezier(endX, endY, out primaryMessage, durationMs);
+                    if (primaryOk)
+                        Thread.Sleep(50);
+                }
+                finally
+                {
+                    if (!MouseUp(MouseButton.Left, out cleanupMessage) && cleanupMessage == null)
+                        cleanupMessage = "The left mouse button could not be released after the Bezier drag.";
+                }
+                return CompleteCompoundOperation(primaryOk, primaryMessage, cleanupMessage, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("BezierDragAndDrop", ex);
+                return false;
+            }
         }
 
         #endregion
@@ -2177,29 +2791,40 @@ namespace MouseAutomation
         [Description("Reads the color of the screen pixel at the given coordinates, as a 0x00BBGGRR COLORREF value. Returns True on success; never throws.")]
         public bool GetPixelColor(int x, int y, out int color, out string message)
         {
-            color = 0;
-            IntPtr hdc = GetDC(IntPtr.Zero);
-            if (hdc == IntPtr.Zero)
-            {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.").Message;
-                return false;
-            }
-
+            color = default;
+            message = default;
             try
             {
-                uint colorRef = GetPixel(hdc, x, y);
-                if (colorRef == CLR_INVALID)
+                color = 0;
+                IntPtr hdc = GetDC(IntPtr.Zero);
+                if (hdc == IntPtr.Zero)
                 {
-                    message = "GetPixel failed - the coordinates may be outside every monitor's clipping region.";
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetDC(NULL) for the screen failed.").Message;
                     return false;
                 }
-                color = unchecked((int)colorRef);
-                message = null;
-                return true;
+
+                try
+                {
+                    uint colorRef = GetPixel(hdc, x, y);
+                    if (colorRef == CLR_INVALID)
+                    {
+                        message = "GetPixel failed - the coordinates may be outside every monitor's clipping region.";
+                        return false;
+                    }
+                    color = unchecked((int)colorRef);
+                    message = null;
+                    return true;
+                }
+                finally
+                {
+                    ReleaseDC(IntPtr.Zero, hdc);
+                }
+
             }
-            finally
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                ReleaseDC(IntPtr.Zero, hdc);
+                message = NeverThrowsGuard.Failure("GetPixelColor", ex);
+                return false;
             }
         }
 
@@ -2217,24 +2842,34 @@ namespace MouseAutomation
         [Description("Polls a screen pixel until it matches the expected COLORREF or the timeout elapses. Returns True if it matched in time; never throws.")]
         public bool WaitForPixelColor(int x, int y, int expectedColorRef, int timeoutMs, int pollIntervalMs, out string message)
         {
-            if (pollIntervalMs < 1) pollIntervalMs = 1;
-
-            int start = Environment.TickCount;
-            while (true)
+            message = default;
+            try
             {
-                if (!GetPixelColor(x, y, out int color, out message))
-                    return false;
-                if (color == expectedColorRef)
+                if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+                int start = Environment.TickCount;
+                while (true)
                 {
-                    message = null;
-                    return true;
+                    if (!GetPixelColor(x, y, out int color, out message))
+                        return false;
+                    if (color == expectedColorRef)
+                    {
+                        message = null;
+                        return true;
+                    }
+                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    {
+                        message = null;
+                        return false;
+                    }
+                    Thread.Sleep(pollIntervalMs);
                 }
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
-                {
-                    message = null;
-                    return false;
-                }
-                Thread.Sleep(pollIntervalMs);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForPixelColor", ex);
+                return false;
             }
         }
 
@@ -2252,27 +2887,37 @@ namespace MouseAutomation
         [Description("Polls a screen pixel until its color changes from its value at call time, or the timeout elapses. Returns True if it changed in time; never throws.")]
         public bool WaitForPixelChange(int x, int y, int timeoutMs, int pollIntervalMs, out string message)
         {
-            if (pollIntervalMs < 1) pollIntervalMs = 1;
-
-            if (!GetPixelColor(x, y, out int baseline, out message))
-                return false;
-
-            int start = Environment.TickCount;
-            while (true)
+            message = default;
+            try
             {
-                if (!GetPixelColor(x, y, out int color, out message))
+                if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+                if (!GetPixelColor(x, y, out int baseline, out message))
                     return false;
-                if (color != baseline)
+
+                int start = Environment.TickCount;
+                while (true)
                 {
-                    message = null;
-                    return true;
+                    if (!GetPixelColor(x, y, out int color, out message))
+                        return false;
+                    if (color != baseline)
+                    {
+                        message = null;
+                        return true;
+                    }
+                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    {
+                        message = null;
+                        return false;
+                    }
+                    Thread.Sleep(pollIntervalMs);
                 }
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
-                {
-                    message = null;
-                    return false;
-                }
-                Thread.Sleep(pollIntervalMs);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForPixelChange", ex);
+                return false;
             }
         }
 
@@ -2292,15 +2937,25 @@ namespace MouseAutomation
         [Description("Returns True if the current system cursor is the Wait or AppStarting busy indicator. Never throws.")]
         public bool IsBusyCursorActive(out string message)
         {
-            CURSORINFO info = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
-            if (!GetCursorInfo(out info))
+            message = default;
+            try
             {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetCursorInfo failed.").Message;
+                CURSORINFO info = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
+                if (!GetCursorInfo(out info))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetCursorInfo failed.").Message;
+                    return false;
+                }
+
+                message = null;
+                return info.hCursor == WaitCursorHandle.Value || info.hCursor == AppStartingCursorHandle.Value;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("IsBusyCursorActive", ex);
                 return false;
             }
-
-            message = null;
-            return info.hCursor == WaitCursorHandle.Value || info.hCursor == AppStartingCursorHandle.Value;
         }
 
         /// <summary>
@@ -2316,29 +2971,64 @@ namespace MouseAutomation
         [Description("Waits until the busy cursor (Wait/AppStarting) clears, or the timeout elapses. Returns True if it became idle in time; never throws.")]
         public bool WaitForIdleCursor(int timeoutMs, int pollIntervalMs, out string message)
         {
-            if (pollIntervalMs < 1) pollIntervalMs = 1;
-
-            int start = Environment.TickCount;
-            while (true)
+            message = default;
+            try
             {
-                if (!IsBusyCursorActive(out message))
+                if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+                int start = Environment.TickCount;
+                while (true)
                 {
-                    if (message != null)
-                        return false; // aborted due to a Win32 failure
-                    return true; // not busy - idle
+                    if (!IsBusyCursorActive(out message))
+                    {
+                        if (message != null)
+                            return false; // aborted due to a Win32 failure
+                        return true; // not busy - idle
+                    }
+                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    {
+                        message = null;
+                        return false;
+                    }
+                    Thread.Sleep(pollIntervalMs);
                 }
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
-                {
-                    message = null;
-                    return false;
-                }
-                Thread.Sleep(pollIntervalMs);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForIdleCursor", ex);
+                return false;
             }
         }
 
         #endregion
 
         #region Internal Helpers
+
+        private static bool CompleteCompoundOperation(
+            bool primaryOk,
+            string primaryMessage,
+            string cleanupMessage,
+            out string message)
+        {
+            if (primaryOk && string.IsNullOrEmpty(cleanupMessage))
+            {
+                message = null;
+                return true;
+            }
+
+            if (!primaryOk && !string.IsNullOrEmpty(cleanupMessage))
+            {
+                message = (string.IsNullOrEmpty(primaryMessage) ? "The operation failed." : primaryMessage) +
+                          " Cleanup also failed: " + cleanupMessage;
+                return false;
+            }
+
+            message = primaryOk
+                ? cleanupMessage
+                : (string.IsNullOrEmpty(primaryMessage) ? "The operation failed." : primaryMessage);
+            return false;
+        }
 
         private static bool TryGetPoint(out POINT p, out string message)
         {
@@ -2503,21 +3193,21 @@ namespace MouseAutomation
 
         #region Constants
 
-        private const uint INPUT_MOUSE    = 0;
+        private const uint INPUT_MOUSE = 0;
         private const uint INPUT_KEYBOARD = 1;
 
-        private const uint MOUSEEVENTF_LEFTDOWN   = 0x0002;
-        private const uint MOUSEEVENTF_LEFTUP     = 0x0004;
-        private const uint MOUSEEVENTF_RIGHTDOWN  = 0x0008;
-        private const uint MOUSEEVENTF_RIGHTUP    = 0x0010;
+        private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+        private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+        private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+        private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
         private const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
-        private const uint MOUSEEVENTF_MIDDLEUP   = 0x0040;
-        private const uint MOUSEEVENTF_XDOWN      = 0x0080;
-        private const uint MOUSEEVENTF_XUP        = 0x0100;
-        private const uint MOUSEEVENTF_WHEEL      = 0x0800;
-        private const uint MOUSEEVENTF_HWHEEL     = 0x1000;
+        private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+        private const uint MOUSEEVENTF_XDOWN = 0x0080;
+        private const uint MOUSEEVENTF_XUP = 0x0100;
+        private const uint MOUSEEVENTF_WHEEL = 0x0800;
+        private const uint MOUSEEVENTF_HWHEEL = 0x1000;
 
-        private const uint KEYEVENTF_KEYUP        = 0x0002;
+        private const uint KEYEVENTF_KEYUP = 0x0002;
 
         private const int WHEEL_DELTA = 120;
 
@@ -2531,54 +3221,54 @@ namespace MouseAutomation
         private const int VK_RBUTTON = 0x02;
         private const int VK_MBUTTON = 0x04;
 
-        private const int VK_SHIFT   = 0x10;
+        private const int VK_SHIFT = 0x10;
         private const int VK_CONTROL = 0x11;
-        private const int VK_MENU    = 0x12; // Alt
+        private const int VK_MENU = 0x12; // Alt
 
         private const int SM_CXSCREEN = 0;
         private const int SM_CYSCREEN = 1;
 
-        private const int SM_XVIRTUALSCREEN  = 76;
-        private const int SM_YVIRTUALSCREEN  = 77;
+        private const int SM_XVIRTUALSCREEN = 76;
+        private const int SM_YVIRTUALSCREEN = 77;
         private const int SM_CXVIRTUALSCREEN = 78;
         private const int SM_CYVIRTUALSCREEN = 79;
 
-        private const uint SPI_SETCURSORS         = 0x0057;
+        private const uint SPI_SETCURSORS = 0x0057;
         private const uint SPI_SETDOUBLECLICKTIME = 0x0021;
-        private const uint SPIF_SENDCHANGE        = 0x0002;
+        private const uint SPIF_SENDCHANGE = 0x0002;
 
         #endregion
 
         #region Constants - Background Clicks / DPI / Highlight
 
         // Window messages for mouse buttons.
-        private const uint WM_LBUTTONDOWN  = 0x0201;
-        private const uint WM_LBUTTONUP    = 0x0202;
+        private const uint WM_LBUTTONDOWN = 0x0201;
+        private const uint WM_LBUTTONUP = 0x0202;
         private const uint WM_LBUTTONDBLCLK = 0x0203;
-        private const uint WM_RBUTTONDOWN  = 0x0204;
-        private const uint WM_RBUTTONUP    = 0x0205;
+        private const uint WM_RBUTTONDOWN = 0x0204;
+        private const uint WM_RBUTTONUP = 0x0205;
         private const uint WM_RBUTTONDBLCLK = 0x0206;
-        private const uint WM_MBUTTONDOWN  = 0x0207;
-        private const uint WM_MBUTTONUP    = 0x0208;
+        private const uint WM_MBUTTONDOWN = 0x0207;
+        private const uint WM_MBUTTONUP = 0x0208;
         private const uint WM_MBUTTONDBLCLK = 0x0209;
-        private const uint WM_XBUTTONDOWN  = 0x020B;
-        private const uint WM_XBUTTONUP    = 0x020C;
+        private const uint WM_XBUTTONDOWN = 0x020B;
+        private const uint WM_XBUTTONUP = 0x020C;
         private const uint WM_XBUTTONDBLCLK = 0x020D;
 
         // Mouse-key state flags (wParam for posted mouse messages).
-        private const uint MK_LBUTTON  = 0x0001;
-        private const uint MK_RBUTTON  = 0x0002;
-        private const uint MK_MBUTTON   = 0x0010;
-        private const uint MK_XBUTTON1  = 0x0020;
-        private const uint MK_XBUTTON2  = 0x0040;
+        private const uint MK_LBUTTON = 0x0001;
+        private const uint MK_RBUTTON = 0x0002;
+        private const uint MK_MBUTTON = 0x0010;
+        private const uint MK_XBUTTON1 = 0x0020;
+        private const uint MK_XBUTTON2 = 0x0040;
 
         // HIWORD values for X-button messages.
         private const uint XBUTTON1_HI = 0x0001;
         private const uint XBUTTON2_HI = 0x0002;
 
         // GDI constants for the highlight ring.
-        private const int PS_SOLID    = 0;
-        private const int NULL_BRUSH  = 5;
+        private const int PS_SOLID = 0;
+        private const int NULL_BRUSH = 5;
         private const int R2_NOTXORPEN = 10; // Draw = NOT (pen XOR dest)
 
         // DPI awareness context handles (passed as IntPtr).
