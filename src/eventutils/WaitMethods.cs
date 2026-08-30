@@ -19,29 +19,77 @@ namespace EventAutomation
         /// <summary>Waits for a window-created event matching the filter.</summary>
         public bool WaitForWindowCreated(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            return WaitFor(filterJson, timeoutMs, "WindowCreated", out eventData, out timedOut, out message,
-                e => e.Category == "WindowCreated");
+            eventData = default;
+            timedOut = default;
+            message = default;
+            try
+            {
+                return WaitFor(filterJson, timeoutMs, "WindowCreated", out eventData, out timedOut, out message,
+                    e => e.Category == "WindowCreated");
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForWindowCreated", ex);
+                return false;
+            }
         }
 
         /// <summary>Waits for a window-destroyed event matching the filter.</summary>
         public bool WaitForWindowDestroyed(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            return WaitFor(filterJson, timeoutMs, "WindowDestroyed", out eventData, out timedOut, out message,
-                e => e.Category == "WindowDestroyed");
+            eventData = default;
+            timedOut = default;
+            message = default;
+            try
+            {
+                return WaitFor(filterJson, timeoutMs, "WindowDestroyed", out eventData, out timedOut, out message,
+                    e => e.Category == "WindowDestroyed");
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForWindowDestroyed", ex);
+                return false;
+            }
         }
 
         /// <summary>Waits for a window-shown event matching the filter.</summary>
         public bool WaitForWindowShown(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            return WaitFor(filterJson, timeoutMs, "WindowShown", out eventData, out timedOut, out message,
-                e => e.Category == "WindowShown");
+            eventData = default;
+            timedOut = default;
+            message = default;
+            try
+            {
+                return WaitFor(filterJson, timeoutMs, "WindowShown", out eventData, out timedOut, out message,
+                    e => e.Category == "WindowShown");
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForWindowShown", ex);
+                return false;
+            }
         }
 
         /// <summary>Waits for a foreground-change event matching the filter.</summary>
         public bool WaitForForegroundChanged(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            return WaitFor(filterJson, timeoutMs, "ForegroundChanged", out eventData, out timedOut, out message,
-                e => e.Category == "ForegroundChanged");
+            eventData = default;
+            timedOut = default;
+            message = default;
+            try
+            {
+                return WaitFor(filterJson, timeoutMs, "ForegroundChanged", out eventData, out timedOut, out message,
+                    e => e.Category == "ForegroundChanged");
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForForegroundChanged", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -52,15 +100,27 @@ namespace EventAutomation
         /// </summary>
         public bool WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            var re = TryCompileRegex(titleRegex, "titleRegex", out message);
-            if (message != null)
+            eventData = default;
+            timedOut = default;
+            message = default;
+            try
             {
-                eventData = null;
-                timedOut = false;
+                var re = TryCompileRegex(titleRegex, "titleRegex", out message);
+                if (message != null)
+                {
+                    eventData = null;
+                    timedOut = false;
+                    return false;
+                }
+                return WaitFor(filterJson, timeoutMs, "TitleChanged", out eventData, out timedOut, out message,
+                    e => e.Category == "TitleChanged" && (re == null || re.IsMatch(e.Title ?? string.Empty)));
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForTitleChanged", ex);
                 return false;
             }
-            return WaitFor(filterJson, timeoutMs, "TitleChanged", out eventData, out timedOut, out message,
-                e => e.Category == "TitleChanged" && (re == null || re.IsMatch(e.Title ?? string.Empty)));
         }
 
         /// <summary>
@@ -69,10 +129,22 @@ namespace EventAutomation
         /// </summary>
         public bool WaitForDialogAppeared(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            return WaitFor(filterJson, timeoutMs, "DialogAppeared", out eventData, out timedOut, out message,
-                e => e.Category == "DialogAppeared" || e.Category == "DialogClosed" ||
-                (string.Equals(e.ClassName, "#32770", StringComparison.OrdinalIgnoreCase) &&
-                 (e.Category == "WindowCreated" || e.Category == "WindowShown")));
+            eventData = default;
+            timedOut = default;
+            message = default;
+            try
+            {
+                return WaitFor(filterJson, timeoutMs, "DialogAppeared", out eventData, out timedOut, out message,
+                    e => e.Category == "DialogAppeared" || e.Category == "DialogClosed" ||
+                    (string.Equals(e.ClassName, "#32770", StringComparison.OrdinalIgnoreCase) &&
+                     (e.Category == "WindowCreated" || e.Category == "WindowShown")));
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForDialogAppeared", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -83,22 +155,46 @@ namespace EventAutomation
         /// </summary>
         public bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            var re = TryCompileRegex(stateRegex, "stateRegex", out message);
-            if (message != null)
+            eventData = default;
+            timedOut = default;
+            message = default;
+            try
             {
-                eventData = null;
-                timedOut = false;
+                var re = TryCompileRegex(stateRegex, "stateRegex", out message);
+                if (message != null)
+                {
+                    eventData = null;
+                    timedOut = false;
+                    return false;
+                }
+                return WaitFor(filterJson, timeoutMs, "StateChanged", out eventData, out timedOut, out message,
+                    e => e.Category == "StateChanged" && (re == null || re.IsMatch(e.State ?? string.Empty)));
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForStateChanged", ex);
                 return false;
             }
-            return WaitFor(filterJson, timeoutMs, "StateChanged", out eventData, out timedOut, out message,
-                e => e.Category == "StateChanged" && (re == null || re.IsMatch(e.State ?? string.Empty)));
         }
 
         /// <summary>Waits for a menu-opened or menu-popup-opened event matching the filter.</summary>
         public bool WaitForMenuOpened(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            return WaitFor(filterJson, timeoutMs, "MenuOpened", out eventData, out timedOut, out message,
-                e => e.Category == "MenuOpened" || e.Category == "MenuPopupOpened");
+            eventData = default;
+            timedOut = default;
+            message = default;
+            try
+            {
+                return WaitFor(filterJson, timeoutMs, "MenuOpened", out eventData, out timedOut, out message,
+                    e => e.Category == "MenuOpened" || e.Category == "MenuPopupOpened");
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForMenuOpened", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -109,15 +205,25 @@ namespace EventAutomation
         /// </summary>
         public bool CancelWaits(out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                _waiters.CancelAll();
-                return true;
+                message = null;
+                try
+                {
+                    _waiters.CancelAll();
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    message = "CancelWaits failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "CancelWaits failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("CancelWaits", ex);
                 return false;
             }
         }

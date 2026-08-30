@@ -113,16 +113,27 @@ namespace OcrAutomation
         [Description("Captures a screen region and returns its recognized text. Returns True on success; never throws.")]
         public bool GetTextFromRegion(int left, int top, int width, int height, out string text, out string message, string languageTag = null)
         {
-            text = null;
-            if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bitmap, out message))
-                return false;
-
-            using (bitmap)
+            text = default;
+            message = default;
+            try
             {
-                if (!TryRecognizeText(bitmap, languageTag, out OcrResult result, out message, left, top))
+                text = null;
+                if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bitmap, out message))
                     return false;
-                text = result.Text;
-                return true;
+
+                using (bitmap)
+                {
+                    if (!TryRecognizeText(bitmap, languageTag, out OcrResult result, out message, left, top))
+                        return false;
+                    text = result.Text;
+                    return true;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                text = NeverThrowsGuard.Failure("GetTextFromRegion", ex);
+                return false;
             }
         }
 
@@ -136,16 +147,27 @@ namespace OcrAutomation
         [Description("Loads an image file and returns its recognized text. Returns True on success; never throws.")]
         public bool GetTextFromImageFile(string filePath, out string text, out string message, string languageTag = null)
         {
-            text = null;
-            if (!TryLoadBitmapWithoutLockingFile(filePath, out Bitmap bitmap, out message))
-                return false;
-
-            using (bitmap)
+            text = default;
+            message = default;
+            try
             {
-                if (!TryRecognizeText(bitmap, languageTag, out OcrResult result, out message))
+                text = null;
+                if (!TryLoadBitmapWithoutLockingFile(filePath, out Bitmap bitmap, out message))
                     return false;
-                text = result.Text;
-                return true;
+
+                using (bitmap)
+                {
+                    if (!TryRecognizeText(bitmap, languageTag, out OcrResult result, out message))
+                        return false;
+                    text = result.Text;
+                    return true;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                text = NeverThrowsGuard.Failure("GetTextFromImageFile", ex);
+                return false;
             }
         }
 
@@ -166,13 +188,24 @@ namespace OcrAutomation
         [Description("Captures a screen region and returns its recognized text as positioned lines and words. Returns True on success; never throws.")]
         public bool GetStructuredTextFromRegion(int left, int top, int width, int height, out OcrResult result, out string message, string languageTag = null)
         {
-            result = null;
-            if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bitmap, out message))
-                return false;
-
-            using (bitmap)
+            result = default;
+            message = default;
+            try
             {
-                return TryRecognizeText(bitmap, languageTag, out result, out message, left, top);
+                result = null;
+                if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bitmap, out message))
+                    return false;
+
+                using (bitmap)
+                {
+                    return TryRecognizeText(bitmap, languageTag, out result, out message, left, top);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetStructuredTextFromRegion", ex);
+                return false;
             }
         }
 
@@ -197,35 +230,46 @@ namespace OcrAutomation
         [Description("Searches a screen region for text and returns its bounding rectangle. Returns True if found; never throws.")]
         public bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)
         {
-            location = Rectangle.Empty;
-            if (string.IsNullOrEmpty(searchText))
+            location = default;
+            message = default;
+            try
             {
-                message = "Search text must not be null or empty.";
-                return false;
-            }
-            if (!GetStructuredTextFromRegion(left, top, width, height, out OcrResult result, out message))
-                return false;
-
-            foreach (var line in result.Lines)
-            {
-                if (line.Text.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                location = Rectangle.Empty;
+                if (string.IsNullOrEmpty(searchText))
                 {
-                    location = line.Bounds;
-                    return true;
+                    message = "Search text must not be null or empty.";
+                    return false;
                 }
+                if (!GetStructuredTextFromRegion(left, top, width, height, out OcrResult result, out message))
+                    return false;
 
-                foreach (var word in line.Words)
+                foreach (var line in result.Lines)
                 {
-                    if (word.Text.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (line.Text.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        location = word.Bounds;
+                        location = line.Bounds;
                         return true;
                     }
-                }
-            }
 
-            message = null;
-            return false;
+                    foreach (var word in line.Words)
+                    {
+                        if (word.Text.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            location = word.Bounds;
+                            return true;
+                        }
+                    }
+                }
+
+                message = null;
+                return false;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("FindTextLocation", ex);
+                return false;
+            }
         }
 
         #endregion
@@ -248,19 +292,30 @@ namespace OcrAutomation
         [Description("Gets the language tags of every OCR language pack currently installed. Returns True on success; never throws.")]
         public bool TryGetAvailableLanguages(out List<string> tags, out string message)
         {
-            tags = null;
+            tags = default;
+            message = default;
             try
             {
-                var result = new List<string>();
-                foreach (Language language in OcrEngine.AvailableRecognizerLanguages)
-                    result.Add(language.LanguageTag);
-                tags = result;
-                message = null;
-                return true;
+                tags = null;
+                try
+                {
+                    var result = new List<string>();
+                    foreach (Language language in OcrEngine.AvailableRecognizerLanguages)
+                        result.Add(language.LanguageTag);
+                    tags = result;
+                    message = null;
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    message = "Failed to query installed OCR language packs: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "Failed to query installed OCR language packs: " + ex.Message;
+                message = NeverThrowsGuard.Failure("TryGetAvailableLanguages", ex);
                 return false;
             }
         }
@@ -287,34 +342,44 @@ namespace OcrAutomation
         [Description("Polls a screen region until it contains the expected text, or the timeout elapses. Returns True if found in time; never throws.")]
         public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)
         {
-            if (string.IsNullOrEmpty(expectedText))
+            message = default;
+            try
             {
-                message = "Expected text must not be null or empty.";
-                return false;
-            }
-            if (timeoutMs < 0)
-            {
-                message = "Timeout must not be negative.";
-                return false;
-            }
-            if (pollIntervalMs < 1) pollIntervalMs = 1;
+                if (string.IsNullOrEmpty(expectedText))
+                {
+                    message = "Expected text must not be null or empty.";
+                    return false;
+                }
+                if (timeoutMs < 0)
+                {
+                    message = "Timeout must not be negative.";
+                    return false;
+                }
+                if (pollIntervalMs < 1) pollIntervalMs = 1;
 
-            int start = Environment.TickCount;
-            while (true)
+                int start = Environment.TickCount;
+                while (true)
+                {
+                    if (!GetTextFromRegion(left, top, width, height, out string text, out message))
+                        return false;
+                    if (text.IndexOf(expectedText, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        message = null;
+                        return true;
+                    }
+                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    {
+                        message = null;
+                        return false;
+                    }
+                    Thread.Sleep(pollIntervalMs);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                if (!GetTextFromRegion(left, top, width, height, out string text, out message))
-                    return false;
-                if (text.IndexOf(expectedText, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    message = null;
-                    return true;
-                }
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
-                {
-                    message = null;
-                    return false;
-                }
-                Thread.Sleep(pollIntervalMs);
+                message = NeverThrowsGuard.Failure("WaitForTextToAppear", ex);
+                return false;
             }
         }
 
@@ -580,8 +645,8 @@ namespace OcrAutomation
 
         #region Win32 Interop
 
-        private const int SM_XVIRTUALSCREEN  = 76;
-        private const int SM_YVIRTUALSCREEN  = 77;
+        private const int SM_XVIRTUALSCREEN = 76;
+        private const int SM_YVIRTUALSCREEN = 77;
         private const int SM_CXVIRTUALSCREEN = 78;
         private const int SM_CYVIRTUALSCREEN = 79;
 

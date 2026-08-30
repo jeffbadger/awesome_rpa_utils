@@ -85,10 +85,10 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
   `bool`/enum returns with no `message` parameter.
 - **`PressKeyWithModifiers`/`PressKeyCombo`** inject their entire sequence as a single
   `SendInput` batch, so real user input cannot interleave mid-sequence. If injection
-  fails partway through a batch (e.g. it is blocked after the modifier key-downs were
-  inserted), the keys already pressed remain held down.
-- **`PressKey`/`HoldKey`** press then release; if the release fails after the press
-  succeeded, the key remains held down — pair with `KeyUp` in cleanup logic.
+  fails partway through a batch, they send a best-effort release batch for every
+  requested key and modifier and report cleanup failure in `message`.
+- **`PressKey`/`HoldKey`** attempt key release from guaranteed cleanup after a
+  successful key-down. A failed release makes the method return `false`.
 - **`TypeText`** sends one `SendInput` call per UTF-16 code unit; characters outside the
   Basic Multilingual Plane (many emoji, some CJK extension characters) are sent as two
   code units (a surrogate pair) in the canonical order — high surrogate down, low

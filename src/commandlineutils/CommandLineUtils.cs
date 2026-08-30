@@ -89,57 +89,68 @@ namespace CommandLineAutomation
         [Description("Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr. Returns True on success; never throws.")]
         public bool Run(string fileName, out CommandResult result, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null, Encoding outputEncoding = null)
         {
-            result = null;
-
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                message = "A file name is required.";
-                return false;
-            }
-            if (timeoutMs < -1)
-            {
-                message = "timeoutMs must be -1 (infinite) or non-negative.";
-                return false;
-            }
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments ?? string.Empty,
-                WorkingDirectory = workingDirectory ?? string.Empty,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            if (environmentVariables != null)
-            {
-                foreach (var pair in environmentVariables)
-                {
-                    if (pair.Key == null)
-                    {
-                        message = "environmentVariables contains a null key.";
-                        return false;
-                    }
-                    psi.Environment[pair.Key] = pair.Value;
-                }
-            }
-            if (outputEncoding != null)
-            {
-                psi.StandardOutputEncoding = outputEncoding;
-                psi.StandardErrorEncoding = outputEncoding;
-            }
-
+            result = default;
+            message = default;
             try
             {
-                result = RunAndCapture(psi, timeoutMs);
-                message = null;
-                return true;
+                result = null;
+
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    message = "A file name is required.";
+                    return false;
+                }
+                if (timeoutMs < -1)
+                {
+                    message = "timeoutMs must be -1 (infinite) or non-negative.";
+                    return false;
+                }
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    Arguments = arguments ?? string.Empty,
+                    WorkingDirectory = workingDirectory ?? string.Empty,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+
+                if (environmentVariables != null)
+                {
+                    foreach (var pair in environmentVariables)
+                    {
+                        if (pair.Key == null)
+                        {
+                            message = "environmentVariables contains a null key.";
+                            return false;
+                        }
+                        psi.Environment[pair.Key] = pair.Value;
+                    }
+                }
+                if (outputEncoding != null)
+                {
+                    psi.StandardOutputEncoding = outputEncoding;
+                    psi.StandardErrorEncoding = outputEncoding;
+                }
+
+                try
+                {
+                    result = RunAndCapture(psi, timeoutMs);
+                    message = null;
+                    return true;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = ex.Message;
+                    return false;
+                }
+
             }
-            catch (Win32Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = ex.Message;
+                message = NeverThrowsGuard.Failure("Run", ex);
                 return false;
             }
         }
@@ -182,72 +193,83 @@ namespace CommandLineAutomation
         [Description("Runs a command through cmd.exe /d /s /c, waits for it to exit, and captures its exit code, stdout, and stderr. Optionally validates that every command segment launches an allowed program before running anything. Returns True on success; never throws.")]
         public bool RunShellCommand(string command, out CommandResult result, out string message, string[] allowedPrograms = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null, Encoding outputEncoding = null)
         {
-            result = null;
-
-            if (string.IsNullOrWhiteSpace(command))
-            {
-                message = "A command is required.";
-                return false;
-            }
-            if (timeoutMs < -1)
-            {
-                message = "timeoutMs must be -1 (infinite) or non-negative.";
-                return false;
-            }
-            if (allowedPrograms != null)
-            {
-                // Validate before starting anything: the guard only helps if segment 2 of
-                // a compound command is checked too, not just the first thing cmd would run.
-                if (!IsCommandAllowed(command, allowedPrograms, out string segment, out string program))
-                {
-                    message = program == null
-                        ? $"Command segment \"{segment.Trim()}\" is empty between shell operators."
-                        : $"Command segment \"{segment.Trim()}\" launches '{program}', which is not in allowedPrograms.";
-                    return false;
-                }
-            }
-
-            var psi = new ProcessStartInfo
-            {
-                // Pinned to System32 so a planted cmd.exe earlier in PATH can't be resolved instead.
-                FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
-                // /d skips AutoRun registry scripts; /s makes the quote-stripping rule
-                // deterministic (first and last quote only) no matter what command contains.
-                Arguments = "/d /s /c \"" + command + "\"",
-                WorkingDirectory = workingDirectory ?? string.Empty,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            if (environmentVariables != null)
-            {
-                foreach (var pair in environmentVariables)
-                {
-                    if (pair.Key == null)
-                    {
-                        message = "environmentVariables contains a null key.";
-                        return false;
-                    }
-                    psi.Environment[pair.Key] = pair.Value;
-                }
-            }
-            if (outputEncoding != null)
-            {
-                psi.StandardOutputEncoding = outputEncoding;
-                psi.StandardErrorEncoding = outputEncoding;
-            }
-
+            result = default;
+            message = default;
             try
             {
-                result = RunAndCapture(psi, timeoutMs);
-                message = null;
-                return true;
+                result = null;
+
+                if (string.IsNullOrWhiteSpace(command))
+                {
+                    message = "A command is required.";
+                    return false;
+                }
+                if (timeoutMs < -1)
+                {
+                    message = "timeoutMs must be -1 (infinite) or non-negative.";
+                    return false;
+                }
+                if (allowedPrograms != null)
+                {
+                    // Validate before starting anything: the guard only helps if segment 2 of
+                    // a compound command is checked too, not just the first thing cmd would run.
+                    if (!IsCommandAllowed(command, allowedPrograms, out string segment, out string program))
+                    {
+                        message = program == null
+                            ? $"Command segment \"{segment.Trim()}\" is empty between shell operators."
+                            : $"Command segment \"{segment.Trim()}\" launches '{program}', which is not in allowedPrograms.";
+                        return false;
+                    }
+                }
+
+                var psi = new ProcessStartInfo
+                {
+                    // Pinned to System32 so a planted cmd.exe earlier in PATH can't be resolved instead.
+                    FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                    // /d skips AutoRun registry scripts; /s makes the quote-stripping rule
+                    // deterministic (first and last quote only) no matter what command contains.
+                    Arguments = "/d /s /c \"" + command + "\"",
+                    WorkingDirectory = workingDirectory ?? string.Empty,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+
+                if (environmentVariables != null)
+                {
+                    foreach (var pair in environmentVariables)
+                    {
+                        if (pair.Key == null)
+                        {
+                            message = "environmentVariables contains a null key.";
+                            return false;
+                        }
+                        psi.Environment[pair.Key] = pair.Value;
+                    }
+                }
+                if (outputEncoding != null)
+                {
+                    psi.StandardOutputEncoding = outputEncoding;
+                    psi.StandardErrorEncoding = outputEncoding;
+                }
+
+                try
+                {
+                    result = RunAndCapture(psi, timeoutMs);
+                    message = null;
+                    return true;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = ex.Message;
+                    return false;
+                }
+
             }
-            catch (Win32Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = ex.Message;
+                message = NeverThrowsGuard.Failure("RunShellCommand", ex);
                 return false;
             }
         }
@@ -281,103 +303,115 @@ namespace CommandLineAutomation
         [Description("Runs an executable elevated (UAC prompt) and waits for it to exit. Returns True on success; never throws. Output cannot be captured for an elevated process.")]
         public bool RunElevated(string fileName, out int exitCode, out bool timedOut, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1)
         {
-            exitCode = 0;
-            timedOut = false;
-
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                message = "A file name is required.";
-                return false;
-            }
-            if (timeoutMs < -1)
-            {
-                message = "timeoutMs must be -1 (infinite) or non-negative.";
-                return false;
-            }
-            if (!Path.IsPathRooted(fileName))
-            {
-                message = "fileName must be an absolute path (a relative name would be resolved with admin rights).";
-                return false;
-            }
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments ?? string.Empty,
-                WorkingDirectory = workingDirectory ?? string.Empty,
-                UseShellExecute = true,
-                Verb = "runas"
-            };
-
-            Process process;
+            exitCode = default;
+            timedOut = default;
+            message = default;
             try
             {
-                process = Process.Start(psi);
-            }
-            catch (Win32Exception ex)
-            {
-                message = ex.Message;
-                return false;
-            }
+                exitCode = 0;
+                timedOut = false;
 
-            using (process)
-            {
-                if (process == null)
+                if (string.IsNullOrWhiteSpace(fileName))
                 {
-                    message = $"Process.Start returned null for '{fileName}'.";
+                    message = "A file name is required.";
+                    return false;
+                }
+                if (timeoutMs < -1)
+                {
+                    message = "timeoutMs must be -1 (infinite) or non-negative.";
+                    return false;
+                }
+                if (!Path.IsPathRooted(fileName))
+                {
+                    message = "fileName must be an absolute path (a relative name would be resolved with admin rights).";
                     return false;
                 }
 
-                bool exited = process.WaitForExit(timeoutMs);
-                if (exited)
+                var psi = new ProcessStartInfo
                 {
-                    exitCode = process.ExitCode;
-                    message = null;
-                    return true;
-                }
+                    FileName = fileName,
+                    Arguments = arguments ?? string.Empty,
+                    WorkingDirectory = workingDirectory ?? string.Empty,
+                    UseShellExecute = true,
+                    Verb = "runas"
+                };
 
-                // Attempt to kill it. This can fail either because it already exited
-                // (InvalidOperationException) or, for an elevated child launched from a
-                // non-elevated caller, because Windows' integrity-level rules deny
-                // PROCESS_TERMINATE access even to the process that started it
-                // (Win32Exception, "Access is denied"). Either way, we did NOT actually
-                // terminate the process ourselves in these two cases.
-                bool killedByUs = true;
+                Process process;
                 try
                 {
-                    process.Kill(entireProcessTree: true);
+                    process = Process.Start(psi);
                 }
-                catch (InvalidOperationException)
+                catch (Win32Exception ex)
                 {
-                    killedByUs = false;
-                }
-                catch (Win32Exception)
-                {
-                    killedByUs = false;
+                    message = ex.Message;
+                    return false;
                 }
 
-                // Bounded: never let this method hang past its stated timeout contract,
-                // whether the kill succeeded, failed, or the process is just slow to die.
-                process.WaitForExit(5000);
-
-                if (!killedByUs && process.HasExited)
+                using (process)
                 {
-                    // We did not terminate it ourselves, and it turned out to have
-                    // exited anyway (already gone before the kill, or finished on its
-                    // own within the grace window despite the kill being denied) - not
-                    // a timeout from the caller's perspective.
-                    exitCode = process.ExitCode;
+                    if (process == null)
+                    {
+                        message = $"Process.Start returned null for '{fileName}'.";
+                        return false;
+                    }
+
+                    bool exited = process.WaitForExit(timeoutMs);
+                    if (exited)
+                    {
+                        exitCode = process.ExitCode;
+                        message = null;
+                        return true;
+                    }
+
+                    // Attempt to kill it. This can fail either because it already exited
+                    // (InvalidOperationException) or, for an elevated child launched from a
+                    // non-elevated caller, because Windows' integrity-level rules deny
+                    // PROCESS_TERMINATE access even to the process that started it
+                    // (Win32Exception, "Access is denied"). Either way, we did NOT actually
+                    // terminate the process ourselves in these two cases.
+                    bool killedByUs = true;
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        killedByUs = false;
+                    }
+                    catch (Win32Exception)
+                    {
+                        killedByUs = false;
+                    }
+
+                    // Bounded: never let this method hang past its stated timeout contract,
+                    // whether the kill succeeded, failed, or the process is just slow to die.
+                    process.WaitForExit(5000);
+
+                    if (!killedByUs && process.HasExited)
+                    {
+                        // We did not terminate it ourselves, and it turned out to have
+                        // exited anyway (already gone before the kill, or finished on its
+                        // own within the grace window despite the kill being denied) - not
+                        // a timeout from the caller's perspective.
+                        exitCode = process.ExitCode;
+                        message = null;
+                        return true;
+                    }
+
+                    // Either we successfully killed it (a real timeout), or we couldn't
+                    // kill it AND it's still running (also a real timeout, from the
+                    // caller's perspective, even though we couldn't confirm termination).
+                    timedOut = true;
+                    exitCode = process.HasExited ? process.ExitCode : -1;
                     message = null;
                     return true;
                 }
 
-                // Either we successfully killed it (a real timeout), or we couldn't
-                // kill it AND it's still running (also a real timeout, from the
-                // caller's perspective, even though we couldn't confirm termination).
-                timedOut = true;
-                exitCode = process.HasExited ? process.ExitCode : -1;
-                message = null;
-                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RunElevated", ex);
+                return false;
             }
         }
 
@@ -408,56 +442,67 @@ namespace CommandLineAutomation
         [Description("Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately. No console window is created for console executables. Returns True on success; never throws.")]
         public bool StartFireAndForget(string fileName, out int processId, out string message, string arguments = null, string workingDirectory = null, IDictionary<string, string> environmentVariables = null)
         {
-            processId = 0;
-
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                message = "A file name is required.";
-                return false;
-            }
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments ?? string.Empty,
-                WorkingDirectory = workingDirectory ?? string.Empty,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            if (environmentVariables != null)
-            {
-                foreach (var pair in environmentVariables)
-                {
-                    if (pair.Key == null)
-                    {
-                        message = "environmentVariables contains a null key.";
-                        return false;
-                    }
-                    psi.Environment[pair.Key] = pair.Value;
-                }
-            }
-
+            processId = default;
+            message = default;
             try
             {
-                using (Process process = Process.Start(psi))
-                {
-                    if (process == null)
-                    {
-                        // Defensive: Process.Start normally throws instead of returning
-                        // null, but the null case must not escape as an NRE either way.
-                        message = $"Process.Start returned null for '{fileName}'.";
-                        return false;
-                    }
+                processId = 0;
 
-                    processId = process.Id;
-                    message = null;
-                    return true;
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    message = "A file name is required.";
+                    return false;
                 }
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    Arguments = arguments ?? string.Empty,
+                    WorkingDirectory = workingDirectory ?? string.Empty,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                if (environmentVariables != null)
+                {
+                    foreach (var pair in environmentVariables)
+                    {
+                        if (pair.Key == null)
+                        {
+                            message = "environmentVariables contains a null key.";
+                            return false;
+                        }
+                        psi.Environment[pair.Key] = pair.Value;
+                    }
+                }
+
+                try
+                {
+                    using (Process process = Process.Start(psi))
+                    {
+                        if (process == null)
+                        {
+                            // Defensive: Process.Start normally throws instead of returning
+                            // null, but the null case must not escape as an NRE either way.
+                            message = $"Process.Start returned null for '{fileName}'.";
+                            return false;
+                        }
+
+                        processId = process.Id;
+                        message = null;
+                        return true;
+                    }
+                }
+                catch (Win32Exception ex)
+                {
+                    message = ex.Message;
+                    return false;
+                }
+
             }
-            catch (Win32Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = ex.Message;
+                message = NeverThrowsGuard.Failure("StartFireAndForget", ex);
                 return false;
             }
         }

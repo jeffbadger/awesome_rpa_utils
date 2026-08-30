@@ -13,11 +13,13 @@ guidance says the project target must match Robot Runtime.
 
 Key findings:
 
-- **High:** `DragAndDrop`, `DragAndHold`, and `BezierDragAndDrop` can fail after
-  button-down without releasing left; `RubberBandSelect` inherits this defect.
+- **Resolved on `codex/never-throws-standard`:** `DragAndDrop`, `DragAndHold`, and
+  `BezierDragAndDrop` now release left from `finally`; `RubberBandSelect` inherits
+  the corrected drag cleanup.
 - **High:** `Dispose` does not undo hiding, clipping, input blocking, system-cursor
   replacement, or injected down states. Exception/termination paths need cleanup.
-- **Medium:** `ClickAndRestore` can return `true` while reporting restore failure.
+- **Resolved on `codex/never-throws-standard`:** `ClickAndRestore` returns `false`
+  when cursor restoration fails.
 - **Medium:** sleeps block the Pega automation thread and cannot be cancelled.
 - **Medium:** coordinate APIs must share the host's DPI coordinate model.
 - **Low:** silent coercion of invalid numeric inputs can hide bad design wiring.
@@ -49,7 +51,7 @@ Key findings:
 | `MouseDown`, `MouseUp` | Expose stateful button injection. | Every successful down must reach an up in `finally`; add an emergency release during component cleanup. |
 | `ClickAndHold` | Holds a button for a duration, then releases. | No `finally`; interruption/release failure can strand it. Reject negative duration and guarantee cleanup. |
 | `ClickWithModifiers` | Sends modifier/button down and up batches. | Ordering and one cleanup retry are good. Reject undefined flag bits; total up failure can still strand input. |
-| `ClickAndRestore` | Clicks elsewhere and restores the cursor in `finally`. | **Defect:** restore failure may return `true` with an error. Return `false` and preserve the native error. |
+| `ClickAndRestore` | Clicks elsewhere and restores the cursor in `finally`. | Restoration failure now returns `false`; Windows/Pega integration verification remains required. |
 | `ClickWithRetry` | Retries the entire move/click. | Ambiguous partial failure can double-submit non-idempotent actions. Retry only known-safe failures and verify UI outcome. |
 | `TripleClick` | Sends three clicks with fixed gaps. | App behavior varies and partial success changes selection. Make timing configurable; avoid blind business-action retries. |
 
@@ -57,9 +59,9 @@ Key findings:
 
 | Method | What it does | Pega concerns / improvements |
 |---|---|---|
-| `DragAndDrop` (both) | Presses left, interpolates, releases. | **High:** movement failure returns without button-up. Put release in `finally`, validate step/delay values, and verify the drop target. |
+| `DragAndDrop` (both) | Presses left, interpolates, releases. | Button-up is now attempted from `finally`; validate step/delay values and verify the drop target. |
 | `RubberBandSelect` (both) | Holds modifiers around `DragAndDrop`. | Modifier cleanup is good, but nested drag can leave left down; undefined flags are ignored and cleanup failures discarded. |
-| `DragAndHold` | Drags, pauses at destination, releases. | Same missing button-up `finally`; long hold blocks the automation thread. |
+| `DragAndHold` | Drags, pauses at destination, releases. | Button-up is now attempted from `finally`; long holds still block the automation thread. |
 
 ### Wheel and scrolling
 
@@ -137,7 +139,7 @@ Key findings:
 | `FlashCursorHighlight` | Flashes an XOR ring using the screen DC. | Blocks, coerces invalid values, ignores several GDI failures, and may artifact. Prefer a cancellable overlay window. |
 | `MoveMouseBezier` | Moves on a randomized curve. | Random paths reduce repeatability and can cross unintended UI/gaps. Remove the “anti-detection” positioning; add bounded deterministic mode/cancellation. |
 | `BezierClickAt`, `BezierDoubleClickAt` | Randomized movement then click/double-click. | Inherit target, DPI, timing, and repeatability risks; add a final target guard. |
-| `BezierDragAndDrop` | Left-drags on a randomized curve. | **High:** movement failure can leave left down. Use `finally` and constrain/verify the entire path. |
+| `BezierDragAndDrop` | Left-drags on a randomized curve. | Button-up is now attempted from `finally`; constrain and verify the randomized path. |
 
 ### Verification and synchronization
 

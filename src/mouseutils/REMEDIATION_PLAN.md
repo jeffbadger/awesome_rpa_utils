@@ -1,5 +1,13 @@
 # MouseUtils Remediation Plan
 
+## Implementation status
+
+The `codex/never-throws-standard` branch has applied recoverable public
+boundaries, compound-result handling, guaranteed button release for click/hold/
+drag operations, and the `ClickAndRestore` result correction. Component-owned
+global-state restoration, fault-injection coverage, and Windows/Pega verification
+remain open.
+
 ## Goals
 
 1. Make the documented never-throws contract real for recoverable operational,
