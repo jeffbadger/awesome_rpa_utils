@@ -400,6 +400,192 @@ namespace EventAutomation.Tests
         }
 
         // ------------------------------------------------------------------
+        // Review-fix behaviors: input rejection, isolation, wake-on-unsubscribe
+        // ------------------------------------------------------------------
+
+        [Fact]
+        public void Subscribe_malformed_titleMatches_regex_is_rejected()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                Assert.False(utils.Subscribe("Windows", "{\"titleMatches\":\"[Bad\"}", "s1", out string m1));
+                Assert.NotNull(m1);
+                // A valid regex is still accepted.
+                Assert.True(utils.Subscribe("Windows", "{\"titleMatches\":\"\\\\d{4}\"}", "s2", out _));
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Subscribe_unknown_category_message_lists_unknown_names()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                Assert.False(utils.Subscribe("Windows,Windowz,Forground", null, "s1", out string m1));
+                Assert.NotNull(m1);
+                Assert.Contains("Windowz", m1);
+                Assert.Contains("Forground", m1);
+                // Unknown categories are rejected for Start as well — but Start
+                // initializes the engine first, so only assert that on Windows.
+                if (OperatingSystem.IsWindows())
+                {
+                    Assert.False(utils.Start("Windows,Bogus", out string m2));
+                    Assert.Contains("Bogus", m2);
+                }
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void WaitForTitleChanged_malformed_regex_returns_false_never_throws()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                // Validation happens before the engine check, so this runs anywhere.
+                bool ok = utils.WaitForTitleChanged(null, "[Bad", 100, out EventData e, out bool timedOut, out string message);
+                Assert.False(ok);
+                Assert.Null(e);
+                Assert.False(timedOut); // an input error, not a timeout
+                Assert.NotNull(message);
+                // A valid regex with no engine still fails via the engine check.
+                bool ok2 = utils.WaitForStateChanged(null, "Visible", 100, out _, out bool timedOut2, out string message2);
+                Assert.False(ok2);
+                Assert.False(timedOut2);
+                Assert.NotNull(message2);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void WaitFor_malformed_filter_json_returns_false_never_throws()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                bool ok = utils.WaitForWindowCreated("{not json", 100, out EventData e, out bool timedOut, out string message);
+                Assert.False(ok);
+                Assert.Null(e);
+                Assert.False(timedOut);
+                Assert.NotNull(message);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Fluent_filter_invalid_regex_fails_closed()
+        {
+            var f = EventFilter.Create().TitleMatches("[Bad");
+            Assert.False(f.Matches(Ev("notepad.exe", null, "Anything"), 0));
+            // Other fields still narrow: with no regex error the filter matches.
+            var valid = EventFilter.Create().Process("notepad");
+            Assert.True(valid.Matches(Ev("notepad.exe", null, null), 0));
+        }
+
+        [Fact]
+        public void Stop_before_initialize_returns_false_with_message()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                Assert.False(utils.Stop(out string message));
+                Assert.NotNull(message);
+                // After a real Start, Stop succeeds.
+                if (OperatingSystem.IsWindows())
+                {
+                    Assert.True(utils.Initialize(out _));
+                    Assert.True(utils.Start("Windows", out _));
+                    Assert.True(utils.Stop(out _));
+                }
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task Waiter_zero_and_negative_timeout_complete_immediately()
+        {
+            var reg = new WaiterRegistry();
+            var t0 = reg.Register(e => true, 0);
+            var tNeg = reg.Register(e => true, -5);
+            Assert.Null(await t0);       // 0 = immediate timeout
+            Assert.Null(await tNeg);
+        }
+
+        [Fact]
+        public void Delivery_clones_events_per_subscription()
+        {
+            var mgr = new SubscriptionManager();
+            Assert.True(mgr.TryAdd("a", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
+            Assert.True(mgr.TryAdd("b", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
+            mgr.Deliver(Ev("notepad.exe", null, "orig", processId: 1), new List<EventCategory> { EventCategory.Windows }, 0);
+
+            var a = mgr.GetNextEvent("a", 0, out _, out _);
+            a.Title = "mutated-by-consumer-a";
+            var b = mgr.GetNextEvent("b", 0, out _, out _);
+            Assert.Equal("orig", b.Title); // b did not see a's mutation
+        }
+
+        [Fact]
+        public async System.Threading.Tasks.Task Unsubscribe_wakes_blocked_GetNextEvent()
+        {
+            var mgr = new SubscriptionManager();
+            Assert.True(mgr.TryAdd("s", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
+            var wait = System.Threading.Tasks.Task.Run(() =>
+                mgr.GetNextEvent("s", 10000, out _, out string message));
+            Thread.Sleep(100); // let it park inside the wait
+            Assert.True(mgr.TryRemove("s", out _));
+            await wait.WaitAsync(TimeSpan.FromMilliseconds(1000)); // throws (fails) if Unsubscribe did not wake the waiter
+        }
+
+        [Fact]
+        public void Debounce_prunes_stale_entries()
+        {
+            var d = new ThrottleDebounce();
+            for (uint i = 1; i <= 600; i++)
+                d.ShouldDrop(i, "WindowShown"); // 600 distinct keys, default 150 ms window
+            Assert.True(d.CachedKeys > 512);
+            Thread.Sleep(200); // let every window elapse
+            d.ShouldDrop(99999, "WindowShown"); // count exceeded → prune pass
+            Assert.True(d.CachedKeys <= 2, "stale entries were not pruned: " + d.CachedKeys);
+            // The still-live key (99999) is tracked again, and pruning does not break debounce.
+            Assert.False(d.ShouldDrop(99998, "WindowShown"));
+        }
+
+        [Fact]
+        public void WasWindowCreated_malformed_filter_json_returns_false_never_throws()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                bool ok = utils.WasWindowCreated("{not json", 500, out bool wasCreated, out string message);
+                Assert.False(ok);
+                Assert.False(wasCreated);
+                Assert.NotNull(message);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        // ------------------------------------------------------------------
         // Windows-only integration tests (self-skip elsewhere)
         // ------------------------------------------------------------------
 
@@ -565,7 +751,7 @@ namespace EventAutomation.Tests
         }
 
         [Fact]
-        public void Dispose_twice_is_safe_and_reinitialize_works()
+        public void Dispose_twice_is_safe_and_reinit_is_refused()
         {
             if (!OperatingSystem.IsWindows())
                 return;
@@ -573,7 +759,9 @@ namespace EventAutomation.Tests
             Assert.True(utils.Initialize(out _));
             utils.Dispose();
             utils.Dispose(); // second dispose is a no-op
-            Assert.True(utils.Initialize(out _)); // re-initialize after dispose works
+            // The instance is final after Dispose — create a new one instead.
+            Assert.False(utils.Initialize(out string message));
+            Assert.NotNull(message);
             utils.Dispose();
         }
 

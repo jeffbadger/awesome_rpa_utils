@@ -45,8 +45,8 @@ subscribed — see [Known limitations](#known-limitations).
 |---|---|---|
 | `Initialize` | `bool Initialize(out string message)` | Starts the background hook thread (idempotent). Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
 | `Start` | `bool Start(string categoriesCsv, out string message)` | Activates the given categories (e.g. `"Windows,Foreground,Dialogs"`) and installs the hook. Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
-| `Stop` | `bool Stop(out string message)` | Unhooks; queues are preserved so they can still be drained. Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
-| `Dispose` | `void Dispose()` | Full teardown — unhooks, stops the thread, clears subscriptions/waiters. Safe to call multiple times; a later `Initialize()` restarts the component. |
+| `Stop` | `bool Stop(out string message)` | Unhooks; queues are preserved so they can still be drained. Returns False with a message when the component was never initialized. Never throws. |
+| `Dispose` | `void Dispose()` | Full teardown — unhooks, stops the thread, clears subscriptions/waiters. Safe to call multiple times; the instance is final afterwards — a later `Initialize()` returns False, so create a new instance. |
 
 Call `Initialize()` then `Start(...)` before any `WaitForX` or `Subscribe` call.
 If the engine is not running, a wait returns False immediately with a message.
@@ -133,12 +133,20 @@ Pega boundary. All fields are optional — an unset field is a wildcard.
 // Fluent
 EventFilter.Create().Process("saplogon").Class("#32770").TitleContains("Save As");
 
-// JSON (unknown keys are ignored; malformed JSON makes Subscribe return False)
+// JSON (unknown keys are ignored; malformed JSON or an invalid titleMatches
+// regex makes Subscribe/WaitForX return False with a message)
 events.Subscribe("Windows", "{\"process\":\"notepad\",\"class\":\"#32770\",\"titleContains\":\"Save\"}", "sub");
 ```
 
 Supported JSON keys: `process`, `processes` (array), `class`, `titleContains`,
-`titleMatches` (regex, IgnoreCase|Compiled), `hasButtonChildren`, `excludeSelf`.
+`titleMatches` (regex, IgnoreCase|Compiled, 250 ms match timeout),
+`hasButtonChildren`, `excludeSelf`.
+
+Invalid input is rejected, never silently ignored: malformed filter JSON, an
+uncompilable `titleMatches` regex, and unknown category names (e.g.
+`"Windowz"`) all make `Start`/`Subscribe`/`WaitForX` return False with a
+message naming the problem. A fluent `TitleMatches("[Bad")` fails closed — the
+filter matches nothing.
 
 ## Wait methods
 
@@ -157,7 +165,9 @@ Supported JSON keys: `process`, `processes` (array), `class`, `titleContains`,
 
 A wait returns False with `timedOut = true` on timeout (`eventData` is null and
 `message` explains the timeout); it returns False with `timedOut = false` on an
-error such as the engine not being started. **Do not use `WaitForX` for file or
+error such as the engine not being started. A `timeoutMs` of 0 or negative is
+also an immediate timeout (nothing keeps waiting) — `GetNextEvent`/`GetNextEvents`
+treat 0 the same way. **Do not use `WaitForX` for file or
 process waits** — these are UI-event waits; a process that never creates a window
 (or a file operation that never touches a window) will simply time out. Use
 `commandlineutils`/`serviceutils` for those.
@@ -167,7 +177,7 @@ process waits** — these are UI-event waits; a process that never creates a win
 | Method | Signature | Description |
 |---|---|---|
 | `Subscribe` | `bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId, out string message)` | Registers a subscription. Returns True on success; `message` is null on success, a reason otherwise (malformed filter JSON, duplicate id, invalid category). Never throws. |
-| `Unsubscribe` | `bool Unsubscribe(string subscriptionId, out string message)` | Removes a subscription and drops its queue. Returns True if it existed; `message` is null on success, a reason otherwise. |
+| `Unsubscribe` | `bool Unsubscribe(string subscriptionId, out string message)` | Removes a subscription and drops its queue; a blocked `GetNextEvent` is woken and returns False with a message. Returns True if it existed; `message` is null on success, a reason otherwise. |
 | `GetNextEvent` | `bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)` | Blocks up to `timeoutMs` for the next queued event. Returns True when the call succeeded; `hasEvent` is True when `eventData` holds an event (False on timeout). `message` is null on success, a reason otherwise (unknown subscription). |
 | `GetNextEvents` | `bool GetNextEvents(string subscriptionId, int maxCount, int drainMs, out EventData[] events, out string message)` | Drains up to `maxCount` events into `events`. Returns True on success; `message` is null on success, a reason otherwise. |
 | `HasEvents` | `bool HasEvents(string subscriptionId, out int count, out string message)` | Reports queued-event count. Returns True when the subscription exists; `message` is null on success, a reason otherwise (unknown subscription). |
@@ -178,18 +188,24 @@ process waits** — these are UI-event waits; a process that never creates a win
 | Method | Signature | Description |
 |---|---|---|
 | `SetDebounce` | `bool SetDebounce(string eventName, int debounceMs, out string message)` | Dedupes per (hwnd, event-name). Defaults: 150 ms for `WindowShown`/`WindowHidden`, 0 otherwise. Save dialogs fire 4-6 SHOWs in ~200 ms; debounce coalesces them to 1. Returns True on success; `message` is null on success, a reason otherwise. |
-| `SetQueueLimits` | `bool SetQueueLimits(int maxEvents, string overflowPolicy, out string message)` | Per-subscription queue bound + policy: `"DropOldest"` (default), `"DropNewest"`, `"Block"`. Returns True on success; `message` is null on success, a reason otherwise (invalid arguments). |
+| `SetQueueLimits` | `bool SetQueueLimits(int maxEvents, string overflowPolicy, out string message)` | Per-subscription queue bound + policy: `"DropOldest"` (default), `"DropNewest"`, `"Block"`. `"Block"` is accepted for compatibility but behaves exactly like `"DropNewest"` — the hook thread must never block, so a full queue always drops the arriving event. Returns True on success; `message` is null on success, a reason otherwise (invalid arguments). |
 | `DumpRecentEvents` | `bool DumpRecentEvents(int count, out string json, out string message)` | Last N events as a JSON array in `json` (ring buffer, max 500). Returns True on success; `message` is null on success, a reason otherwise. |
 
 ## Notes & Caveats
 
 - **Every public method returns `bool` and never throws** — abnormal results
-  (hook install failure, malformed filter JSON, unknown subscription) are
-  reported through an `out string message` (null on success), and timeouts
-  through `out bool timedOut` / `out bool hasEvent` where a timeout is a normal
-  outcome. Failures are also logged at debug level via
+  (hook install failure, malformed filter JSON, invalid regex, unknown category,
+  unknown subscription) are reported through an `out string message` (null on
+  success), and timeouts through `out bool timedOut` / `out bool hasEvent` where
+  a timeout is a normal outcome. Failures are also logged at debug level via
   `System.Diagnostics.Debug.WriteLine`. Hook install failure logs the Win32
   error from `Marshal.GetLastWin32Error()`.
+- **`EventData` objects are per-consumer copies** — subscriptions and
+  waiters each receive their own clone, so mutating one delivered event cannot
+  affect another consumer. Treat the object as read-only anyway.
+- **`Unsubscribe` wakes a blocked `GetNextEvent`** — instead of waiting out its
+  full timeout on a removed subscription, the blocked call returns False with a
+  message promptly.
 - **`EVENT_OBJECT_VALUECHANGE` is opt-in only** — every keystroke fires it, so it
   is not part of the `States` category by default. To receive it, subscribe to
   `States` and call `SetDebounce("ValueChanged", ms)`.

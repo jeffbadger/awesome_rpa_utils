@@ -44,11 +44,16 @@ namespace EventAutomation
         public bool TryRemove(string id, out string message)
         {
             message = null;
-            if (!_subscriptions.TryRemove(id, out _))
+            if (!_subscriptions.TryRemove(id, out var sub))
             {
                 message = "No subscription with id '" + id + "'.";
                 return false;
             }
+            // A robot thread may be parked in GetNextEvent on this subscription;
+            // wake it so it re-checks the registry and returns promptly instead
+            // of waiting out its full timeout.
+            lock (sub.Gate)
+                Monitor.PulseAll(sub.Gate);
             return true;
         }
 
@@ -74,7 +79,11 @@ namespace EventAutomation
             _subscriptions.Clear();
         }
 
-        /// <summary>Fans an event out to every subscription whose categories and filter match.</summary>
+        /// <summary>
+        /// Fans an event out to every subscription whose categories and filter
+        /// match. Each subscription gets its own copy of the event, so a consumer
+        /// mutating one delivered event cannot affect another consumer.
+        /// </summary>
         public void Deliver(EventData data, List<EventCategory> cats, uint hostPid)
         {
             foreach (var sub in _subscriptions.Values)
@@ -83,7 +92,7 @@ namespace EventAutomation
                     continue;
                 if (!sub.Filter.Matches(data, hostPid))
                     continue;
-                Enqueue(sub, data);
+                Enqueue(sub, data.Clone());
             }
         }
 
@@ -105,6 +114,15 @@ namespace EventAutomation
                     if (remaining <= 0)
                         return null;
                     Monitor.Wait(sub.Gate, (int)Math.Min(remaining, int.MaxValue));
+                    // TryRemove pulses this gate after removing the subscription.
+                    // If we woke to find our subscription gone (or removed and
+                    // re-added under the same id), report it instead of waiting
+                    // out the remaining timeout on a dead queue.
+                    if (!_subscriptions.TryGetValue(id, out var current) || !ReferenceEquals(current, sub))
+                    {
+                        message = "Subscription '" + id + "' was removed while waiting.";
+                        return null;
+                    }
                 }
                 if (sub.Queue.TryDequeue(out var e))
                 {
@@ -148,7 +166,8 @@ namespace EventAutomation
                 message = "No subscription with id '" + id + "'.";
                 return false;
             }
-            count = sub.Count;
+            lock (sub.Gate)
+                count = sub.Count; // read the count under the same lock the producer writes it
             return true;
         }
 
@@ -184,6 +203,10 @@ namespace EventAutomation
             {
                 if (sub.Count >= sub.MaxEvents)
                 {
+                    // "Block" behaves as DropNewest: this runs on the WinEvent
+                    // hook thread, which must never block, so a full queue
+                    // always drops the arriving event. (Documented in
+                    // SetQueueLimits.)
                     if (sub.OverflowPolicy == "DropNewest" || sub.OverflowPolicy == "Block")
                         return;
                     // DropOldest
@@ -220,24 +243,31 @@ namespace EventAutomation
         private readonly object _gate = new object();
         private readonly List<Waiter> _waiters = new List<Waiter>();
 
-        /// <summary>Registers a waiter and returns a task that completes with the matching event or null on timeout.</summary>
+        /// <summary>
+        /// Registers a waiter and returns a task that completes with the matching
+        /// event or null on timeout. A <paramref name="timeoutMs"/> of 0 or less
+        /// completes immediately with null (no wait is registered), matching the
+        /// queue-drain methods where 0 also means "do not wait".
+        /// </summary>
         public Task<EventData> Register(Func<EventData, bool> predicate, int timeoutMs)
         {
             var tcs = new TaskCompletionSource<EventData>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (timeoutMs <= 0)
+            {
+                tcs.TrySetResult(null); // 0/negative = return immediately as a timeout
+                return tcs.Task;
+            }
             var cts = new CancellationTokenSource();
             var waiter = new Waiter { Predicate = predicate, Tcs = tcs, Cts = cts };
             lock (_gate)
                 _waiters.Add(waiter);
-            if (timeoutMs > 0)
+            cts.CancelAfter(timeoutMs);
+            cts.Token.Register(() =>
             {
-                cts.CancelAfter(timeoutMs);
-                cts.Token.Register(() =>
-                {
-                    lock (_gate)
-                        _waiters.Remove(waiter);
-                    tcs.TrySetResult(null);
-                });
-            }
+                lock (_gate)
+                    _waiters.Remove(waiter);
+                tcs.TrySetResult(null);
+            });
             return tcs.Task;
         }
 
@@ -264,7 +294,8 @@ namespace EventAutomation
                         _waiters.Remove(w);
                     // Set the result BEFORE cancelling: the timeout registration's
                     // TrySetResult(null) is then a no-op (TrySetResult is idempotent).
-                    w.Tcs.TrySetResult(data);
+                    // A clone per waiter so no consumer shares mutable state.
+                    w.Tcs.TrySetResult(data.Clone());
                     w.Cts.Cancel();
                 }
             }
