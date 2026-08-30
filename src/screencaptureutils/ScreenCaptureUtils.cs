@@ -87,13 +87,23 @@ namespace ScreenCaptureAutomation
         [Description("Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws.")]
         public bool CaptureScreenToFile(string filePath, out string message)
         {
-            Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-            if (!TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out message))
-                return false;
-
-            using (bmp)
+            message = default;
+            try
             {
-                return TrySaveBitmap(bmp, filePath, out message);
+                Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
+                if (!TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySaveBitmap(bmp, filePath, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureScreenToFile", ex);
+                return false;
             }
         }
 
@@ -111,12 +121,22 @@ namespace ScreenCaptureAutomation
         [Description("Captures a specific screen region to an image file. Returns True on success; never throws.")]
         public bool CaptureRegionToFile(int left, int top, int width, int height, string filePath, out string message)
         {
-            if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bmp, out message))
-                return false;
-
-            using (bmp)
+            message = default;
+            try
             {
-                return TrySaveBitmap(bmp, filePath, out message);
+                if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySaveBitmap(bmp, filePath, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureRegionToFile", ex);
+                return false;
             }
         }
 
@@ -137,50 +157,60 @@ namespace ScreenCaptureAutomation
         [Description("Captures a window to an image file via PrintWindow - works even if the window is covered by other windows. Returns True on success; never throws.")]
         public bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)
         {
-            if (!GetWindowRect(hWnd, out RECT rc))
-            {
-                message = new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.").Message;
-                return false;
-            }
-
-            int width = rc.Right - rc.Left;
-            int height = rc.Bottom - rc.Top;
-            if (width <= 0 || height <= 0)
-            {
-                message = "Target window has an empty or invalid bounding rectangle.";
-                return false;
-            }
-
+            message = default;
             try
             {
-                using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+                if (!GetWindowRect(hWnd, out RECT rc))
                 {
-                    using (Graphics g = Graphics.FromImage(bmp))
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.").Message;
+                    return false;
+                }
+
+                int width = rc.Right - rc.Left;
+                int height = rc.Bottom - rc.Top;
+                if (width <= 0 || height <= 0)
+                {
+                    message = "Target window has an empty or invalid bounding rectangle.";
+                    return false;
+                }
+
+                try
+                {
+                    using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
                     {
-                        IntPtr hdc = g.GetHdc();
-                        try
+                        using (Graphics g = Graphics.FromImage(bmp))
                         {
-                            if (!PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT))
+                            IntPtr hdc = g.GetHdc();
+                            try
                             {
-                                message = new Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow failed.").Message;
-                                return false;
+                                if (!PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT))
+                                {
+                                    message = new Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow failed.").Message;
+                                    return false;
+                                }
+                            }
+                            finally
+                            {
+                                g.ReleaseHdc(hdc);
                             }
                         }
-                        finally
-                        {
-                            g.ReleaseHdc(hdc);
-                        }
-                    }
 
-                    return TrySaveBitmap(bmp, filePath, out message);
+                        return TrySaveBitmap(bmp, filePath, out message);
+                    }
                 }
+                catch (Exception ex)
+                {
+                    // new Bitmap / Graphics.FromImage / GetHdc can throw (OOM for a huge
+                    // window rect, GDI resource exhaustion) - surfaces as false + message
+                    // instead of an exception (never-throws contract).
+                    message = $"Window capture failed: {ex.Message}";
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                // new Bitmap / Graphics.FromImage / GetHdc can throw (OOM for a huge
-                // window rect, GDI resource exhaustion) - surfaces as false + message
-                // instead of an exception (never-throws contract).
-                message = $"Window capture failed: {ex.Message}";
+                message = NeverThrowsGuard.Failure("CaptureWindowToFile", ex);
                 return false;
             }
         }
@@ -195,14 +225,24 @@ namespace ScreenCaptureAutomation
         [Description("Captures the current foreground window to an image file. Returns True on success; never throws.")]
         public bool CaptureActiveWindowToFile(string filePath, out string message)
         {
-            IntPtr hWnd = GetForegroundWindow();
-            if (hWnd == IntPtr.Zero)
+            message = default;
+            try
             {
-                message = "No foreground window is currently available.";
+                IntPtr hWnd = GetForegroundWindow();
+                if (hWnd == IntPtr.Zero)
+                {
+                    message = "No foreground window is currently available.";
+                    return false;
+                }
+
+                return CaptureWindowToFile(hWnd, filePath, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureActiveWindowToFile", ex);
                 return false;
             }
-
-            return CaptureWindowToFile(hWnd, filePath, out message);
         }
 
         /// <summary>
@@ -221,7 +261,17 @@ namespace ScreenCaptureAutomation
         [Description("Captures a region centered on the given point (e.g. MouseUtils.GetX/GetY) to an image file. Returns True on success; never throws.")]
         public bool CaptureAroundPointToFile(int x, int y, int width, int height, string filePath, out string message)
         {
-            return CaptureRegionToFile(x - width / 2, y - height / 2, width, height, filePath, out message);
+            message = default;
+            try
+            {
+                return CaptureRegionToFile(x - width / 2, y - height / 2, width, height, filePath, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureAroundPointToFile", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -239,24 +289,34 @@ namespace ScreenCaptureAutomation
         [Description("Captures the entire virtual screen and copies it to the clipboard as an image. Returns True on success; never throws.")]
         public bool CaptureToClipboard(out string message)
         {
-            Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-            if (!TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out message))
-                return false;
-
-            using (bmp)
+            message = default;
+            try
             {
-                try
-                {
-                    System.Windows.Forms.Clipboard.SetImage(bmp);
-                    message = null;
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    message = "Could not copy to the clipboard: " + ex.Message +
-                              " (the clipboard may be held by another process, or the thread is not STA.)";
+                Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
+                if (!TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out message))
                     return false;
+
+                using (bmp)
+                {
+                    try
+                    {
+                        System.Windows.Forms.Clipboard.SetImage(bmp);
+                        message = null;
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        message = "Could not copy to the clipboard: " + ex.Message +
+                                  " (the clipboard may be held by another process, or the thread is not STA.)";
+                        return false;
+                    }
                 }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureToClipboard", ex);
+                return false;
             }
         }
 
@@ -294,42 +354,53 @@ namespace ScreenCaptureAutomation
         [Description("Captures the screen to an auto-named, sequentially-numbered evidence file: 001_StepName_20260826_143201.png. Returns True on success; never throws.")]
         public bool CaptureStepEvidence(string stepName, string folderPath, out string fullPath, out string message)
         {
-            fullPath = null;
-            if (string.IsNullOrWhiteSpace(stepName))
-            {
-                message = "A step name is required.";
-                return false;
-            }
-            if (string.IsNullOrWhiteSpace(folderPath))
-            {
-                message = "A folder path is required.";
-                return false;
-            }
-
+            fullPath = default;
+            message = default;
             try
             {
-                Directory.CreateDirectory(folderPath);
+                fullPath = null;
+                if (string.IsNullOrWhiteSpace(stepName))
+                {
+                    message = "A step name is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(folderPath))
+                {
+                    message = "A folder path is required.";
+                    return false;
+                }
+
+                try
+                {
+                    Directory.CreateDirectory(folderPath);
+                }
+                catch (Exception ex)
+                {
+                    message = $"Could not create evidence folder '{folderPath}': {ex.Message}";
+                    return false;
+                }
+
+                Interlocked.Increment(ref _evidenceCounter);
+
+                string fileName = $"{_evidenceCounter:D3}_{SanitizeFileNameSegment(stepName)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                string candidatePath = Path.Combine(folderPath, fileName);
+                if (!CaptureScreenToFile(candidatePath, out message))
+                {
+                    // Roll the counter back so a failed capture doesn't leave a gap in
+                    // the evidence sequence (001, 003, ...).
+                    Interlocked.Decrement(ref _evidenceCounter);
+                    return false;
+                }
+
+                fullPath = candidatePath;
+                return true;
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = $"Could not create evidence folder '{folderPath}': {ex.Message}";
+                fullPath = NeverThrowsGuard.Failure("CaptureStepEvidence", ex);
                 return false;
             }
-
-            Interlocked.Increment(ref _evidenceCounter);
-
-            string fileName = $"{_evidenceCounter:D3}_{SanitizeFileNameSegment(stepName)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-            string candidatePath = Path.Combine(folderPath, fileName);
-            if (!CaptureScreenToFile(candidatePath, out message))
-            {
-                // Roll the counter back so a failed capture doesn't leave a gap in
-                // the evidence sequence (001, 003, ...).
-                Interlocked.Decrement(ref _evidenceCounter);
-                return false;
-            }
-
-            fullPath = candidatePath;
-            return true;
         }
 
         #endregion
@@ -357,53 +428,64 @@ namespace ScreenCaptureAutomation
         [Description("Computes a lightweight perceptual hash of a screen region, for cheap 'did this change' checks. Returns True on success; never throws.")]
         public bool GetRegionHash(int left, int top, int width, int height, out string hash, out string message)
         {
-            hash = null;
-            if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap region, out message))
-                return false;
-
-            using (region)
+            hash = default;
+            message = default;
+            try
             {
-                try
+                hash = null;
+                if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap region, out message))
+                    return false;
+
+                using (region)
                 {
-                    using (Bitmap small = new Bitmap(region, new Size(8, 8)))
+                    try
                     {
-                        long[] luminance = new long[64];
-                        int i = 0;
-                        for (int y = 0; y < 8; y++)
+                        using (Bitmap small = new Bitmap(region, new Size(8, 8)))
                         {
-                            for (int x = 0; x < 8; x++)
+                            long[] luminance = new long[64];
+                            int i = 0;
+                            for (int y = 0; y < 8; y++)
                             {
-                                Color c = small.GetPixel(x, y);
-                                // Weighted luma (Rec. 601) rather than a plain average -
-                                // green dominates perceived brightness, so a plain average
-                                // under-weights it and over-weights blue.
-                                luminance[i++] = (long)(0.299 * c.R + 0.587 * c.G + 0.114 * c.B);
+                                for (int x = 0; x < 8; x++)
+                                {
+                                    Color c = small.GetPixel(x, y);
+                                    // Weighted luma (Rec. 601) rather than a plain average -
+                                    // green dominates perceived brightness, so a plain average
+                                    // under-weights it and over-weights blue.
+                                    luminance[i++] = (long)(0.299 * c.R + 0.587 * c.G + 0.114 * c.B);
+                                }
                             }
+
+                            long average = 0;
+                            for (int p = 0; p < luminance.Length; p++)
+                                average += luminance[p];
+                            average /= luminance.Length;
+
+                            ulong h = 0;
+                            for (int b = 0; b < 64; b++)
+                            {
+                                if (luminance[b] >= average)
+                                    h |= (1UL << b);
+                            }
+
+                            hash = h.ToString("X16");
+                            message = null;
+                            return true;
                         }
-
-                        long average = 0;
-                        for (int p = 0; p < luminance.Length; p++)
-                            average += luminance[p];
-                        average /= luminance.Length;
-
-                        ulong h = 0;
-                        for (int b = 0; b < 64; b++)
-                        {
-                            if (luminance[b] >= average)
-                                h |= (1UL << b);
-                        }
-
-                        hash = h.ToString("X16");
-                        message = null;
-                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        hash = null;
+                        message = "Region hash computation failed: " + ex.Message;
+                        return false;
                     }
                 }
-                catch (Exception ex)
-                {
-                    hash = null;
-                    message = "Region hash computation failed: " + ex.Message;
-                    return false;
-                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                hash = NeverThrowsGuard.Failure("GetRegionHash", ex);
+                return false;
             }
         }
 
@@ -428,32 +510,42 @@ namespace ScreenCaptureAutomation
         [Description("Polls a screen region until its appearance changes, or the timeout elapses. Returns True if it changed in time; never throws.")]
         public bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)
         {
-            if (timeoutMs < 0)
+            message = default;
+            try
             {
-                message = "Timeout must not be negative.";
-                return false;
+                if (timeoutMs < 0)
+                {
+                    message = "Timeout must not be negative.";
+                    return false;
+                }
+                if (pollIntervalMs < 1) pollIntervalMs = 1;
+
+                if (!GetRegionHash(left, top, width, height, out string baseline, out message))
+                    return false;
+
+                int start = Environment.TickCount;
+                while (true)
+                {
+                    if (!GetRegionHash(left, top, width, height, out string current, out message))
+                        return false;
+                    if (current != baseline)
+                    {
+                        message = null;
+                        return true;
+                    }
+                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    {
+                        message = null;
+                        return false;
+                    }
+                    Thread.Sleep(pollIntervalMs);
+                }
+
             }
-            if (pollIntervalMs < 1) pollIntervalMs = 1;
-
-            if (!GetRegionHash(left, top, width, height, out string baseline, out message))
-                return false;
-
-            int start = Environment.TickCount;
-            while (true)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                if (!GetRegionHash(left, top, width, height, out string current, out message))
-                    return false;
-                if (current != baseline)
-                {
-                    message = null;
-                    return true;
-                }
-                if (unchecked(Environment.TickCount - start) >= timeoutMs)
-                {
-                    message = null;
-                    return false;
-                }
-                Thread.Sleep(pollIntervalMs);
+                message = NeverThrowsGuard.Failure("WaitForRegionToChange", ex);
+                return false;
             }
         }
 
@@ -480,44 +572,55 @@ namespace ScreenCaptureAutomation
         [Description("Compares a screen region against a saved baseline image and reports whether the difference is within tolerance. Never throws.")]
         public bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)
         {
-            actualDifferencePercent = 0;
-
-            if (double.IsNaN(tolerancePercent) || tolerancePercent < 0 || tolerancePercent > 100)
+            actualDifferencePercent = default;
+            message = default;
+            try
             {
-                message = "Tolerance must be a percentage between 0 and 100.";
-                return false;
-            }
+                actualDifferencePercent = 0;
 
-            if (!TryLoadBitmapWithoutLockingFile(baselineImagePath, out Bitmap baseline, out message))
-                return false;
-
-            using (baseline)
-            {
-                if (baseline.Width != width || baseline.Height != height)
+                if (double.IsNaN(tolerancePercent) || tolerancePercent < 0 || tolerancePercent > 100)
                 {
-                    message = $"Baseline image size ({baseline.Width}x{baseline.Height}) does not match the requested region size ({width}x{height}).";
+                    message = "Tolerance must be a percentage between 0 and 100.";
                     return false;
                 }
 
-                if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap current, out message))
+                if (!TryLoadBitmapWithoutLockingFile(baselineImagePath, out Bitmap baseline, out message))
                     return false;
 
-                using (current)
+                using (baseline)
                 {
-                    try
+                    if (baseline.Width != width || baseline.Height != height)
                     {
-                        // LockBits/Marshal.Copy can throw (OOM, GDI failure) - surfaces
-                        // as false + message instead of an exception (never-throws contract).
-                        actualDifferencePercent = ComputeDifferencePercent(baseline, current);
-                    }
-                    catch (Exception ex)
-                    {
-                        message = "Region comparison failed: " + ex.Message;
+                        message = $"Baseline image size ({baseline.Width}x{baseline.Height}) does not match the requested region size ({width}x{height}).";
                         return false;
                     }
-                    message = null;
-                    return actualDifferencePercent <= tolerancePercent;
+
+                    if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap current, out message))
+                        return false;
+
+                    using (current)
+                    {
+                        try
+                        {
+                            // LockBits/Marshal.Copy can throw (OOM, GDI failure) - surfaces
+                            // as false + message instead of an exception (never-throws contract).
+                            actualDifferencePercent = ComputeDifferencePercent(baseline, current);
+                        }
+                        catch (Exception ex)
+                        {
+                            message = "Region comparison failed: " + ex.Message;
+                            return false;
+                        }
+                        message = null;
+                        return actualDifferencePercent <= tolerancePercent;
+                    }
                 }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CompareRegionToBaseline", ex);
+                return false;
             }
         }
 
@@ -543,25 +646,35 @@ namespace ScreenCaptureAutomation
         [Description("Draws a rectangular highlight box onto a saved screenshot and overwrites it in place. Returns True on success; never throws.")]
         public bool DrawHighlightBox(string imagePath, int left, int top, int right, int bottom, int colorRef, out string message, int lineWidth = 3)
         {
-            if (right <= left || bottom <= top)
+            message = default;
+            try
             {
-                message = "Rectangle must be non-empty: right > left and bottom > top.";
-                return false;
-            }
-            if (lineWidth < 1) lineWidth = 1;
-
-            if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
-                return false;
-
-            using (bmp)
-            {
-                using (Graphics g = Graphics.FromImage(bmp))
-                using (Pen pen = new Pen(ColorFromColorRef(colorRef), lineWidth))
+                if (right <= left || bottom <= top)
                 {
-                    g.DrawRectangle(pen, left, top, right - left, bottom - top);
+                    message = "Rectangle must be non-empty: right > left and bottom > top.";
+                    return false;
+                }
+                if (lineWidth < 1) lineWidth = 1;
+
+                if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    using (Graphics g = Graphics.FromImage(bmp))
+                    using (Pen pen = new Pen(ColorFromColorRef(colorRef), lineWidth))
+                    {
+                        g.DrawRectangle(pen, left, top, right - left, bottom - top);
+                    }
+
+                    return TrySaveBitmap(bmp, imagePath, out message);
                 }
 
-                return TrySaveBitmap(bmp, imagePath, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("DrawHighlightBox", ex);
+                return false;
             }
         }
 
@@ -582,22 +695,32 @@ namespace ScreenCaptureAutomation
         [Description("Draws an arrow pointing at the given coordinates onto a saved screenshot and overwrites it in place. Returns True on success; never throws.")]
         public bool DrawArrowToPoint(string imagePath, int x, int y, int colorRef, out string message, int length = 40, int lineWidth = 3)
         {
-            if (length < 1) length = 1;
-            if (lineWidth < 1) lineWidth = 1;
-
-            if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
-                return false;
-
-            using (bmp)
+            message = default;
+            try
             {
-                using (Graphics g = Graphics.FromImage(bmp))
-                using (Pen pen = new Pen(ColorFromColorRef(colorRef), lineWidth))
+                if (length < 1) length = 1;
+                if (lineWidth < 1) lineWidth = 1;
+
+                if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
                 {
-                    pen.CustomEndCap = new AdjustableArrowCap(6, 8);
-                    g.DrawLine(pen, x - length, y - length, x, y);
+                    using (Graphics g = Graphics.FromImage(bmp))
+                    using (Pen pen = new Pen(ColorFromColorRef(colorRef), lineWidth))
+                    {
+                        pen.CustomEndCap = new AdjustableArrowCap(6, 8);
+                        g.DrawLine(pen, x - length, y - length, x, y);
+                    }
+
+                    return TrySaveBitmap(bmp, imagePath, out message);
                 }
 
-                return TrySaveBitmap(bmp, imagePath, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("DrawArrowToPoint", ex);
+                return false;
             }
         }
 
@@ -623,24 +746,34 @@ namespace ScreenCaptureAutomation
         [Description("Fills a rectangular region of a saved screenshot with a solid color (default black) to redact PII, overwriting the file in place. Returns True on success; never throws.")]
         public bool RedactRegion(string imagePath, int left, int top, int width, int height, out string message, int colorRef = 0x000000)
         {
-            if (width <= 0 || height <= 0)
+            message = default;
+            try
             {
-                message = "Redaction width and height must both be positive.";
-                return false;
-            }
-
-            if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
-                return false;
-
-            using (bmp)
-            {
-                using (Graphics g = Graphics.FromImage(bmp))
-                using (SolidBrush brush = new SolidBrush(ColorFromColorRef(colorRef)))
+                if (width <= 0 || height <= 0)
                 {
-                    g.FillRectangle(brush, left, top, width, height);
+                    message = "Redaction width and height must both be positive.";
+                    return false;
                 }
 
-                return TrySaveBitmap(bmp, imagePath, out message);
+                if (!TryLoadBitmapWithoutLockingFile(imagePath, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    using (Graphics g = Graphics.FromImage(bmp))
+                    using (SolidBrush brush = new SolidBrush(ColorFromColorRef(colorRef)))
+                    {
+                        g.FillRectangle(brush, left, top, width, height);
+                    }
+
+                    return TrySaveBitmap(bmp, imagePath, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RedactRegion", ex);
+                return false;
             }
         }
 

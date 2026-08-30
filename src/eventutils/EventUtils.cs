@@ -64,31 +64,41 @@ namespace EventAutomation
         /// </summary>
         public bool Initialize(out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                if (!OperatingSystem.IsWindows())
+                message = null;
+                try
                 {
-                    message = "SetWinEventHook requires Windows.";
-                    return false;
-                }
-                lock (_gate)
-                {
-                    if (_disposed)
+                    if (!OperatingSystem.IsWindows())
                     {
-                        message = "EventUtils is disposed; create a new instance.";
+                        message = "SetWinEventHook requires Windows.";
                         return false;
                     }
-                    if (_engine != null)
-                        return true; // already initialized
-                    _engine = new WinEventEngine(OnEventReceived);
-                    _engine.StartThread();
-                    return true;
+                    lock (_gate)
+                    {
+                        if (_disposed)
+                        {
+                            message = "EventUtils is disposed; create a new instance.";
+                            return false;
+                        }
+                        if (_engine != null)
+                            return true; // already initialized
+                        _engine = new WinEventEngine(OnEventReceived);
+                        _engine.StartThread();
+                        return true;
+                    }
                 }
+                catch (Exception ex)
+                {
+                    message = "Initialize failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "Initialize failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("Initialize", ex);
                 return false;
             }
         }
@@ -102,36 +112,46 @@ namespace EventAutomation
         /// </summary>
         public bool Start(string categoriesCsv, out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                lock (_gate)
+                message = null;
+                try
                 {
-                    if (_disposed)
+                    lock (_gate)
                     {
-                        message = "EventUtils is disposed; create a new instance.";
-                        return false;
+                        if (_disposed)
+                        {
+                            message = "EventUtils is disposed; create a new instance.";
+                            return false;
+                        }
+                        if (_engine == null && !Initialize(out message))
+                            return false;
+                        if (!TryParseCategories(categoriesCsv, out var cats, out string parseError))
+                        {
+                            message = parseError;
+                            return false;
+                        }
+                        if (cats.Count == 0)
+                        {
+                            message = "No categories in '" + categoriesCsv + "'. Pass a comma-separated list, e.g. 'Windows,Dialogs'.";
+                            return false;
+                        }
+                        _activeCategories = cats;
+                        _engine.RequestHook(true);
+                        return true;
                     }
-                    if (_engine == null && !Initialize(out message))
-                        return false;
-                    if (!TryParseCategories(categoriesCsv, out var cats, out string parseError))
-                    {
-                        message = parseError;
-                        return false;
-                    }
-                    if (cats.Count == 0)
-                    {
-                        message = "No categories in '" + categoriesCsv + "'. Pass a comma-separated list, e.g. 'Windows,Dialogs'.";
-                        return false;
-                    }
-                    _activeCategories = cats;
-                    _engine.RequestHook(true);
-                    return true;
                 }
+                catch (Exception ex)
+                {
+                    message = "Start failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "Start failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("Start", ex);
                 return false;
             }
         }
@@ -145,26 +165,36 @@ namespace EventAutomation
         /// </summary>
         public bool Stop(out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                lock (_gate)
+                message = null;
+                try
                 {
-                    if (_engine == null)
+                    lock (_gate)
                     {
-                        message = "EventUtils is not initialized; nothing to stop.";
-                        return false;
+                        if (_engine == null)
+                        {
+                            message = "EventUtils is not initialized; nothing to stop.";
+                            return false;
+                        }
+                        _activeCategories = new HashSet<EventCategory>();
+                        _engine.RequestHook(false);
+                        _debounce.Clear();
+                        Native.ProcessHelpers.Clear();
+                        return true;
                     }
-                    _activeCategories = new HashSet<EventCategory>();
-                    _engine.RequestHook(false);
-                    _debounce.Clear();
-                    Native.ProcessHelpers.Clear();
-                    return true;
                 }
+                catch (Exception ex)
+                {
+                    message = "Stop failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "Stop failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("Stop", ex);
                 return false;
             }
         }
@@ -225,35 +255,45 @@ namespace EventAutomation
         /// </summary>
         public bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId, out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                if (string.IsNullOrWhiteSpace(subscriptionId))
+                message = null;
+                try
                 {
-                    message = "subscriptionId is empty.";
+                    if (string.IsNullOrWhiteSpace(subscriptionId))
+                    {
+                        message = "subscriptionId is empty.";
+                        return false;
+                    }
+                    if (!TryParseCategories(categoriesCsv, out var cats, out string parseError))
+                    {
+                        message = parseError;
+                        return false;
+                    }
+                    if (cats.Count == 0)
+                    {
+                        message = "No categories in '" + categoriesCsv + "'. Pass a comma-separated list, e.g. 'Windows,Dialogs'.";
+                        return false;
+                    }
+                    if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+                    {
+                        message = "Invalid filter for '" + subscriptionId + "': " + filterError;
+                        return false;
+                    }
+                    filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
+                    return _subscriptions.TryAdd(subscriptionId, cats, filter, out message);
+                }
+                catch (Exception ex)
+                {
+                    message = "Subscribe failed: " + ex.Message;
                     return false;
                 }
-                if (!TryParseCategories(categoriesCsv, out var cats, out string parseError))
-                {
-                    message = parseError;
-                    return false;
-                }
-                if (cats.Count == 0)
-                {
-                    message = "No categories in '" + categoriesCsv + "'. Pass a comma-separated list, e.g. 'Windows,Dialogs'.";
-                    return false;
-                }
-                if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
-                {
-                    message = "Invalid filter for '" + subscriptionId + "': " + filterError;
-                    return false;
-                }
-                filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
-                return _subscriptions.TryAdd(subscriptionId, cats, filter, out message);
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "Subscribe failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("Subscribe", ex);
                 return false;
             }
         }
@@ -265,14 +305,24 @@ namespace EventAutomation
         /// </summary>
         public bool Unsubscribe(string subscriptionId, out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                return _subscriptions.TryRemove(subscriptionId, out message);
+                message = null;
+                try
+                {
+                    return _subscriptions.TryRemove(subscriptionId, out message);
+                }
+                catch (Exception ex)
+                {
+                    message = "Unsubscribe failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "Unsubscribe failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("Unsubscribe", ex);
                 return false;
             }
         }
@@ -287,17 +337,29 @@ namespace EventAutomation
         /// </summary>
         public bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)
         {
-            eventData = null;
-            hasEvent = false;
-            message = null;
+            eventData = default;
+            hasEvent = default;
+            message = default;
             try
             {
-                eventData = _subscriptions.GetNextEvent(subscriptionId, timeoutMs, out hasEvent, out message);
-                return message == null; // non-null message = unknown subscription
+                eventData = null;
+                hasEvent = false;
+                message = null;
+                try
+                {
+                    eventData = _subscriptions.GetNextEvent(subscriptionId, timeoutMs, out hasEvent, out message);
+                    return message == null; // non-null message = unknown subscription
+                }
+                catch (Exception ex)
+                {
+                    message = "GetNextEvent failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "GetNextEvent failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("GetNextEvent", ex);
                 return false;
             }
         }
@@ -311,16 +373,27 @@ namespace EventAutomation
         /// </summary>
         public bool GetNextEvents(string subscriptionId, int maxCount, int drainMs, out EventData[] events, out string message)
         {
-            events = Array.Empty<EventData>();
-            message = null;
+            events = default;
+            message = default;
             try
             {
-                events = _subscriptions.GetNextEvents(subscriptionId, maxCount, drainMs, out message);
-                return message == null; // non-null message = unknown subscription
+                events = Array.Empty<EventData>();
+                message = null;
+                try
+                {
+                    events = _subscriptions.GetNextEvents(subscriptionId, maxCount, drainMs, out message);
+                    return message == null; // non-null message = unknown subscription
+                }
+                catch (Exception ex)
+                {
+                    message = "GetNextEvents failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "GetNextEvents failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("GetNextEvents", ex);
                 return false;
             }
         }
@@ -334,15 +407,26 @@ namespace EventAutomation
         /// </summary>
         public bool HasEvents(string subscriptionId, out int count, out string message)
         {
-            count = 0;
-            message = null;
+            count = default;
+            message = default;
             try
             {
-                return _subscriptions.HasEvents(subscriptionId, out count, out message);
+                count = 0;
+                message = null;
+                try
+                {
+                    return _subscriptions.HasEvents(subscriptionId, out count, out message);
+                }
+                catch (Exception ex)
+                {
+                    message = "HasEvents failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "HasEvents failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("HasEvents", ex);
                 return false;
             }
         }
@@ -355,14 +439,24 @@ namespace EventAutomation
         /// </summary>
         public bool ClearQueue(string subscriptionId, out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                return _subscriptions.ClearQueue(subscriptionId, out message);
+                message = null;
+                try
+                {
+                    return _subscriptions.ClearQueue(subscriptionId, out message);
+                }
+                catch (Exception ex)
+                {
+                    message = "ClearQueue failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "ClearQueue failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("ClearQueue", ex);
                 return false;
             }
         }
@@ -380,15 +474,25 @@ namespace EventAutomation
         /// </summary>
         public bool SetDebounce(string eventName, int debounceMs, out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                _debounce.Set(eventName, debounceMs);
-                return true;
+                message = null;
+                try
+                {
+                    _debounce.Set(eventName, debounceMs);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    message = "SetDebounce failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "SetDebounce failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("SetDebounce", ex);
                 return false;
             }
         }
@@ -404,25 +508,35 @@ namespace EventAutomation
         /// </summary>
         public bool SetQueueLimits(int maxEvents, string overflowPolicy, out string message)
         {
-            message = null;
+            message = default;
             try
             {
-                if (maxEvents < 1)
+                message = null;
+                try
                 {
-                    message = "maxEvents must be positive.";
+                    if (maxEvents < 1)
+                    {
+                        message = "maxEvents must be positive.";
+                        return false;
+                    }
+                    if (overflowPolicy != "DropOldest" && overflowPolicy != "DropNewest" && overflowPolicy != "Block")
+                    {
+                        message = "overflowPolicy must be 'DropOldest', 'DropNewest', or 'Block'.";
+                        return false;
+                    }
+                    _subscriptions.SetQueueLimits(maxEvents, overflowPolicy);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    message = "SetQueueLimits failed: " + ex.Message;
                     return false;
                 }
-                if (overflowPolicy != "DropOldest" && overflowPolicy != "DropNewest" && overflowPolicy != "Block")
-                {
-                    message = "overflowPolicy must be 'DropOldest', 'DropNewest', or 'Block'.";
-                    return false;
-                }
-                _subscriptions.SetQueueLimits(maxEvents, overflowPolicy);
-                return true;
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "SetQueueLimits failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("SetQueueLimits", ex);
                 return false;
             }
         }
@@ -435,18 +549,29 @@ namespace EventAutomation
         /// </summary>
         public bool DumpRecentEvents(int count, out string json, out string message)
         {
-            json = "[]";
-            message = null;
+            json = default;
+            message = default;
             try
             {
-                var engine = _engine;
-                var events = engine != null ? engine.SnapshotRing(Math.Max(0, count)) : Array.Empty<EventData>();
-                json = JsonSerializer.Serialize(events, EventJson.Options);
-                return true;
+                json = "[]";
+                message = null;
+                try
+                {
+                    var engine = _engine;
+                    var events = engine != null ? engine.SnapshotRing(Math.Max(0, count)) : Array.Empty<EventData>();
+                    json = JsonSerializer.Serialize(events, EventJson.Options);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    message = "DumpRecentEvents failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "DumpRecentEvents failed: " + ex.Message;
+                json = NeverThrowsGuard.Failure("DumpRecentEvents", ex);
                 return false;
             }
         }
@@ -461,36 +586,47 @@ namespace EventAutomation
         /// </summary>
         public bool WasWindowCreated(string filterJson, int withinLastMs, out bool wasCreated, out string message)
         {
-            wasCreated = false;
-            message = null;
+            wasCreated = default;
+            message = default;
             try
             {
-                var engine = _engine;
-                if (engine == null)
+                wasCreated = false;
+                message = null;
+                try
                 {
-                    message = "Engine not started; call Initialize() and Start() first.";
-                    return false;
-                }
-                if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
-                {
-                    message = filterError;
-                    return false;
-                }
-                filter = filter ?? EventFilter.Create();
-                long cutoff = DateTime.UtcNow.Ticks - TimeSpan.FromMilliseconds(Math.Max(0, withinLastMs)).Ticks;
-                foreach (var e in engine.SnapshotRing(500))
-                {
-                    if (e.Category == "WindowCreated" && e.Timestamp >= cutoff && filter.Matches(e, _hostPid))
+                    var engine = _engine;
+                    if (engine == null)
                     {
-                        wasCreated = true;
-                        return true;
+                        message = "Engine not started; call Initialize() and Start() first.";
+                        return false;
                     }
+                    if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+                    {
+                        message = filterError;
+                        return false;
+                    }
+                    filter = filter ?? EventFilter.Create();
+                    long cutoff = DateTime.UtcNow.Ticks - TimeSpan.FromMilliseconds(Math.Max(0, withinLastMs)).Ticks;
+                    foreach (var e in engine.SnapshotRing(500))
+                    {
+                        if (e.Category == "WindowCreated" && e.Timestamp >= cutoff && filter.Matches(e, _hostPid))
+                        {
+                            wasCreated = true;
+                            return true;
+                        }
+                    }
+                    return true;
                 }
-                return true;
+                catch (Exception ex)
+                {
+                    message = "WasWindowCreated failed: " + ex.Message;
+                    return false;
+                }
+
             }
-            catch (Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = "WasWindowCreated failed: " + ex.Message;
+                message = NeverThrowsGuard.Failure("WasWindowCreated", ex);
                 return false;
             }
         }

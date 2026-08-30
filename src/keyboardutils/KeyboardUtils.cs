@@ -283,15 +283,25 @@ namespace KeyboardAutomation
         [Description("Presses and holds a key down. Returns True on success; never throws.")]
         public bool KeyDown(VirtualKey key, out string message)
         {
+            message = default;
             try
             {
-                SendInputs(new[] { MakeKeyInput((int)key, false) });
-                message = null;
-                return true;
+                try
+                {
+                    SendInputs(new[] { MakeKeyInput((int)key, false) });
+                    message = null;
+                    return true;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = ex.Message;
+                    return false;
+                }
+
             }
-            catch (Win32Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = ex.Message;
+                message = NeverThrowsGuard.Failure("KeyDown", ex);
                 return false;
             }
         }
@@ -304,15 +314,25 @@ namespace KeyboardAutomation
         [Description("Releases a previously pressed key. Returns True on success; never throws.")]
         public bool KeyUp(VirtualKey key, out string message)
         {
+            message = default;
             try
             {
-                SendInputs(new[] { MakeKeyInput((int)key, true) });
-                message = null;
-                return true;
+                try
+                {
+                    SendInputs(new[] { MakeKeyInput((int)key, true) });
+                    message = null;
+                    return true;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = ex.Message;
+                    return false;
+                }
+
             }
-            catch (Win32Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = ex.Message;
+                message = NeverThrowsGuard.Failure("KeyUp", ex);
                 return false;
             }
         }
@@ -321,17 +341,42 @@ namespace KeyboardAutomation
         /// <param name="key">The key to press.</param>
         /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
         /// <returns><c>true</c> if the input was injected successfully.</returns>
-        /// <remarks>If the release fails after the press succeeded, the key remains held down. Never throws.</remarks>
+        /// <remarks>The release is attempted from cleanup even if the hold operation fails. Never throws.</remarks>
         [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses and releases a key (~20 ms between down and up). Returns True on success; never throws.")]
         public bool PressKey(VirtualKey key, out string message)
         {
-            if (!KeyDown(key, out message))
+            message = default;
+            try
+            {
+                if (!KeyDown(key, out message))
+                    return false;
+
+                bool primaryOk = false;
+                string primaryMessage = null;
+                string cleanupMessage = null;
+                try
+                {
+                    Thread.Sleep(20);
+                    primaryOk = true;
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    primaryMessage = NeverThrowsGuard.Failure("PressKey", ex);
+                }
+                finally
+                {
+                    if (!KeyUp(key, out cleanupMessage) && cleanupMessage == null)
+                        cleanupMessage = "The key could not be released after the press.";
+                }
+                return CompleteCompoundOperation(primaryOk, primaryMessage, cleanupMessage, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("PressKey", ex);
                 return false;
-            Thread.Sleep(20);
-            if (!KeyUp(key, out message))
-                return false;
-            return true;
+            }
         }
 
         /// <summary>
@@ -350,15 +395,28 @@ namespace KeyboardAutomation
         [Description("Presses a key while holding modifier keys (Control/Shift/Alt/Win). Returns True on success; never throws.")]
         public bool PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers, out string message)
         {
+            message = default;
             try
             {
-                SendInputs(BuildModifierComboBatch(key, modifiers).ToArray());
-                message = null;
-                return true;
+                try
+                {
+                    SendInputs(BuildModifierComboBatch(key, modifiers).ToArray());
+                    message = null;
+                    return true;
+                }
+                catch (Win32Exception ex)
+                {
+                    string cleanupMessage = TryReleaseKeys(key, modifiers);
+                    message = string.IsNullOrEmpty(cleanupMessage)
+                        ? ex.Message
+                        : ex.Message + " Cleanup also failed: " + cleanupMessage;
+                    return false;
+                }
+
             }
-            catch (Win32Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = ex.Message;
+                message = NeverThrowsGuard.Failure("PressKeyWithModifiers", ex);
                 return false;
             }
         }
@@ -396,27 +454,40 @@ namespace KeyboardAutomation
         /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c> (including a null/empty <paramref name="keys"/>).</param>
         /// <param name="keys">The keys to press, in order.</param>
         /// <returns><c>true</c> if the input was injected successfully.</returns>
-        /// <remarks>If the batch is only partially injected, the keys already pressed
-        /// remain held down. Never throws.</remarks>
+        /// <remarks>If the batch is only partially injected, a best-effort release batch
+        /// is sent for every requested key. Never throws.</remarks>
         [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses all given keys down in order, then releases them in reverse order. Returns True on success; never throws.")]
         public bool PressKeyCombo(out string message, params VirtualKey[] keys)
         {
-            if (keys == null || keys.Length == 0)
-            {
-                message = "At least one key is required.";
-                return false;
-            }
-
+            message = default;
             try
             {
-                SendInputs(BuildComboBatch(keys).ToArray());
-                message = null;
-                return true;
+                if (keys == null || keys.Length == 0)
+                {
+                    message = "At least one key is required.";
+                    return false;
+                }
+
+                try
+                {
+                    SendInputs(BuildComboBatch(keys).ToArray());
+                    message = null;
+                    return true;
+                }
+                catch (Win32Exception ex)
+                {
+                    string cleanupMessage = TryReleaseKeys(keys);
+                    message = string.IsNullOrEmpty(cleanupMessage)
+                        ? ex.Message
+                        : ex.Message + " Cleanup also failed: " + cleanupMessage;
+                    return false;
+                }
+
             }
-            catch (Win32Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = ex.Message;
+                message = NeverThrowsGuard.Failure("PressKeyCombo", ex);
                 return false;
             }
         }
@@ -440,17 +511,42 @@ namespace KeyboardAutomation
         /// <param name="holdMilliseconds">How long to hold the key, in milliseconds.</param>
         /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
         /// <returns><c>true</c> if the input was injected successfully.</returns>
-        /// <remarks>If the release fails after the press succeeded, the key remains held down. Never throws.</remarks>
+        /// <remarks>The release is attempted from cleanup even if the hold operation fails. Never throws.</remarks>
         [Category("Keyboard - Press & Hold & Combo")]
         [Description("Holds a key down for the given duration, then releases it. Returns True on success; never throws.")]
         public bool HoldKey(VirtualKey key, int holdMilliseconds, out string message)
         {
-            if (!KeyDown(key, out message))
+            message = default;
+            try
+            {
+                if (!KeyDown(key, out message))
+                    return false;
+
+                bool primaryOk = false;
+                string primaryMessage = null;
+                string cleanupMessage = null;
+                try
+                {
+                    Thread.Sleep(Math.Max(0, holdMilliseconds));
+                    primaryOk = true;
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    primaryMessage = NeverThrowsGuard.Failure("HoldKey", ex);
+                }
+                finally
+                {
+                    if (!KeyUp(key, out cleanupMessage) && cleanupMessage == null)
+                        cleanupMessage = "The key could not be released after the hold.";
+                }
+                return CompleteCompoundOperation(primaryOk, primaryMessage, cleanupMessage, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("HoldKey", ex);
                 return false;
-            Thread.Sleep(Math.Max(0, holdMilliseconds));
-            if (!KeyUp(key, out message))
-                return false;
-            return true;
+            }
         }
 
         #endregion
@@ -465,7 +561,17 @@ namespace KeyboardAutomation
         [Description("Types a string via simulated Unicode key input (default ~10 ms/character). Returns True on success; never throws.")]
         public bool TypeText(string text, out string message)
         {
-            return TypeText(text, 10, out message);
+            message = default;
+            try
+            {
+                return TypeText(text, 10, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("TypeText", ex);
+                return false;
+            }
         }
 
         /// <summary>
@@ -482,28 +588,38 @@ namespace KeyboardAutomation
         [Description("Types a string via simulated Unicode key input with a custom per-character delay. Returns True on success; never throws.")]
         public bool TypeText(string text, int delayMilliseconds, out string message)
         {
-            if (text == null)
-            {
-                message = "Text cannot be null.";
-                return false;
-            }
-
+            message = default;
             try
             {
-                foreach (var rune in text.EnumerateRunes())
+                if (text == null)
                 {
-                    SendInputs(BuildUnicodeRuneBatch(rune));
-
-                    if (delayMilliseconds > 0)
-                        Thread.Sleep(delayMilliseconds);
+                    message = "Text cannot be null.";
+                    return false;
                 }
 
-                message = null;
-                return true;
+                try
+                {
+                    foreach (var rune in text.EnumerateRunes())
+                    {
+                        SendInputs(BuildUnicodeRuneBatch(rune));
+
+                        if (delayMilliseconds > 0)
+                            Thread.Sleep(delayMilliseconds);
+                    }
+
+                    message = null;
+                    return true;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = ex.Message;
+                    return false;
+                }
+
             }
-            catch (Win32Exception ex)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = ex.Message;
+                message = NeverThrowsGuard.Failure("TypeText", ex);
                 return false;
             }
         }
@@ -534,70 +650,78 @@ namespace KeyboardAutomation
         /// cannot be restored - the clipboard is left holding the pasted text. Note the
         /// text briefly sits on the system clipboard, where any process monitoring the
         /// clipboard can observe it; prefer <see cref="TypeText(string, out string)"/> for sensitive values.
-        /// If restoring the original clipboard contents afterward itself fails, that
-        /// failure is swallowed rather than masking the primary outcome already captured
-        /// in <paramref name="message"/>/the return value.
+        /// If restoring the original clipboard contents fails, the method returns false;
+        /// when the paste also failed, both failures are retained in <paramref name="message"/>.
         /// </remarks>
         [Category("Keyboard - Clipboard")]
         [Description("Sets the clipboard to the given text, sends Ctrl+V, then restores the original clipboard. Returns True on success; never throws.")]
         public bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)
         {
-            if (text == null)
-            {
-                message = "Text cannot be null.";
-                return false;
-            }
-
-            string original = null;
-            bool clipboardWasEmpty = false;
-            bool succeeded = false;
-            string failureMessage = null;
-
+            message = default;
             try
             {
-                original = GetClipboardText();
-                clipboardWasEmpty = CountClipboardFormats() == 0;
+                if (text == null)
+                {
+                    message = "Text cannot be null.";
+                    return false;
+                }
 
-                SetClipboardText(text);
-                if (!PressKeyWithModifiers(VirtualKey.V, ModifierKeys.Control, out failureMessage))
-                {
-                    succeeded = false;
-                }
-                else
-                {
-                    if (postPasteDelayMilliseconds > 0)
-                        Thread.Sleep(postPasteDelayMilliseconds);
-                    succeeded = true;
-                }
-            }
-            catch (Win32Exception ex)
-            {
-                succeeded = false;
-                failureMessage = ex.Message;
-            }
-            finally
-            {
+                string original = null;
+                bool clipboardWasEmpty = false;
+                bool succeeded = false;
+                string failureMessage = null;
+                string cleanupMessage = null;
+
                 try
                 {
-                    if (original != null)
-                        SetClipboardText(original);
-                    else if (clipboardWasEmpty)
-                        ClearClipboard();
-                    // else: the clipboard held non-text content (e.g. an image), which was
-                    // already destroyed by EmptyClipboard inside SetClipboardText when the
-                    // paste text was set - EmptyClipboard must precede SetClipboardData, so
-                    // there is no raw-Win32 way to preserve it. Leave the pasted text on
-                    // the clipboard; the original content is gone either way.
-                }
-                catch (Win32Exception)
-                {
-                    // Best-effort restoration - don't let a cleanup failure mask the
-                    // primary paste outcome already captured above.
-                }
-            }
+                    original = GetClipboardText();
+                    clipboardWasEmpty = CountClipboardFormats() == 0;
 
-            message = succeeded ? null : failureMessage;
-            return succeeded;
+                    SetClipboardText(text);
+                    if (!PressKeyWithModifiers(VirtualKey.V, ModifierKeys.Control, out failureMessage))
+                    {
+                        succeeded = false;
+                    }
+                    else
+                    {
+                        if (postPasteDelayMilliseconds > 0)
+                            Thread.Sleep(postPasteDelayMilliseconds);
+                        succeeded = true;
+                    }
+                }
+                catch (Win32Exception ex)
+                {
+                    succeeded = false;
+                    failureMessage = ex.Message;
+                }
+                finally
+                {
+                    try
+                    {
+                        if (original != null)
+                            SetClipboardText(original);
+                        else if (clipboardWasEmpty)
+                            ClearClipboard();
+                        // else: the clipboard held non-text content (e.g. an image), which was
+                        // already destroyed by EmptyClipboard inside SetClipboardText when the
+                        // paste text was set - EmptyClipboard must precede SetClipboardData, so
+                        // there is no raw-Win32 way to preserve it. Leave the pasted text on
+                        // the clipboard; the original content is gone either way.
+                    }
+                    catch (Win32Exception ex)
+                    {
+                        cleanupMessage = "Clipboard restoration failed: " + ex.Message;
+                    }
+                }
+
+                return CompleteCompoundOperation(succeeded, failureMessage, cleanupMessage, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("PasteText", ex);
+                return false;
+            }
         }
 
         private static string GetClipboardText()
@@ -932,6 +1056,57 @@ namespace KeyboardAutomation
         /// Windows refuses them (locked / secure desktop, UAC prompt, or a target app
         /// running at a higher integrity level - UIPI blocks the injection).
         /// </summary>
+        private static bool CompleteCompoundOperation(
+            bool primaryOk,
+            string primaryMessage,
+            string cleanupMessage,
+            out string message)
+        {
+            if (primaryOk && string.IsNullOrEmpty(cleanupMessage))
+            {
+                message = null;
+                return true;
+            }
+
+            if (!primaryOk && !string.IsNullOrEmpty(cleanupMessage))
+            {
+                message = (string.IsNullOrEmpty(primaryMessage) ? "The operation failed." : primaryMessage) +
+                          " Cleanup also failed: " + cleanupMessage;
+                return false;
+            }
+
+            message = primaryOk
+                ? cleanupMessage
+                : (string.IsNullOrEmpty(primaryMessage) ? "The operation failed." : primaryMessage);
+            return false;
+        }
+
+        private static string TryReleaseKeys(VirtualKey key, ModifierKeys modifiers)
+        {
+            var keys = new List<VirtualKey> { key };
+            if ((modifiers & ModifierKeys.Win) != 0) keys.Add(VirtualKey.LWin);
+            if ((modifiers & ModifierKeys.Alt) != 0) keys.Add(VirtualKey.Alt);
+            if ((modifiers & ModifierKeys.Shift) != 0) keys.Add(VirtualKey.Shift);
+            if ((modifiers & ModifierKeys.Control) != 0) keys.Add(VirtualKey.Control);
+            return TryReleaseKeys(keys.ToArray());
+        }
+
+        private static string TryReleaseKeys(VirtualKey[] keys)
+        {
+            try
+            {
+                var releases = new INPUT[keys.Length];
+                for (int i = 0; i < keys.Length; i++)
+                    releases[i] = MakeKeyInput((int)keys[keys.Length - 1 - i], true);
+                SendInputs(releases);
+                return null;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                return NeverThrowsGuard.Failure("ReleaseKeys", ex);
+            }
+        }
+
         private static void SendInputs(INPUT[] inputs)
         {
             uint sent = SendInput((uint)inputs.Length, inputs, InputSize);
