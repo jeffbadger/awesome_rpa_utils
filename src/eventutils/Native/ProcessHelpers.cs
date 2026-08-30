@@ -7,14 +7,18 @@ using System.Threading;
 namespace EventAutomation.Native
 {
     /// <summary>
-    /// Resolves a process id to its image name (e.g. "notepad"), cached per pid.
-    /// The cache is bounded: entries are keyed by pid and evicted when the pid is
-    /// reused is not tracked — a pid that exits keeps its name cached, which is
-    /// fine because the name is what we want for lookbacks. Call <see cref="Clear"/>
-    /// on Stop/Dispose so a long-running robot does not accumulate stale entries.
+    /// Resolves a process id to its image name (e.g. "notepad"), cached per pid
+    /// so the WinEvent hook thread does one OpenProcess/QueryFullProcessImageName
+    /// per distinct pid instead of per event. Pid reuse is not tracked — a reused
+    /// pid keeps the first name seen, which is acceptable because the name is
+    /// what we want for lookbacks. The cache is bounded (cleared wholesale when
+    /// it exceeds 1024 entries) and <see cref="Clear"/> runs on Stop/Dispose so a
+    /// long-running robot does not accumulate stale entries.
     /// </summary>
     internal static class ProcessHelpers
     {
+        private const int CacheLimit = 1024;
+
         private static readonly ConcurrentDictionary<uint, string> Cache = new ConcurrentDictionary<uint, string>();
 
         /// <summary>Gets the image name for a pid, or null if it cannot be resolved.</summary>
@@ -26,6 +30,8 @@ namespace EventAutomation.Native
                 return cached;
             string name = QueryName(pid);
             Cache[pid] = name;
+            if (Cache.Count > CacheLimit)
+                Cache.Clear(); // crude but cheap bound; entries re-resolve on demand
             return name;
         }
 

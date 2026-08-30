@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -18,6 +19,10 @@ namespace EventAutomation
         private string _class;
         private string _titleContains;
         private Regex _titleRegex;
+        // Set when TitleMatches was given a pattern that failed to compile: the
+        // filter then fails closed (Matches returns false for everything) rather
+        // than silently degrading the invalid regex into a wildcard.
+        private bool _hasRegexError;
         private bool _hasButtonChildren;
         private bool _excludeSelf;
 
@@ -43,10 +48,16 @@ namespace EventAutomation
         /// <summary>Requires the window title to contain this text (case-insensitive).</summary>
         public EventFilter TitleContains(string text) { _titleContains = text; return this; }
 
-        /// <summary>Requires the window title to match this regex (IgnoreCase | Compiled).</summary>
+        /// <summary>
+        /// Requires the window title to match this regex (IgnoreCase | Compiled,
+        /// with a 250 ms match timeout). A pattern that fails to compile makes the
+        /// filter fail closed — <see cref="Matches"/> returns False for everything
+        /// — instead of silently behaving as a wildcard.
+        /// </summary>
         public EventFilter TitleMatches(string pattern)
         {
-            _titleRegex = CompileRegex(pattern);
+            _titleRegex = CompileRegex(pattern, out string error);
+            _hasRegexError = error != null;
             return this;
         }
 
@@ -64,15 +75,32 @@ namespace EventAutomation
         /// </summary>
         public static EventFilter FromJson(string json)
         {
+            return TryFromJson(json, out var filter, out _) ? filter : null;
+        }
+
+        /// <summary>
+        /// Parses the compact JSON filter form and reports why it was rejected.
+        /// Returns True on success. Fails with an error when the JSON is
+        /// malformed/not an object, or when the <c>titleMatches</c> regex does
+        /// not compile — nothing is silently degraded to a wildcard.
+        /// Null/empty <paramref name="json"/> is a match-all filter (no error).
+        /// </summary>
+        public static bool TryFromJson(string json, out EventFilter filter, out string error)
+        {
+            filter = null;
+            error = null;
             if (string.IsNullOrWhiteSpace(json))
-                return null;
+                return true; // null/empty = match-all; caller combines with Create()
             try
             {
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
                 if (root.ValueKind != JsonValueKind.Object)
-                    return null;
-                var filter = new EventFilter();
+                {
+                    error = "Filter JSON must be an object.";
+                    return false;
+                }
+                filter = new EventFilter();
                 foreach (var prop in root.EnumerateObject())
                 {
                     switch (prop.Name)
@@ -96,7 +124,13 @@ namespace EventAutomation
                             filter._titleContains = prop.Value.GetString();
                             break;
                         case "titleMatches":
-                            filter._titleRegex = CompileRegex(prop.Value.GetString());
+                            filter._titleRegex = CompileRegex(prop.Value.GetString(), out string regexError);
+                            if (regexError != null)
+                            {
+                                error = regexError;
+                                filter = null;
+                                return false;
+                            }
                             break;
                         case "hasButtonChildren":
                             filter._hasButtonChildren = prop.Value.ValueKind == JsonValueKind.True;
@@ -107,11 +141,13 @@ namespace EventAutomation
                         // Unknown keys are intentionally ignored.
                     }
                 }
-                return filter;
+                return true;
             }
-            catch
+            catch (Exception ex)
             {
-                return null;
+                filter = null;
+                error = "Malformed filter JSON: " + ex.Message;
+                return false;
             }
         }
 
@@ -123,6 +159,8 @@ namespace EventAutomation
         {
             if (e == null)
                 return false;
+            if (_hasRegexError)
+                return false; // fail closed: an uncompilable TitleMatches matches nothing
             string procName = NormalizeProcessName(e.ProcessName);
             if (_process != null && !string.Equals(procName, _process, StringComparison.OrdinalIgnoreCase))
                 return false;
@@ -151,24 +189,43 @@ namespace EventAutomation
             return name;
         }
 
-        private static Regex CompileRegex(string pattern)
+        /// <summary>
+        /// Compiles with IgnoreCase|Compiled and a 250 ms match timeout so a
+        /// catastrophic-backtracking pattern cannot stall a caller indefinitely.
+        /// Returns null and sets <paramref name="error"/> for an invalid pattern.
+        /// </summary>
+        private static Regex CompileRegex(string pattern, out string error)
         {
+            error = null;
             if (string.IsNullOrWhiteSpace(pattern))
                 return null;
             try
             {
-                return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+                return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(250));
             }
-            catch
+            catch (Exception ex)
             {
+                error = "Invalid regular expression '" + pattern + "': " + ex.Message;
                 return null;
             }
         }
+
+        // Enumerating child windows is not free, and for a busy window (hundreds
+        // of controls) it happens on the WinEvent hook thread. Cache the result
+        // per hwnd for a short window so repeated events for the same dialog do
+        // not re-enumerate; a hung window can at worst stall the pump once per
+        // cache entry, not once per event.
+        private static readonly ConcurrentDictionary<uint, (long Ticks, bool Found)> ButtonChildCache =
+            new ConcurrentDictionary<uint, (long, bool)>();
+        private static readonly TimeSpan ButtonChildCacheTtl = TimeSpan.FromMilliseconds(500);
 
         private static bool HasButtonChild(uint hwnd)
         {
             if (hwnd == 0)
                 return false;
+            long now = Environment.TickCount64;
+            if (ButtonChildCache.TryGetValue(hwnd, out var cached) && now - cached.Ticks < ButtonChildCacheTtl.TotalMilliseconds)
+                return cached.Found;
             bool found = false;
             WinEventInterop.EnumChildWindows(
                 new IntPtr((long)hwnd),
@@ -184,6 +241,9 @@ namespace EventAutomation
                     return true;
                 },
                 IntPtr.Zero);
+            ButtonChildCache[hwnd] = (now, found);
+            if (ButtonChildCache.Count > 1024)
+                ButtonChildCache.Clear(); // crude bound; hwnds are cheap to recompute
             return found;
         }
     }

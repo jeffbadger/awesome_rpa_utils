@@ -47,10 +47,18 @@ namespace EventAutomation
         /// <summary>
         /// Waits for a title-change event matching the filter whose new title
         /// matches <paramref name="titleRegex"/> (null/empty matches any title).
+        /// A regex that does not compile returns False with a message before any
+        /// waiting begins.
         /// </summary>
         public bool WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            var re = CompileRegex(titleRegex);
+            var re = TryCompileRegex(titleRegex, "titleRegex", out message);
+            if (message != null)
+            {
+                eventData = null;
+                timedOut = false;
+                return false;
+            }
             return WaitFor(filterJson, timeoutMs, "TitleChanged", out eventData, out timedOut, out message,
                 e => e.Category == "TitleChanged" && (re == null || re.IsMatch(e.Title ?? string.Empty)));
         }
@@ -70,10 +78,18 @@ namespace EventAutomation
         /// <summary>
         /// Waits for a state-change event matching the filter whose normalized
         /// state matches <paramref name="stateRegex"/> (null/empty matches any).
+        /// A regex that does not compile returns False with a message before any
+        /// waiting begins.
         /// </summary>
         public bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
-            var re = CompileRegex(stateRegex);
+            var re = TryCompileRegex(stateRegex, "stateRegex", out message);
+            if (message != null)
+            {
+                eventData = null;
+                timedOut = false;
+                return false;
+            }
             return WaitFor(filterJson, timeoutMs, "StateChanged", out eventData, out timedOut, out message,
                 e => e.Category == "StateChanged" && (re == null || re.IsMatch(e.State ?? string.Empty)));
         }
@@ -106,6 +122,12 @@ namespace EventAutomation
             }
         }
 
+        /// <summary>
+        /// Shared wait core. Filter and timeout are validated before any waiting:
+        /// a malformed filter JSON, an unusable timeout (0 or negative is an
+        /// immediate timeout), or a stopped engine all return False with a
+        /// message instead of waiting.
+        /// </summary>
         private bool WaitFor(string filterJson, int timeoutMs, string eventName, out EventData eventData, out bool timedOut, out string message, Func<EventData, bool> predicate)
         {
             eventData = null;
@@ -113,13 +135,18 @@ namespace EventAutomation
             message = null;
             try
             {
+                if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+                {
+                    message = filterError;
+                    return false;
+                }
+                filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
                 if (_engine == null || _activeCategories.Count == 0)
                 {
                     message = "Engine not started; call Initialize() and Start() first.";
                     return false;
                 }
-                var filter = EventFilter.FromJson(filterJson) ?? EventFilter.Create();
-                var task = _waiters.Register(e => predicate(e) && filter.Matches(e, _hostPid), Math.Max(0, timeoutMs));
+                var task = _waiters.Register(e => predicate(e) && filter.Matches(e, _hostPid), timeoutMs);
                 var result = task.GetAwaiter().GetResult();
                 if (result == null)
                 {
@@ -137,16 +164,24 @@ namespace EventAutomation
             }
         }
 
-        private static Regex CompileRegex(string pattern)
+        /// <summary>
+        /// Compiles with IgnoreCase|Compiled and a 250 ms match timeout so a
+        /// catastrophic-backtracking pattern cannot hang a wait. Null pattern is
+        /// "match any"; an invalid pattern is rejected via
+        /// <paramref name="message"/> rather than silently matching everything.
+        /// </summary>
+        private static Regex TryCompileRegex(string pattern, string paramName, out string message)
         {
+            message = null;
             if (string.IsNullOrWhiteSpace(pattern))
                 return null;
             try
             {
-                return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+                return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(250));
             }
-            catch
+            catch (Exception ex)
             {
+                message = "Invalid regular expression in " + paramName + " '" + pattern + "': " + ex.Message;
                 return null;
             }
         }

@@ -11,7 +11,8 @@ namespace EventAutomation
 
     /// <summary>
     /// A single WinEvent, flattened into Pega-mappable fields. Produced by the
-    /// event engine and delivered to subscriptions and waiters. All fields are
+    /// event engine and delivered to subscriptions and waiters — each consumer
+    /// receives its own copy, but treat the object as read-only. All fields are
     /// plain strings/numbers so the object maps directly onto Pega properties;
     /// use <see cref="ToJson"/> for anything structured.
     /// </summary>
@@ -43,6 +44,23 @@ namespace EventAutomation
 
         /// <summary>Normalized state for state-change events, e.g. "Visible", "Minimized".</summary>
         public string State;
+
+        /// <summary>Returns a shallow copy with the same field values.</summary>
+        public EventData Clone()
+        {
+            return new EventData
+            {
+                EventId = EventId,
+                Category = Category,
+                Timestamp = Timestamp,
+                Hwnd = Hwnd,
+                ProcessName = ProcessName,
+                ProcessId = ProcessId,
+                ClassName = ClassName,
+                Title = Title,
+                State = State
+            };
+        }
 
         /// <summary>Serializes this event to a compact JSON object.</summary>
         public string ToJson()

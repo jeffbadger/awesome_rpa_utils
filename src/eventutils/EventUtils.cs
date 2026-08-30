@@ -114,10 +114,14 @@ namespace EventAutomation
                     }
                     if (_engine == null && !Initialize(out message))
                         return false;
-                    var cats = ParseCategories(categoriesCsv);
-                    if (cats == null || cats.Count == 0)
+                    if (!TryParseCategories(categoriesCsv, out var cats, out string parseError))
                     {
-                        message = "No valid categories in '" + categoriesCsv + "'.";
+                        message = parseError;
+                        return false;
+                    }
+                    if (cats.Count == 0)
+                    {
+                        message = "No categories in '" + categoriesCsv + "'. Pass a comma-separated list, e.g. 'Windows,Dialogs'.";
                         return false;
                     }
                     _activeCategories = cats;
@@ -134,7 +138,8 @@ namespace EventAutomation
 
         /// <summary>
         /// Unhooks the WinEvent hook and clears the active category set. Queues
-        /// are preserved so they can still be drained. Returns True on success;
+        /// are preserved so they can still be drained. Returns False with a
+        /// message when the component was never initialized (nothing to stop).
         /// <paramref name="message"/> is null on success and a human-readable
         /// reason otherwise. Never throws.
         /// </summary>
@@ -145,8 +150,15 @@ namespace EventAutomation
             {
                 lock (_gate)
                 {
+                    if (_engine == null)
+                    {
+                        message = "EventUtils is not initialized; nothing to stop.";
+                        return false;
+                    }
                     _activeCategories = new HashSet<EventCategory>();
-                    _engine?.RequestHook(false);
+                    _engine.RequestHook(false);
+                    _debounce.Clear();
+                    Native.ProcessHelpers.Clear();
                     return true;
                 }
             }
@@ -159,29 +171,40 @@ namespace EventAutomation
 
         /// <summary>
         /// Full teardown: unhooks, stops the hook thread, clears subscriptions,
-        /// waiters, and debounce state. Safe to call multiple times; a subsequent
-        /// <see cref="Initialize(out string)"/> restarts the component.
+        /// waiters, and debounce state. Safe to call multiple times. After
+        /// Dispose the instance is final: a subsequent
+        /// <see cref="Initialize(out string)"/> returns False with a message —
+        /// create a new instance instead.
         /// </summary>
         protected override void Dispose(bool disposing)
         {
+            _waiters.CancelAll();
+            _subscriptions.ClearAll();
+            _debounce.Clear();
+
+            var engine = (WinEventEngine)null;
             lock (_gate)
             {
                 if (_disposed)
+                {
+                    base.Dispose(disposing);
                     return;
+                }
                 _disposed = true;
-                try
-                {
-                    _waiters.CancelAll();
-                    _subscriptions.ClearAll();
-                    _debounce.Clear();
-                    _engine?.Dispose();
-                    _engine = null;
-                    _activeCategories = new HashSet<EventCategory>();
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine("EventUtils.Dispose failed: " + ex.Message);
-                }
+                engine = _engine;
+                _engine = null;
+                _activeCategories = new HashSet<EventCategory>();
+            }
+            // Dispose joins the hook thread (up to 2 s) — do it outside _gate so
+            // other public methods are not blocked behind teardown.
+            try
+            {
+                engine?.Dispose();
+                Native.ProcessHelpers.Clear();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("EventUtils.Dispose failed: " + ex.Message);
             }
             base.Dispose(disposing);
         }
@@ -197,7 +220,8 @@ namespace EventAutomation
         /// <paramref name="subscriptionId"/>. A null/empty filter matches all
         /// events. Returns True on success; <paramref name="message"/> is null
         /// on success and a human-readable reason otherwise (malformed filter
-        /// JSON, duplicate id, invalid category). Never throws.
+        /// JSON, invalid <c>titleMatches</c> regex, unknown category, duplicate
+        /// id, empty id). Never throws.
         /// </summary>
         public bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId, out string message)
         {
@@ -209,16 +233,19 @@ namespace EventAutomation
                     message = "subscriptionId is empty.";
                     return false;
                 }
-                var cats = ParseCategories(categoriesCsv);
-                if (cats == null || cats.Count == 0)
+                if (!TryParseCategories(categoriesCsv, out var cats, out string parseError))
                 {
-                    message = "No valid categories in '" + categoriesCsv + "'.";
+                    message = parseError;
                     return false;
                 }
-                EventFilter filter = EventFilter.FromJson(filterJson);
-                if (!string.IsNullOrEmpty(filterJson) && filter == null)
+                if (cats.Count == 0)
                 {
-                    message = "Malformed filter JSON for '" + subscriptionId + "'.";
+                    message = "No categories in '" + categoriesCsv + "'. Pass a comma-separated list, e.g. 'Windows,Dialogs'.";
+                    return false;
+                }
+                if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+                {
+                    message = "Invalid filter for '" + subscriptionId + "': " + filterError;
                     return false;
                 }
                 filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
@@ -368,10 +395,12 @@ namespace EventAutomation
 
         /// <summary>
         /// Sets the per-subscription queue limit and overflow policy
-        /// ("DropOldest" | "DropNewest" | "Block"). Applies to existing and
-        /// future subscriptions. Returns True on success;
-        /// <paramref name="message"/> is null on success and a human-readable
-        /// reason otherwise (invalid arguments). Never throws.
+        /// ("DropOldest" | "DropNewest" | "Block"). "Block" is accepted for
+        /// compatibility but behaves exactly like "DropNewest": the WinEvent
+        /// hook thread must never block, so a full queue always drops the new
+        /// event. Applies to existing and future subscriptions. Returns True on
+        /// success; <paramref name="message"/> is null on success and a
+        /// human-readable reason otherwise (invalid arguments). Never throws.
         /// </summary>
         public bool SetQueueLimits(int maxEvents, string overflowPolicy, out string message)
         {
@@ -442,7 +471,12 @@ namespace EventAutomation
                     message = "Engine not started; call Initialize() and Start() first.";
                     return false;
                 }
-                var filter = EventFilter.FromJson(filterJson) ?? EventFilter.Create();
+                if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+                {
+                    message = filterError;
+                    return false;
+                }
+                filter = filter ?? EventFilter.Create();
                 long cutoff = DateTime.UtcNow.Ticks - TimeSpan.FromMilliseconds(Math.Max(0, withinLastMs)).Ticks;
                 foreach (var e in engine.SnapshotRing(500))
                 {
@@ -488,20 +522,30 @@ namespace EventAutomation
             _waiters.Match(data);
         }
 
-        private static HashSet<EventCategory> ParseCategories(string categoriesCsv)
+        private static bool TryParseCategories(string categoriesCsv, out HashSet<EventCategory> cats, out string error)
         {
-            var result = new HashSet<EventCategory>();
+            cats = new HashSet<EventCategory>();
+            error = null;
             if (string.IsNullOrWhiteSpace(categoriesCsv))
-                return result;
+                return true; // caller treats an empty set as invalid input
+            var unknown = new List<string>();
             foreach (var part in categoriesCsv.Split(','))
             {
                 string name = part.Trim();
                 if (name.Length == 0)
                     continue;
                 if (Enum.TryParse(name, true, out EventCategory cat))
-                    result.Add(cat);
+                    cats.Add(cat);
+                else
+                    unknown.Add(name);
             }
-            return result;
+            if (unknown.Count > 0)
+            {
+                error = "Unknown event categories in '" + categoriesCsv + "': '" + string.Join("', '", unknown) +
+                        "'. Valid categories: " + string.Join(", ", Enum.GetNames(typeof(EventCategory))) + ".";
+                return false;
+            }
+            return true;
         }
     }
 }
