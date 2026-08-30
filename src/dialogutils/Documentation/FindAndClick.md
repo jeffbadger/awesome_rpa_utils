@@ -3,7 +3,8 @@
 ## Dismiss a Yes/No confirmation
 
 ```csharp
-if (dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100, out IntPtr hWnd))
+if (dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100,
+                         out IntPtr hWnd, exactMatch: false))
 {
     dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _);
 }
@@ -12,7 +13,7 @@ if (dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100, out In
 ## Click a button by its visible label instead of a control ID
 
 ```csharp
-dialog.ClickDialogButtonByText(hWnd, "Don't Save", out _);
+dialog.ClickDialogButtonByText(hWnd, "Don't Save", out bool wasEnabled, out _);
 ```
 
 ## Click a button whose text you only know part of
@@ -21,7 +22,7 @@ Useful when a button's text includes a variable suffix, e.g. `"Retry (3 left)"`
 or a trailing ellipsis like `"Details..."`:
 
 ```csharp
-dialog.ClickDialogButtonByText(hWnd, "Retry", out _, exactMatch: false);
+dialog.ClickDialogButtonByText(hWnd, "Retry", out bool wasEnabled, out _, exactMatch: false);
 ```
 
 ## Matching "Yes"/"No"/"OK" against real button text
@@ -35,7 +36,7 @@ comparing, so matching against what you actually see on screen just works — no
 special-casing needed, and this applies with either `exactMatch` setting:
 
 ```csharp
-dialog.ClickDialogButtonByText(hWnd, "Yes", out _); // matches a button whose real text is "&Yes"
+dialog.ClickDialogButtonByText(hWnd, "Yes", out bool wasEnabled, out _); // matches "&Yes"
 ```
 
 ## Lower-level: find then click
@@ -141,34 +142,32 @@ dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _, waitForEnabledM
 dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _, waitForEnabledMs: 0);
 ```
 
-## The click found the right button but the dialog just doesn't close (already enabled, no exception)
+## Understand what a click can report
 
-Some apps' click handlers ignore a click for reasons that have nothing to do with
-Win32 (app-internal validation, async state not yet ready) — the button was already
-enabled the whole time, so waiting for `IsWindowEnabled` doesn't help. Since Windows
-gives no reliable success signal for a click, the only robust fix is to verify the
-outcome and retry, which is what `ClickDialogButtonByText` does by default: it clicks,
-checks whether the dialog actually closed, and re-clicks (up to `maxAttempts`, default
-3, `retryDelayMs` apart, default 300 ms) if not — no separate call needed:
+Windows does not provide a reliable signal that an application acted on `BM_CLICK`.
+`ClickDialogButtonByText` therefore reports only what it can observe: its return value
+means the button was found, and `wasEnabled` means it was enabled when the single click
+was sent.
 
 ```csharp
-bool closed = dialog.ClickDialogButtonByText(hWnd, "Yes", out string message, exactMatch: false);
-if (!closed)
-{
-    // Still open after every attempt, or no button matched at all — message explains which:
+bool found = dialog.ClickDialogButtonByText(
+    hWnd, "Yes", out bool wasEnabled, out string message, exactMatch: false);
+
+if (!found)
     Console.WriteLine(message);
-}
-
-// Tune the retry, or disable it (click exactly once):
-dialog.ClickDialogButtonByText(hWnd, "Yes", out _, exactMatch: false, maxAttempts: 5, retryDelayMs: 500);
-dialog.ClickDialogButtonByText(hWnd, "Yes", out _, exactMatch: false, maxAttempts: 1);
-
-// Each click also waits up to waitForEnabledMs for the button to become enabled
-// (default 500 ms) — tune it for a dialog known to be slow to become interactive:
-dialog.ClickDialogButtonByText(hWnd, "Yes", out _, waitForEnabledMs: 2000);
+else if (!wasEnabled)
+    Console.WriteLine("The button was found but disabled when clicked.");
 ```
 
-Only meaningful for a click expected to close the dialog — a button that intentionally
-keeps it open (e.g. "Apply") will use up every attempt and return `false` (with `message`
-saying so). This method never throws — a missing button is also reported via `message`,
-not an exception.
+When closing the dialog is the expected outcome, verify that separately:
+
+```csharp
+if (found && wasEnabled)
+{
+    bool closed = dialog.WaitForDialogToClose(hWnd, timeoutMs: 5000, pollIntervalMs: 100);
+    // This confirms only that the original dialog handle disappeared.
+}
+```
+
+The click waits up to `waitForEnabledMs` (default 500 ms) before sending. Increase it
+for a dialog known to become interactive slowly.

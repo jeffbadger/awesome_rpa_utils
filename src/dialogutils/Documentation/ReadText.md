@@ -35,5 +35,5 @@ it on screen to confirm you've got the right one before scripting against it.
 
 ```csharp
 var controls = dialog.ListDialogControls(hWnd);
-dialog.HighlightControl(controls[2].Handle);
+dialog.HighlightControl(controls[2].Handle, System.Drawing.Color.Red);
 ```

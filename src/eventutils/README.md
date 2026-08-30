@@ -68,7 +68,7 @@ ok = events.WaitForDialogAppeared("{\"process\":\"notepad\"}", 10000, out EventD
 if (ok && !timedOut)
 {
     var dialogs = new DialogAutomation.DialogUtils();
-    dialogs.ClickDialogButtonByText(new IntPtr(dialog.Hwnd), "OK", out _);
+    dialogs.ClickDialogButtonByText(new IntPtr(dialog.Hwnd), "OK", out bool wasEnabled, out _);
 }
 ```
 
@@ -89,7 +89,7 @@ while (true)
     var capture = new ScreenCaptureAutomation.ScreenCaptureUtils();
     capture.CaptureWindow(new IntPtr(dialog.Hwnd), out _, out _);
     var dialogs = new DialogAutomation.DialogUtils();
-    dialogs.ClickDialogButtonByText(new IntPtr(dialog.Hwnd), "OK", out _);
+    dialogs.ClickDialogButtonByText(new IntPtr(dialog.Hwnd), "OK", out bool wasEnabled, out _);
 }
 ```
 

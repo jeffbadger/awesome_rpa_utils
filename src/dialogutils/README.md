@@ -46,14 +46,14 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
 
 | Method | Signature | Description |
 |---|---|---|
-| `FindDialog` | `bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch = true, int processId = 0)` | Finds a visible top-level dialog window by its title (exact or substring match, case-insensitive; optionally scoped to a process ID via `GetWindowThreadProcessId`) and reports whether it has a native `Button` control DialogUtils can click. Hidden windows are skipped, so it can't match a dialog before it actually appears. Returns the first match; use `FindAllDialogs` when more than one window could match. Returns True if found; never throws. |
+| `FindDialog` | `bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch, int processId = 0)` | Finds a visible top-level dialog window by its title (exact or substring match, case-insensitive; optionally scoped to a process ID via `GetWindowThreadProcessId`) and reports whether it has a native `Button` control DialogUtils can click. Hidden windows are skipped, so it can't match a dialog before it actually appears. Returns the first match; use `FindAllDialogs` when more than one window could match. Returns True if found; never throws. |
 | `FindAllDialogs` | `List<IntPtr> FindAllDialogs(string titlePattern, bool exactMatch = true, int processId = 0)` | Finds every visible top-level window whose title matches (exact or substring, case-insensitive; optionally process-scoped) — the same matching as `FindDialog`, but returning all matches instead of just the first. Returns an empty list if none match; never throws. |
 | `CanDismissDialog` | `bool CanDismissDialog(IntPtr hDialog)` | Checks whether a dialog has at least one native `Button` control that `ClickButton`/`ClickDialogButtonById`/`ClickDialogButtonByText` can target. |
 | `FindButtonByText` | `bool FindButtonByText(IntPtr hDialog, out IntPtr hButton, string buttonText, bool exactMatch = true)` | Finds a button on a dialog by its visible text (exact match, or substring when `exactMatch: false`). Returns True if found; never throws. |
 | `FindButtonById` | `bool FindButtonById(IntPtr hDialog, out IntPtr hButton, int controlId)` | Finds a control on a dialog by its control ID. Returns True if found; never throws. |
 | `ClickButton` | `bool ClickButton(IntPtr hButton, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by sending it `BM_CLICK`, waiting briefly for the button to become enabled first. Returns True if it was enabled when clicked. |
 | `ClickDialogButtonById` | `bool ClickDialogButtonById(IntPtr hDialog, int controlId, out bool wasEnabled, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Invokes a button by its control ID — a well-known `DialogButton` value cast to `int`, or a custom ID from `ListDialogControls`. Returns True if the control was found (and clicked); never throws. |
-| `ClickDialogButtonByText` | `bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out string message, bool exactMatch = true, int maxAttempts = 3, int retryDelayMs = 300, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Finds a button by its visible text (exact match, or substring when `exactMatch: false`) and invokes it, verifying the dialog actually closed and re-clicking (up to `maxAttempts`) if it didn't. Returns whether it closed; `message` explains why when it returns False. Never throws. |
+| `ClickDialogButtonByText` | `bool ClickDialogButtonByText(IntPtr hDialog, string buttonText, out bool wasEnabled, out string message, bool exactMatch = true, int waitForEnabledMs = 500, int pollIntervalMs = 25)` | Finds a button by its visible text and invokes it once. Returns whether it was found; `wasEnabled` reports whether it was enabled when clicked. Never throws. |
 
 ### Read Text
 
@@ -67,13 +67,13 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
 | Method | Signature | Description |
 |---|---|---|
 | `ListDialogControls` | `List<DialogControlInfo> ListDialogControls(IntPtr hDialog)` | Lists every control on a dialog (including nested controls) with its ID, text, and window class name. |
-| `HighlightControl` | `bool HighlightControl(IntPtr hControl, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around a control (e.g. a handle from `ListDialogControls`) to visually confirm which on-screen control it is. Blocks the calling thread for ~`flashes`×2×`flashMs` (~1.2 s by default). Returns True on success; never throws. |
+| `HighlightControl` | `bool HighlightControl(IntPtr hControl, Color color, int flashes = 3, int flashMs = 200, int lineWidth = 3)` | Flashes an inverting rectangle of the requested color around a control (e.g. a handle from `ListDialogControls`). Blocks the calling thread for ~`flashes`×2×`flashMs` (~1.2 s by default). Returns True on success; never throws. |
 
 ### Wait-for-Dialog Polling
 
 | Method | Signature | Description |
 |---|---|---|
-| `WaitForDialog` | `bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, int processId = 0, bool exactMatch = false)` | Polls for a visible top-level dialog matching the title (exact or substring, case-insensitive; optionally scoped to a process ID) until it appears or the timeout elapses. Note `exactMatch` defaults to `false` (substring) here, unlike `FindDialog`'s `true` — pass it explicitly if you need the same matching. |
+| `WaitForDialog` | `bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, bool exactMatch, int processId = 0)` | Polls for a visible top-level dialog matching the title (exact or substring, case-insensitive; optionally scoped to a process ID) until it appears or the timeout elapses. The required `exactMatch` value makes matching behavior explicit. |
 | `WaitForDialogToClose` | `bool WaitForDialogToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until a dialog handle is no longer valid, or the timeout elapses. |
 
 ## Notes & Caveats
@@ -118,7 +118,7 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
   can never be matched or clicked:
   ```csharp
   dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100,
-                       out IntPtr hWnd, processId: targetPid);
+                       out IntPtr hWnd, exactMatch: false, processId: targetPid);
   ```
 - **`FindDialog`/`WaitForDialog` return the first matching window** — if more than one
   window could match (e.g. two apps both showing a "Confirm" dialog), use
@@ -135,18 +135,14 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
   `BM_CLICK` on a disabled control. `ClickButton`/`ClickDialogButtonById` poll `IsWindowEnabled`
   for up to `waitForEnabledMs` (default 500 ms) before clicking to avoid this race; pass
   `waitForEnabledMs: 0` to click immediately without waiting. `ClickDialogButtonByText`
-  passes its own `waitForEnabledMs`/`pollIntervalMs` through to `ClickButton` — see the
-  next point for why it handles a stuck click differently.
+  passes its own `waitForEnabledMs`/`pollIntervalMs` through to `ClickButton`.
 - **A click that's found the right button and isn't blocked by a disabled state can still
   have no visible effect the first time** — some apps' click handlers ignore a click for
   reasons that aren't visible through Win32 at all (app-internal validation/state not
-  reflected in `IsWindowEnabled`), so waiting for "enabled" doesn't help here; the only
-  reliable fix is to verify the outcome and retry. `ClickDialogButtonByText` does this by
-  default: it clicks, checks whether the dialog actually closed, and re-clicks (up to
-  `maxAttempts`, default 3, `retryDelayMs` apart, default 300 ms) if not, returning whether it
-  closed. This only makes sense for a click expected to close the dialog — for a button that
-  intentionally keeps it open (e.g. "Apply"), it'll use up every attempt and return `false`;
-  pass `maxAttempts: 1` to click exactly once with no retry.
+  reflected in `IsWindowEnabled`). `ClickDialogButtonByText` sends one click and reports
+  whether the button was found and enabled; it cannot report whether the application acted
+  on the click. Use `WaitForDialogToClose` separately when disappearance of the original
+  dialog handle is the outcome the automation needs to observe.
 - **`FindButtonByText`/`ClickDialogButtonByText` strip the `&` access-key mnemonic** from
   both the button's raw text and the text you pass before comparing — a standard `MessageBox`'s
   Yes/No buttons are literally `"&Yes"`/`"&No"` per `GetWindowText` (Windows only draws the `&`

@@ -51,7 +51,7 @@ namespace DialogAutomation.Tests
         [Fact]
         public void FindDialog_NullOrEmptyPattern_ReturnsFalseAndZeroedOutParams()
         {
-            Assert.False(_dialog.FindDialog(null, out IntPtr hDialog, out bool canDismiss));
+            Assert.False(_dialog.FindDialog(null, out IntPtr hDialog, out bool canDismiss, exactMatch: false));
             Assert.Equal(IntPtr.Zero, hDialog);
             Assert.False(canDismiss);
 
@@ -125,7 +125,7 @@ namespace DialogAutomation.Tests
         {
             // timeoutMs: 0 makes the first timeout check fire immediately, so no Win32
             // call is made and the test runs on any OS.
-            Assert.False(_dialog.WaitForDialog(null, timeoutMs: 0, pollIntervalMs: 10, out IntPtr hWnd));
+            Assert.False(_dialog.WaitForDialog(null, timeoutMs: 0, pollIntervalMs: 10, out IntPtr hWnd, exactMatch: false));
             Assert.Equal(IntPtr.Zero, hWnd);
 
             Assert.False(_dialog.WaitForDialog("", timeoutMs: 0, pollIntervalMs: 10, out hWnd, exactMatch: true));
@@ -137,10 +137,12 @@ namespace DialogAutomation.Tests
         [Fact]
         public void ClickDialogButtonByText_NullOrEmptyButtonText_ReturnsFalseWithMessage()
         {
-            Assert.False(_dialog.ClickDialogButtonByText(IntPtr.Zero, null, out string message));
+            Assert.False(_dialog.ClickDialogButtonByText(IntPtr.Zero, null, out bool wasEnabled, out string message));
+            Assert.False(wasEnabled);
             Assert.False(string.IsNullOrEmpty(message));
 
-            Assert.False(_dialog.ClickDialogButtonByText(IntPtr.Zero, "", out message, exactMatch: false));
+            Assert.False(_dialog.ClickDialogButtonByText(IntPtr.Zero, "", out wasEnabled, out message, exactMatch: false));
+            Assert.False(wasEnabled);
             Assert.False(string.IsNullOrEmpty(message));
         }
 
@@ -151,7 +153,7 @@ namespace DialogAutomation.Tests
         {
             if (!OperatingSystem.IsWindows()) return;
 
-            Assert.False(_dialog.HighlightControl(IntPtr.Zero));
+            Assert.False(_dialog.HighlightControl(IntPtr.Zero, System.Drawing.Color.Red));
         }
     }
 }

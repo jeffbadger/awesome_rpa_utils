@@ -3,7 +3,8 @@
 ## Wait for a save-confirmation dialog that may or may not appear
 
 ```csharp
-if (dialog.WaitForDialog("Save changes", timeoutMs: 3000, pollIntervalMs: 100, out IntPtr hWnd))
+if (dialog.WaitForDialog("Save changes", timeoutMs: 3000, pollIntervalMs: 100,
+                         out IntPtr hWnd, exactMatch: false))
 {
     dialog.ClickDialogButtonById(hWnd, (int)DialogButton.No, out _);
 }
@@ -22,7 +23,7 @@ pre-created form before the dialog actually appears:
 ```csharp
 int targetPid = windows.GetWindowProcessId(appMainWindow);
 if (dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100,
-                         out IntPtr hWnd, processId: targetPid))
+                         out IntPtr hWnd, exactMatch: false, processId: targetPid))
 {
     dialog.ClickDialogButtonById(hWnd, (int)DialogButton.Yes, out _);
 }
@@ -30,8 +31,8 @@ if (dialog.WaitForDialog("Confirm", timeoutMs: 5000, pollIntervalMs: 100,
 
 ## Wait for an exact title match
 
-`WaitForDialog` matches substrings by default (`exactMatch: false`), which differs from
-`FindDialog`'s default of `true`. Pass `exactMatch: true` when the title must match exactly
+`WaitForDialog` requires the caller to choose exact or substring matching. Pass
+`exactMatch: true` when the title must match exactly
 (e.g. a dialog titled "Confirm" should not match a window titled "Confirm changes"):
 
 ```csharp
