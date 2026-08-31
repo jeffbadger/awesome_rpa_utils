@@ -28,6 +28,19 @@ if (window.WaitForWindow("Notepad", timeoutMs: 5000, pollIntervalMs: 100, out In
 }
 ```
 
+The original overload's `false` covers both a genuine timeout and a null/empty
+`title` (polling refused), indistinguishably. The `message`-output overload
+tells them apart:
+
+```csharp
+if (!window.WaitForWindow("Notepad", timeoutMs: 5000, pollIntervalMs: 100, out IntPtr hWnd, out string message))
+{
+    if (message != null)
+        throw new ArgumentException($"Bad WaitForWindow call: {message}");
+    Logger.Warn("Notepad window never appeared within 5s.");
+}
+```
+
 ## Wait for a window to close before continuing
 
 ```csharp

@@ -41,6 +41,47 @@ namespace WindowAutomation.Tests
             Assert.Equal(IntPtr.Zero, hWnd);
         }
 
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void WaitForWindowWithMessage_NullOrEmptyTitle_ReturnsFalseWithMessage(string title)
+        {
+            bool found = _window.WaitForWindow(title, timeoutMs: 5000, pollIntervalMs: 10, out IntPtr hWnd, out string message);
+
+            Assert.False(found);
+            Assert.Equal(IntPtr.Zero, hWnd);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- Try* getters: a zero handle is always invalid, so False + message on every
+        //     platform - on Windows this is IsWindow(IntPtr.Zero) == false; on a non-Windows
+        //     host without user32.dll, the P/Invoke itself fails and is caught by the
+        //     never-throws contract, which also produces False + message. ---
+
+        [Fact]
+        public void TryGetWindowTitle_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_window.TryGetWindowTitle(IntPtr.Zero, out string title, out string message));
+            Assert.Null(title);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryGetWindowClassName_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_window.TryGetWindowClassName(IntPtr.Zero, out string className, out string message));
+            Assert.Null(className);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryGetWindowProcessId_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_window.TryGetWindowProcessId(IntPtr.Zero, out int processId, out string message));
+            Assert.Equal(0, processId);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         // --- SetWindowBounds: negative dimensions rejected before any Win32 call, with a message ---
 
         [Theory]
