@@ -298,7 +298,7 @@ namespace OcrAutomation
         /// <returns><c>true</c> if matching text was found; <c>false</c> if it wasn't found, or if a real failure prevented the search (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("OCR - Structured Results")]
         [Description("Searches a screen region for text and returns its bounding rectangle. Returns True if found; never throws.")]
-        public bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)
+        public bool FindTextLocationAsRectangle(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)
         {
             location = default;
             message = default;
@@ -337,13 +337,13 @@ namespace OcrAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("FindTextLocation", ex);
+                message = NeverThrowsGuard.Failure("FindTextLocationAsRectangle", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="FindTextLocation(string, int, int, int, int, out Rectangle, out string)"/>,
+        /// Same as <see cref="FindTextLocationAsRectangle(string, int, int, int, int, out Rectangle, out string)"/>,
         /// but reports the matched bounding rectangle as scalar left/top/width/height outputs
         /// for designers without a <c>Rectangle</c> proxy.
         /// </summary>
@@ -366,7 +366,7 @@ namespace OcrAutomation
             foundTop = default;
             foundWidth = default;
             foundHeight = default;
-            bool found = FindTextLocation(searchText, left, top, width, height, out Rectangle location, out message);
+            bool found = FindTextLocationAsRectangle(searchText, left, top, width, height, out Rectangle location, out message);
             foundLeft = location.Left;
             foundTop = location.Top;
             foundWidth = location.Width;
@@ -476,13 +476,13 @@ namespace OcrAutomation
         /// <returns><c>true</c> if the expected text appeared before the timeout; <c>false</c> if it timed out, or if a real failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("OCR - Wait for Text")]
         [Description("Polls a screen region until it contains the expected text, or the timeout elapses. Returns True if found in time; never throws.")]
-        public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)
+        public bool WaitForTextToAppearSimple(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)
         {
             return WaitForTextToAppear(left, top, width, height, expectedText, timeoutMs, pollIntervalMs, out _, out message);
         }
 
         /// <summary>
-        /// Same as <see cref="WaitForTextToAppear(int, int, int, int, string, int, int, out string)"/>,
+        /// Same as <see cref="WaitForTextToAppearSimple(int, int, int, int, string, int, int, out string)"/>,
         /// but also reports whether the wait ended because the timeout elapsed, so the
         /// automation can branch on timeout vs. execution failure without a null-message test.
         /// </summary>
