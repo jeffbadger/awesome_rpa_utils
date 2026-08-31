@@ -31,6 +31,10 @@ if (!mouse.DragAndDrop(before.X, before.Y, before.X + 200, before.Y, out string 
 }
 ```
 
+A `bool GetPosition(out int x, out int y, out string message)` scalar overload is
+also available for designers without a `Point` proxy — it reads both coordinates
+from the same native call, unlike calling `GetX` then `GetY` as two separate steps.
+
 ## `MoveTo(int x, int y)`
 
 **Scenario:** A screen-scrape step needs the cursor parked over a specific grid

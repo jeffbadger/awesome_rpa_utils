@@ -243,6 +243,41 @@ namespace MouseAutomation
         }
 
         /// <summary>
+        /// Gets the current cursor position as scalar X/Y outputs from one native read,
+        /// for designers without a <c>Point</c> proxy.
+        /// </summary>
+        /// <param name="x">The X coordinate in screen pixels, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="y">The Y coordinate in screen pixels, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the cursor position could not be read.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the underlying GetCursorPos call failed. Never throws.</returns>
+        /// <remarks>
+        /// Unlike calling <see cref="GetX"/> then <see cref="GetY"/> as two separate steps,
+        /// this reads both coordinates from a single <c>GetCursorPos</c> call, so the values
+        /// are an atomic snapshot even if the cursor moves between calls.
+        /// </remarks>
+        [Category("Mouse - Position")]
+        [Description("Gets the current cursor X/Y as scalar outputs from one atomic native read. Returns True on success; never throws.")]
+        public bool GetPosition(out int x, out int y, out string message)
+        {
+            x = default;
+            y = default;
+            message = default;
+            try
+            {
+                bool ok = TryGetPoint(out POINT p, out message);
+                x = ok ? p.X : 0;
+                y = ok ? p.Y : 0;
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetPosition", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Instantly moves the cursor to the given screen coordinates.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
@@ -1589,6 +1624,47 @@ namespace MouseAutomation
             }
         }
 
+        /// <summary>
+        /// Gets the rectangle the cursor is currently confined to, as scalar outputs,
+        /// for designers without a <c>Rectangle</c> proxy.
+        /// </summary>
+        /// <param name="left">Left edge of the clip rectangle, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="top">Top edge of the clip rectangle, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="width">Width of the clip rectangle, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="height">Height of the clip rectangle, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the GetClipCursor call failed. Never throws.</returns>
+        [Category("Mouse - Cursor")]
+        [Description("Gets the rectangle the cursor is currently confined to, as scalar left/top/width/height. Returns True on success; never throws.")]
+        public bool GetCursorClip(out int left, out int top, out int width, out int height, out string message)
+        {
+            left = default;
+            top = default;
+            width = default;
+            height = default;
+            message = default;
+            try
+            {
+                if (!GetClipCursor(out RECT rc))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClipCursor failed.").Message;
+                    return false;
+                }
+                left = rc.Left;
+                top = rc.Top;
+                width = rc.Right - rc.Left;
+                height = rc.Bottom - rc.Top;
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetCursorClip", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Button State / Screen Info
@@ -2093,6 +2169,38 @@ namespace MouseAutomation
                 bool ok = TryGetWindowRect(hWnd, out int left, out int top, out int width, out int height, out message);
                 bounds = ok ? new System.Drawing.Rectangle(left, top, width, height) : default;
                 return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetWindowBounds", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets the screen-space bounding rectangle of a window, as scalar outputs,
+        /// for designers without a <c>Rectangle</c> proxy.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to measure.</param>
+        /// <param name="left">Left edge of the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="top">Top edge of the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="width">Width of the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="height">Height of the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetWindowRect failed (e.g. an invalid handle). Never throws.</returns>
+        [Category("Mouse - Window Targeting")]
+        [Description("Gets the screen-space bounding rectangle of a window, as scalar left/top/width/height. Returns True on success; never throws.")]
+        public bool GetWindowBounds(IntPtr hWnd, out int left, out int top, out int width, out int height, out string message)
+        {
+            left = default;
+            top = default;
+            width = default;
+            height = default;
+            message = default;
+            try
+            {
+                return TryGetWindowRect(hWnd, out left, out top, out width, out height, out message);
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))

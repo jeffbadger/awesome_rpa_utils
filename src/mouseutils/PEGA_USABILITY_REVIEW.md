@@ -14,9 +14,9 @@ object as an input. The main friction is in complex outputs.
 
 | Method group | Non-scalar port | Rating | Assessment |
 |---|---|---|---|
-| `GetPosition` | `out Point position` | Proxy friction | Pega must expose a `Point` proxy to read X/Y. `GetX` and `GetY` are scalar alternatives, but two calls are not one atomic snapshot. Add `GetPosition(out int x, out int y, out string message)`. |
-| `GetCursorClip` | `out Rectangle clip` | Proxy friction | No primitive-output alternative exists. Add an overload returning left, top, width, and height. |
-| `GetWindowBounds` | `IntPtr hWnd`, `out Rectangle bounds` | Chainable input; proxy-friction output | The handle can come from WindowUtils or `GetWindowAtPoint`; consuming the rectangle requires proxy configuration. Add primitive bound outputs. |
+| `GetPosition` | `out Point position` | Direct scalar overload added | `GetX`/`GetY` were already scalar alternatives, but two calls are not one atomic snapshot. Added `GetPosition(out int x, out int y, out string message)`, reading both from a single native call; the `Point` overload remains for callers with a proxy. |
+| `GetCursorClip` | `out Rectangle clip` | Direct scalar overload added | Added `GetCursorClip(out int left, out int top, out int width, out int height, out string message)`; the `Rectangle` overload remains for callers with a proxy. |
+| `GetWindowBounds` | `IntPtr hWnd`, `out Rectangle bounds` | Chainable input; direct scalar overload added | The handle can come from WindowUtils or `GetWindowAtPoint`. Added `GetWindowBounds(IntPtr hWnd, out int left, out int top, out int width, out int height, out string message)`; the `Rectangle` overload remains for callers with a proxy. |
 | `ClickWindow`, `ClickWindowAtPoint`, `ClickWindowAtClientPoint`, `DoubleClickWindowAtClientPoint` | `IntPtr hWnd` | Chainable | Intended to consume a handle from WindowUtils/DialogUtils or `GetWindowAtPoint`. Fine when utilities share one automation, but awkward as a standalone MouseUtils workflow. Document the producer→consumer chain prominently. |
 | `ClientPointToScreen`, `ScreenPointToClient`, `ClickAtClientPoint`, `ClickAtRelativePosition` | `IntPtr hWnd` | Chainable | Same handle chain. Coordinate outputs are already primitive. No adapter required. |
 | `SafeClickAt` | `IntPtr expectedWindowHandle` | Chainable | The safety value must come from a prior find/wait operation. This is appropriate because manually typing a stale numeric handle would undermine the safety guarantee. |
@@ -31,15 +31,21 @@ methods for common combinations rather than integer-mask inputs.
 
 ## Recommended changes
 
-1. Add a scalar `GetPosition` overload returning `x` and `y` from one native read.
-2. Add scalar-output overloads for `GetCursorClip` and `GetWindowBounds`.
-3. Add a short Pega example that wires `WindowUtils.FindWindowByTitle` into a
-   MouseUtils handle consumer.
+1. **Done.** Added a scalar `GetPosition(out int x, out int y, out string message)`
+   overload, reading both coordinates from one native call.
+2. **Done.** Added scalar-output overloads for `GetCursorClip` and
+   `GetWindowBounds`.
+3. **Done.** Added a producer → consumer example wiring
+   `WindowUtils.FindWindowByTitle` into `GetWindowBounds`/`ClickAtClientPoint` to
+   [Documentation/WindowRelativeTargeting.md](Documentation/WindowRelativeTargeting.md).
 4. Verify flags-enum selection for `ModifierKeys` on the actual Robot Studio
-   design surface.
+   design surface. *(Out of scope for this pass.)*
 
 ## Verdict
 
 `MouseUtils` has no non-scalar input that is effectively unusable. Its `IntPtr`
-inputs are deliberate chain types. The three structure outputs are usable through
-proxies but deserve primitive overloads to reduce design-surface friction.
+inputs are deliberate chain types. `GetPosition`, `GetCursorClip`, and
+`GetWindowBounds` now have primitive-output overloads alongside their structure
+overloads, removing the proxy-configuration friction for designers without one.
+`ModifierKeys` flag-combining support on the actual Robot Studio design surface
+remains an open question for a future pass.
