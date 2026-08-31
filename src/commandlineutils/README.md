@@ -40,7 +40,9 @@ exhaust memory — the tail is replaced with a truncation notice.
 | Method | Signature | Description |
 |---|---|---|
 | `Run` | `bool Run(string fileName, out CommandResult result, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null, Encoding outputEncoding = null)` | Runs an executable directly (no shell), waits for it to exit, and captures its exit code, stdout, and stderr (capped, see `OutputTruncated`). Returns True if the process ran (regardless of exit code/timeout); never throws. |
+| `RunFlat` | `bool RunFlat(string fileName, out int exitCode, out string standardOutput, out string standardError, out bool timedOut, out bool outputTruncated, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1, string environmentVariablesText = null, string outputEncodingName = null)` | Same as `Run`, but with scalar outputs instead of `CommandResult`, a `NAME=VALUE`-per-line `environmentVariablesText` instead of `IDictionary`, and an `outputEncodingName` (e.g. `"utf-8"`) instead of `Encoding`. Distinctly named, not an overload of `Run`. |
 | `RunShellCommand` | `bool RunShellCommand(string command, out CommandResult result, out string message, string[] allowedPrograms = null, string workingDirectory = null, int timeoutMs = -1, IDictionary<string, string> environmentVariables = null, Encoding outputEncoding = null)` | Runs a command through `cmd.exe /d /s /c`, waits for it to exit, and captures its exit code, stdout, and stderr. Use for pipes, redirection, shell built-ins, or `.bat`/`.cmd` files. When `allowedPrograms` is supplied, every top-level command segment must start with an allowed program or nothing runs. Returns True if the command ran; never throws. |
+| `RunShellCommandFlat` | `bool RunShellCommandFlat(string command, out int exitCode, out string standardOutput, out string standardError, out bool timedOut, out bool outputTruncated, out string message, string allowedProgramsCsv = null, string workingDirectory = null, int timeoutMs = -1, string environmentVariablesText = null, string outputEncodingName = null)` | Same as `RunShellCommand`, but with scalar outputs, a comma-separated `allowedProgramsCsv` instead of `string[]`, `environmentVariablesText` instead of `IDictionary`, and `outputEncodingName` instead of `Encoding`. Distinctly named, not an overload of `RunShellCommand`. |
 
 ### Elevated
 
@@ -53,9 +55,24 @@ exhaust memory — the tail is replaced with a truncation notice.
 | Method | Signature | Description |
 |---|---|---|
 | `StartFireAndForget` | `bool StartFireAndForget(string fileName, out int processId, out string message, string arguments = null, string workingDirectory = null, IDictionary<string, string> environmentVariables = null)` | Starts a process without redirecting output or waiting for it to exit, and returns its process ID immediately. Console executables get no console window. Returns True on success; never throws. |
+| `StartFireAndForgetWithEnvironment` | `bool StartFireAndForgetWithEnvironment(string fileName, out int processId, out string message, string arguments = null, string workingDirectory = null, string environmentVariablesText = null)` | Same as `StartFireAndForget`, but with a `NAME=VALUE`-per-line `environmentVariablesText` instead of `IDictionary`. Distinctly named, not an overload of `StartFireAndForget`. |
 
 ## Notes & Caveats
 
+- **`RunFlat`/`RunShellCommandFlat`/`StartFireAndForgetWithEnvironment` are
+  distinctly-named Pega-oriented counterparts**, not overloads of
+  `Run`/`RunShellCommand`/`StartFireAndForget` — so a Pega designer's method
+  picker never has to disambiguate between two methods with the same name by
+  parameter list alone. Each replaces every object-typed port
+  (`CommandResult`, `IDictionary<string, string>`, `Encoding`, `string[]`)
+  with a scalar equivalent: individual `exitCode`/`standardOutput`/
+  `standardError`/`timedOut`/`outputTruncated` outputs, newline-delimited
+  `NAME=VALUE` `environmentVariablesText`, an `outputEncodingName` string
+  (`Encoding.GetEncoding`-compatible, e.g. `"utf-8"`), and a comma-separated
+  `allowedProgramsCsv`. A malformed environment line, an unrecognized
+  encoding name, or a disallowed program all return `false` with a message
+  before anything runs, exactly like the object-based originals. The
+  original methods remain unchanged for .NET callers.
 - **Every method returns `bool` with an `out string message`** rather than throwing —
   bad arguments, a missing executable, `Process.Start` returning null, and a
   cancelled UAC prompt are all reported this way, with `message` set to a

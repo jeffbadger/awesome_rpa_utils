@@ -15,6 +15,21 @@ way as on `Run` (`environmentVariables:`). As everywhere in this component,
 prefer an **absolute** `fileName` — a bare name is resolved via PATH, outside
 this component's control.
 
+## For designers without an `IDictionary<string, string>` proxy
+
+`StartFireAndForgetWithEnvironment` is a distinctly-named (not an overload)
+Pega-friendly counterpart that takes environment variables as newline-delimited
+`NAME=VALUE` text instead of a dictionary object:
+
+```csharp
+cmd.StartFireAndForgetWithEnvironment(@"C:\sync\background-sync.exe",
+    out int pid, out string message,
+    environmentVariablesText: "SYNC_MODE=fast\nLOG_LEVEL=verbose");
+```
+
+A malformed line (missing `=`, or an empty name) returns `false` with a message
+before anything is started.
+
 ## Checking why a fire-and-forget start failed
 
 `StartFireAndForget` returns `bool` with an `out int processId` and
