@@ -102,6 +102,22 @@ other pages inside itself. Choose a different output path with
 substitutes it with `net8.0` and `net10.0` to produce one archive per target
 framework.
 
+## Swagger REST code generation
+
+Rather than hand-writing a REST component per API, the repository includes a
+generator that reads any Swagger 2.0 / OpenAPI 3.x file and emits a
+ready-to-use Robot Studio component with one never-throw method per
+operation — a single self-contained `.cs` file you paste into a Script
+component (or compile with the emitted `.csproj`):
+
+```powershell
+./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store
+```
+
+Generated methods take designer-friendly primitive parameters, return raw
+JSON the automation parses with Robot Studio's built-in JSON methods, and
+need no NuGet packages. See [tools/README.md](tools/README.md).
+
 ## Documentation
 
 Each component has its own README with the full method reference, plus a
