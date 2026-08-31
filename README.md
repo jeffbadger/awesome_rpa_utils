@@ -76,9 +76,12 @@ Each component has its own README with the full method reference, plus a
 `Documentation/` folder with real-world usage examples organized by category:
 
 Public methods documented as never throwing follow the repository-wide
-[Never-Throws Standard](NEVER_THROWS_STANDARD.md). The current rollout and
+[Never-Throws Standard](project-docs/coding-standards/never-throws-standard.md). The current rollout and
 platform-verification status is recorded in
-[Never-Throws Implementation Record](NEVER_THROWS_IMPLEMENTATION.md).
+[Never-Throws Implementation Record](project-docs/coding-standards/never-throws-implementation.md). Overload
+signatures must also satisfy the
+[Signature Uniqueness Standard](project-docs/coding-standards/signature-uniqueness-standard.md), so every
+public method stays selectable on the Pega Robot Studio designer surface.
 
 - [mouseutils/README.md](src/mouseutils/README.md) and [mouseutils/Documentation/](src/mouseutils/Documentation/README.md)
 - [screencaptureutils/README.md](src/screencaptureutils/README.md)
