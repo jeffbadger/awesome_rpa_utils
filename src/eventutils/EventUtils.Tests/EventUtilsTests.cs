@@ -182,6 +182,21 @@ namespace EventAutomation.Tests
             Assert.False(d.ShouldDrop(100, "WindowCreated"));
         }
 
+        [Fact]
+        public void Debounce_distinguishes_hwnds_differing_only_in_high_32_bits()
+        {
+            // Regression test for the Hwnd truncation bug: before the fix, ShouldDrop
+            // took a uint, so a handle whose value only differs in its high 32 bits
+            // collapsed to the same key as a different handle and was wrongly debounced
+            // away as a duplicate of it.
+            var d = new ThrottleDebounce();
+            d.Set("WindowShown", 150);
+            long low = 0x1234;
+            long high = unchecked((long)0x1_0000_1234UL); // same low 32 bits, nonzero high bits
+            Assert.False(d.ShouldDrop(low, "WindowShown"));  // first hwnd, kept
+            Assert.False(d.ShouldDrop(high, "WindowShown")); // a genuinely different hwnd, also kept
+        }
+
         // ------------------------------------------------------------------
         // SubscriptionManager: overflow policies (pure, no interop)
         // ------------------------------------------------------------------
@@ -397,6 +412,181 @@ namespace EventAutomation.Tests
             Assert.Equal("WindowCreated", doc.RootElement.GetProperty("Category").GetString());
             Assert.Equal("notepad.exe", doc.RootElement.GetProperty("ProcessName").GetString());
             Assert.Equal(123u, doc.RootElement.GetProperty("ProcessId").GetUInt32());
+        }
+
+        [Fact]
+        public void EventData_Hwnd_does_not_truncate_a_64_bit_handle()
+        {
+            long fullHandle = unchecked((long)0x00007FF6_12345678UL); // realistic 64-bit handle magnitude
+            var e = new EventData { Hwnd = fullHandle };
+            Assert.Equal(fullHandle, e.Hwnd);
+
+            using var doc = JsonDocument.Parse(e.ToJson());
+            Assert.Equal(fullHandle, doc.RootElement.GetProperty("Hwnd").GetInt64());
+        }
+
+        // ------------------------------------------------------------------
+        // BuildFilterJson: scalar filter construction, no hand-authored JSON
+        // ------------------------------------------------------------------
+
+        [Fact]
+        public void BuildFilterJson_noParameters_returnsMatchAll()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                Assert.Equal("{}", utils.BuildFilterJson());
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void BuildFilterJson_process_roundtrips_through_TryFromJson_and_matches()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                string json = utils.BuildFilterJson(process: "notepad");
+                Assert.True(EventFilter.TryFromJson(json, out var filter, out string error));
+                Assert.Null(error);
+                Assert.True(filter.Matches(Ev("notepad.exe", null, null), 0));
+                Assert.False(filter.Matches(Ev("calc.exe", null, null), 0));
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void BuildFilterJson_processesCsv_matches_any_listed_process()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                string json = utils.BuildFilterJson(processesCsv: "notepad, calc");
+                Assert.True(EventFilter.TryFromJson(json, out var filter, out _));
+                Assert.True(filter.Matches(Ev("notepad.exe", null, null), 0));
+                Assert.True(filter.Matches(Ev("calc.exe", null, null), 0));
+                Assert.False(filter.Matches(Ev("explorer.exe", null, null), 0));
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void BuildFilterJson_invalid_titleMatches_is_rejected_by_TryFromJson()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                string json = utils.BuildFilterJson(titleMatches: "[Bad");
+                Assert.False(EventFilter.TryFromJson(json, out var filter, out string error));
+                Assert.Null(filter);
+                Assert.NotNull(error);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // EventName / EventOverflowPolicy enum overloads
+        // ------------------------------------------------------------------
+
+        [Fact]
+        public void SetDebounce_enum_overload_behaves_like_string_overload()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                Assert.True(utils.SetDebounce(EventName.WindowShown, 250, out string message));
+                Assert.Null(message);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void SetQueueLimits_enum_overload_behaves_like_string_overload()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                Assert.True(utils.SetQueueLimits(10, EventOverflowPolicy.DropOldest, out string message));
+                Assert.Null(message);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // JSON/handle-companion overloads: same guards as their EventData originals
+        // ------------------------------------------------------------------
+
+        [Fact]
+        public void GetNextEventJson_unknown_subscription_returns_false_with_message()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                bool ok = utils.GetNextEvent("nope", 0, out string json, out IntPtr hwnd, out bool hasEvent, out string message);
+                Assert.False(ok);
+                Assert.Equal("{}", json);
+                Assert.Equal(IntPtr.Zero, hwnd);
+                Assert.False(hasEvent);
+                Assert.NotNull(message);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void GetNextEventsJson_unknown_subscription_returns_false_with_message()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                bool ok = utils.GetNextEventsJson("nope", 10, 0, out string json, out string message);
+                Assert.False(ok);
+                Assert.Equal("[]", json);
+                Assert.NotNull(message);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void WaitForWindowCreatedJson_without_start_returns_false_with_message()
+        {
+            var utils = new EventUtils();
+            try
+            {
+                bool ok = utils.WaitForWindowCreated(null, 100, out string json, out IntPtr hwnd, out bool timedOut, out string message);
+                Assert.False(ok);
+                Assert.Equal("{}", json);
+                Assert.Equal(IntPtr.Zero, hwnd);
+                Assert.False(timedOut);
+                Assert.NotNull(message);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
         }
 
         // ------------------------------------------------------------------

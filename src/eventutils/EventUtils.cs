@@ -240,6 +240,63 @@ namespace EventAutomation
         }
 
         // ------------------------------------------------------------------
+        // Filter building
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Builds a compact filter JSON string from scalar parameters, for
+        /// <see cref="Subscribe"/>/the <c>WaitForX</c> methods/<see cref="WasWindowCreated"/>,
+        /// so a Pega automation does not need to hand-author or escape JSON. Every
+        /// parameter is optional (null/empty/default = not filtered on); omitted
+        /// parameters are left out of the resulting JSON entirely. Never throws.
+        /// </summary>
+        /// <param name="process">Match a single process name (case-insensitive; a trailing ".exe" is ignored).</param>
+        /// <param name="processesCsv">Comma-separated process names to match any of (case-insensitive) - the scalar alternative to <c>EventFilter.AnyOfProcesses(params string[])</c>, which is not Pega-friendly.</param>
+        /// <param name="className">Match a window class name (case-insensitive), e.g. "#32770" for a dialog.</param>
+        /// <param name="titleContains">Require the window title to contain this text (case-insensitive).</param>
+        /// <param name="titleMatches">Require the window title to match this regex.</param>
+        /// <param name="hasButtonChildren">Require (<c>true</c>) or exclude (<c>false</c>) a Button child window (dialog heuristic); pass null to not filter on this.</param>
+        /// <param name="excludeSelf">Skip events whose process id equals this component's host process; pass null to not filter on this.</param>
+        /// <returns>The filter JSON string. Returns <c>"{}"</c> (match-all) if every parameter is omitted.</returns>
+        public string BuildFilterJson(string process = null, string processesCsv = null, string className = null, string titleContains = null, string titleMatches = null, bool? hasButtonChildren = null, bool? excludeSelf = null)
+        {
+            try
+            {
+                var fields = new Dictionary<string, object>();
+                if (!string.IsNullOrWhiteSpace(process))
+                    fields["process"] = process;
+                if (!string.IsNullOrWhiteSpace(processesCsv))
+                {
+                    var names = new List<string>();
+                    foreach (var part in processesCsv.Split(','))
+                    {
+                        var trimmed = part.Trim();
+                        if (trimmed.Length > 0)
+                            names.Add(trimmed);
+                    }
+                    if (names.Count > 0)
+                        fields["processes"] = names;
+                }
+                if (!string.IsNullOrWhiteSpace(className))
+                    fields["class"] = className;
+                if (!string.IsNullOrWhiteSpace(titleContains))
+                    fields["titleContains"] = titleContains;
+                if (!string.IsNullOrWhiteSpace(titleMatches))
+                    fields["titleMatches"] = titleMatches;
+                if (hasButtonChildren.HasValue)
+                    fields["hasButtonChildren"] = hasButtonChildren.Value;
+                if (excludeSelf.HasValue)
+                    fields["excludeSelf"] = excludeSelf.Value;
+
+                return fields.Count == 0 ? "{}" : JsonSerializer.Serialize(fields);
+            }
+            catch
+            {
+                return "{}";
+            }
+        }
+
+        // ------------------------------------------------------------------
         // Subscribe model
         // ------------------------------------------------------------------
 
@@ -365,6 +422,44 @@ namespace EventAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="GetNextEvent(string, int, out EventData, out bool, out string)"/>,
+        /// but reports the event as a JSON string plus a chainable window-handle output,
+        /// for designers without an <see cref="EventData"/> proxy.
+        /// </summary>
+        /// <param name="subscriptionId">The subscription to dequeue from.</param>
+        /// <param name="timeoutMs">Maximum time to wait for an event, in milliseconds.</param>
+        /// <param name="eventJson">The dequeued event as JSON, or <c>"{}"</c> if no event was dequeued (<paramref name="hasEvent"/> is <c>false</c>).</param>
+        /// <param name="hwnd">The event's window handle, ready to pass to WindowUtils/UIAutomationUtils, or <see cref="IntPtr.Zero"/> if no event was dequeued.</param>
+        /// <param name="hasEvent">True when <paramref name="eventJson"/> holds an event (false on timeout).</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason (e.g. unknown subscription). Never throws.</param>
+        /// <returns><c>true</c> when the call succeeded (whether or not an event was dequeued); <c>false</c> on a real failure. Never throws.</returns>
+        public bool GetNextEvent(string subscriptionId, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool hasEvent, out string message)
+        {
+            eventJson = default;
+            hwnd = default;
+            hasEvent = default;
+            message = default;
+            try
+            {
+                eventJson = "{}";
+                hwnd = IntPtr.Zero;
+                bool ok = GetNextEvent(subscriptionId, timeoutMs, out EventData eventData, out hasEvent, out message);
+                if (hasEvent && eventData != null)
+                {
+                    eventJson = eventData.ToJson();
+                    hwnd = new IntPtr(eventData.Hwnd);
+                }
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetNextEvent", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Drains up to <paramref name="maxCount"/> queued events, waiting up to
         /// <paramref name="drainMs"/> for the first one. Returns True on success;
         /// <paramref name="events"/> holds the drained events (possibly empty).
@@ -394,6 +489,38 @@ namespace EventAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 message = NeverThrowsGuard.Failure("GetNextEvents", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetNextEvents(string, int, int, out EventData[], out string)"/>,
+        /// but reports the drained events as a JSON array (the same shape
+        /// <see cref="DumpRecentEvents"/> produces), for designers without an
+        /// <see cref="EventData"/> array/collection proxy.
+        /// </summary>
+        /// <param name="subscriptionId">The subscription to drain.</param>
+        /// <param name="maxCount">Maximum number of events to drain.</param>
+        /// <param name="drainMs">Maximum time to wait for the first event, in milliseconds.</param>
+        /// <param name="json">The drained events as a JSON array (possibly empty, <c>"[]"</c>), or <c>"[]"</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason (e.g. unknown subscription). Never throws.</param>
+        /// <returns><c>true</c> on success; <c>false</c> on a real failure. Never throws.</returns>
+        public bool GetNextEventsJson(string subscriptionId, int maxCount, int drainMs, out string json, out string message)
+        {
+            json = default;
+            message = default;
+            try
+            {
+                json = "[]";
+                bool ok = GetNextEvents(subscriptionId, maxCount, drainMs, out EventData[] events, out message);
+                json = JsonSerializer.Serialize(events ?? Array.Empty<EventData>(), EventJson.Options);
+                return ok;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                json = "[]";
+                message = NeverThrowsGuard.Failure("GetNextEventsJson", ex);
                 return false;
             }
         }
@@ -498,6 +625,16 @@ namespace EventAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="SetDebounce(string, int, out string)"/>, but takes the
+        /// repository-owned <see cref="EventName"/> enum instead of a free-form,
+        /// typo-prone string, for designer selection and validation.
+        /// </summary>
+        public bool SetDebounce(EventName eventName, int debounceMs, out string message)
+        {
+            return SetDebounce(eventName.ToString(), debounceMs, out message);
+        }
+
+        /// <summary>
         /// Sets the per-subscription queue limit and overflow policy
         /// ("DropOldest" | "DropNewest" | "Block"). "Block" is accepted for
         /// compatibility but behaves exactly like "DropNewest": the WinEvent
@@ -539,6 +676,16 @@ namespace EventAutomation
                 message = NeverThrowsGuard.Failure("SetQueueLimits", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="SetQueueLimits(int, string, out string)"/>, but takes
+        /// the repository-owned <see cref="EventOverflowPolicy"/> enum instead of a
+        /// free-form string, for designer selection and validation.
+        /// </summary>
+        public bool SetQueueLimits(int maxEvents, EventOverflowPolicy overflowPolicy, out string message)
+        {
+            return SetQueueLimits(maxEvents, overflowPolicy.ToString(), out message);
         }
 
         /// <summary>

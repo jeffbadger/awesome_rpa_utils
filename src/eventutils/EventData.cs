@@ -3,49 +3,53 @@ using System.Text.Json;
 
 namespace EventAutomation
 {
-    /// <summary>Shared serializer options: EventData uses public fields, which STJ omits by default.</summary>
+    /// <summary>Shared serializer options for <see cref="EventData"/>.</summary>
     internal static class EventJson
     {
-        public static readonly JsonSerializerOptions Options = new JsonSerializerOptions { IncludeFields = true };
+        public static readonly JsonSerializerOptions Options = new JsonSerializerOptions();
     }
 
     /// <summary>
-    /// A single WinEvent, flattened into Pega-mappable fields. Produced by the
+    /// A single WinEvent, flattened into Pega-mappable properties. Produced by the
     /// event engine and delivered to subscriptions and waiters — each consumer
-    /// receives its own copy, but treat the object as read-only. All fields are
+    /// receives its own copy, but treat the object as read-only. All properties are
     /// plain strings/numbers so the object maps directly onto Pega properties;
     /// use <see cref="ToJson"/> for anything structured.
     /// </summary>
     public class EventData
     {
         /// <summary>Unique id for this event (GUID, no dashes).</summary>
-        public string EventId;
+        public string EventId { get; internal set; }
 
         /// <summary>Human-readable event name, e.g. "WindowCreated", "DialogAppeared".</summary>
-        public string Category;
+        public string Category { get; internal set; }
 
         /// <summary><see cref="DateTime.UtcNow"/> ticks at capture time.</summary>
-        public long Timestamp;
+        public long Timestamp { get; internal set; }
 
-        /// <summary>Window handle as a 32-bit value (0 if none).</summary>
-        public uint Hwnd;
+        /// <summary>
+        /// Window handle as a signed 64-bit value (0 if none), safe for both 32- and
+        /// 64-bit handles. Reconstruct an <see cref="IntPtr"/> for WindowUtils/
+        /// UIAutomationUtils methods with <c>new IntPtr(Hwnd)</c>.
+        /// </summary>
+        public long Hwnd { get; internal set; }
 
         /// <summary>Process image name (e.g. "notepad"), or null if unknown.</summary>
-        public string ProcessName;
+        public string ProcessName { get; internal set; }
 
         /// <summary>Owning process id.</summary>
-        public uint ProcessId;
+        public uint ProcessId { get; internal set; }
 
         /// <summary>Window class name (e.g. "#32770" for a dialog), or null.</summary>
-        public string ClassName;
+        public string ClassName { get; internal set; }
 
         /// <summary>Window title at capture time, or null.</summary>
-        public string Title;
+        public string Title { get; internal set; }
 
         /// <summary>Normalized state for state-change events, e.g. "Visible", "Minimized".</summary>
-        public string State;
+        public string State { get; internal set; }
 
-        /// <summary>Returns a shallow copy with the same field values.</summary>
+        /// <summary>Returns a shallow copy with the same property values.</summary>
         public EventData Clone()
         {
             return new EventData

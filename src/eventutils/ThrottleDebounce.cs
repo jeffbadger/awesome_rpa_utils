@@ -14,7 +14,7 @@ namespace EventAutomation
         private const int PruneThreshold = 512;
 
         private readonly ConcurrentDictionary<string, int> _debounceMs = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<(uint hwnd, string eventName), long> _lastDelivered = new ConcurrentDictionary<(uint, string), long>();
+        private readonly ConcurrentDictionary<(long hwnd, string eventName), long> _lastDelivered = new ConcurrentDictionary<(long, string), long>();
 
         public ThrottleDebounce()
         {
@@ -37,7 +37,7 @@ namespace EventAutomation
         /// Returns true when this event should be dropped because an identical
         /// (hwnd, event-name) event was delivered within the debounce window.
         /// </summary>
-        public bool ShouldDrop(uint hwnd, string eventName)
+        public bool ShouldDrop(long hwnd, string eventName)
         {
             if (hwnd == 0 || string.IsNullOrEmpty(eventName))
                 return false;

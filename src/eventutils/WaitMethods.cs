@@ -35,6 +35,18 @@ namespace EventAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="WaitForWindowCreated(string, int, out EventData, out bool, out string)"/>,
+        /// but reports the matched event as JSON plus a chainable window-handle output,
+        /// for designers without an <see cref="EventData"/> proxy.
+        /// </summary>
+        public bool WaitForWindowCreated(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)
+        {
+            bool found = WaitForWindowCreated(filterJson, timeoutMs, out EventData eventData, out timedOut, out message);
+            ToJsonAndHwnd(eventData, out eventJson, out hwnd);
+            return found;
+        }
+
         /// <summary>Waits for a window-destroyed event matching the filter.</summary>
         public bool WaitForWindowDestroyed(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
@@ -52,6 +64,17 @@ namespace EventAutomation
                 message = NeverThrowsGuard.Failure("WaitForWindowDestroyed", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForWindowDestroyed(string, int, out EventData, out bool, out string)"/>,
+        /// but reports the matched event as JSON plus a chainable window-handle output.
+        /// </summary>
+        public bool WaitForWindowDestroyed(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)
+        {
+            bool found = WaitForWindowDestroyed(filterJson, timeoutMs, out EventData eventData, out timedOut, out message);
+            ToJsonAndHwnd(eventData, out eventJson, out hwnd);
+            return found;
         }
 
         /// <summary>Waits for a window-shown event matching the filter.</summary>
@@ -73,6 +96,17 @@ namespace EventAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="WaitForWindowShown(string, int, out EventData, out bool, out string)"/>,
+        /// but reports the matched event as JSON plus a chainable window-handle output.
+        /// </summary>
+        public bool WaitForWindowShown(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)
+        {
+            bool found = WaitForWindowShown(filterJson, timeoutMs, out EventData eventData, out timedOut, out message);
+            ToJsonAndHwnd(eventData, out eventJson, out hwnd);
+            return found;
+        }
+
         /// <summary>Waits for a foreground-change event matching the filter.</summary>
         public bool WaitForForegroundChanged(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
@@ -90,6 +124,17 @@ namespace EventAutomation
                 message = NeverThrowsGuard.Failure("WaitForForegroundChanged", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForForegroundChanged(string, int, out EventData, out bool, out string)"/>,
+        /// but reports the matched event as JSON plus a chainable window-handle output.
+        /// </summary>
+        public bool WaitForForegroundChanged(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)
+        {
+            bool found = WaitForForegroundChanged(filterJson, timeoutMs, out EventData eventData, out timedOut, out message);
+            ToJsonAndHwnd(eventData, out eventJson, out hwnd);
+            return found;
         }
 
         /// <summary>
@@ -124,6 +169,17 @@ namespace EventAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="WaitForTitleChanged(string, string, int, out EventData, out bool, out string)"/>,
+        /// but reports the matched event as JSON plus a chainable window-handle output.
+        /// </summary>
+        public bool WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)
+        {
+            bool found = WaitForTitleChanged(filterJson, titleRegex, timeoutMs, out EventData eventData, out timedOut, out message);
+            ToJsonAndHwnd(eventData, out eventJson, out hwnd);
+            return found;
+        }
+
+        /// <summary>
         /// Waits for a dialog event (SYSTEM_DIALOGSTART/END or a "#32770" window
         /// being created/shown) matching the filter.
         /// </summary>
@@ -145,6 +201,17 @@ namespace EventAutomation
                 message = NeverThrowsGuard.Failure("WaitForDialogAppeared", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForDialogAppeared(string, int, out EventData, out bool, out string)"/>,
+        /// but reports the matched event as JSON plus a chainable window-handle output.
+        /// </summary>
+        public bool WaitForDialogAppeared(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)
+        {
+            bool found = WaitForDialogAppeared(filterJson, timeoutMs, out EventData eventData, out timedOut, out message);
+            ToJsonAndHwnd(eventData, out eventJson, out hwnd);
+            return found;
         }
 
         /// <summary>
@@ -178,6 +245,17 @@ namespace EventAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="WaitForStateChanged(string, string, int, out EventData, out bool, out string)"/>,
+        /// but reports the matched event as JSON plus a chainable window-handle output.
+        /// </summary>
+        public bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)
+        {
+            bool found = WaitForStateChanged(filterJson, stateRegex, timeoutMs, out EventData eventData, out timedOut, out message);
+            ToJsonAndHwnd(eventData, out eventJson, out hwnd);
+            return found;
+        }
+
         /// <summary>Waits for a menu-opened or menu-popup-opened event matching the filter.</summary>
         public bool WaitForMenuOpened(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)
         {
@@ -195,6 +273,17 @@ namespace EventAutomation
                 message = NeverThrowsGuard.Failure("WaitForMenuOpened", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForMenuOpened(string, int, out EventData, out bool, out string)"/>,
+        /// but reports the matched event as JSON plus a chainable window-handle output.
+        /// </summary>
+        public bool WaitForMenuOpened(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)
+        {
+            bool found = WaitForMenuOpened(filterJson, timeoutMs, out EventData eventData, out timedOut, out message);
+            ToJsonAndHwnd(eventData, out eventJson, out hwnd);
+            return found;
         }
 
         /// <summary>
@@ -267,6 +356,24 @@ namespace EventAutomation
             {
                 message = "WaitFor" + eventName + " failed: " + ex.Message;
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Converts a <see cref="WaitFor"/> result into the JSON + <see cref="IntPtr"/>
+        /// shape shared by every <c>WaitForX</c> JSON-companion overload.
+        /// </summary>
+        private static void ToJsonAndHwnd(EventData eventData, out string eventJson, out IntPtr hwnd)
+        {
+            if (eventData != null)
+            {
+                eventJson = eventData.ToJson();
+                hwnd = new IntPtr(eventData.Hwnd);
+            }
+            else
+            {
+                eventJson = "{}";
+                hwnd = IntPtr.Zero;
             }
         }
 
