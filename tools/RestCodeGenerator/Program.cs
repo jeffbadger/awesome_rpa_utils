@@ -39,8 +39,8 @@ internal static class Program
         Console.WriteLine("Primary: paste the .cs into a Robot Studio Script component - the per-endpoint");
         Console.WriteLine("  methods are compiled and persisted right there, and the swagger file is not");
         Console.WriteLine("  needed at runtime.");
-        Console.WriteLine("Fallback: dotnet build <outputDirectory>/<apiName>RestUtils.csproj, then load");
-        Console.WriteLine("  the built DLL into Robot Studio.");
+        Console.WriteLine("Fallback: dotnet build " + Path.Combine(outputDirectory, rendered.FileNameBase + ".csproj") + ", then load the");
+        Console.WriteLine("  built DLL into Robot Studio.");
         return 0;
     }
 }
