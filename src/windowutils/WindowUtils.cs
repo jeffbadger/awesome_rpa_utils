@@ -196,7 +196,7 @@ namespace WindowAutomation
         /// <returns><c>true</c> on success; <c>false</c> if GetWindowRect failed (e.g. an invalid handle). Never throws.</returns>
         [Category("Window - State & Geometry")]
         [Description("Gets the screen-space bounding rectangle of a window. Returns True on success; never throws.")]
-        public bool GetWindowBounds(IntPtr hWnd, out System.Drawing.Rectangle bounds, out string message)
+        public bool GetWindowBoundsAsRectangle(IntPtr hWnd, out System.Drawing.Rectangle bounds, out string message)
         {
             bounds = default;
             message = default;
@@ -215,13 +215,13 @@ namespace WindowAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("GetWindowBounds", ex);
+                message = NeverThrowsGuard.Failure("GetWindowBoundsAsRectangle", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="GetWindowBounds(IntPtr, out System.Drawing.Rectangle, out string)"/>,
+        /// Same as <see cref="GetWindowBoundsAsRectangle(IntPtr, out System.Drawing.Rectangle, out string)"/>,
         /// but reports the bounds as scalar left/top/width/height outputs, for designers
         /// without a <c>Rectangle</c> proxy.
         /// </summary>
@@ -240,7 +240,7 @@ namespace WindowAutomation
             top = default;
             width = default;
             height = default;
-            bool ok = GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message);
+            bool ok = GetWindowBoundsAsRectangle(hWnd, out System.Drawing.Rectangle bounds, out message);
             left = bounds.Left;
             top = bounds.Top;
             width = bounds.Width;
@@ -297,7 +297,7 @@ namespace WindowAutomation
             message = default;
             try
             {
-                if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+                if (!GetWindowBoundsAsRectangle(hWnd, out System.Drawing.Rectangle bounds, out message))
                     return false;
                 return SetWindowBounds(hWnd, left, top, bounds.Width, bounds.Height, out message);
 
@@ -322,7 +322,7 @@ namespace WindowAutomation
             message = default;
             try
             {
-                if (!GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message))
+                if (!GetWindowBoundsAsRectangle(hWnd, out System.Drawing.Rectangle bounds, out message))
                     return false;
                 return SetWindowBounds(hWnd, bounds.Left, bounds.Top, width, height, out message);
 
@@ -616,13 +616,13 @@ namespace WindowAutomation
         /// </returns>
         [Category("Window - Activation & Z-Order")]
         [Description("Polls for a window matching the title until it appears or the timeout elapses.")]
-        public bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
+        public bool WaitForWindowSimple(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
         {
             return WaitForWindow(title, timeoutMs, pollIntervalMs, out hWnd, out _);
         }
 
         /// <summary>
-        /// Same as <see cref="WaitForWindow(string, int, int, out IntPtr)"/>, but also
+        /// Same as <see cref="WaitForWindowSimple(string, int, int, out IntPtr)"/>, but also
         /// reports why a <c>false</c> return happened via <paramref name="message"/>, so the
         /// automation can distinguish a genuine timeout from an invalid <paramref name="title"/>
         /// without inferring it from <paramref name="hWnd"/> alone.

@@ -49,7 +49,7 @@ The window-state command applied by `SetWindowState`, wrapping the Win32
 
 | Method | Signature | Description |
 |---|---|---|
-| `GetWindowBounds` | `bool GetWindowBounds(IntPtr hWnd, out Rectangle bounds, out string message)` | Gets the screen-space bounding rectangle of a window. Returns True on success; never throws. |
+| `GetWindowBoundsAsRectangle` | `bool GetWindowBoundsAsRectangle(IntPtr hWnd, out Rectangle bounds, out string message)` | Gets the screen-space bounding rectangle of a window. Returns True on success; never throws. |
 | `GetWindowBounds` | `bool GetWindowBounds(IntPtr hWnd, out int left, out int top, out int width, out int height, out string message)` | Same, as scalar left/top/width/height outputs for designers without a `Rectangle` proxy. |
 | `SetWindowBounds` | `bool SetWindowBounds(IntPtr hWnd, int left, int top, int width, int height, out string message)` | Moves and/or resizes a window to the given rectangle. Returns True on success; never throws. |
 | `MoveWindow` | `bool MoveWindow(IntPtr hWnd, int left, int top, out string message)` | Moves a window without changing its size. Returns True on success; never throws. |
@@ -71,7 +71,7 @@ The window-state command applied by `SetWindowState`, wrapping the Win32
 |---|---|---|
 | `ActivateWindow` | `bool ActivateWindow(IntPtr hWnd, out string message)` | Brings a window to the foreground and gives it input focus. Returns True on success; never throws. |
 | `SetAlwaysOnTop` | `bool SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop, out string message)` | Makes a window always-on-top (or removes that state). Returns True on success; never throws. |
-| `WaitForWindow` | `bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)` | Polls for a window matching the title (substring, case-insensitive) until it appears or the timeout elapses. `hWnd == IntPtr.Zero` on `false` covers both timeout and an invalid title, indistinguishably. |
+| `WaitForWindowSimple` | `bool WaitForWindowSimple(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)` | Polls for a window matching the title (substring, case-insensitive) until it appears or the timeout elapses. `hWnd == IntPtr.Zero` on `false` covers both timeout and an invalid title, indistinguishably. |
 | `WaitForWindow` | `bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, out string message)` | Same, plus a `message` output (`null` on a genuine timeout; set if `title` was null/empty and polling was refused), so the two `false` cases are distinguishable. |
 | `WaitForWindowToClose` | `bool WaitForWindowToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until a window handle is no longer valid, or the timeout elapses. |
 | `WaitForWindowActive` | `bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until the given window becomes the foreground window, or the timeout elapses. |
@@ -85,26 +85,26 @@ The window-state command applied by `SetWindowState`, wrapping the Win32
 
 ## Notes & Caveats
 
-- **`GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow`, `CloseWindow`,
-  `ActivateWindow`, `SetAlwaysOnTop`, and the `WaitForWindow` overload with a `message`
-  output all return `bool` with an `out string message`** rather than throwing — a Win32
-  call failing (invalid handle, `MoveWindow`/`SetWindowPos`/`PostMessage`/
-  `SetForegroundWindow` refused) and bad arguments (negative width/height, a null/empty
-  `WaitForWindow` title) are both reported this way, with `message` set to a
+- **`GetWindowBoundsAsRectangle`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow`,
+  `CloseWindow`, `ActivateWindow`, `SetAlwaysOnTop`, and the `WaitForWindow` overload with
+  a `message` output all return `bool` with an `out string message`** rather than
+  throwing — a Win32 call failing (invalid handle, `MoveWindow`/`SetWindowPos`/
+  `PostMessage`/`SetForegroundWindow` refused) and bad arguments (negative width/height, a
+  null/empty `WaitForWindow` title) are both reported this way, with `message` set to a
   human-readable reason whenever the method returns `false`. `TryGetWindowTitle`/
   `TryGetWindowClassName`/`TryGetWindowProcessId` also follow this pattern, reporting an
   invalid/nonexistent handle rather than collapsing it to an empty string or `0`. Every
   other method here (`GetTopLevelWindows`, `FindWindowByTitle`, `FindWindowByClass`,
   `FindWindowsByProcessId`, `FindFirstWindowByProcessId`, `GetForegroundWindow`,
   `GetWindowTitle`, `GetWindowClassName`, `GetWindowProcessId`, `IsWindowVisible`,
-  `IsWindowResponding`, `SetWindowState`, `WaitForWindow` (the original overload),
+  `IsWindowResponding`, `SetWindowState`, `WaitForWindowSimple`,
   `WaitForWindowToClose`, `WaitForWindowActive`, `GetChildWindows`, `FindChildWindow`)
   was never able to fail and is unchanged.
 - **Window handles (`IntPtr`) are short-lived and become invalid once a window closes.**
   No method here holds a handle open, and none should be cached across a long-running
   automation step or between separate automation runs — re-find the window immediately
   before use instead (via `FindWindowByTitle`/`FindWindowByClass`/`FindFirstWindowByProcessId`/
-  `WaitForWindow`). The intended shape is producer → immediate consumer within one
+  `WaitForWindow`/`WaitForWindowSimple`). The intended shape is producer → immediate consumer within one
   automation: a lookup/wait method produces a handle, and the very next steps (geometry,
   state, activation, wait, child-window methods) consume it, the same way a Pega flow
   wires one step's output port directly into the next step's input port. `WaitForWindowToClose`

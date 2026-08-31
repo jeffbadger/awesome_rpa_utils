@@ -33,9 +33,9 @@ namespace WindowAutomation.Tests
         [InlineData("", true)]
         [InlineData(null, false)]
         [InlineData("", false)]
-        public void WaitForWindow_NullOrEmptyTitle_ReturnsFalseWithZeroHandle(string title, bool _)
+        public void WaitForWindowSimple_NullOrEmptyTitle_ReturnsFalseWithZeroHandle(string title, bool _)
         {
-            bool found = _window.WaitForWindow(title, timeoutMs: 5000, pollIntervalMs: 10, out IntPtr hWnd);
+            bool found = _window.WaitForWindowSimple(title, timeoutMs: 5000, pollIntervalMs: 10, out IntPtr hWnd);
 
             Assert.False(found);
             Assert.Equal(IntPtr.Zero, hWnd);

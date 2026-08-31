@@ -1,14 +1,14 @@
 # State & Geometry
 
-`GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow`, and
-`CloseWindow` return `bool` (success) with an `out string message` — none of
-them throw. The examples below discard `message` via `out _` where the
+`GetWindowBoundsAsRectangle`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow`,
+and `CloseWindow` return `bool` (success) with an `out string message` — none
+of them throw. The examples below discard `message` via `out _` where the
 failure reason isn't needed.
 
 ## Read a window's position and size
 
 ```csharp
-window.GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out _);
+window.GetWindowBoundsAsRectangle(hWnd, out System.Drawing.Rectangle bounds, out _);
 ```
 
 For designers without a `Rectangle` proxy, the scalar overload returns the

@@ -72,6 +72,6 @@ if (hWnd == IntPtr.Zero)
 }
 
 // Use hWnd right away; don't cache it for a later step.
-window.GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out _);
+window.GetWindowBoundsAsRectangle(hWnd, out System.Drawing.Rectangle bounds, out _);
 window.ActivateWindow(hWnd, out _);
 ```

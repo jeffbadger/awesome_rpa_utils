@@ -62,3 +62,35 @@ State & Geometry getters gained Try-style variants, and the `List<IntPtr>`
 methods are now paired with documented scalar alternatives for the common
 case, with the collection-returning originals kept and clearly documented
 for the genuine multi-result case.
+
+## Addendum: naming ambiguity fix
+
+The additive overloads above solved usability, but two of them introduced a
+new problem: two same-named methods whose Pega-visible (non-`out`)
+parameter lists became identical, differing only in an `out` parameter's
+type or presence. C# overload resolution handles this fine, but Pega Robot
+Studio's designer surface cannot disambiguate two overloads by `out`
+parameter shape alone - both entries in the designer's method picker would
+look the same.
+
+Two method groups in this component had this problem: `GetWindowBounds` and
+`WaitForWindow`. `GetWindowBounds` had one overload returning a `Rectangle`
+via a single `out` parameter and another returning scalar `out int`s -
+identical `(IntPtr hWnd)` input either way. `WaitForWindow` had one overload
+taking just `(string title, int timeoutMs, int pollIntervalMs, out IntPtr
+hWnd)` and another adding an `out string message` - the same non-`out`
+inputs.
+
+Fixed by renaming the less-disambiguated overload rather than the newer,
+more Pega-usable one, following this repository's convention of breaking
+changes over compatibility shims:
+
+| Old name | New name | Reason |
+|---|---|---|
+| `GetWindowBounds(IntPtr, out Rectangle, out string)` | `GetWindowBoundsAsRectangle` | Return type, not an extra output, was the only difference from the scalar overload |
+| `WaitForWindow(string, int, int, out IntPtr)` | `WaitForWindowSimple` | Missing the `message` disambiguator |
+
+The plain (un-suffixed) name in each pair now belongs to the overload with
+the extra disambiguating output or scalar coordinates - the one most useful
+to a Pega automation - per the naming convention documented in the
+component `README.md`.
