@@ -29,6 +29,12 @@ A Windows service startup type, unifying `System.ServiceProcess.ServiceStartMode
 with the separate delayed-auto-start flag that mode doesn't expose:
 `Boot`, `System`, `Automatic`, `AutomaticDelayedStart`, `Manual`, `Disabled`.
 
+### `ServiceStatus`
+A repository-owned mirror of `System.ServiceProcess.ServiceControllerStatus`,
+so Pega Robot Studio does not need a reference to the `System.ServiceProcess`
+assembly to select or consume a status: `Stopped`, `StartPending`,
+`StopPending`, `Running`, `ContinuePending`, `PausePending`, `Paused`.
+
 ## Constructors
 
 | Constructor | Description |
@@ -43,22 +49,34 @@ with the separate delayed-auto-start flag that mode doesn't expose:
 | Method | Signature | Description |
 |---|---|---|
 | `IsServiceInstalled` | `bool IsServiceInstalled(string serviceName, out string message)` | Returns True if a service with the given name is installed. Never throws. |
+| `IsServiceInstalled` | `bool IsServiceInstalled(string serviceName, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output so the automation doesn't need to interpret `message` to tell a genuine "not installed" answer apart from an invalid name or SCM failure. |
 | `IsRunning` | `bool IsRunning(string serviceName, out string message)` | Returns True if a service with the given name is installed and currently running. False with a null message means installed-but-stopped; False with a message means the check failed (invalid name or missing service). |
+| `IsRunning` | `bool IsRunning(string serviceName, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`, for designers who'd rather branch on a Boolean. |
 | `TryGetStatus` | `bool TryGetStatus(string serviceName, out ServiceControllerStatus status, out string message)` | Gets a service's current status. Returns False with a message on failure. |
+| `TryGetStatus` | `bool TryGetStatus(string serviceName, out ServiceStatus status, out string message)` | Same, as the repository-owned `ServiceStatus` enum instead of `ServiceControllerStatus`, so Pega does not need the `System.ServiceProcess` assembly. |
 | `TryGetStartType` | `bool TryGetStartType(string serviceName, out ServiceStartType startType, out string message)` | Gets a service's configured startup type. Returns False with a message on failure. |
 | `ListServiceNames` | `List<string> ListServiceNames()` | Gets the service names of every installed service. Empty list on failure. |
+| `ListServiceNamesDelimited` | `string ListServiceNamesDelimited(string delimiter = ",")` | Same, joined into a single delimited string, for designers without a `List<string>` proxy. |
 | `FindServiceNamesByDisplayName` | `List<string> FindServiceNamesByDisplayName(string displayName, bool exactMatch = true)` | Finds the service name(s) of installed services matching a display name. Null/empty filter or failed enumeration returns an empty list. |
+| `TryFindFirstServiceNameByDisplayName` | `bool TryFindFirstServiceNameByDisplayName(string displayName, out string serviceName, out string message, bool exactMatch = true)` | Same, but returns just the first match as a scalar string, for the common single-match case. |
+| `FindServiceNamesByDisplayNameDelimited` | `string FindServiceNamesByDisplayNameDelimited(string displayName, bool exactMatch = true, string delimiter = ",")` | Same as `FindServiceNamesByDisplayName`, joined into a single delimited string. |
 
 ### Control
 
 | Method | Signature | Description |
 |---|---|---|
 | `StartService` | `bool StartService(string serviceName, int timeoutMs, out string message)` | Starts a service and waits for it to reach Running. Idempotent: an already-running service returns True with an "already running" note. False (not an exception) on failure or timeout. |
+| `StartService` | `bool StartService(string serviceName, int timeoutMs, out bool wasAlreadyRunning, out string message)` | Same, but reports the already-running case via `wasAlreadyRunning` instead of an informational `message` - `message` stays `null` on every success path. |
 | `StopService` | `bool StopService(string serviceName, int timeoutMs, out string message)` | Stops a service and waits for it to reach Stopped. Idempotent: an already-stopped service returns True with an "already stopped" note. False (not an exception) on failure or timeout. |
+| `StopService` | `bool StopService(string serviceName, int timeoutMs, out bool wasAlreadyStopped, out string message)` | Same, but reports the already-stopped case via `wasAlreadyStopped` instead of an informational `message`. |
 | `RestartService` | `bool RestartService(string serviceName, int timeoutMs, out string message)` | Stops then starts a service, skipping the start phase if the stop phase fails. Each phase gets its own timeoutMs budget. |
+| `RestartService` | `bool RestartService(string serviceName, int timeoutMs, out bool wasAlreadyStopped, out string message)` | Same, but reports whether the stop phase found the service already stopped via `wasAlreadyStopped` instead of an informational `message`. |
 | `PauseService` | `bool PauseService(string serviceName, out string message)` | Pauses a running service. Idempotent. Does not wait for Paused - pair with `WaitForServiceStatus`. |
+| `PauseService` | `bool PauseService(string serviceName, out bool wasAlreadyPaused, out string message)` | Same, but reports the already-paused case via `wasAlreadyPaused` instead of an informational `message`. |
 | `ResumeService` | `bool ResumeService(string serviceName, out string message)` | Resumes a paused service. Idempotent. Does not wait for Running - pair with `WaitForServiceStatus`. |
+| `ResumeService` | `bool ResumeService(string serviceName, out bool wasAlreadyRunning, out string message)` | Same, but reports the already-running case via `wasAlreadyRunning` instead of an informational `message`. |
 | `WaitForServiceStatus` | `bool WaitForServiceStatus(string serviceName, ServiceControllerStatus expectedStatus, int timeoutMs, out string message)` | Polls for a service to reach the given status until it does, or the timeout elapses. |
+| `WaitForServiceStatus` | `bool WaitForServiceStatus(string serviceName, ServiceStatus expectedStatus, int timeoutMs, out string message)` | Same, taking the expected status as the repository-owned `ServiceStatus` enum instead of `ServiceControllerStatus`. |
 
 ### Configuration
 
@@ -76,10 +94,27 @@ with the separate delayed-auto-start flag that mode doesn't expose:
 - **Idempotent control methods.** `StartService` on an already-running
   service, `StopService` on an already-stopped one, `PauseService` on an
   already-paused, and `ResumeService` on an already-running all return `True`
-  with an "already ..." note in the message - the normal automation retry
-  case isn't an error. A `timeoutMs` of 0 means "don't wait" (success only if
-  the service is already in the target state); a negative timeout returns
-  `False` + message.
+  - the normal automation retry case isn't an error. A `timeoutMs` of 0 means
+  "don't wait" (success only if the service is already in the target state);
+  a negative timeout returns `False` + message.
+- **Two conventions for the idempotent "already in that state" case.** The
+  original overloads of `StartService`/`StopService`/`RestartService`/
+  `PauseService`/`ResumeService` report it as a non-null informational
+  `message` even on success (e.g. "Service 'X' is already running."). The
+  newer `out bool wasAlready...` overloads instead keep `message` `null` on
+  every success path and report the idempotent case through the dedicated
+  Boolean output - use these when a project-wide convention treats any
+  non-null `message` as failure.
+- **`IsServiceInstalled`/`IsRunning` have a `querySucceeded`-output overload**
+  that separates "the query itself completed" from "the service is
+  installed/running," so the automation doesn't need to interpret `message`
+  for `null` to tell a genuine negative answer apart from an invalid name or
+  an SCM query failure.
+- **`TryGetStatus`/`WaitForServiceStatus` have overloads taking/returning the
+  repository-owned `ServiceStatus` enum** instead of
+  `ServiceControllerStatus`, so a Pega deployment doesn't need a reference to
+  the `System.ServiceProcess` assembly just to select or read a status. The
+  original `ServiceControllerStatus` overloads remain for .NET consumers.
 - **`RestartService` skips the start phase when the stop phase fails.**
   Starting a service that never stopped would throw, so the failure from the
   stop phase is reported and the start is not attempted.

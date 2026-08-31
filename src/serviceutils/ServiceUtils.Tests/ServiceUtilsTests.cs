@@ -33,11 +33,36 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
+        public void IsServiceInstalledWithQuerySucceeded_NullOrEmptyName_ReturnsFalseWithFailedQuery(string serviceName)
+        {
+            bool installed = _svc.IsServiceInstalled(serviceName, out bool querySucceeded, out string message);
+
+            // An invalid name is a query failure, not a genuine "not installed" answer.
+            Assert.False(installed);
+            Assert.False(querySucceeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
         public void IsRunning_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
             bool running = _svc.IsRunning(serviceName, out string message);
 
             Assert.False(running);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void IsRunningWithQuerySucceeded_NullOrEmptyName_ReturnsFalseWithFailedQuery(string serviceName)
+        {
+            bool running = _svc.IsRunning(serviceName, out bool querySucceeded, out string message);
+
+            Assert.False(running);
+            Assert.False(querySucceeded);
             Assert.False(string.IsNullOrEmpty(message));
         }
 
@@ -56,6 +81,18 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
+        public void TryGetStatusRepoEnum_NullOrEmptyName_ReturnsFalseWithDefaultStatus(string serviceName)
+        {
+            bool got = _svc.TryGetStatus(serviceName, out ServiceStatus status, out string message);
+
+            Assert.False(got);
+            Assert.Equal(ServiceStatus.Stopped, status); // documented default
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
         public void TryGetStartType_NullOrEmptyName_ReturnsFalseWithDefaultStartType(string serviceName)
         {
             bool got = _svc.TryGetStartType(serviceName, out ServiceStartType startType, out string message);
@@ -68,11 +105,51 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
+        public void TryFindFirstServiceNameByDisplayName_NullOrEmptyName_ReturnsFalseWithMessage(string displayName)
+        {
+            bool found = _svc.TryFindFirstServiceNameByDisplayName(displayName, out string serviceName, out string message);
+
+            Assert.False(found);
+            Assert.Null(serviceName);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ListServiceNamesDelimited_NeverThrows()
+        {
+            string names = _svc.ListServiceNamesDelimited();
+
+            Assert.NotNull(names);
+        }
+
+        [Fact]
+        public void FindServiceNamesByDisplayNameDelimited_NoMatch_ReturnsEmptyString()
+        {
+            string names = _svc.FindServiceNamesByDisplayNameDelimited("\0no such display name\0");
+
+            Assert.Equal(string.Empty, names);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
         public void StartService_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
             bool started = _svc.StartService(serviceName, timeoutMs: 1000, out string message);
 
             Assert.False(started);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void StartServiceWithWasAlreadyRunning_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        {
+            bool started = _svc.StartService(serviceName, timeoutMs: 1000, out bool wasAlreadyRunning, out string message);
+
+            Assert.False(started);
+            Assert.False(wasAlreadyRunning);
             Assert.False(string.IsNullOrEmpty(message));
         }
 
@@ -90,11 +167,35 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
+        public void StopServiceWithWasAlreadyStopped_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        {
+            bool stopped = _svc.StopService(serviceName, timeoutMs: 1000, out bool wasAlreadyStopped, out string message);
+
+            Assert.False(stopped);
+            Assert.False(wasAlreadyStopped);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
         public void RestartService_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
             bool restarted = _svc.RestartService(serviceName, timeoutMs: 1000, out string message);
 
             Assert.False(restarted);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void RestartServiceWithWasAlreadyStopped_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        {
+            bool restarted = _svc.RestartService(serviceName, timeoutMs: 1000, out bool wasAlreadyStopped, out string message);
+
+            Assert.False(restarted);
+            Assert.False(wasAlreadyStopped);
             Assert.False(string.IsNullOrEmpty(message));
         }
 
@@ -112,6 +213,18 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
+        public void PauseServiceWithWasAlreadyPaused_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        {
+            bool paused = _svc.PauseService(serviceName, out bool wasAlreadyPaused, out string message);
+
+            Assert.False(paused);
+            Assert.False(wasAlreadyPaused);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
         public void ResumeService_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
             bool resumed = _svc.ResumeService(serviceName, out string message);
@@ -123,10 +236,44 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
+        public void ResumeServiceWithWasAlreadyRunning_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        {
+            bool resumed = _svc.ResumeService(serviceName, out bool wasAlreadyRunning, out string message);
+
+            Assert.False(resumed);
+            Assert.False(wasAlreadyRunning);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
         public void WaitForServiceStatus_NullOrEmptyName_ReturnsFalseWithoutPolling(string serviceName)
         {
             // A nonzero timeout proves the guard returns before any polling/SCM wait.
             bool reached = _svc.WaitForServiceStatus(serviceName, ServiceControllerStatus.Running, timeoutMs: 5000, out string message);
+
+            Assert.False(reached);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void WaitForServiceStatusRepoEnum_NullOrEmptyName_ReturnsFalseWithoutPolling(string serviceName)
+        {
+            bool reached = _svc.WaitForServiceStatus(serviceName, ServiceStatus.Running, timeoutMs: 5000, out string message);
+
+            Assert.False(reached);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void WaitForServiceStatusRepoEnum_UndefinedStatus_ReturnsFalseWithMessage()
+        {
+            const ServiceStatus undefined = (ServiceStatus)999;
+
+            bool reached = _svc.WaitForServiceStatus("Anything", undefined, timeoutMs: 5000, out string message);
 
             Assert.False(reached);
             Assert.False(string.IsNullOrEmpty(message));
@@ -176,6 +323,45 @@ namespace ServiceAutomation.Tests
         public void WaitForServiceStatus_NegativeTimeout_ReturnsFalseWithMessage()
         {
             bool reached = _svc.WaitForServiceStatus("Anything", ServiceControllerStatus.Running, timeoutMs: -1, out string message);
+
+            Assert.False(reached);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void StartServiceWithWasAlreadyRunning_NegativeTimeout_ReturnsFalseWithMessage()
+        {
+            bool started = _svc.StartService("Anything", timeoutMs: -1, out bool wasAlreadyRunning, out string message);
+
+            Assert.False(started);
+            Assert.False(wasAlreadyRunning);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void StopServiceWithWasAlreadyStopped_NegativeTimeout_ReturnsFalseWithMessage()
+        {
+            bool stopped = _svc.StopService("Anything", timeoutMs: -1, out bool wasAlreadyStopped, out string message);
+
+            Assert.False(stopped);
+            Assert.False(wasAlreadyStopped);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void RestartServiceWithWasAlreadyStopped_NegativeTimeout_ReturnsFalseWithMessage()
+        {
+            bool restarted = _svc.RestartService("Anything", timeoutMs: -1, out bool wasAlreadyStopped, out string message);
+
+            Assert.False(restarted);
+            Assert.False(wasAlreadyStopped);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void WaitForServiceStatusRepoEnum_NegativeTimeout_ReturnsFalseWithMessage()
+        {
+            bool reached = _svc.WaitForServiceStatus("Anything", ServiceStatus.Running, timeoutMs: -1, out string message);
 
             Assert.False(reached);
             Assert.False(string.IsNullOrEmpty(message));

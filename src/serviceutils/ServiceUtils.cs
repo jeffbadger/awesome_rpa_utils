@@ -27,6 +27,29 @@ namespace ServiceAutomation
     }
 
     /// <summary>
+    /// A Windows service's run state, mirroring <see cref="ServiceControllerStatus"/> without
+    /// requiring Pega Robot Studio to reference the <c>System.ServiceProcess</c> assembly
+    /// that type comes from.
+    /// </summary>
+    public enum ServiceStatus
+    {
+        /// <summary>The service is not running.</summary>
+        Stopped,
+        /// <summary>The service is starting.</summary>
+        StartPending,
+        /// <summary>The service is stopping.</summary>
+        StopPending,
+        /// <summary>The service is running.</summary>
+        Running,
+        /// <summary>The service continue is pending.</summary>
+        ContinuePending,
+        /// <summary>The service pause is pending.</summary>
+        PausePending,
+        /// <summary>The service is paused.</summary>
+        Paused
+    }
+
+    /// <summary>
     /// Pega Robot Studio-ready component that queries, starts, stops, restarts, pauses/
     /// resumes, and configures the startup type of Windows services.
     /// <para>
@@ -80,7 +103,7 @@ namespace ServiceAutomation
             message = default;
             try
             {
-                bool installed = TryGetStatus(serviceName, out _, out string statusMessage);
+                bool installed = TryGetStatus(serviceName, out ServiceControllerStatus _, out string statusMessage);
                 // A missing service is the *answer* here, not a failure - only surface the
                 // message for genuinely broken cases (invalid name, SCM unavailable).
                 message = installed ? null : statusMessage;
@@ -95,11 +118,41 @@ namespace ServiceAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="IsServiceInstalled(string, out string)"/>, but separates
+        /// "the query completed" from "the service is installed" into two outputs, so the
+        /// automation does not need to interpret <paramref name="message"/> to tell a genuine
+        /// "not installed" answer apart from an invalid name or an SCM query failure.
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name) to check.</param>
+        /// <param name="querySucceeded"><c>true</c> if the query itself completed (whether or not the service turned out to be installed); <c>false</c> if the name was null/empty or the Service Control Manager couldn't be queried (check <paramref name="message"/>).</param>
+        /// <param name="message"><c>null</c> whenever <paramref name="querySucceeded"/> is <c>true</c>; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if the service is installed; <c>false</c> if it isn't installed, or if the query failed (check <paramref name="querySucceeded"/> to tell them apart). Never throws.</returns>
+        [Category("Service - Query")]
+        [Description("Returns True if a service with the given name is installed, plus whether the query itself succeeded. Never throws.")]
+        public bool IsServiceInstalled(string serviceName, out bool querySucceeded, out string message)
+        {
+            querySucceeded = default;
+            message = default;
+            try
+            {
+                querySucceeded = TryCheckInstalled(serviceName, out bool installed, out message);
+                return installed;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                querySucceeded = false;
+                message = NeverThrowsGuard.Failure("IsServiceInstalled", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Returns <c>true</c> if a service with the given name is installed and currently running.
         /// <para>
         /// A <c>false</c> return with a null <paramref name="message"/> means the service is installed
         /// but not running; a <c>false</c> with a non-null message means the check itself failed
-        /// (invalid name, service doesn't exist). Unlike <see cref="TryGetStatus"/>, this does not
+        /// (invalid name, service doesn't exist). Unlike <see cref="TryGetStatus(string, out ServiceControllerStatus, out string)"/>, this does not
         /// throw for a service that isn't installed.
         /// </para>
         /// Never throws.
@@ -133,6 +186,25 @@ namespace ServiceAutomation
                 message = NeverThrowsGuard.Failure("IsRunning", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="IsRunning(string, out string)"/>, but separates "the query
+        /// completed" from "the service is running" into two outputs, so the automation does
+        /// not need to interpret <paramref name="message"/> to tell an installed-but-stopped
+        /// answer apart from an invalid name or a missing service.
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name) to check.</param>
+        /// <param name="querySucceeded"><c>true</c> if the query itself completed (whether or not the service turned out to be running); <c>false</c> if the name was null/empty, no such service is installed, or the query otherwise failed (check <paramref name="message"/>).</param>
+        /// <param name="message"><c>null</c> whenever <paramref name="querySucceeded"/> is <c>true</c>; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if the service is installed and running; <c>false</c> if it's stopped, or if the query failed (check <paramref name="querySucceeded"/> to tell them apart). Never throws.</returns>
+        [Category("Service - Query")]
+        [Description("Returns True if a service is installed and running, plus whether the query itself succeeded. Never throws.")]
+        public bool IsRunning(string serviceName, out bool querySucceeded, out string message)
+        {
+            bool running = IsRunning(serviceName, out message);
+            querySucceeded = message == null;
+            return running;
         }
 
         /// <summary>Gets a service's current status. Never throws.</summary>
@@ -185,6 +257,26 @@ namespace ServiceAutomation
                 message = NeverThrowsGuard.Failure("TryGetStatus", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="TryGetStatus(string, out ServiceControllerStatus, out string)"/>,
+        /// but reports the status as the repository-owned <see cref="ServiceStatus"/> enum
+        /// instead of <see cref="ServiceControllerStatus"/>, so Pega Robot Studio does not need
+        /// a reference to the <c>System.ServiceProcess</c> assembly to consume it.
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name).</param>
+        /// <param name="status">The service's current status when returning <c>true</c>; <see cref="ServiceStatus.Stopped"/> (the default) otherwise.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if the status was read; <c>false</c> if the name is null/empty, no service with
+        /// that name is installed, or the Service Control Manager couldn't be queried. Never throws.</returns>
+        [Category("Service - Query")]
+        [Description("Gets a service's current status as the repository-owned ServiceStatus enum. Returns False with a message (not an exception) on failure.")]
+        public bool TryGetStatus(string serviceName, out ServiceStatus status, out string message)
+        {
+            bool ok = TryGetStatus(serviceName, out ServiceControllerStatus scStatus, out message);
+            status = ok ? ToServiceStatus(scStatus) : ServiceStatus.Stopped;
+            return ok;
         }
 
         /// <summary>Gets a service's configured startup type. Never throws.</summary>
@@ -327,6 +419,78 @@ namespace ServiceAutomation
             return results;
         }
 
+        /// <summary>
+        /// Same as <see cref="ListServiceNames"/>, but joined into a single delimited string,
+        /// for designers without a <c>List&lt;string&gt;</c> proxy.
+        /// </summary>
+        /// <param name="delimiter">The separator placed between names; defaults to <c>","</c>. A <c>null</c> value also falls back to <c>","</c>.</param>
+        /// <returns>Every installed service name joined by <paramref name="delimiter"/>; empty if none are installed or the Service Control Manager couldn't be queried. Never throws.</returns>
+        [Category("Service - Query")]
+        [Description("Gets the service names of every installed service as a single delimited string (default comma-separated). Never throws.")]
+        public string ListServiceNamesDelimited(string delimiter = ",")
+        {
+            return string.Join(delimiter ?? ",", ListServiceNames());
+        }
+
+        /// <summary>
+        /// Finds the single first service name matching a display name, for the common case
+        /// where exactly one match is expected. Use <see cref="FindServiceNamesByDisplayName"/>
+        /// directly when more than one match is possible or expected.
+        /// </summary>
+        /// <param name="displayName">The display name to match.</param>
+        /// <param name="serviceName">The first matching service name, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if a match was found; otherwise a human-readable reason none was (no match, invalid input, or the query failed - these are not distinguished, matching <see cref="FindServiceNamesByDisplayName"/>'s own empty-on-failure convention).</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match. If <c>false</c>, matches any service whose display name contains <paramref name="displayName"/> (case-insensitive).</param>
+        /// <returns><c>true</c> if at least one match was found; <c>false</c> otherwise. Never throws.</returns>
+        [Category("Service - Query")]
+        [Description("Finds the first service name matching a display name, for the common single-match case. Returns False with a message (not an exception) on no match.")]
+        public bool TryFindFirstServiceNameByDisplayName(string displayName, out string serviceName, out string message, bool exactMatch = true)
+        {
+            serviceName = default;
+            message = default;
+            try
+            {
+                serviceName = null;
+                if (IsNullOrEmpty(displayName))
+                {
+                    message = "A display name is required.";
+                    return false;
+                }
+
+                List<string> matches = FindServiceNamesByDisplayName(displayName, exactMatch);
+                if (matches.Count == 0)
+                {
+                    message = $"No service found with display name '{displayName}' (or the query failed).";
+                    return false;
+                }
+
+                serviceName = matches[0];
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("TryFindFirstServiceNameByDisplayName", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="FindServiceNamesByDisplayName"/>, but joined into a single
+        /// delimited string, for designers without a <c>List&lt;string&gt;</c> proxy.
+        /// </summary>
+        /// <param name="displayName">The display name to match.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match. If <c>false</c>, matches any service whose display name contains <paramref name="displayName"/> (case-insensitive).</param>
+        /// <param name="delimiter">The separator placed between names; defaults to <c>","</c>. A <c>null</c> value also falls back to <c>","</c>.</param>
+        /// <returns>The matching service name(s) joined by <paramref name="delimiter"/>; empty if none match or the query failed.</returns>
+        [Category("Service - Query")]
+        [Description("Finds the service name(s) matching a display name, as a single delimited string. Never throws.")]
+        public string FindServiceNamesByDisplayNameDelimited(string displayName, bool exactMatch = true, string delimiter = ",")
+        {
+            return string.Join(delimiter ?? ",", FindServiceNamesByDisplayName(displayName, exactMatch));
+        }
+
         #endregion
 
         #region Control
@@ -388,6 +552,64 @@ namespace ServiceAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="StartService(string, int, out string)"/>, but reports the
+        /// already-running case via <paramref name="wasAlreadyRunning"/> instead of an
+        /// informational <paramref name="message"/>, so <paramref name="message"/> stays
+        /// <c>null</c> on every success path (standardized with the rest of this suite).
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name).</param>
+        /// <param name="timeoutMs">Maximum time to wait for it to reach Running, in milliseconds. 0 means "don't wait".</param>
+        /// <param name="wasAlreadyRunning"><c>true</c> if this method returned <c>true</c> because the service was already Running (or already starting); <c>false</c> otherwise, including on failure.</param>
+        /// <param name="message"><c>null</c> whenever this method returns <c>true</c>; otherwise a human-readable reason the start failed.</param>
+        /// <returns><c>true</c> if the service is Running (or reached Running within the timeout); <c>false</c> if
+        /// the name is null/empty, <paramref name="timeoutMs"/> is negative, no such service is installed, the
+        /// runtime isn't elevated, or it didn't reach Running within the timeout. Never throws.</returns>
+        [Category("Service - Control")]
+        [Description("Starts a service and waits for it to reach Running, reporting whether it was already running. Idempotent; returns False with a message (not an exception) on failure or timeout.")]
+        public bool StartService(string serviceName, int timeoutMs, out bool wasAlreadyRunning, out string message)
+        {
+            wasAlreadyRunning = default;
+            message = default;
+            try
+            {
+                if (IsNullOrEmpty(serviceName))
+                {
+                    message = "A service name is required.";
+                    return false;
+                }
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be non-negative.";
+                    return false;
+                }
+
+                try
+                {
+                    using (var sc = new ServiceController(serviceName))
+                    {
+                        return StartAndWait(sc, serviceName, timeoutMs, out wasAlreadyRunning, out message);
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    message = DescribeServiceException(ex, serviceName, "Starting the service");
+                    return false;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = $"Starting the service failed for service '{serviceName}': {ex.Message}";
+                    return false;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("StartService", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Stops a service and waits for it to reach <see cref="ServiceControllerStatus.Stopped"/>.
         /// Idempotent: stopping an already-stopped (or already stopping) service reports success.
         /// Never throws.
@@ -423,6 +645,65 @@ namespace ServiceAutomation
                     using (var sc = new ServiceController(serviceName))
                     {
                         return StopAndWait(sc, serviceName, timeoutMs, out message);
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    message = DescribeServiceException(ex, serviceName, "Stopping the service");
+                    return false;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = $"Stopping the service failed for service '{serviceName}': {ex.Message}";
+                    return false;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("StopService", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="StopService(string, int, out string)"/>, but reports the
+        /// already-stopped case via <paramref name="wasAlreadyStopped"/> instead of an
+        /// informational <paramref name="message"/>, so <paramref name="message"/> stays
+        /// <c>null</c> on every success path (standardized with the rest of this suite).
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name).</param>
+        /// <param name="timeoutMs">Maximum time to wait for it to reach Stopped, in milliseconds. 0 means "don't wait".</param>
+        /// <param name="wasAlreadyStopped"><c>true</c> if this method returned <c>true</c> because the service was already Stopped (or already stopping); <c>false</c> otherwise, including on failure.</param>
+        /// <param name="message"><c>null</c> whenever this method returns <c>true</c>; otherwise a human-readable reason the stop failed.</param>
+        /// <returns><c>true</c> if the service is Stopped (or reached Stopped within the timeout); <c>false</c> if
+        /// the name is null/empty, <paramref name="timeoutMs"/> is negative, no such service is installed, the
+        /// runtime isn't elevated, the service doesn't support being stopped, or it didn't reach Stopped within
+        /// the timeout. Never throws.</returns>
+        [Category("Service - Control")]
+        [Description("Stops a service and waits for it to reach Stopped, reporting whether it was already stopped. Idempotent; returns False with a message (not an exception) on failure or timeout.")]
+        public bool StopService(string serviceName, int timeoutMs, out bool wasAlreadyStopped, out string message)
+        {
+            wasAlreadyStopped = default;
+            message = default;
+            try
+            {
+                if (IsNullOrEmpty(serviceName))
+                {
+                    message = "A service name is required.";
+                    return false;
+                }
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be non-negative.";
+                    return false;
+                }
+
+                try
+                {
+                    using (var sc = new ServiceController(serviceName))
+                    {
+                        return StopAndWait(sc, serviceName, timeoutMs, out wasAlreadyStopped, out message);
                     }
                 }
                 catch (InvalidOperationException ex)
@@ -512,9 +793,74 @@ namespace ServiceAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="RestartService(string, int, out string)"/>, but reports whether
+        /// the stop phase found the service already stopped via
+        /// <paramref name="wasAlreadyStopped"/> instead of an informational
+        /// <paramref name="message"/>, so <paramref name="message"/> stays <c>null</c> on every
+        /// success path (standardized with the rest of this suite).
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name).</param>
+        /// <param name="timeoutMs">Maximum time to wait for each phase (stop, then start) to complete, in milliseconds. 0 means "don't wait".</param>
+        /// <param name="wasAlreadyStopped"><c>true</c> if the stop phase found the service already Stopped (or already stopping); <c>false</c> otherwise, including on failure.</param>
+        /// <param name="message"><c>null</c> whenever this method returns <c>true</c>; otherwise a human-readable reason the restart failed (from whichever phase failed).</param>
+        /// <returns><c>true</c> only if the service is Running after both phases; <c>false</c> if the name is
+        /// null/empty, <paramref name="timeoutMs"/> is negative, no such service is installed, the runtime isn't
+        /// elevated, or either phase failed or timed out. Never throws.</returns>
+        [Category("Service - Control")]
+        [Description("Stops then starts a service, reporting whether the stop phase found it already stopped. Skips the start phase if the stop phase fails. Never throws.")]
+        public bool RestartService(string serviceName, int timeoutMs, out bool wasAlreadyStopped, out string message)
+        {
+            wasAlreadyStopped = default;
+            message = default;
+            try
+            {
+                if (IsNullOrEmpty(serviceName))
+                {
+                    message = "A service name is required.";
+                    return false;
+                }
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be non-negative.";
+                    return false;
+                }
+
+                try
+                {
+                    using (var sc = new ServiceController(serviceName))
+                    {
+                        if (!StopAndWait(sc, serviceName, timeoutMs, out wasAlreadyStopped, out string stopMessage))
+                        {
+                            message = stopMessage;
+                            return false;
+                        }
+
+                        return StartAndWait(sc, serviceName, timeoutMs, out _, out message);
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    message = DescribeServiceException(ex, serviceName, "Restarting the service");
+                    return false;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = $"Restarting the service failed for service '{serviceName}': {ex.Message}";
+                    return false;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RestartService", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Pauses a running service. Idempotent: pausing an already-paused service reports success.
         /// Returns as soon as the pause is requested (it does not wait for the service to reach
-        /// Paused - pair with <see cref="WaitForServiceStatus"/> for that). Never throws.
+        /// Paused - pair with <see cref="WaitForServiceStatus(string, ServiceControllerStatus, int, out string)"/> for that). Never throws.
         /// </summary>
         /// <param name="serviceName">The service name (not display name).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the pause failed.
@@ -570,9 +916,70 @@ namespace ServiceAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="PauseService(string, out string)"/>, but reports the
+        /// already-paused case via <paramref name="wasAlreadyPaused"/> instead of an
+        /// informational <paramref name="message"/>, so <paramref name="message"/> stays
+        /// <c>null</c> on every success path (standardized with the rest of this suite).
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name).</param>
+        /// <param name="wasAlreadyPaused"><c>true</c> if this method returned <c>true</c> because the service was already Paused; <c>false</c> otherwise, including on failure.</param>
+        /// <param name="message"><c>null</c> whenever this method returns <c>true</c>; otherwise a human-readable reason the pause failed.</param>
+        /// <returns><c>true</c> if the service is paused (or the pause was accepted); <c>false</c> if the name is
+        /// null/empty, no such service is installed, the service doesn't support pause/continue, or the runtime
+        /// isn't elevated. Never throws.</returns>
+        [Category("Service - Control")]
+        [Description("Pauses a running service, reporting whether it was already paused. Idempotent; returns False with a message (not an exception) on failure.")]
+        public bool PauseService(string serviceName, out bool wasAlreadyPaused, out string message)
+        {
+            wasAlreadyPaused = default;
+            message = default;
+            try
+            {
+                if (IsNullOrEmpty(serviceName))
+                {
+                    message = "A service name is required.";
+                    return false;
+                }
+
+                try
+                {
+                    using (var sc = new ServiceController(serviceName))
+                    {
+                        if (sc.Status == ServiceControllerStatus.Paused)
+                        {
+                            wasAlreadyPaused = true;
+                            message = null;
+                            return true;
+                        }
+
+                        sc.Pause();
+                        message = null;
+                        return true;
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    message = DescribeServiceException(ex, serviceName, "Pausing the service");
+                    return false;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = $"Pausing the service failed for service '{serviceName}': {ex.Message}";
+                    return false;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("PauseService", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Resumes a paused service. Idempotent: resuming an already-running service reports
         /// success. Returns as soon as the resume is requested (it does not wait for the service
-        /// to reach Running - pair with <see cref="WaitForServiceStatus"/> for that). Never throws.
+        /// to reach Running - pair with <see cref="WaitForServiceStatus(string, ServiceControllerStatus, int, out string)"/> for that). Never throws.
         /// </summary>
         /// <param name="serviceName">The service name (not display name).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the resume failed.
@@ -600,6 +1007,67 @@ namespace ServiceAutomation
                         if (sc.Status == ServiceControllerStatus.Running)
                         {
                             message = $"Service '{serviceName}' is already running.";
+                            return true;
+                        }
+
+                        sc.Continue();
+                        message = null;
+                        return true;
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    message = DescribeServiceException(ex, serviceName, "Resuming the service");
+                    return false;
+                }
+                catch (Win32Exception ex)
+                {
+                    message = $"Resuming the service failed for service '{serviceName}': {ex.Message}";
+                    return false;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ResumeService", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="ResumeService(string, out string)"/>, but reports the
+        /// already-running case via <paramref name="wasAlreadyRunning"/> instead of an
+        /// informational <paramref name="message"/>, so <paramref name="message"/> stays
+        /// <c>null</c> on every success path (standardized with the rest of this suite).
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name).</param>
+        /// <param name="wasAlreadyRunning"><c>true</c> if this method returned <c>true</c> because the service was already Running; <c>false</c> otherwise, including on failure.</param>
+        /// <param name="message"><c>null</c> whenever this method returns <c>true</c>; otherwise a human-readable reason the resume failed.</param>
+        /// <returns><c>true</c> if the service is running (or the resume was accepted); <c>false</c> if the name is
+        /// null/empty, no such service is installed, the service doesn't support pause/continue, or the runtime
+        /// isn't elevated. Never throws.</returns>
+        [Category("Service - Control")]
+        [Description("Resumes a paused service, reporting whether it was already running. Idempotent; returns False with a message (not an exception) on failure.")]
+        public bool ResumeService(string serviceName, out bool wasAlreadyRunning, out string message)
+        {
+            wasAlreadyRunning = default;
+            message = default;
+            try
+            {
+                if (IsNullOrEmpty(serviceName))
+                {
+                    message = "A service name is required.";
+                    return false;
+                }
+
+                try
+                {
+                    using (var sc = new ServiceController(serviceName))
+                    {
+                        if (sc.Status == ServiceControllerStatus.Running)
+                        {
+                            wasAlreadyRunning = true;
+                            message = null;
                             return true;
                         }
 
@@ -676,6 +1144,37 @@ namespace ServiceAutomation
                     message = $"Waiting for the service status failed for service '{serviceName}': {ex.Message}";
                     return false;
                 }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("WaitForServiceStatus", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForServiceStatus(string, ServiceControllerStatus, int, out string)"/>,
+        /// but takes the expected status as the repository-owned <see cref="ServiceStatus"/> enum
+        /// instead of <see cref="ServiceControllerStatus"/>, so Pega Robot Studio does not need a
+        /// reference to the <c>System.ServiceProcess</c> assembly to select it.
+        /// </summary>
+        /// <param name="serviceName">The service name (not display name).</param>
+        /// <param name="expectedStatus">The status to wait for.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds. 0 returns immediately (success only if the service is already in the expected status).</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the wait failed or timed out.</param>
+        /// <returns><c>true</c> if the service reached <paramref name="expectedStatus"/> within the timeout; <c>false</c> if the name is null/empty, <paramref name="timeoutMs"/> is negative, no such service is installed, or it timed out. Never throws.</returns>
+        [Category("Service - Control")]
+        [Description("Polls for a service to reach the given repository-owned ServiceStatus until it does, or the timeout elapses. Returns False with a message (not an exception) on timeout.")]
+        public bool WaitForServiceStatus(string serviceName, ServiceStatus expectedStatus, int timeoutMs, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!TryToServiceControllerStatus(expectedStatus, out ServiceControllerStatus scStatus, out message))
+                    return false;
+
+                return WaitForServiceStatus(serviceName, scStatus, timeoutMs, out message);
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -887,8 +1386,8 @@ namespace ServiceAutomation
         }
 
         /// <summary>
-        /// Idempotent start phase shared by <see cref="StartService"/> and
-        /// <see cref="RestartService"/>: an already-running (or already starting) service is
+        /// Idempotent start phase shared by <see cref="StartService(string, int, out string)"/> and
+        /// <see cref="RestartService(string, int, out string)"/>: an already-running (or already starting) service is
         /// success, so the common automation retry case doesn't blow up. Assumes the caller
         /// has already validated <paramref name="timeoutMs"/>.
         /// </summary>
@@ -908,8 +1407,31 @@ namespace ServiceAutomation
         }
 
         /// <summary>
-        /// Idempotent stop phase shared by <see cref="StopService"/> and
-        /// <see cref="RestartService"/>: an already-stopped (or already stopping) service is
+        /// Same as <see cref="StartAndWait(ServiceController, string, int, out string)"/>, but
+        /// reports the already-running case via <paramref name="wasAlreadyRunning"/> instead of
+        /// an informational <paramref name="message"/>, so <paramref name="message"/> stays
+        /// <c>null</c> on every success path (standardized with the rest of this suite).
+        /// </summary>
+        private static bool StartAndWait(ServiceController sc, string serviceName, int timeoutMs, out bool wasAlreadyRunning, out string message)
+        {
+            wasAlreadyRunning = false;
+            var status = sc.Status;
+            if (status == ServiceControllerStatus.Running)
+            {
+                wasAlreadyRunning = true;
+                message = null;
+                return true;
+            }
+            if (status == ServiceControllerStatus.StartPending)
+                return WaitForStatusInternal(sc, ServiceControllerStatus.Running, timeoutMs, out message);
+
+            sc.Start();
+            return WaitForStatusInternal(sc, ServiceControllerStatus.Running, timeoutMs, out message);
+        }
+
+        /// <summary>
+        /// Idempotent stop phase shared by <see cref="StopService(string, int, out string)"/> and
+        /// <see cref="RestartService(string, int, out string)"/>: an already-stopped (or already stopping) service is
         /// success. Assumes the caller has already validated <paramref name="timeoutMs"/>.
         /// </summary>
         private static bool StopAndWait(ServiceController sc, string serviceName, int timeoutMs, out string message)
@@ -918,6 +1440,29 @@ namespace ServiceAutomation
             if (status == ServiceControllerStatus.Stopped)
             {
                 message = $"Service '{serviceName}' is already stopped.";
+                return true;
+            }
+            if (status == ServiceControllerStatus.StopPending)
+                return WaitForStatusInternal(sc, ServiceControllerStatus.Stopped, timeoutMs, out message);
+
+            sc.Stop();
+            return WaitForStatusInternal(sc, ServiceControllerStatus.Stopped, timeoutMs, out message);
+        }
+
+        /// <summary>
+        /// Same as <see cref="StopAndWait(ServiceController, string, int, out string)"/>, but
+        /// reports the already-stopped case via <paramref name="wasAlreadyStopped"/> instead of
+        /// an informational <paramref name="message"/>, so <paramref name="message"/> stays
+        /// <c>null</c> on every success path (standardized with the rest of this suite).
+        /// </summary>
+        private static bool StopAndWait(ServiceController sc, string serviceName, int timeoutMs, out bool wasAlreadyStopped, out string message)
+        {
+            wasAlreadyStopped = false;
+            var status = sc.Status;
+            if (status == ServiceControllerStatus.Stopped)
+            {
+                wasAlreadyStopped = true;
+                message = null;
                 return true;
             }
             if (status == ServiceControllerStatus.StopPending)
@@ -939,6 +1484,82 @@ namespace ServiceAutomation
                 return $"No Windows service named '{serviceName}' is installed.";
 
             return $"{operation} failed for service '{serviceName}': {ex.Message}";
+        }
+
+        /// <summary>
+        /// Checks whether a service is installed, distinguishing "the query completed and the
+        /// service isn't there" (a normal answer) from "the query itself failed" (invalid name,
+        /// SCM/access failure) via the return value, rather than via message content.
+        /// </summary>
+        private static bool TryCheckInstalled(string serviceName, out bool installed, out string message)
+        {
+            installed = false;
+            message = default;
+            if (IsNullOrEmpty(serviceName))
+            {
+                message = "A service name is required.";
+                return false;
+            }
+
+            try
+            {
+                using (var sc = new ServiceController(serviceName))
+                {
+                    _ = sc.Status; // throws if the service doesn't exist or the query fails
+                    installed = true;
+                    message = null;
+                    return true;
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (ex.InnerException is Win32Exception w32 && w32.NativeErrorCode == ERROR_SERVICE_DOES_NOT_EXIST)
+                {
+                    installed = false;
+                    message = null;
+                    return true; // the query succeeded; the service just isn't installed
+                }
+                message = DescribeServiceException(ex, serviceName, "Checking whether the service is installed");
+                return false;
+            }
+            catch (Win32Exception ex)
+            {
+                message = $"Checking whether the service is installed failed for service '{serviceName}': {ex.Message}";
+                return false;
+            }
+        }
+
+        private static ServiceStatus ToServiceStatus(ServiceControllerStatus status)
+        {
+            switch (status)
+            {
+                case ServiceControllerStatus.Stopped: return ServiceStatus.Stopped;
+                case ServiceControllerStatus.StartPending: return ServiceStatus.StartPending;
+                case ServiceControllerStatus.StopPending: return ServiceStatus.StopPending;
+                case ServiceControllerStatus.Running: return ServiceStatus.Running;
+                case ServiceControllerStatus.ContinuePending: return ServiceStatus.ContinuePending;
+                case ServiceControllerStatus.PausePending: return ServiceStatus.PausePending;
+                case ServiceControllerStatus.Paused: return ServiceStatus.Paused;
+                default: return ServiceStatus.Stopped; // unreachable for a defined ServiceControllerStatus
+            }
+        }
+
+        private static bool TryToServiceControllerStatus(ServiceStatus status, out ServiceControllerStatus scStatus, out string message)
+        {
+            switch (status)
+            {
+                case ServiceStatus.Stopped: scStatus = ServiceControllerStatus.Stopped; message = null; return true;
+                case ServiceStatus.StartPending: scStatus = ServiceControllerStatus.StartPending; message = null; return true;
+                case ServiceStatus.StopPending: scStatus = ServiceControllerStatus.StopPending; message = null; return true;
+                case ServiceStatus.Running: scStatus = ServiceControllerStatus.Running; message = null; return true;
+                case ServiceStatus.ContinuePending: scStatus = ServiceControllerStatus.ContinuePending; message = null; return true;
+                case ServiceStatus.PausePending: scStatus = ServiceControllerStatus.PausePending; message = null; return true;
+                case ServiceStatus.Paused: scStatus = ServiceControllerStatus.Paused; message = null; return true;
+                default:
+                    scStatus = default;
+                    message = $"'{status}' is not a defined ServiceStatus value.";
+                    return false;
+            }
         }
 
         /// <summary>
