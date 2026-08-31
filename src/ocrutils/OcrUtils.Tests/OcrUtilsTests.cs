@@ -75,6 +75,52 @@ namespace OcrAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        // --- FindTextLocation scalar-coordinate overload: same guards as the Rectangle overload ---
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void FindTextLocationScalar_NullOrEmptySearchText_ReturnsFalseWithMessage(string searchText)
+        {
+            bool found = _ocr.FindTextLocation(searchText, 0, 0, 100, 100, out int left, out int top, out int width, out int height, out string message);
+
+            Assert.False(found);
+            Assert.Equal(0, left);
+            Assert.Equal(0, top);
+            Assert.Equal(0, width);
+            Assert.Equal(0, height);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        public void FindTextLocationScalar_NonPositiveDimensions_ReturnsFalseWithMessage(int regionWidth, int regionHeight)
+        {
+            bool found = _ocr.FindTextLocation("OK", 0, 0, regionWidth, regionHeight, out int left, out int top, out int width, out int height, out string message);
+
+            Assert.False(found);
+            Assert.Equal(0, left);
+            Assert.Equal(0, top);
+            Assert.Equal(0, width);
+            Assert.Equal(0, height);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void GetStructuredTextFromRegionAsJson_NonPositiveDimensions_ReturnsFalseWithNullJson(int width, int height)
+        {
+            bool ok = _ocr.GetStructuredTextFromRegionAsJson(0, 0, width, height, out string json, out string message);
+
+            Assert.False(ok);
+            Assert.Null(json);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         // --- WaitForTextToAppear: null/empty text refuses to poll; bad dimensions abort on the first pass ---
 
         [Theory]
@@ -113,6 +159,43 @@ namespace OcrAutomation.Tests
             // A negative timeout is invalid input, not a clean timeout - it must abort
             // with a message rather than silently returning false with message == null.
             Assert.False(found);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- WaitForTextToAppear(out bool timedOut, ...) overload: same guards, plus timedOut
+        //     must stay false when a guard (not a real timeout) is what aborted the poll ---
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void WaitForTextToAppearWithTimedOut_NullOrEmptyExpectedText_ReturnsFalseWithoutTimeout(string expectedText)
+        {
+            bool found = _ocr.WaitForTextToAppear(0, 0, 100, 100, expectedText, timeoutMs: 30000, pollIntervalMs: 10, out bool timedOut, out string message);
+
+            Assert.False(found);
+            Assert.False(timedOut);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        public void WaitForTextToAppearWithTimedOut_NonPositiveDimensions_ReturnsFalseWithoutTimeout(int width, int height)
+        {
+            bool found = _ocr.WaitForTextToAppear(0, 0, width, height, "any text", timeoutMs: 30000, pollIntervalMs: 10, out bool timedOut, out string message);
+
+            Assert.False(found);
+            Assert.False(timedOut);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void WaitForTextToAppearWithTimedOut_NegativeTimeout_ReturnsFalseWithoutTimeout()
+        {
+            bool found = _ocr.WaitForTextToAppear(0, 0, 100, 100, "any text", timeoutMs: -1, pollIntervalMs: 10, out bool timedOut, out string message);
+
+            Assert.False(found);
+            Assert.False(timedOut);
             Assert.False(string.IsNullOrEmpty(message));
         }
 
@@ -217,6 +300,37 @@ namespace OcrAutomation.Tests
             List<string> tags = _ocr.GetAvailableLanguages();
 
             Assert.NotNull(tags);
+        }
+
+        [Fact]
+        public void GetAvailableLanguagesDelimited_NeverThrows()
+        {
+            bool ok = _ocr.GetAvailableLanguagesDelimited(out string tags, out string message);
+
+            // Same never-throws contract as TryGetAvailableLanguages, just joined to a string.
+            if (ok)
+            {
+                Assert.NotNull(tags);
+                Assert.Null(message);
+            }
+            else
+            {
+                Assert.Null(tags);
+                Assert.False(string.IsNullOrEmpty(message));
+            }
+        }
+
+        [Fact]
+        public void GetAvailableLanguagesDelimited_NullDelimiter_NeverThrows()
+        {
+            // A null delimiter must fall back to "," internally rather than reaching
+            // string.Join(null, ...), which throws ArgumentNullException.
+            bool ok = _ocr.GetAvailableLanguagesDelimited(out string tags, out string message, delimiter: null);
+
+            if (ok)
+                Assert.NotNull(tags);
+            else
+                Assert.False(string.IsNullOrEmpty(message));
         }
 
         // --- Component lifecycle: construct + dispose is safe and side-effect free ---

@@ -6,6 +6,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Text.Json;
 using System.Threading;
 using Windows.Globalization;
 using Windows.Graphics.Imaging;
@@ -210,6 +211,75 @@ namespace OcrAutomation
         }
 
         /// <summary>
+        /// Captures a screen region and returns its recognized text as lines/words with
+        /// bounds, serialized to a JSON string, for designers that cannot construct an
+        /// <see cref="OcrResult"/> proxy.
+        /// </summary>
+        /// <param name="left">The X-coordinate of the top-left corner of the region to capture.</param>
+        /// <param name="top">The Y-coordinate of the top-left corner of the region to capture.</param>
+        /// <param name="width">The width of the region to capture, in pixels.</param>
+        /// <param name="height">The height of the region to capture, in pixels.</param>
+        /// <param name="languageTag">A BCP-47 language tag (e.g. <c>"en-US"</c>), or <c>null</c> to use the user's profile languages.</param>
+        /// <param name="json">
+        /// The recognized text as JSON: <c>{"text":"...","lines":[{"text":"...","bounds":{"left":0,"top":0,"width":0,"height":0},"words":[{"text":"...","bounds":{...}}]}]}</c>.
+        /// <c>null</c> if this method returns <c>false</c>.
+        /// </param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason recognition failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if width/height are not positive, or no matching OCR language pack is installed. Never throws.</returns>
+        [Category("OCR - Structured Results")]
+        [Description("Captures a screen region and returns its recognized text as lines/words with bounds, as a JSON string. Returns True on success; never throws.")]
+        public bool GetStructuredTextFromRegionAsJson(int left, int top, int width, int height, out string json, out string message, string languageTag = null)
+        {
+            json = default;
+            message = default;
+            try
+            {
+                json = null;
+                if (!GetStructuredTextFromRegion(left, top, width, height, out OcrResult result, out message, languageTag))
+                    return false;
+
+                json = SerializeToJson(result);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetStructuredTextFromRegionAsJson", ex);
+                return false;
+            }
+        }
+
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+
+        private static string SerializeToJson(OcrResult result)
+        {
+            var payload = new
+            {
+                text = result.Text,
+                lines = result.Lines.ConvertAll(line => new
+                {
+                    text = line.Text,
+                    bounds = ToJsonRect(line.Bounds),
+                    words = line.Words.ConvertAll(word => new
+                    {
+                        text = word.Text,
+                        bounds = ToJsonRect(word.Bounds)
+                    })
+                })
+            };
+            return JsonSerializer.Serialize(payload, JsonOptions);
+        }
+
+        private static object ToJsonRect(Rectangle bounds)
+        {
+            return new { left = bounds.Left, top = bounds.Top, width = bounds.Width, height = bounds.Height };
+        }
+
+        /// <summary>
         /// Searches a screen region for text matching <paramref name="searchText"/> (a
         /// case-insensitive substring match — e.g. searching for "OK" also matches inside
         /// "BOOK") and returns its bounding rectangle in screen coordinates via
@@ -272,6 +342,38 @@ namespace OcrAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="FindTextLocation(string, int, int, int, int, out Rectangle, out string)"/>,
+        /// but reports the matched bounding rectangle as scalar left/top/width/height outputs
+        /// for designers without a <c>Rectangle</c> proxy.
+        /// </summary>
+        /// <param name="searchText">The text to search for (case-insensitive substring match).</param>
+        /// <param name="left">The X-coordinate of the top-left corner of the region to search.</param>
+        /// <param name="top">The Y-coordinate of the top-left corner of the region to search.</param>
+        /// <param name="width">The width of the region to search, in pixels.</param>
+        /// <param name="height">The height of the region to search, in pixels.</param>
+        /// <param name="foundLeft">Left edge of the matched text's bounding rectangle, or <c>0</c> if not found or on failure.</param>
+        /// <param name="foundTop">Top edge of the matched text's bounding rectangle, or <c>0</c> if not found or on failure.</param>
+        /// <param name="foundWidth">Width of the matched text's bounding rectangle, or <c>0</c> if not found or on failure.</param>
+        /// <param name="foundHeight">Height of the matched text's bounding rectangle, or <c>0</c> if not found or on failure.</param>
+        /// <param name="message"><c>null</c> if the search completed (found or genuinely not found); otherwise a human-readable reason a real failure prevented the search.</param>
+        /// <returns><c>true</c> if matching text was found; <c>false</c> if it wasn't found, or if a real failure prevented the search (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        [Category("OCR - Structured Results")]
+        [Description("Searches a screen region for text and returns its bounding rectangle as scalar left/top/width/height. Returns True if found; never throws.")]
+        public bool FindTextLocation(string searchText, int left, int top, int width, int height, out int foundLeft, out int foundTop, out int foundWidth, out int foundHeight, out string message)
+        {
+            foundLeft = default;
+            foundTop = default;
+            foundWidth = default;
+            foundHeight = default;
+            bool found = FindTextLocation(searchText, left, top, width, height, out Rectangle location, out message);
+            foundLeft = location.Left;
+            foundTop = location.Top;
+            foundWidth = location.Width;
+            foundHeight = location.Height;
+            return found;
+        }
+
         #endregion
 
         #region Language
@@ -320,6 +422,40 @@ namespace OcrAutomation
             }
         }
 
+        /// <summary>
+        /// Gets the BCP-47 language tags of every installed OCR language pack as a single
+        /// delimited string, for designers without a <c>List&lt;string&gt;</c> proxy. The
+        /// list-returning overloads remain available for .NET consumers that need a
+        /// collection.
+        /// </summary>
+        /// <param name="tags">The installed language tags joined by <paramref name="delimiter"/> (e.g. <c>"en-US,fr-FR"</c>), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the language list could not be queried.</param>
+        /// <param name="delimiter">The separator placed between tags; defaults to <c>","</c>. A <c>null</c> value also falls back to <c>","</c>.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the OCR language list could not be queried. Never throws.</returns>
+        [Category("OCR - Language")]
+        [Description("Gets the installed OCR language tags as a single delimited string (default comma-separated). Returns True on success; never throws.")]
+        public bool GetAvailableLanguagesDelimited(out string tags, out string message, string delimiter = ",")
+        {
+            tags = default;
+            message = default;
+            try
+            {
+                tags = null;
+                if (!TryGetAvailableLanguages(out List<string> list, out message))
+                    return false;
+
+                tags = string.Join(delimiter ?? ",", list);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetAvailableLanguagesDelimited", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Wait-for-Text Polling
@@ -342,6 +478,33 @@ namespace OcrAutomation
         [Description("Polls a screen region until it contains the expected text, or the timeout elapses. Returns True if found in time; never throws.")]
         public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)
         {
+            return WaitForTextToAppear(left, top, width, height, expectedText, timeoutMs, pollIntervalMs, out _, out message);
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForTextToAppear(int, int, int, int, string, int, int, out string)"/>,
+        /// but also reports whether the wait ended because the timeout elapsed, so the
+        /// automation can branch on timeout vs. execution failure without a null-message test.
+        /// </summary>
+        /// <remarks>
+        /// The actual wait can exceed <paramref name="timeoutMs"/> by up to one poll interval
+        /// plus the time of a single capture+OCR pass, since the timeout is checked between passes.
+        /// </remarks>
+        /// <param name="left">The X-coordinate of the top-left corner of the region to poll.</param>
+        /// <param name="top">The Y-coordinate of the top-left corner of the region to poll.</param>
+        /// <param name="width">The width of the region to poll, in pixels.</param>
+        /// <param name="height">The height of the region to poll, in pixels.</param>
+        /// <param name="expectedText">The text to wait for (case-insensitive substring match).</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds; must not be negative.</param>
+        /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
+        /// <param name="timedOut"><c>true</c> if this method returned <c>false</c> because the timeout elapsed; <c>false</c> on success or on a real failure (check <paramref name="message"/> for the latter).</param>
+        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason a real failure (bad dimensions, missing language pack, negative timeout) aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the expected text appeared before the timeout; <c>false</c> if it timed out, or if a real failure aborted the poll (check <paramref name="timedOut"/>/<paramref name="message"/> to tell them apart). Never throws.</returns>
+        [Category("OCR - Wait for Text")]
+        [Description("Polls a screen region until it contains the expected text, or the timeout elapses; reports whether the wait timed out. Returns True if found in time; never throws.")]
+        public bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)
+        {
+            timedOut = default;
             message = default;
             try
             {
@@ -369,6 +532,7 @@ namespace OcrAutomation
                     }
                     if (unchecked(Environment.TickCount - start) >= timeoutMs)
                     {
+                        timedOut = true;
                         message = null;
                         return false;
                     }

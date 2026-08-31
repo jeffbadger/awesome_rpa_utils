@@ -51,7 +51,9 @@ internal screen capture, though, so it has no project reference to either.
 | Method | Signature | Description |
 |---|---|---|
 | `GetStructuredTextFromRegion` | `bool GetStructuredTextFromRegion(int left, int top, int width, int height, out OcrResult result, out string message, string languageTag = null)` | Captures a screen region and returns its recognized text as lines/words with screen-space bounding rectangles. Returns True on success; never throws. |
+| `GetStructuredTextFromRegionAsJson` | `bool GetStructuredTextFromRegionAsJson(int left, int top, int width, int height, out string json, out string message, string languageTag = null)` | Same, serialized to a JSON string, for designers that cannot construct an `OcrResult` proxy. Returns True on success; never throws. |
 | `FindTextLocation` | `bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)` | Searches a region for matching text and returns its screen-space bounding rectangle. Returns True if found; `location` is `Rectangle.Empty` both when not found and on a real failure — check `message` to tell them apart. Never throws. |
+| `FindTextLocation` | `bool FindTextLocation(string searchText, int left, int top, int width, int height, out int foundLeft, out int foundTop, out int foundWidth, out int foundHeight, out string message)` | Same, as scalar left/top/width/height outputs for designers without a `Rectangle` proxy. |
 
 ### Language
 
@@ -59,12 +61,14 @@ internal screen capture, though, so it has no project reference to either.
 |---|---|---|
 | `GetAvailableLanguages` | `List<string> GetAvailableLanguages()` | Gets the BCP-47 language tags of every OCR language pack currently installed. Never throws; returns an empty list if the language list cannot be queried. |
 | `TryGetAvailableLanguages` | `bool TryGetAvailableLanguages(out List<string> tags, out string message)` | Gets the BCP-47 language tags of every OCR language pack currently installed. Returns True on success; never throws. |
+| `GetAvailableLanguagesDelimited` | `bool GetAvailableLanguagesDelimited(out string tags, out string message, string delimiter = ",")` | Same, as a single delimited string (default comma-separated) for designers without a `List<string>` proxy. Returns True on success; never throws. |
 
 ### Wait-for-Text Polling
 
 | Method | Signature | Description |
 |---|---|---|
 | `WaitForTextToAppear` | `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains matching text, or the timeout elapses. `message` is only set if a real failure (bad dimensions, missing language pack, negative timeout) aborted the poll early. Never throws. |
+| `WaitForTextToAppear` | `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)` | Same, plus a `timedOut` output so the automation can branch on timeout vs. execution failure without a null-message test. Never throws. |
 
 ## Notes & Caveats
 
@@ -77,6 +81,7 @@ internal screen capture, though, so it has no project reference to either.
 - **`FindTextLocation`/`WaitForTextToAppear`** overload the meaning of a `false` return: it
   covers both a normal "not found"/"timed out" outcome (`message == null`) and a real failure
   that aborted the search/poll early (`message` set) — check `message` to tell them apart.
+  `WaitForTextToAppear` has a `timedOut`-output overload that avoids the null-message check.
 - **Recognition accuracy depends on an installed OCR language pack** for the requested
   language (or the user's profile languages, if none is specified) — install one via
   Windows Settings > Time & Language > Language & region. A missing pack is reported via
