@@ -4,6 +4,7 @@ Real-world usage examples for every method on the `UIAutomationUtils`
 component, organized by the same categories used in the source code and the
 top-level [README](../README.md).
 
+- [Common Tasks](CommonTasks.md) — click a button, read/set a text field, or select a combo box item, in one call
 - [Find](Find.md) — locating elements by AutomationId, name, class, or control type
 - [Properties](Properties.md) — reading an element's name, bounds, and state
 - [Actions](Actions.md) — invoking, setting values, toggling, expanding, and selecting

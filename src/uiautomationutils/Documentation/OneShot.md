@@ -36,6 +36,14 @@ IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
 uia.InvokeByAutomationId(hWnd, "SaveButton", out string message);
 ```
 
+For designers without an AutomationId to hand — only the button's visible
+text — `InvokeByName` does the same thing, matched by `Name` instead:
+
+```csharp
+IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
+uia.InvokeByName(hWnd, "Save", out string message);
+```
+
 ## Set and read a text field by AutomationId without a separate find step
 
 ```csharp
@@ -43,6 +51,31 @@ IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
 uia.SetValueByAutomationId(hWnd, "UsernameField", "jbadger", out string message);
 uia.GetValueByAutomationId(hWnd, "UsernameField", out string current, out message);
 ```
+
+The `ByName` overloads match by visible name instead, for the same reason
+as `InvokeByName` above:
+
+```csharp
+IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
+uia.SetValueByName(hWnd, "Username", "jbadger", out string message);
+uia.GetValueByName(hWnd, "Username", out string current, out message);
+```
+
+## Select an item in a combo box, list box, or tree by name, in one call
+
+`SelectListItemByName` finds the container by name, expands it if the
+control needs that before its items are reachable, then finds and selects
+the item within it by name:
+
+```csharp
+IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
+uia.SelectListItemByName(hWnd, "Country", "United States", out string message);
+```
+
+Equivalent to `FromWindowHandle` → `FindByName` (container) → `Expand` →
+`FindByName` (item) → `Select` via the composable API — see
+[Actions](Actions.md) for those individual methods if you need to act on the
+container or item again afterward instead of just selecting once.
 
 ## Checking why a one-shot call failed
 
