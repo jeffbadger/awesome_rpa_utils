@@ -47,6 +47,13 @@ finally
 }
 ```
 
+In a Robot Studio diagram (no `try`/`finally`), wire a failure connection from every step
+between `KeyDown` and its matching `KeyUp` to a cleanup `KeyUp` step. Without it, a later
+step failing leaves the key held down for the rest of the session. `PressKey` and `HoldKey`
+don't need this — they release the key from internal cleanup even when the press/hold
+itself fails — so prefer them whenever the automation doesn't need to hold the key across
+other steps.
+
 ## Checking why a press failed
 
 ```csharp
