@@ -73,3 +73,43 @@ bounds, collection adapters (indexed access and JSON summaries), one-shot
 handle-scoped methods, disambiguating outputs, expanded control-type
 coverage, and color overloads substantially reduce Pega design-surface
 complexity for the common cases.
+
+## Addendum: naming ambiguity fix
+
+The additive overloads above solved usability, but several of them introduced
+a new problem: two same-named methods whose Pega-visible (non-`out`)
+parameter lists became identical, differing only in an `out` parameter's
+type or presence. C# overload resolution handles this fine, but Pega Robot
+Studio's designer surface cannot disambiguate two overloads by `out`
+parameter type/shape alone - both entries in the designer's method picker
+would look the same.
+
+Seven method groups in this component had this problem: `GetBoundingRectangle`,
+`IsEnabled`, `IsOffscreen`, `IsToggled`, `IsSelected`,
+`WaitForElementByAutomationId`, `WaitForElementByName`. In each case, one
+overload takes just `(AutomationElement element, ..., out string message)`
+and the other adds one extra `out` parameter (`querySucceeded`, `timedOut`)
+or returns a different `out` type (`Rectangle` vs. scalar `int`s) -
+identical from Pega's point of view.
+
+Fixed by renaming the less-disambiguated overload (the one without the
+extra output) rather than the newer, more Pega-usable one, following this
+repository's convention of breaking changes over compatibility shims:
+
+| Old name | New name | Reason |
+|---|---|---|
+| `GetBoundingRectangle(AutomationElement, out Rectangle, out string)` | `GetBoundingRectangleAsRectangle` | Return type, not an extra output, was the only difference |
+| `IsEnabled(AutomationElement, out string)` | `IsEnabledSimple` | Missing the `querySucceeded` disambiguator |
+| `IsOffscreen(AutomationElement, out string)` | `IsOffscreenSimple` | Missing the `querySucceeded` disambiguator |
+| `IsToggled(AutomationElement, out string)` | `IsToggledSimple` | Missing the `querySucceeded` disambiguator |
+| `IsSelected(AutomationElement, out string)` | `IsSelectedSimple` | Missing the `querySucceeded` disambiguator |
+| `WaitForElementByAutomationId(..., out AutomationElement, out string)` | `WaitForElementByAutomationIdSimple` | Missing the `timedOut` disambiguator |
+| `WaitForElementByName(..., out AutomationElement, out string)` | `WaitForElementByNameSimple` | Missing the `timedOut` disambiguator |
+
+The plain (un-suffixed) name in each pair now belongs to the overload with
+the extra disambiguating output - the one most useful to a Pega automation -
+per the naming convention documented in the component `README.md`.
+`GetBoundingRectangle(AutomationElement, out int, out int, out int, out int, out string)`
+(the scalar left/top/width/height overload) was unaffected: it keeps the
+plain name since its parameter count already disambiguates it from every
+other overload.

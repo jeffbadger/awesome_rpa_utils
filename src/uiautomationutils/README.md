@@ -82,11 +82,11 @@ A common UI Automation control type, mapped internally to
 | `GetAutomationId` | `bool GetAutomationId(AutomationElement element, out string automationId, out string message)` | Gets an element's AutomationId property. Returns True on success; never throws. |
 | `GetClassName` | `bool GetClassName(AutomationElement element, out string className, out string message)` | Gets an element's window class name. Returns True on success; never throws. |
 | `GetControlTypeName` | `bool GetControlTypeName(AutomationElement element, out string controlTypeName, out string message)` | Gets a friendly name for an element's control type (e.g. "Button"); `false` + message if the element reports no ControlType. |
-| `GetBoundingRectangle` | `bool GetBoundingRectangle(AutomationElement element, out Rectangle bounds, out string message)` | Gets an element's screen-space bounding rectangle; `false` (+ message) if the element has no on-screen bounding rectangle. |
+| `GetBoundingRectangleAsRectangle` | `bool GetBoundingRectangleAsRectangle(AutomationElement element, out Rectangle bounds, out string message)` | Gets an element's screen-space bounding rectangle; `false` (+ message) if the element has no on-screen bounding rectangle. |
 | `GetBoundingRectangle` | `bool GetBoundingRectangle(AutomationElement element, out int left, out int top, out int width, out int height, out string message)` | Same, as scalar left/top/width/height outputs for designers without a `Rectangle` proxy. |
-| `IsEnabled` | `bool IsEnabled(AutomationElement element, out string message)` | Returns True if the element is enabled. Never throws. |
+| `IsEnabledSimple` | `bool IsEnabledSimple(AutomationElement element, out string message)` | Returns True if the element is enabled. Never throws. |
 | `IsEnabled` | `bool IsEnabled(AutomationElement element, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`, for designers who'd rather branch on a Boolean. |
-| `IsOffscreen` | `bool IsOffscreen(AutomationElement element, out string message)` | Returns True if the element is offscreen. Never throws. |
+| `IsOffscreenSimple` | `bool IsOffscreenSimple(AutomationElement element, out string message)` | Returns True if the element is offscreen. Never throws. |
 | `IsOffscreen` | `bool IsOffscreen(AutomationElement element, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`. |
 | `IsElementAvailable` | `bool IsElementAvailable(AutomationElement element)` | Returns True if the element is still available (its underlying UI hasn't gone away). |
 
@@ -98,21 +98,21 @@ A common UI Automation control type, mapped internally to
 | `SetValue` | `bool SetValue(AutomationElement element, string value, out string message)` | Sets an element's value via ValuePattern. Returns True on success; never throws. |
 | `GetValue` | `bool GetValue(AutomationElement element, out string value, out string message)` | Gets an element's value via ValuePattern. Returns True on success; never throws. |
 | `Toggle` | `bool Toggle(AutomationElement element, out string message)` | Toggles an element (e.g. a checkbox) via TogglePattern. Returns True on success; never throws. |
-| `IsToggled` | `bool IsToggled(AutomationElement element, out string message)` | Returns True if a toggleable element is currently On. Never throws. |
+| `IsToggledSimple` | `bool IsToggledSimple(AutomationElement element, out string message)` | Returns True if a toggleable element is currently On. Never throws. |
 | `IsToggled` | `bool IsToggled(AutomationElement element, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`. |
 | `Expand` | `bool Expand(AutomationElement element, out string message)` | Expands an element (e.g. a combo box or tree node) via ExpandCollapsePattern. Returns True on success; never throws. |
 | `Collapse` | `bool Collapse(AutomationElement element, out string message)` | Collapses an element via ExpandCollapsePattern. Returns True on success; never throws. |
 | `Select` | `bool Select(AutomationElement element, out string message)` | Selects an element (e.g. a list item) via SelectionItemPattern. Returns True on success; never throws. |
-| `IsSelected` | `bool IsSelected(AutomationElement element, out string message)` | Returns True if a selectable element is currently selected. Never throws. |
+| `IsSelectedSimple` | `bool IsSelectedSimple(AutomationElement element, out string message)` | Returns True if a selectable element is currently selected. Never throws. |
 | `IsSelected` | `bool IsSelected(AutomationElement element, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`. |
 
 ### Wait
 
 | Method | Signature | Description |
 |---|---|---|
-| `WaitForElementByAutomationId` | `bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)` | Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses. `message` is only set if a real argument error aborted the poll early. Never throws. |
+| `WaitForElementByAutomationIdSimple` | `bool WaitForElementByAutomationIdSimple(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)` | Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses. `message` is only set if a real argument error aborted the poll early. Never throws. |
 | `WaitForElementByAutomationId` | `bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out bool timedOut, out string message)` | Same, plus a `timedOut` output so the automation can branch on timeout vs. a real argument error without a null-message test. |
-| `WaitForElementByName` | `bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)` | Polls for a descendant element matching the given Name until it appears or the timeout elapses. `message` is only set if a real argument error aborted the poll early. Never throws. |
+| `WaitForElementByNameSimple` | `bool WaitForElementByNameSimple(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)` | Polls for a descendant element matching the given Name until it appears or the timeout elapses. `message` is only set if a real argument error aborted the poll early. Never throws. |
 | `WaitForElementByName` | `bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out bool timedOut, out string message)` | Same, plus a `timedOut` output. |
 
 ### Visual
@@ -135,17 +135,19 @@ A common UI Automation control type, mapped internally to
   search (`message` set) — check `message` to tell them apart. `FindAllByControlType`/
   `GetChildren` don't have this ambiguity since an empty list is an unambiguous "no
   results," so their `bool` means only "no argument error occurred."
-- **`IsEnabled`/`IsOffscreen`/`IsToggled`/`IsSelected` keep their original `bool` meaning**
-  (the property's actual value) — a `false` return can mean either the genuine state or a
-  real error (null element, unsupported pattern); check `message` to tell them apart, or
-  use the `out bool querySucceeded` overload to avoid the null-message test.
+- **`IsEnabledSimple`/`IsOffscreenSimple`/`IsToggledSimple`/`IsSelectedSimple` keep
+  their original `bool` meaning** (the property's actual value) — a `false` return can
+  mean either the genuine state or a real error (null element, unsupported pattern);
+  check `message` to tell them apart, or use the `IsEnabled`/`IsOffscreen`/`IsToggled`/
+  `IsSelected` overload's `out bool querySucceeded` to avoid the null-message test.
 - **`IsElementAvailable` is the one method that accepts `null` without
   needing an `out message`** (returning `false` instead) - its entire purpose is checking
   whether a reference is still good, and a null reference is definitionally
   not available. It was already never-throw and is unchanged.
-- **`WaitForElementByAutomationId`/`WaitForElementByName` have a `timedOut`-output
-  overload** that distinguishes a genuine timeout from a real argument error without a
-  null-message test; the original overloads (message-only) remain.
+- **`WaitForElementByAutomationId`/`WaitForElementByName` have a `timedOut`-output**
+  that distinguishes a genuine timeout from a real argument error without a
+  null-message test; the message-only overloads (`WaitForElementByAutomationIdSimple`,
+  `WaitForElementByNameSimple`) remain.
 - **`GetChildren`/`FindAllByControlType` results feed `GetElementCount`/`GetElementAt`**
   for designers who'd rather drive a counted loop by scalar index than iterate an
   `AutomationElement` collection proxy directly. `GetChildrenSummaryJson` goes further,

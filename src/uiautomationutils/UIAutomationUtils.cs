@@ -587,7 +587,7 @@ namespace UIAutomation
                     GetAutomationId(child, out string automationId, out _);
                     GetClassName(child, out string className, out _);
                     GetControlTypeName(child, out string controlType, out _);
-                    object bounds = GetBoundingRectangle(child, out System.Drawing.Rectangle rc, out _)
+                    object bounds = GetBoundingRectangleAsRectangle(child, out System.Drawing.Rectangle rc, out _)
                         ? (object)new { left = rc.Left, top = rc.Top, width = rc.Width, height = rc.Height }
                         : null;
 
@@ -774,7 +774,7 @@ namespace UIAutomation
         /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null. Never throws.</returns>
         [Category("UIAutomation - Properties")]
         [Description("Gets an element's screen-space bounding rectangle. Returns True on success; never throws.")]
-        public bool GetBoundingRectangle(AutomationElement element, out System.Drawing.Rectangle bounds, out string message)
+        public bool GetBoundingRectangleAsRectangle(AutomationElement element, out System.Drawing.Rectangle bounds, out string message)
         {
             bounds = default;
             message = default;
@@ -806,13 +806,13 @@ namespace UIAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("GetBoundingRectangle", ex);
+                message = NeverThrowsGuard.Failure("GetBoundingRectangleAsRectangle", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="GetBoundingRectangle(AutomationElement, out System.Drawing.Rectangle, out string)"/>,
+        /// Same as <see cref="GetBoundingRectangleAsRectangle(AutomationElement, out System.Drawing.Rectangle, out string)"/>,
         /// but reports the bounds as scalar left/top/width/height outputs, for designers
         /// without a <c>Rectangle</c> proxy.
         /// </summary>
@@ -831,7 +831,7 @@ namespace UIAutomation
             top = default;
             width = default;
             height = default;
-            bool ok = GetBoundingRectangle(element, out System.Drawing.Rectangle bounds, out message);
+            bool ok = GetBoundingRectangleAsRectangle(element, out System.Drawing.Rectangle bounds, out message);
             left = bounds.Left;
             top = bounds.Top;
             width = bounds.Width;
@@ -845,7 +845,7 @@ namespace UIAutomation
         /// <returns><c>true</c> if the element is enabled; <c>false</c> if it isn't, or if <paramref name="element"/> is null (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Properties")]
         [Description("Returns True if the element is enabled. Never throws.")]
-        public bool IsEnabled(AutomationElement element, out string message)
+        public bool IsEnabledSimple(AutomationElement element, out string message)
         {
             message = default;
             try
@@ -864,13 +864,13 @@ namespace UIAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("IsEnabled", ex);
+                message = NeverThrowsGuard.Failure("IsEnabledSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="IsEnabled(AutomationElement, out string)"/>, but separates
+        /// Same as <see cref="IsEnabledSimple(AutomationElement, out string)"/>, but separates
         /// "the query succeeded" from "the element is enabled" into two outputs, so the
         /// automation does not need to interpret <paramref name="message"/> for <c>null</c>.
         /// </summary>
@@ -882,7 +882,7 @@ namespace UIAutomation
         [Description("Returns True if the element is enabled, plus whether the query itself succeeded. Never throws.")]
         public bool IsEnabled(AutomationElement element, out bool querySucceeded, out string message)
         {
-            bool enabled = IsEnabled(element, out message);
+            bool enabled = IsEnabledSimple(element, out message);
             querySucceeded = message == null;
             return enabled;
         }
@@ -893,7 +893,7 @@ namespace UIAutomation
         /// <returns><c>true</c> if the element is offscreen; <c>false</c> if it isn't, or if <paramref name="element"/> is null (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Properties")]
         [Description("Returns True if the element is offscreen. Never throws.")]
-        public bool IsOffscreen(AutomationElement element, out string message)
+        public bool IsOffscreenSimple(AutomationElement element, out string message)
         {
             message = default;
             try
@@ -912,13 +912,13 @@ namespace UIAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("IsOffscreen", ex);
+                message = NeverThrowsGuard.Failure("IsOffscreenSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="IsOffscreen(AutomationElement, out string)"/>, but separates
+        /// Same as <see cref="IsOffscreenSimple(AutomationElement, out string)"/>, but separates
         /// "the query succeeded" from "the element is offscreen" into two outputs, so the
         /// automation does not need to interpret <paramref name="message"/> for <c>null</c>.
         /// </summary>
@@ -930,7 +930,7 @@ namespace UIAutomation
         [Description("Returns True if the element is offscreen, plus whether the query itself succeeded. Never throws.")]
         public bool IsOffscreen(AutomationElement element, out bool querySucceeded, out string message)
         {
-            bool offscreen = IsOffscreen(element, out message);
+            bool offscreen = IsOffscreenSimple(element, out message);
             querySucceeded = message == null;
             return offscreen;
         }
@@ -1148,7 +1148,7 @@ namespace UIAutomation
         /// <returns><c>true</c> if the element is On; <c>false</c> if it isn't, or if <paramref name="element"/> is null/does not support TogglePattern (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Actions")]
         [Description("Returns True if a toggleable element is currently On. Never throws.")]
-        public bool IsToggled(AutomationElement element, out string message)
+        public bool IsToggledSimple(AutomationElement element, out string message)
         {
             message = default;
             try
@@ -1177,13 +1177,13 @@ namespace UIAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("IsToggled", ex);
+                message = NeverThrowsGuard.Failure("IsToggledSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="IsToggled(AutomationElement, out string)"/>, but separates
+        /// Same as <see cref="IsToggledSimple(AutomationElement, out string)"/>, but separates
         /// "the query succeeded" from "the element is On" into two outputs, so the automation
         /// does not need to interpret <paramref name="message"/> for <c>null</c>.
         /// </summary>
@@ -1195,7 +1195,7 @@ namespace UIAutomation
         [Description("Returns True if a toggleable element is currently On, plus whether the query itself succeeded. Never throws.")]
         public bool IsToggled(AutomationElement element, out bool querySucceeded, out string message)
         {
-            bool isOn = IsToggled(element, out message);
+            bool isOn = IsToggledSimple(element, out message);
             querySucceeded = message == null;
             return isOn;
         }
@@ -1326,7 +1326,7 @@ namespace UIAutomation
         /// <returns><c>true</c> if the element is selected; <c>false</c> if it isn't, or if <paramref name="element"/> is null/does not support SelectionItemPattern (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Actions")]
         [Description("Returns True if a selectable element is currently selected. Never throws.")]
-        public bool IsSelected(AutomationElement element, out string message)
+        public bool IsSelectedSimple(AutomationElement element, out string message)
         {
             message = default;
             try
@@ -1361,13 +1361,13 @@ namespace UIAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("IsSelected", ex);
+                message = NeverThrowsGuard.Failure("IsSelectedSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="IsSelected(AutomationElement, out string)"/>, but separates
+        /// Same as <see cref="IsSelectedSimple(AutomationElement, out string)"/>, but separates
         /// "the query succeeded" from "the element is selected" into two outputs, so the
         /// automation does not need to interpret <paramref name="message"/> for <c>null</c>.
         /// </summary>
@@ -1379,7 +1379,7 @@ namespace UIAutomation
         [Description("Returns True if a selectable element is currently selected, plus whether the query itself succeeded. Never throws.")]
         public bool IsSelected(AutomationElement element, out bool querySucceeded, out string message)
         {
-            bool isSelected = IsSelected(element, out message);
+            bool isSelected = IsSelectedSimple(element, out message);
             querySucceeded = message == null;
             return isSelected;
         }
@@ -1600,13 +1600,13 @@ namespace UIAutomation
         /// <returns><c>true</c> if a matching element was found before the timeout; <c>false</c> if it timed out, or if a real argument error aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Wait")]
         [Description("Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses. Never throws.")]
-        public bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)
+        public bool WaitForElementByAutomationIdSimple(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)
         {
             return WaitForElementByAutomationId(parent, automationId, timeoutMs, pollIntervalMs, out element, out _, out message);
         }
 
         /// <summary>
-        /// Same as <see cref="WaitForElementByAutomationId(AutomationElement, string, int, int, out AutomationElement, out string)"/>,
+        /// Same as <see cref="WaitForElementByAutomationIdSimple(AutomationElement, string, int, int, out AutomationElement, out string)"/>,
         /// but also reports whether the wait ended because the timeout elapsed, so the
         /// automation can branch on timeout vs. a real argument error without a null-message test.
         /// </summary>
@@ -1669,13 +1669,13 @@ namespace UIAutomation
         /// <returns><c>true</c> if a matching element was found before the timeout; <c>false</c> if it timed out, or if a real argument error aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("UIAutomation - Wait")]
         [Description("Polls for a descendant element matching the given Name until it appears or the timeout elapses. Never throws.")]
-        public bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)
+        public bool WaitForElementByNameSimple(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)
         {
             return WaitForElementByName(parent, name, exactMatch, timeoutMs, pollIntervalMs, out element, out _, out message);
         }
 
         /// <summary>
-        /// Same as <see cref="WaitForElementByName(AutomationElement, string, bool, int, int, out AutomationElement, out string)"/>,
+        /// Same as <see cref="WaitForElementByNameSimple(AutomationElement, string, bool, int, int, out AutomationElement, out string)"/>,
         /// but also reports whether the wait ended because the timeout elapsed, so the
         /// automation can branch on timeout vs. a real argument error without a null-message test.
         /// </summary>
@@ -1751,7 +1751,7 @@ namespace UIAutomation
             message = default;
             try
             {
-                if (!GetBoundingRectangle(element, out System.Drawing.Rectangle rc, out message))
+                if (!GetBoundingRectangleAsRectangle(element, out System.Drawing.Rectangle rc, out message))
                     return false;
                 if (flashes < 1) flashes = 1;
                 if (flashMs < 1) flashMs = 1;
