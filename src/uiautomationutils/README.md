@@ -31,6 +31,7 @@ A common UI Automation control type, mapped internally to
 `System.Windows.Automation.ControlType`: `Button`, `CheckBox`, `ComboBox`,
 `Edit`, `Hyperlink`, `Image`, `List`, `ListItem`, `Menu`, `MenuItem`, `Pane`,
 `RadioButton`, `Tab`, `TabItem`, `Text`, `Tree`, `TreeItem`, `Window`,
+`DataGrid`, `DataItem`, `Group`, `Header`, `Slider`, `Spinner`, `ToolBar`,
 `Custom`.
 
 ## Constructors
@@ -55,10 +56,23 @@ A common UI Automation control type, mapped internally to
 | `FindByControlType` | `bool FindByControlType(AutomationElement parent, UiControlType controlType, out AutomationElement element, out string message, bool descendantsOnly = true)` | Finds the first descendant (or child) element of the given control type. Returns True if found; never throws. |
 | `FindAllByControlType` | `bool FindAllByControlType(AutomationElement parent, UiControlType controlType, out List<AutomationElement> elements, out string message, bool descendantsOnly = true)` | Finds every descendant (or child) element of the given control type. Returns True on success; never throws. |
 | `GetChildren` | `bool GetChildren(AutomationElement parent, out List<AutomationElement> children, out string message)` | Gets all immediate children of an element. Returns True on success; never throws. |
+| `GetElementCount` | `bool GetElementCount(List<AutomationElement> elements, out int count, out string message)` | Gets the number of elements in a list from `GetChildren`/`FindAllByControlType`, for designers who'd rather loop by scalar index. |
+| `GetElementAt` | `bool GetElementAt(List<AutomationElement> elements, int index, out AutomationElement element, out string message)` | Gets the element at a given index in a list from `GetChildren`/`FindAllByControlType`. Pair with `GetElementCount` to drive the loop bound. |
+| `GetChildrenSummaryJson` | `bool GetChildrenSummaryJson(AutomationElement parent, out string json, out string message)` | Same as `GetChildren`, summarized as a JSON array (name/automationId/className/controlType/bounds), for designers without an `AutomationElement` collection proxy. |
 
 `descendantsOnly = true` (the default) searches the full subtree
 (`TreeScope.Descendants`); `false` searches only immediate children
 (`TreeScope.Children`).
+
+### One-Shot (Window-Handle-Scoped)
+
+| Method | Signature | Description |
+|---|---|---|
+| `GetChildrenFromWindowHandle` | `bool GetChildrenFromWindowHandle(IntPtr hWnd, out List<AutomationElement> children, out string message)` | Gets all immediate children of a top-level window from its handle, in one call - `FromWindowHandle` + `GetChildren` without the intermediate proxy. |
+| `GetChildrenSummaryJsonFromWindowHandle` | `bool GetChildrenSummaryJsonFromWindowHandle(IntPtr hWnd, out string json, out string message)` | Same, summarized as JSON. |
+| `InvokeByAutomationId` | `bool InvokeByAutomationId(IntPtr hWnd, string automationId, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and invokes it, in one call. |
+| `SetValueByAutomationId` | `bool SetValueByAutomationId(IntPtr hWnd, string automationId, string value, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and sets its value, in one call. |
+| `GetValueByAutomationId` | `bool GetValueByAutomationId(IntPtr hWnd, string automationId, out string value, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and gets its value, in one call. |
 
 ### Properties
 
@@ -69,8 +83,11 @@ A common UI Automation control type, mapped internally to
 | `GetClassName` | `bool GetClassName(AutomationElement element, out string className, out string message)` | Gets an element's window class name. Returns True on success; never throws. |
 | `GetControlTypeName` | `bool GetControlTypeName(AutomationElement element, out string controlTypeName, out string message)` | Gets a friendly name for an element's control type (e.g. "Button"); `false` + message if the element reports no ControlType. |
 | `GetBoundingRectangle` | `bool GetBoundingRectangle(AutomationElement element, out Rectangle bounds, out string message)` | Gets an element's screen-space bounding rectangle; `false` (+ message) if the element has no on-screen bounding rectangle. |
+| `GetBoundingRectangle` | `bool GetBoundingRectangle(AutomationElement element, out int left, out int top, out int width, out int height, out string message)` | Same, as scalar left/top/width/height outputs for designers without a `Rectangle` proxy. |
 | `IsEnabled` | `bool IsEnabled(AutomationElement element, out string message)` | Returns True if the element is enabled. Never throws. |
+| `IsEnabled` | `bool IsEnabled(AutomationElement element, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`, for designers who'd rather branch on a Boolean. |
 | `IsOffscreen` | `bool IsOffscreen(AutomationElement element, out string message)` | Returns True if the element is offscreen. Never throws. |
+| `IsOffscreen` | `bool IsOffscreen(AutomationElement element, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`. |
 | `IsElementAvailable` | `bool IsElementAvailable(AutomationElement element)` | Returns True if the element is still available (its underlying UI hasn't gone away). |
 
 ### Actions
@@ -82,23 +99,29 @@ A common UI Automation control type, mapped internally to
 | `GetValue` | `bool GetValue(AutomationElement element, out string value, out string message)` | Gets an element's value via ValuePattern. Returns True on success; never throws. |
 | `Toggle` | `bool Toggle(AutomationElement element, out string message)` | Toggles an element (e.g. a checkbox) via TogglePattern. Returns True on success; never throws. |
 | `IsToggled` | `bool IsToggled(AutomationElement element, out string message)` | Returns True if a toggleable element is currently On. Never throws. |
+| `IsToggled` | `bool IsToggled(AutomationElement element, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`. |
 | `Expand` | `bool Expand(AutomationElement element, out string message)` | Expands an element (e.g. a combo box or tree node) via ExpandCollapsePattern. Returns True on success; never throws. |
 | `Collapse` | `bool Collapse(AutomationElement element, out string message)` | Collapses an element via ExpandCollapsePattern. Returns True on success; never throws. |
 | `Select` | `bool Select(AutomationElement element, out string message)` | Selects an element (e.g. a list item) via SelectionItemPattern. Returns True on success; never throws. |
 | `IsSelected` | `bool IsSelected(AutomationElement element, out string message)` | Returns True if a selectable element is currently selected. Never throws. |
+| `IsSelected` | `bool IsSelected(AutomationElement element, out bool querySucceeded, out string message)` | Same, plus a `querySucceeded` output equivalent to `message == null`. |
 
 ### Wait
 
 | Method | Signature | Description |
 |---|---|---|
 | `WaitForElementByAutomationId` | `bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)` | Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses. `message` is only set if a real argument error aborted the poll early. Never throws. |
+| `WaitForElementByAutomationId` | `bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out bool timedOut, out string message)` | Same, plus a `timedOut` output so the automation can branch on timeout vs. a real argument error without a null-message test. |
 | `WaitForElementByName` | `bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)` | Polls for a descendant element matching the given Name until it appears or the timeout elapses. `message` is only set if a real argument error aborted the poll early. Never throws. |
+| `WaitForElementByName` | `bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out bool timedOut, out string message)` | Same, plus a `timedOut` output. |
 
 ### Visual
 
 | Method | Signature | Description |
 |---|---|---|
 | `HighlightElement` | `bool HighlightElement(AutomationElement element, out string message, int flashes = 3, int flashMs = 200, int lineWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting rectangle around an element to visually confirm which on-screen element it corresponds to. Returns True on success; never throws. |
+| `HighlightElement` | `bool HighlightElement(AutomationElement element, int red, int green, int blue, out string message, int flashes = 3, int flashMs = 200, int lineWidth = 3)` | Same, as RGB color components (0-255 each) instead of a packed colorRef. |
+| `HighlightElement` | `bool HighlightElement(AutomationElement element, Color color, out string message, int flashes = 3, int flashMs = 200, int lineWidth = 3)` | Same, taking a `System.Drawing.Color`. |
 
 ## Notes & Caveats
 
@@ -113,13 +136,31 @@ A common UI Automation control type, mapped internally to
   `GetChildren` don't have this ambiguity since an empty list is an unambiguous "no
   results," so their `bool` means only "no argument error occurred."
 - **`IsEnabled`/`IsOffscreen`/`IsToggled`/`IsSelected` keep their original `bool` meaning**
-  (the property's actual value) rather than gaining a separate success flag — a `false`
-  return can mean either the genuine state or a real error (null element, unsupported
-  pattern); check `message` to tell them apart.
+  (the property's actual value) — a `false` return can mean either the genuine state or a
+  real error (null element, unsupported pattern); check `message` to tell them apart, or
+  use the `out bool querySucceeded` overload to avoid the null-message test.
 - **`IsElementAvailable` is the one method that accepts `null` without
   needing an `out message`** (returning `false` instead) - its entire purpose is checking
   whether a reference is still good, and a null reference is definitionally
   not available. It was already never-throw and is unchanged.
+- **`WaitForElementByAutomationId`/`WaitForElementByName` have a `timedOut`-output
+  overload** that distinguishes a genuine timeout from a real argument error without a
+  null-message test; the original overloads (message-only) remain.
+- **`GetChildren`/`FindAllByControlType` results feed `GetElementCount`/`GetElementAt`**
+  for designers who'd rather drive a counted loop by scalar index than iterate an
+  `AutomationElement` collection proxy directly. `GetChildrenSummaryJson` goes further,
+  summarizing an element's children (name/automationId/className/controlType/bounds) as
+  a single JSON string for designers without any element proxy at all.
+- **The `UIAutomationUtils - One-Shot` methods** (`GetChildrenFromWindowHandle`,
+  `GetChildrenSummaryJsonFromWindowHandle`, `InvokeByAutomationId`,
+  `SetValueByAutomationId`, `GetValueByAutomationId`) take a window handle directly and
+  do the `FromWindowHandle` → find/act step internally, for the common case where an
+  automation doesn't need to retain an intermediate `AutomationElement` proxy between
+  steps. They complement, not replace, the composable Find/Properties/Actions API.
+- **`DrawHighlightBox`/`HighlightElement`-style `colorRef` parameters now also have RGB-
+  component and `System.Drawing.Color` overloads** (`HighlightElement`), alongside the
+  original packed `0xBBGGRR` `colorRef`, for designers who find hexadecimal entry
+  inconvenient or who have a `Color` proxy available.
 - **An element reference can go stale at any time** (the underlying UI
   closed, its control was removed, etc.) - property/action/take-lookup
   calls on a stale element throw `ElementNotAvailableException`, so all
@@ -128,9 +169,12 @@ A common UI Automation control type, mapped internally to
   `IsElementAvailable` first) rather than caching a reference across a
   long-running automation step, the same caution `WindowUtils` already
   gives for raw window handles.
-- **`FindByControlType`/`FindAllByControlType` only cover the 19 control
-  types in `UiControlType`** - advanced/rare UIA patterns (Grid, Table,
-  Scroll, Text range, MultipleView) are out of scope for this component.
+- **`FindByControlType`/`FindAllByControlType` only cover the 26 control
+  types in `UiControlType`** (including `DataGrid`/`DataItem`/`Group`/
+  `Header`/`Slider`/`Spinner`/`ToolBar` for common business-application
+  controls) - advanced/rare UIA patterns (Grid, Table, Scroll, Text range,
+  MultipleView) are out of scope for this component; those elements can
+  still be found by `FindByAutomationId`/`FindByName`/`FindByClassName`.
 - **This component cannot be exercised without a real Windows desktop
   session and a real target application** - unlike some other components
   here, almost no part of this can be exercised on a non-Windows

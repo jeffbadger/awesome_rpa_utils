@@ -76,6 +76,69 @@ namespace UIAutomation.Tests
             Assert.False(string.IsNullOrEmpty(m18));
             Assert.False(_uia.FindAllByControlType(null, UiControlType.Button, out _, out string m19));
             Assert.False(string.IsNullOrEmpty(m19));
+            Assert.False(_uia.GetChildrenSummaryJson(null, out _, out string m20));
+            Assert.False(string.IsNullOrEmpty(m20));
+        }
+
+        // --- New scalar/querySucceeded overloads: same null-element guard as their originals ---
+
+        [Fact]
+        public void NewScalarOverloads_NullElement_ReturnFalseWithMessage()
+        {
+            Assert.False(_uia.GetBoundingRectangle(null, out int _, out int _, out int _, out int _, out string m1));
+            Assert.False(string.IsNullOrEmpty(m1));
+            Assert.False(_uia.IsEnabled(null, out bool q1, out string m2));
+            Assert.False(q1);
+            Assert.False(string.IsNullOrEmpty(m2));
+            Assert.False(_uia.IsOffscreen(null, out bool q2, out string m3));
+            Assert.False(q2);
+            Assert.False(string.IsNullOrEmpty(m3));
+            Assert.False(_uia.IsToggled(null, out bool q3, out string m4));
+            Assert.False(q3);
+            Assert.False(string.IsNullOrEmpty(m4));
+            Assert.False(_uia.IsSelected(null, out bool q4, out string m5));
+            Assert.False(q4);
+            Assert.False(string.IsNullOrEmpty(m5));
+            Assert.False(_uia.HighlightElement(null, red: 255, green: 0, blue: 0, out string m6));
+            Assert.False(string.IsNullOrEmpty(m6));
+            Assert.False(_uia.HighlightElement(null, System.Drawing.Color.Red, out string m7));
+            Assert.False(string.IsNullOrEmpty(m7));
+        }
+
+        // --- Element-list accessors: null list and out-of-range index guards ---
+
+        [Fact]
+        public void GetElementCount_NullList_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.GetElementCount(null, out int count, out string message));
+            Assert.Equal(0, count);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void GetElementCount_EmptyList_ReturnsZero()
+        {
+            Assert.True(_uia.GetElementCount(new System.Collections.Generic.List<AutomationElement>(), out int count, out string message));
+            Assert.Equal(0, count);
+            Assert.Null(message);
+        }
+
+        [Fact]
+        public void GetElementAt_NullList_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.GetElementAt(null, 0, out AutomationElement element, out string message));
+            Assert.Null(element);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(0)]
+        public void GetElementAt_IndexOutOfRangeForEmptyList_ReturnsFalseWithMessage(int index)
+        {
+            Assert.False(_uia.GetElementAt(new System.Collections.Generic.List<AutomationElement>(), index, out AutomationElement element, out string message));
+            Assert.Null(element);
+            Assert.False(string.IsNullOrEmpty(message));
         }
 
         // --- Wait guards: an argument error aborts the poll immediately (no timeout stall) ---
@@ -97,6 +160,68 @@ namespace UIAutomation.Tests
                 out AutomationElement element, out string message));
 
             Assert.Null(element);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void WaitForElementByAutomationIdWithTimedOut_NullParent_AbortsImmediatelyWithoutTimeout()
+        {
+            Assert.False(_uia.WaitForElementByAutomationId(null, "ok", timeoutMs: 5000, pollIntervalMs: 10,
+                out AutomationElement element, out bool timedOut, out string message));
+
+            Assert.Null(element);
+            Assert.False(timedOut);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void WaitForElementByNameWithTimedOut_NullParent_AbortsImmediatelyWithoutTimeout()
+        {
+            Assert.False(_uia.WaitForElementByName(null, "ok", exactMatch: true, timeoutMs: 5000, pollIntervalMs: 10,
+                out AutomationElement element, out bool timedOut, out string message));
+
+            Assert.Null(element);
+            Assert.False(timedOut);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- One-shot window-handle-scoped methods: a zero handle is false + message, never throws ---
+
+        [Fact]
+        public void GetChildrenFromWindowHandle_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.GetChildrenFromWindowHandle(IntPtr.Zero, out System.Collections.Generic.List<AutomationElement> children, out string message));
+            Assert.Null(children);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void GetChildrenSummaryJsonFromWindowHandle_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.GetChildrenSummaryJsonFromWindowHandle(IntPtr.Zero, out string json, out string message));
+            Assert.Null(json);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void InvokeByAutomationId_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.InvokeByAutomationId(IntPtr.Zero, "ok", out string message));
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void SetValueByAutomationId_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.SetValueByAutomationId(IntPtr.Zero, "ok", "value", out string message));
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void GetValueByAutomationId_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.GetValueByAutomationId(IntPtr.Zero, "ok", out string value, out string message));
+            Assert.Null(value);
             Assert.False(string.IsNullOrEmpty(message));
         }
 

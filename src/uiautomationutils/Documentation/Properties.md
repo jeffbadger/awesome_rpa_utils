@@ -24,6 +24,28 @@ uia.GetBoundingRectangle(element, out Rectangle bounds, out _);
 mouse.MoveTo(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2, out _);
 ```
 
+For designers without a `Rectangle` proxy, the scalar overload returns the
+same bounds as `left`/`top`/`width`/`height`:
+
+```csharp
+uia.GetBoundingRectangle(element, out int left, out int top, out int width, out int height, out _);
+mouse.MoveTo(left + width / 2, top + height / 2, out _);
+```
+
+## Check enabled/offscreen state without a null-message test
+
+`IsEnabled`/`IsOffscreen` have a `querySucceeded`-output overload that makes
+the existing null-message convention explicit as a Boolean:
+
+```csharp
+if (!uia.IsEnabled(element, out bool querySucceeded, out string message))
+{
+    if (!querySucceeded)
+        Logger.Error($"Could not check whether the element is enabled: {message}");
+    // else: querySucceeded is true and the element is genuinely disabled.
+}
+```
+
 ## Check whether a cached element reference is still good
 
 ```csharp

@@ -30,3 +30,23 @@ if (!uia.WaitForElementByAutomationId(dialogWindow, "OkButton", timeoutMs: 5000,
     Logger.Warn("OK button never appeared.");
 }
 ```
+
+## Branching on timeout vs. failure without a null-message test
+
+The `timedOut`-output overloads report which case caused a `false` return
+directly, for designers that would rather branch on a Boolean than test
+`message` for `null`:
+
+```csharp
+bool found = uia.WaitForElementByAutomationId(dialogWindow, "OkButton",
+    timeoutMs: 5000, pollIntervalMs: 200,
+    out AutomationElement okButton, out bool timedOut, out string message);
+
+if (!found)
+{
+    if (timedOut)
+        Logger.Warn("OK button never appeared within 5s.");
+    else
+        Logger.Error($"Wait aborted: {message}");
+}
+```
