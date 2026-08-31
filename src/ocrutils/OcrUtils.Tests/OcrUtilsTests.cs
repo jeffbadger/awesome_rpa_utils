@@ -24,9 +24,9 @@ namespace OcrAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void FindTextLocation_NullOrEmptySearchText_ReturnsFalseWithMessage(string searchText)
+        public void FindTextLocationAsRectangle_NullOrEmptySearchText_ReturnsFalseWithMessage(string searchText)
         {
-            bool found = _ocr.FindTextLocation(searchText, 0, 0, 100, 100, out var location, out string message);
+            bool found = _ocr.FindTextLocationAsRectangle(searchText, 0, 0, 100, 100, out var location, out string message);
 
             Assert.False(found);
             Assert.Equal(System.Drawing.Rectangle.Empty, location);
@@ -66,9 +66,9 @@ namespace OcrAutomation.Tests
         [Theory]
         [InlineData(0, 100)]
         [InlineData(100, 0)]
-        public void FindTextLocation_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        public void FindTextLocationAsRectangle_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
         {
-            bool found = _ocr.FindTextLocation("OK", 0, 0, width, height, out var location, out string message);
+            bool found = _ocr.FindTextLocationAsRectangle("OK", 0, 0, width, height, out var location, out string message);
 
             Assert.False(found);
             Assert.Equal(System.Drawing.Rectangle.Empty, location);
@@ -126,11 +126,11 @@ namespace OcrAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void WaitForTextToAppear_NullOrEmptyExpectedText_ReturnsFalseWithoutPolling(string expectedText)
+        public void WaitForTextToAppearSimple_NullOrEmptyExpectedText_ReturnsFalseWithoutPolling(string expectedText)
         {
             var sw = Stopwatch.StartNew();
             // A generous timeout proves the guard returns before the poll loop could ever stall.
-            bool found = _ocr.WaitForTextToAppear(0, 0, 100, 100, expectedText, timeoutMs: 30000, pollIntervalMs: 10, out string message);
+            bool found = _ocr.WaitForTextToAppearSimple(0, 0, 100, 100, expectedText, timeoutMs: 30000, pollIntervalMs: 10, out string message);
             sw.Stop();
 
             Assert.False(found);
@@ -141,9 +141,9 @@ namespace OcrAutomation.Tests
         [Theory]
         [InlineData(0, 100)]
         [InlineData(100, 0)]
-        public void WaitForTextToAppear_NonPositiveDimensions_AbendsWithFailureNotTimeout(int width, int height)
+        public void WaitForTextToAppearSimple_NonPositiveDimensions_AbendsWithFailureNotTimeout(int width, int height)
         {
-            bool found = _ocr.WaitForTextToAppear(0, 0, width, height, "any text", timeoutMs: 30000, pollIntervalMs: 10, out string message);
+            bool found = _ocr.WaitForTextToAppearSimple(0, 0, width, height, "any text", timeoutMs: 30000, pollIntervalMs: 10, out string message);
 
             // A real failure (bad dimensions) must abort the poll early with a message -
             // distinct from a clean timeout, which reports a null message.
@@ -152,9 +152,9 @@ namespace OcrAutomation.Tests
         }
 
         [Fact]
-        public void WaitForTextToAppear_NegativeTimeout_ReturnsFalseWithMessage()
+        public void WaitForTextToAppearSimple_NegativeTimeout_ReturnsFalseWithMessage()
         {
-            bool found = _ocr.WaitForTextToAppear(0, 0, 100, 100, "any text", timeoutMs: -1, pollIntervalMs: 10, out string message);
+            bool found = _ocr.WaitForTextToAppearSimple(0, 0, 100, 100, "any text", timeoutMs: -1, pollIntervalMs: 10, out string message);
 
             // A negative timeout is invalid input, not a clean timeout - it must abort
             // with a message rather than silently returning false with message == null.

@@ -27,12 +27,12 @@ if (ocr.GetStructuredTextFromRegionAsJson(0, 0, 1920, 1080, out string json, out
 
 ## Find where a specific label sits on screen, then click it
 
-`FindTextLocation` returns `true` only when a match is found; `false` covers
-both "not found" and a real failure — check `out string message` to tell them
-apart (it's `null` for a normal not-found).
+`FindTextLocationAsRectangle` returns `true` only when a match is found; `false`
+covers both "not found" and a real failure — check `out string message` to tell
+them apart (it's `null` for a normal not-found).
 
 ```csharp
-if (ocr.FindTextLocation("Submit", 0, 0, 1920, 1080, out System.Drawing.Rectangle location, out string message))
+if (ocr.FindTextLocationAsRectangle("Submit", 0, 0, 1920, 1080, out System.Drawing.Rectangle location, out string message))
 {
     int centerX = location.X + location.Width / 2;
     int centerY = location.Y + location.Height / 2;

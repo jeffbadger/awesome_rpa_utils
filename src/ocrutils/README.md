@@ -17,7 +17,7 @@ examples of every method.
 Designed to be used alongside [ScreenCaptureUtils](../screencaptureutils/ScreenCaptureUtils.cs)
 (`ScreenCaptureAutomation`) for visual verification and
 [MouseUtils](../mouseutils/MouseUtils.cs) (`MouseAutomation`) for
-clicking on text `FindTextLocation` locates — this component does its own
+clicking on text `FindTextLocationAsRectangle` locates — this component does its own
 internal screen capture, though, so it has no project reference to either.
 
 ## Types
@@ -52,7 +52,7 @@ internal screen capture, though, so it has no project reference to either.
 |---|---|---|
 | `GetStructuredTextFromRegion` | `bool GetStructuredTextFromRegion(int left, int top, int width, int height, out OcrResult result, out string message, string languageTag = null)` | Captures a screen region and returns its recognized text as lines/words with screen-space bounding rectangles. Returns True on success; never throws. |
 | `GetStructuredTextFromRegionAsJson` | `bool GetStructuredTextFromRegionAsJson(int left, int top, int width, int height, out string json, out string message, string languageTag = null)` | Same, serialized to a JSON string, for designers that cannot construct an `OcrResult` proxy. Returns True on success; never throws. |
-| `FindTextLocation` | `bool FindTextLocation(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)` | Searches a region for matching text and returns its screen-space bounding rectangle. Returns True if found; `location` is `Rectangle.Empty` both when not found and on a real failure — check `message` to tell them apart. Never throws. |
+| `FindTextLocationAsRectangle` | `bool FindTextLocationAsRectangle(string searchText, int left, int top, int width, int height, out Rectangle location, out string message)` | Searches a region for matching text and returns its screen-space bounding rectangle. Returns True if found; `location` is `Rectangle.Empty` both when not found and on a real failure — check `message` to tell them apart. Never throws. |
 | `FindTextLocation` | `bool FindTextLocation(string searchText, int left, int top, int width, int height, out int foundLeft, out int foundTop, out int foundWidth, out int foundHeight, out string message)` | Same, as scalar left/top/width/height outputs for designers without a `Rectangle` proxy. |
 
 ### Language
@@ -67,7 +67,7 @@ internal screen capture, though, so it has no project reference to either.
 
 | Method | Signature | Description |
 |---|---|---|
-| `WaitForTextToAppear` | `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains matching text, or the timeout elapses. `message` is only set if a real failure (bad dimensions, missing language pack, negative timeout) aborted the poll early. Never throws. |
+| `WaitForTextToAppearSimple` | `bool WaitForTextToAppearSimple(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains matching text, or the timeout elapses. `message` is only set if a real failure (bad dimensions, missing language pack, negative timeout) aborted the poll early. Never throws. |
 | `WaitForTextToAppear` | `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)` | Same, plus a `timedOut` output so the automation can branch on timeout vs. execution failure without a null-message test. Never throws. |
 
 ## Notes & Caveats
@@ -78,21 +78,23 @@ internal screen capture, though, so it has no project reference to either.
   whenever the method returns `false`. `GetAvailableLanguages` never throws (it returns an
   empty list if the language list can't be queried); `TryGetAvailableLanguages` reports such
   failures via `out message`.
-- **`FindTextLocation`/`WaitForTextToAppear`** overload the meaning of a `false` return: it
-  covers both a normal "not found"/"timed out" outcome (`message == null`) and a real failure
-  that aborted the search/poll early (`message` set) — check `message` to tell them apart.
-  `WaitForTextToAppear` has a `timedOut`-output overload that avoids the null-message check.
+- **`FindTextLocationAsRectangle`/`WaitForTextToAppearSimple`** overload the meaning of a
+  `false` return: it covers both a normal "not found"/"timed out" outcome (`message == null`)
+  and a real failure that aborted the search/poll early (`message` set) — check `message` to
+  tell them apart. `WaitForTextToAppear` is the `timedOut`-output overload that avoids the
+  null-message check.
 - **Recognition accuracy depends on an installed OCR language pack** for the requested
   language (or the user's profile languages, if none is specified) — install one via
   Windows Settings > Time & Language > Language & region. A missing pack is reported via
   `message` naming the missing language, rather than silently returning empty results.
 - **Accuracy also depends on legibility**: very small text, low-contrast text, and
   unusual fonts recognize less reliably than typical UI text at 100% DPI scaling.
-- **`FindTextLocation`** does a case-insensitive substring search, preferring a whole-line
-  match before falling back to a single-word match — a search phrase spanning a line break
-  won't match unless it's short enough to be contained within one recognized word or line.
+- **`FindTextLocationAsRectangle`/`FindTextLocation`** do a case-insensitive substring
+  search, preferring a whole-line match before falling back to a single-word match — a
+  search phrase spanning a line break won't match unless it's short enough to be contained
+  within one recognized word or line.
 - **All bounding rectangles are in absolute screen coordinates** (the region's
-  `left`/`top` offset is already applied by `GetStructuredTextFromRegion`/`FindTextLocation`) —
+  `left`/`top` offset is already applied by `GetStructuredTextFromRegion`/`FindTextLocationAsRectangle`) —
   there is currently no structured/positioned-result method for image-file input;
   `GetTextFromImageFile` returns plain text only, with no bounding rectangles.
 - **`GetTextFromImageFile`** reports `false` with a message (not a thrown exception) if the
