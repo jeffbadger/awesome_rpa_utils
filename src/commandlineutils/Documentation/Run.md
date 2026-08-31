@@ -4,6 +4,48 @@ Both `Run` and `RunShellCommand` return `bool` (whether the process ran at all)
 with an `out CommandResult result` and `out string message` — never throws,
 including for a missing executable.
 
+## For designers without `CommandResult`/`IDictionary`/`Encoding` proxies
+
+`RunFlat` and `RunShellCommandFlat` are distinctly-named (not overloads) Pega-friendly
+counterparts to `Run`/`RunShellCommand`: the captured result comes back as individual
+`exitCode`/`standardOutput`/`standardError`/`timedOut`/`outputTruncated` outputs instead
+of a `CommandResult` object, environment variables are newline-delimited `NAME=VALUE`
+text instead of an `IDictionary<string, string>`, the encoding is a name string
+(`Encoding.GetEncoding`-compatible, e.g. `"utf-8"`) instead of an `Encoding` object, and
+`RunShellCommandFlat`'s allowlist is a comma-separated string instead of a `string[]`:
+
+```csharp
+bool ok = cmd.RunFlat("my-tool.exe",
+    out int exitCode, out string stdout, out string stderr, out bool timedOut, out bool truncated,
+    out string message,
+    arguments: "--verbose",
+    environmentVariablesText: "MY_FLAG=1\nANOTHER_VAR=some value",
+    outputEncodingName: "utf-8");
+
+if (ok && !timedOut && exitCode == 0)
+{
+    Console.WriteLine(stdout);
+}
+```
+
+```csharp
+bool ok = cmd.RunShellCommandFlat("robocopy C:\\data \\\\share\\data /mir",
+    out int exitCode, out string stdout, out string stderr, out bool timedOut, out bool truncated,
+    out string message,
+    allowedProgramsCsv: "robocopy, findstr");
+
+if (!ok)
+{
+    Console.WriteLine(message); // e.g. a disallowed segment, or a malformed environment/encoding parameter
+}
+```
+
+`environmentVariablesText`/`outputEncodingName`/`allowedProgramsCsv` are all optional
+(`null` = same as omitting the corresponding object parameter on `Run`/`RunShellCommand`).
+A malformed environment line (missing `=`, or an empty name) or an unrecognized encoding
+name returns `false` with a message *before* anything runs — same never-throws contract
+as everything else here.
+
 ## Run a program directly and check its exit code
 
 ```csharp

@@ -156,6 +156,80 @@ namespace CommandLineAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="Run"/>, but with every port that <see cref="Run"/> requires an
+        /// object proxy for replaced with a scalar: the captured <see cref="CommandResult"/>
+        /// as individual outputs, <paramref name="environmentVariablesText"/> instead of an
+        /// <c>IDictionary&lt;string, string&gt;</c>, and <paramref name="outputEncodingName"/>
+        /// instead of a <see cref="System.Text.Encoding"/>. Named distinctly (not an overload
+        /// of <see cref="Run"/>) so a Pega designer's method picker never has to disambiguate
+        /// between the two by parameter list alone.
+        /// </summary>
+        /// <param name="fileName">Path to the executable to run.</param>
+        /// <param name="exitCode">The process's exit code, or <c>0</c> if this method returns <c>false</c>. Meaningless (0) if <paramref name="timedOut"/> is true.</param>
+        /// <param name="standardOutput">Everything the process wrote to standard output, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="standardError">Everything the process wrote to standard error, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="timedOut"><c>true</c> if the process was killed after exceeding <paramref name="timeoutMs"/>. Check this - not a sentinel exit code - to detect a timeout; a real process can legitimately exit with any code.</param>
+        /// <param name="outputTruncated"><c>true</c> if captured output had to be cut off because it exceeded the capture limit (~4M characters ≈ 8 MB per stream).</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the process could not be run, the environment text was malformed, or the encoding name was unrecognized.</param>
+        /// <param name="arguments">Command-line arguments, or <c>null</c> for none.</param>
+        /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
+        /// <param name="environmentVariablesText">
+        /// Environment variables to add/override for the child process, as newline-delimited
+        /// <c>NAME=VALUE</c> lines (blank lines are skipped), or <c>null</c> for none. A line
+        /// missing <c>=</c> or with an empty name returns <c>false</c> with a message before
+        /// anything is run.
+        /// </param>
+        /// <param name="outputEncodingName">
+        /// The name of the encoding to decode the child's stdout/stderr with (e.g.
+        /// <c>"utf-8"</c>, <c>"windows-1252"</c>, per <see cref="Encoding.GetEncoding(string)"/>),
+        /// or <c>null</c> for the system default. An unrecognized name returns <c>false</c>
+        /// with a message before anything is run.
+        /// </param>
+        /// <returns><c>true</c> if the process ran (regardless of its exit code or whether it timed out); <c>false</c> if it could not be run, or if <paramref name="environmentVariablesText"/>/<paramref name="outputEncodingName"/> could not be parsed. Never throws.</returns>
+        [Category("CommandLine - Run")]
+        [Description("Same as Run, but with scalar exitCode/standardOutput/standardError/timedOut/outputTruncated outputs, a NAME=VALUE environment text, and an encoding name, instead of object ports. Returns True on success; never throws.")]
+        public bool RunFlat(string fileName, out int exitCode, out string standardOutput, out string standardError, out bool timedOut, out bool outputTruncated, out string message, string arguments = null, string workingDirectory = null, int timeoutMs = -1, string environmentVariablesText = null, string outputEncodingName = null)
+        {
+            exitCode = default;
+            standardOutput = default;
+            standardError = default;
+            timedOut = default;
+            outputTruncated = default;
+            message = default;
+            try
+            {
+                exitCode = 0;
+                standardOutput = null;
+                standardError = null;
+                timedOut = false;
+                outputTruncated = false;
+
+                if (!TryParseEnvironmentText(environmentVariablesText, out Dictionary<string, string> environmentVariables, out message))
+                    return false;
+                if (!TryResolveEncoding(outputEncodingName, out Encoding outputEncoding, out message))
+                    return false;
+
+                if (!Run(fileName, out CommandResult result, out message, arguments, workingDirectory, timeoutMs, environmentVariables, outputEncoding))
+                    return false;
+
+                exitCode = result.ExitCode;
+                standardOutput = result.StandardOutput;
+                standardError = result.StandardError;
+                timedOut = result.TimedOut;
+                outputTruncated = result.OutputTruncated;
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RunFlat", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Runs <paramref name="command"/> through <c>cmd.exe /d /s /c "command"</c>, waits
         /// for it to exit, and captures its exit code, stdout, and stderr. Use this for
         /// pipes, redirection, shell built-ins, or <c>.bat</c>/<c>.cmd</c> files that
@@ -270,6 +344,86 @@ namespace CommandLineAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 message = NeverThrowsGuard.Failure("RunShellCommand", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="RunShellCommand"/>, but with every port that requires an
+        /// object proxy replaced with a scalar: the captured <see cref="CommandResult"/> as
+        /// individual outputs, <paramref name="allowedProgramsCsv"/> instead of a
+        /// <c>string[]</c>, <paramref name="environmentVariablesText"/> instead of an
+        /// <c>IDictionary&lt;string, string&gt;</c>, and <paramref name="outputEncodingName"/>
+        /// instead of a <see cref="System.Text.Encoding"/>. Named distinctly (not an overload
+        /// of <see cref="RunShellCommand"/>) so a Pega designer's method picker never has to
+        /// disambiguate between the two by parameter list alone.
+        /// </summary>
+        /// <param name="command">The shell command line to run.</param>
+        /// <param name="exitCode">The process's exit code, or <c>0</c> if this method returns <c>false</c>. Meaningless (0) if <paramref name="timedOut"/> is true.</param>
+        /// <param name="standardOutput">Everything the process wrote to standard output, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="standardError">Everything the process wrote to standard error, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="timedOut"><c>true</c> if the process was killed after exceeding <paramref name="timeoutMs"/>. Check this - not a sentinel exit code - to detect a timeout.</param>
+        /// <param name="outputTruncated"><c>true</c> if captured output had to be cut off because it exceeded the capture limit (~4M characters ≈ 8 MB per stream).</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the command could not be run, or a text/name parameter could not be parsed.</param>
+        /// <param name="allowedProgramsCsv">
+        /// Optional guardrail against unintended programs launching, as a comma-separated
+        /// list (e.g. <c>"robocopy, xcopy"</c>) instead of a <c>string[]</c> - see
+        /// <see cref="RunShellCommand"/>'s <c>allowedPrograms</c> parameter for the exact
+        /// matching rules and its guardrail-not-sandbox caveat. <c>null</c>/empty runs
+        /// <paramref name="command"/> unvalidated, same as <c>null</c> there.
+        /// </param>
+        /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds, or <c>-1</c> to wait indefinitely.</param>
+        /// <param name="environmentVariablesText">
+        /// Environment variables to add/override for the child process, as newline-delimited
+        /// <c>NAME=VALUE</c> lines (blank lines are skipped), or <c>null</c> for none.
+        /// </param>
+        /// <param name="outputEncodingName">
+        /// The name of the encoding to decode the child's stdout/stderr with (e.g.
+        /// <c>"utf-8"</c>), per <see cref="Encoding.GetEncoding(string)"/>, or <c>null</c>
+        /// for the system default.
+        /// </param>
+        /// <returns><c>true</c> if the command ran (regardless of its exit code or whether it timed out); <c>false</c> if it could not be run (bad arguments, a disallowed program, cmd.exe could not be started, or a text/name parameter could not be parsed). Never throws.</returns>
+        [Category("CommandLine - Run")]
+        [Description("Same as RunShellCommand, but with scalar exitCode/standardOutput/standardError/timedOut/outputTruncated outputs, a comma-separated allowlist, a NAME=VALUE environment text, and an encoding name, instead of object ports. Returns True on success; never throws.")]
+        public bool RunShellCommandFlat(string command, out int exitCode, out string standardOutput, out string standardError, out bool timedOut, out bool outputTruncated, out string message, string allowedProgramsCsv = null, string workingDirectory = null, int timeoutMs = -1, string environmentVariablesText = null, string outputEncodingName = null)
+        {
+            exitCode = default;
+            standardOutput = default;
+            standardError = default;
+            timedOut = default;
+            outputTruncated = default;
+            message = default;
+            try
+            {
+                exitCode = 0;
+                standardOutput = null;
+                standardError = null;
+                timedOut = false;
+                outputTruncated = false;
+
+                if (!TryParseEnvironmentText(environmentVariablesText, out Dictionary<string, string> environmentVariables, out message))
+                    return false;
+                if (!TryResolveEncoding(outputEncodingName, out Encoding outputEncoding, out message))
+                    return false;
+
+                string[] allowedPrograms = ParseCsvList(allowedProgramsCsv);
+
+                if (!RunShellCommand(command, out CommandResult result, out message, allowedPrograms, workingDirectory, timeoutMs, environmentVariables, outputEncoding))
+                    return false;
+
+                exitCode = result.ExitCode;
+                standardOutput = result.StandardOutput;
+                standardError = result.StandardError;
+                timedOut = result.TimedOut;
+                outputTruncated = result.OutputTruncated;
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RunShellCommandFlat", ex);
                 return false;
             }
         }
@@ -507,9 +661,135 @@ namespace CommandLineAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="StartFireAndForget"/>, but takes
+        /// <paramref name="environmentVariablesText"/> instead of an
+        /// <c>IDictionary&lt;string, string&gt;</c>, since there is no Pega-friendly way to
+        /// construct one directly. Named distinctly (not an overload of
+        /// <see cref="StartFireAndForget"/>) so a Pega designer's method picker never has to
+        /// disambiguate between the two by parameter list alone.
+        /// </summary>
+        /// <param name="fileName">Path to the executable to run.</param>
+        /// <param name="processId">The started process's ID, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the process could not be started, or <paramref name="environmentVariablesText"/> could not be parsed.</param>
+        /// <param name="arguments">Command-line arguments, or <c>null</c> for none.</param>
+        /// <param name="workingDirectory">Working directory for the process, or <c>null</c> to use the current directory.</param>
+        /// <param name="environmentVariablesText">
+        /// Environment variables to add/override for the child process, as newline-delimited
+        /// <c>NAME=VALUE</c> lines (blank lines are skipped), or <c>null</c> for none. A line
+        /// missing <c>=</c> or with an empty name returns <c>false</c> with a message before
+        /// anything is started.
+        /// </param>
+        /// <returns><c>true</c> on success; <c>false</c> if the process could not be started, or <paramref name="environmentVariablesText"/> could not be parsed. Never throws.</returns>
+        [Category("CommandLine - Fire and Forget")]
+        [Description("Same as StartFireAndForget, but with a NAME=VALUE environment text instead of an object port. Returns True on success; never throws.")]
+        public bool StartFireAndForgetWithEnvironment(string fileName, out int processId, out string message, string arguments = null, string workingDirectory = null, string environmentVariablesText = null)
+        {
+            processId = default;
+            message = default;
+            try
+            {
+                processId = 0;
+
+                if (!TryParseEnvironmentText(environmentVariablesText, out Dictionary<string, string> environmentVariables, out message))
+                    return false;
+
+                return StartFireAndForget(fileName, out processId, out message, arguments, workingDirectory, environmentVariables);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("StartFireAndForgetWithEnvironment", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Internal Helpers
+
+        /// <summary>
+        /// Resolves an encoding name (e.g. "utf-8", "windows-1252") to an
+        /// <see cref="Encoding"/> via <see cref="Encoding.GetEncoding(string)"/>, for the
+        /// <c>Flat</c> methods, which accept a name instead of a
+        /// <see cref="System.Text.Encoding"/> object. Null/empty means "use the system
+        /// default" - same as passing a null <c>Encoding</c> to <see cref="Run"/>/
+        /// <see cref="RunShellCommand"/>.
+        /// </summary>
+        private static bool TryResolveEncoding(string encodingName, out Encoding encoding, out string message)
+        {
+            encoding = null;
+            message = null;
+            if (string.IsNullOrWhiteSpace(encodingName))
+                return true;
+            try
+            {
+                encoding = Encoding.GetEncoding(encodingName);
+                return true;
+            }
+            catch (ArgumentException ex)
+            {
+                message = $"Unrecognized output encoding name '{encodingName}': {ex.Message}";
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Parses newline-delimited <c>NAME=VALUE</c> lines into an environment-variable
+        /// dictionary, for the <c>Flat</c>/<c>WithEnvironment</c> methods, which accept
+        /// text instead of an <c>IDictionary&lt;string, string&gt;</c> object. Blank lines
+        /// are skipped. Null/empty/whitespace-only text means "no overrides" - same as
+        /// passing null to <see cref="Run"/>/<see cref="RunShellCommand"/>/
+        /// <see cref="StartFireAndForget"/>.
+        /// </summary>
+        private static bool TryParseEnvironmentText(string environmentVariablesText, out Dictionary<string, string> variables, out string message)
+        {
+            variables = null;
+            message = null;
+            if (string.IsNullOrWhiteSpace(environmentVariablesText))
+                return true;
+
+            var result = new Dictionary<string, string>();
+            foreach (var rawLine in environmentVariablesText.Split('\n'))
+            {
+                string line = rawLine.TrimEnd('\r');
+                if (line.Trim().Length == 0)
+                    continue; // blank line
+
+                int eq = line.IndexOf('=');
+                if (eq < 0)
+                {
+                    message = $"Environment variable line \"{line}\" is missing '=' (expected NAME=VALUE).";
+                    return false;
+                }
+                string name = line.Substring(0, eq).Trim();
+                if (name.Length == 0)
+                {
+                    message = $"Environment variable line \"{line}\" has an empty name.";
+                    return false;
+                }
+                result[name] = line.Substring(eq + 1);
+            }
+            variables = result;
+            return true;
+        }
+
+        /// <summary>
+        /// Splits a comma-separated list into trimmed, non-empty entries, for
+        /// <see cref="RunShellCommandFlat"/>'s <c>allowedProgramsCsv</c> parameter, which
+        /// accepts text instead of a <c>string[]</c> object. Returns <c>null</c> (not an
+        /// empty array) for null/empty/whitespace-only input, preserving
+        /// <see cref="RunShellCommand"/>'s "null <c>allowedPrograms</c> = no guardrail"
+        /// meaning - an empty array there means "nothing is allowed," which is not what an
+        /// omitted CSV parameter should mean.
+        /// </summary>
+        private static string[] ParseCsvList(string csv)
+        {
+            if (string.IsNullOrWhiteSpace(csv))
+                return null;
+            var items = csv.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
+            return items.Length > 0 ? items : null;
+        }
 
         // Per-stream capture limit (~4M chars ≈ 8 MB). internal (not const) only so the
         // unit tests can shrink it; callers are expected to leave it at the default.

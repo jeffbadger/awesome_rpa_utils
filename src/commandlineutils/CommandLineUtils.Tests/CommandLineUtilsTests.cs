@@ -137,6 +137,130 @@ namespace CommandLineAutomation.Tests
             Assert.Contains("absolute", message);
         }
 
+        // --- Flat methods: same guards as their object-returning counterparts ---
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void RunFlat_NullOrWhitespaceFileName_ReturnsFalseWithMessage(string fileName)
+        {
+            Assert.False(_cli.RunFlat(fileName, out int exitCode, out string stdout, out string stderr, out bool timedOut, out bool truncated, out string message));
+            Assert.Equal(0, exitCode);
+            Assert.Null(stdout);
+            Assert.Null(stderr);
+            Assert.False(timedOut);
+            Assert.False(truncated);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void RunShellCommandFlat_NullOrWhitespaceCommand_ReturnsFalseWithMessage(string command)
+        {
+            Assert.False(_cli.RunShellCommandFlat(command, out int exitCode, out string stdout, out string stderr, out bool timedOut, out bool truncated, out string message));
+            Assert.Equal(0, exitCode);
+            Assert.Null(stdout);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void StartFireAndForgetWithEnvironment_NullOrWhitespaceFileName_ReturnsFalseWithMessage(string fileName)
+        {
+            Assert.False(_cli.StartFireAndForgetWithEnvironment(fileName, out int processId, out string message));
+            Assert.Equal(0, processId);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- Flat methods: environmentVariablesText parsing (cross-platform, pure logic) ---
+
+        [Theory]
+        [InlineData("NO_EQUALS_SIGN")]
+        [InlineData("NAME=value\nBROKEN_LINE")]
+        public void RunFlat_MalformedEnvironmentText_ReturnsFalseWithMessage(string environmentVariablesText)
+        {
+            Assert.False(_cli.RunFlat("everything-is-fine", out _, out _, out _, out _, out _, out string message,
+                environmentVariablesText: environmentVariablesText));
+            Assert.Contains("=", message);
+        }
+
+        [Fact]
+        public void RunFlat_EnvironmentTextWithEmptyName_ReturnsFalseWithMessage()
+        {
+            Assert.False(_cli.RunFlat("everything-is-fine", out _, out _, out _, out _, out _, out string message,
+                environmentVariablesText: "=value"));
+            Assert.Contains("empty name", message);
+        }
+
+        [Fact]
+        public void RunShellCommandFlat_MalformedEnvironmentText_ReturnsFalseWithoutStartingAnything()
+        {
+            Assert.False(_cli.RunShellCommandFlat("echo hi", out _, out _, out _, out _, out _, out string message,
+                environmentVariablesText: "NO_EQUALS_SIGN"));
+            Assert.Contains("=", message);
+        }
+
+        [Fact]
+        public void StartFireAndForgetWithEnvironment_MalformedEnvironmentText_ReturnsFalseWithMessage()
+        {
+            Assert.False(_cli.StartFireAndForgetWithEnvironment("everything-is-fine", out int processId, out string message,
+                environmentVariablesText: "NO_EQUALS_SIGN"));
+            Assert.Equal(0, processId);
+            Assert.Contains("=", message);
+        }
+
+        // --- Flat methods: outputEncodingName resolution (cross-platform, pure logic) ---
+
+        [Fact]
+        public void RunFlat_UnrecognizedEncodingName_ReturnsFalseWithMessage()
+        {
+            Assert.False(_cli.RunFlat("everything-is-fine", out _, out _, out _, out _, out _, out string message,
+                outputEncodingName: "definitely-not-a-real-encoding"));
+            Assert.Contains("encoding", message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // --- RunShellCommandFlat: allowedProgramsCsv parsing (cross-platform, pure logic) ---
+
+        [Fact]
+        public void RunShellCommandFlat_DisallowedProgramInCsv_FailsWithoutStartingAnything()
+        {
+            Assert.False(_cli.RunShellCommandFlat("ver", out _, out _, out _, out _, out _, out string message,
+                allowedProgramsCsv: "cacls, robocopy"));
+            Assert.Contains("not in allowedPrograms", message);
+        }
+
+        [Fact]
+        public void RunShellCommandFlat_NullOrEmptyCsv_RunsUnvalidated()
+        {
+            // Matches RunShellCommand's own "null allowedPrograms = no guardrail" behavior,
+            // not "nothing is allowed" — verified indirectly: a program that would be
+            // rejected by ANY non-empty allowlist is not rejected here.
+            Assert.False(_cli.RunShellCommandFlat("this-is-not-a-real-command-xyz", out _, out _, out _, out _, out _, out string message,
+                allowedProgramsCsv: ""));
+            Assert.DoesNotContain("not in allowedPrograms", message ?? string.Empty);
+        }
+
+        // --- Non-Windows live test: RunFlat works cross-platform against a real child process ---
+
+        [SkippableFactPlatform("/bin/echo")]
+        public void RunFlat_ChildOutput_IsCapturedWithEnvironmentAndEncoding()
+        {
+            Assert.True(_cli.RunFlat("/bin/echo", out int exitCode, out string stdout, out string stderr, out bool timedOut, out bool truncated, out string message,
+                arguments: "hello from RunFlat",
+                environmentVariablesText: "CMDUTILS_FLAT_TEST=grpc-42",
+                outputEncodingName: "utf-8"));
+            Assert.Null(message);
+            Assert.Equal(0, exitCode);
+            Assert.False(timedOut);
+            Assert.False(truncated);
+            Assert.Contains("hello from RunFlat", stdout);
+        }
+
         // --- Non-Windows live test: Run works cross-platform against a real child process ---
 
         [SkippableFactPlatform("/bin/echo")]
