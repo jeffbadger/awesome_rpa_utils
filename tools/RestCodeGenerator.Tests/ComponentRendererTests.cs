@@ -72,6 +72,24 @@ namespace RestCodeGenerator.Tests
         }
 
         [Fact]
+        public void Render_MultiLineSummary_IsFlatInDocCommentAndDescription()
+        {
+            // auth-minimal.json's getCat summary spans multiple lines (with \n and \r\n):
+            // both the /// doc comment line and the Description attribute must be one flat line.
+            var output = ComponentRenderer.Render(SwaggerParser.ParseFile(AuthApi), "auth-api");
+            var normalized = output.Source.Replace("\r\n", "\n");
+            Assert.Contains(
+                "/// <summary>Gets a cat. Includes details spread across lines." +
+                " Returns true if the HTTP call completed; check statusCode for 4xx/5xx. Never throws.</summary>",
+                normalized);
+            Assert.Contains(
+                "[System.ComponentModel.Description(\"Gets a cat. Includes details spread across lines. (GET /cats/{catId})\")]",
+                output.Source);
+            // the raw multi-line summary text must never reach the emitted docs:
+            Assert.DoesNotContain("Gets a cat.\n", normalized);
+        }
+
+        [Fact]
         public void Render_CsprojFallbackIsMultiTargetedStandalone()
         {
             var output = ComponentRenderer.Render(SwaggerParser.ParseFile(Petstore), "pet-store");

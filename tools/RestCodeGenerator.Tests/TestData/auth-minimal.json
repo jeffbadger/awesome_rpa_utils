@@ -16,7 +16,7 @@
       "parameters": [ { "name": "catId", "in": "path", "type": "integer", "required": true } ],
       "get": {
         "operationId": "getCat",
-        "summary": "Gets a cat.",
+        "summary": "Gets a cat.\n  Includes  details\r\n   spread across lines.",
         "responses": { "200": { "description": "ok" } }
       },
       "delete": {

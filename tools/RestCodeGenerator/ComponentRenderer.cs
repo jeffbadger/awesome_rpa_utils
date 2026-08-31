@@ -286,9 +286,13 @@ public static class ComponentRenderer
         var queries = op.QueryParams.Select(p => (Original: p.Name, Param: ParamName(p, used))).ToList();
         var headers = op.HeaderParams.Select(p => (Original: p.Name, Param: ParamName(p, used))).ToList();
 
-        var summary = string.IsNullOrWhiteSpace(op.Summary)
-            ? "Performs the " + op.HttpMethod + " request on " + op.Path + "."
-            : op.Summary!.Trim();
+        // A multi-line swagger summary must be flattened to a single line here, before it
+        // feeds either the XML doc comment (a raw "\n" would emit a continuation line
+        // without "///") or the Description attribute (Lit also escapes, per defense in depth).
+        var words = (op.Summary ?? "").Split(new[] { ' ', '\r', '\n', '\t' }, System.StringSplitOptions.RemoveEmptyEntries);
+        var summary = words.Length > 0
+            ? string.Join(" ", words)
+            : "Performs the " + op.HttpMethod + " request on " + op.Path + ".";
 
         sb.AppendLine();
         sb.AppendLine("        /// <summary>" + Xml(summary) +
