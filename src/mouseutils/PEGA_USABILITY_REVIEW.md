@@ -49,3 +49,34 @@ inputs are deliberate chain types. `GetPosition`, `GetCursorClip`, and
 overloads, removing the proxy-configuration friction for designers without one.
 `ModifierKeys` flag-combining support on the actual Robot Studio design surface
 remains an open question for a future pass.
+
+## Addendum: naming ambiguity fix
+
+The additive scalar overloads above solved usability, but they introduced a
+new problem: two same-named methods whose Pega-visible (non-`out`)
+parameter lists became identical, differing only in an `out` parameter's
+type. C# overload resolution handles this fine, but Pega Robot Studio's
+designer surface cannot disambiguate two overloads by `out` parameter type
+alone - both entries in the designer's method picker would look the same.
+
+Three method groups in this component had this problem: `GetPosition`,
+`GetCursorClip`, `GetWindowBounds`. In each case, one overload returns a
+`Point`/`Rectangle` via a single `out` parameter and the other returns the
+same data as multiple scalar `out int` parameters - the non-`out` inputs
+(none, for `GetPosition`/`GetCursorClip`; just `IntPtr hWnd` for
+`GetWindowBounds`) are identical either way.
+
+Fixed by renaming the struct-returning overload (the one Pega's designer
+cannot chain into a native output proxy without extra configuration)
+rather than the newer, already-scalar overload, following this
+repository's convention of breaking changes over compatibility shims:
+
+| Old name | New name | Reason |
+|---|---|---|
+| `GetPosition(out Point, out string)` | `GetPositionAsPoint` | Return type, not an extra output, was the only difference from the scalar overload |
+| `GetCursorClip(out Rectangle, out string)` | `GetCursorClipAsRectangle` | Same |
+| `GetWindowBounds(IntPtr, out Rectangle, out string)` | `GetWindowBoundsAsRectangle` | Same |
+
+The plain (un-suffixed) name in each pair now belongs to the scalar
+overload - the one most usable directly from a Pega Robot Studio flow -
+per the naming convention documented in the component `README.md`.

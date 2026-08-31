@@ -224,7 +224,7 @@ namespace MouseAutomation
         /// <returns><c>true</c> on success; <c>false</c> if the underlying GetCursorPos call failed. Never throws.</returns>
         [Category("Mouse - Position")]
         [Description("Gets the current cursor position as a System.Drawing.Point. Returns True on success; never throws.")]
-        public bool GetPosition(out System.Drawing.Point position, out string message)
+        public bool GetPositionAsPoint(out System.Drawing.Point position, out string message)
         {
             position = default;
             message = default;
@@ -237,7 +237,7 @@ namespace MouseAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("GetPosition", ex);
+                message = NeverThrowsGuard.Failure("GetPositionAsPoint", ex);
                 return false;
             }
         }
@@ -1600,7 +1600,7 @@ namespace MouseAutomation
         /// <returns><c>true</c> on success; <c>false</c> if the GetClipCursor call failed. Never throws.</returns>
         [Category("Mouse - Cursor")]
         [Description("Gets the rectangle the cursor is currently confined to (full virtual screen when unclipped). Returns True on success; never throws.")]
-        public bool GetCursorClip(out System.Drawing.Rectangle clip, out string message)
+        public bool GetCursorClipAsRectangle(out System.Drawing.Rectangle clip, out string message)
         {
             clip = default;
             message = default;
@@ -1619,7 +1619,7 @@ namespace MouseAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("GetCursorClip", ex);
+                message = NeverThrowsGuard.Failure("GetCursorClipAsRectangle", ex);
                 return false;
             }
         }
@@ -2160,7 +2160,7 @@ namespace MouseAutomation
         /// <returns><c>true</c> on success; <c>false</c> if GetWindowRect failed (e.g. an invalid handle). Never throws.</returns>
         [Category("Mouse - Window Targeting")]
         [Description("Gets the screen-space bounding rectangle of a window. Returns True on success; never throws.")]
-        public bool GetWindowBounds(IntPtr hWnd, out System.Drawing.Rectangle bounds, out string message)
+        public bool GetWindowBoundsAsRectangle(IntPtr hWnd, out System.Drawing.Rectangle bounds, out string message)
         {
             bounds = default;
             message = default;
@@ -2173,7 +2173,7 @@ namespace MouseAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("GetWindowBounds", ex);
+                message = NeverThrowsGuard.Failure("GetWindowBoundsAsRectangle", ex);
                 return false;
             }
         }

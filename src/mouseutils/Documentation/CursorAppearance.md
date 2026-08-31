@@ -124,14 +124,14 @@ above finishes, so the operator regains normal control.
 mouse.ReleaseCursorClip(out _);
 ```
 
-## `GetCursorClip()`
+## `GetCursorClipAsRectangle()`
 
 **Scenario:** A diagnostic step logs the current clip rectangle before changing
 it, so a support engineer can see whether a prior automation run left the
 cursor confined by mistake.
 
 ```csharp
-mouse.GetCursorClip(out System.Drawing.Rectangle clip, out _);
+mouse.GetCursorClipAsRectangle(out System.Drawing.Rectangle clip, out _);
 Logger.Info($"Cursor currently confined to {clip}");
 ```
 
