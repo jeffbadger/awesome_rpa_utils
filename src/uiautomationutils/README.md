@@ -5,12 +5,15 @@ drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation
 (UIA) - the controls that `WindowUtils`/`DialogUtils` can't see, since those
 operate on native Win32 windows/controls by handle and window class.
 
-- Target framework: `net10.0-windows`
+- Target frameworks: `net8.0-windows`, `net10.0-windows`
 - Namespace: `UIAutomation`
 - Assembly: `UIAutomation`
 
-See the [Documentation](Documentation/README.md) folder for real-world usage
-examples of every method.
+New to this component and just want to click a button, read/set a text
+field, or select a combo box item? Start with
+[Documentation/CommonTasks.md](Documentation/CommonTasks.md). See the
+[Documentation](Documentation/README.md) folder more broadly for real-world
+usage examples of every method.
 
 **Naming note:** every other component in this repo follows a
 `<Name>Utils`/`<Name>Automation` pattern (e.g. `WindowUtils`/
@@ -73,6 +76,10 @@ A common UI Automation control type, mapped internally to
 | `InvokeByAutomationId` | `bool InvokeByAutomationId(IntPtr hWnd, string automationId, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and invokes it, in one call. |
 | `SetValueByAutomationId` | `bool SetValueByAutomationId(IntPtr hWnd, string automationId, string value, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and sets its value, in one call. |
 | `GetValueByAutomationId` | `bool GetValueByAutomationId(IntPtr hWnd, string automationId, out string value, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and gets its value, in one call. |
+| `InvokeByName` | `bool InvokeByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and invokes it (e.g. clicks a button), in one call - for when only the control's on-screen text, not an AutomationId, is known. |
+| `SetValueByName` | `bool SetValueByName(IntPtr hWnd, string name, string value, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and sets its value, in one call. |
+| `GetValueByName` | `bool GetValueByName(IntPtr hWnd, string name, out string value, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and gets its value, in one call. |
+| `SelectListItemByName` | `bool SelectListItemByName(IntPtr hWnd, string containerName, string itemName, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a combo box/list box/tree by name, expands it if needed, then finds and selects an item within it by name, in one call. |
 
 ### Properties
 
@@ -155,10 +162,15 @@ A common UI Automation control type, mapped internally to
   a single JSON string for designers without any element proxy at all.
 - **The `UIAutomationUtils - One-Shot` methods** (`GetChildrenFromWindowHandle`,
   `GetChildrenSummaryJsonFromWindowHandle`, `InvokeByAutomationId`,
-  `SetValueByAutomationId`, `GetValueByAutomationId`) take a window handle directly and
+  `SetValueByAutomationId`, `GetValueByAutomationId`, `InvokeByName`, `SetValueByName`,
+  `GetValueByName`, `SelectListItemByName`) take a window handle directly and
   do the `FromWindowHandle` → find/act step internally, for the common case where an
   automation doesn't need to retain an intermediate `AutomationElement` proxy between
-  steps. They complement, not replace, the composable Find/Properties/Actions API.
+  steps. They complement, not replace, the composable Find/Properties/Actions API. The
+  `ByName` variants exist alongside the `ByAutomationId` ones for the common case where
+  only a control's visible text, not an internal AutomationId, is known — see
+  [Documentation/CommonTasks.md](Documentation/CommonTasks.md) for the three most common
+  scenarios this way.
 - **`DrawHighlightBox`/`HighlightElement`-style `colorRef` parameters now also have RGB-
   component and `System.Drawing.Color` overloads** (`HighlightElement`), alongside the
   original packed `0xBBGGRR` `colorRef`, for designers who find hexadecimal entry

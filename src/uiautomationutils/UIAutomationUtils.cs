@@ -1586,6 +1586,208 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Invokes a descendant of a top-level window matched by its visible <c>Name</c>, given
+        /// the window's handle, without retaining an intermediate <see cref="AutomationElement"/>
+        /// proxy. Equivalent to <see cref="FromWindowHandle"/>, <see cref="FindByName"/>, then
+        /// <see cref="Invoke"/>. Use this over <see cref="InvokeByAutomationId"/> when the only
+        /// identifier available is the control's on-screen text (e.g. a button's label), not an
+        /// internal AutomationId.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="name">The visible name/text to match.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the invoke failed.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, no matching element is found, or it does not support InvokePattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by its visible name and invokes it (e.g. clicks a button), in one call. Returns True on success; never throws.")]
+        public bool InvokeByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, name, out AutomationElement element, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{name}' was found.";
+                    return false;
+                }
+
+                return Invoke(element, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("InvokeByName", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Sets the value of a descendant of a top-level window matched by its visible
+        /// <c>Name</c>, given the window's handle, without retaining an intermediate
+        /// <see cref="AutomationElement"/> proxy. Equivalent to <see cref="FromWindowHandle"/>,
+        /// <see cref="FindByName"/>, then <see cref="SetValue"/>. Use this over
+        /// <see cref="SetValueByAutomationId"/> when the only identifier available is the
+        /// field's visible label, not an internal AutomationId.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="name">The visible name/text to match.</param>
+        /// <param name="value">The value to set.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the set failed.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, no matching element is found, or it does not support ValuePattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by its visible name and sets its value, in one call. Returns True on success; never throws.")]
+        public bool SetValueByName(IntPtr hWnd, string name, string value, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, name, out AutomationElement element, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{name}' was found.";
+                    return false;
+                }
+
+                return SetValue(element, value, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SetValueByName", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets the value of a descendant of a top-level window matched by its visible
+        /// <c>Name</c>, given the window's handle, without retaining an intermediate
+        /// <see cref="AutomationElement"/> proxy. Equivalent to <see cref="FromWindowHandle"/>,
+        /// <see cref="FindByName"/>, then <see cref="GetValue"/>. Use this over
+        /// <see cref="GetValueByAutomationId"/> when the only identifier available is the
+        /// field's visible label, not an internal AutomationId.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="name">The visible name/text to match.</param>
+        /// <param name="value">The element's value, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, no matching element is found, or it does not support ValuePattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by its visible name and gets its value, in one call. Returns True on success; never throws.")]
+        public bool GetValueByName(IntPtr hWnd, string name, out string value, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            value = default;
+            message = default;
+            try
+            {
+                value = null;
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, name, out AutomationElement element, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{name}' was found.";
+                    return false;
+                }
+
+                return GetValue(element, out value, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetValueByName", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Selects an item in a combo box, list box, or tree - any descendant of a top-level
+        /// window that exposes <c>SelectionItemPattern</c> - by finding the container by its
+        /// visible <c>Name</c>, expanding it, then finding and selecting the item by its own
+        /// visible <c>Name</c> within it. Equivalent to <see cref="FromWindowHandle"/>,
+        /// <see cref="FindByName"/> (container), <see cref="Expand"/>, <see cref="FindByName"/>
+        /// (item), then <see cref="Select"/>.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Expand"/> is attempted but not required to succeed before searching for
+        /// the item: some simple list-like controls already expose their items without an
+        /// explicit expand, so an <see cref="Expand"/> failure (e.g. the container doesn't
+        /// support <c>ExpandCollapsePattern</c>) doesn't abort the call - only a subsequent
+        /// failure to find or select the item does. This method does not collapse the container
+        /// afterward; most UI Automation implementations close the popup as a side effect of
+        /// selecting an item, and forcing an unrelated collapse to gate success on a task that's
+        /// already complete would be surprising.
+        /// </remarks>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="containerName">The visible name/text of the combo box, list box, or tree to select within.</param>
+        /// <param name="itemName">The visible name/text of the item to select.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the selection failed.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match for both <paramref name="containerName"/> and <paramref name="itemName"/>; if <c>false</c>, matches any element whose name contains the given text (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree for the container; if <c>false</c>, searches only the window's immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, the container or item isn't found, or the item does not support SelectionItemPattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a combo box/list/tree by name, expands it if needed, then finds and selects an item within it by name, in one call. Returns True on success; never throws.")]
+        public bool SelectListItemByName(IntPtr hWnd, string containerName, string itemName, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, containerName, out AutomationElement container, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{containerName}' was found.";
+                    return false;
+                }
+
+                // Best-effort: some controls already expose their items without an explicit
+                // expand. Its failure is only fatal if the item can't subsequently be found/selected.
+                Expand(container, out _);
+
+                if (!FindByName(container, itemName, out AutomationElement item, out message, exactMatch, descendantsOnly: true))
+                {
+                    if (message == null)
+                        message = $"No item with name '{itemName}' was found in '{containerName}'.";
+                    return false;
+                }
+
+                return Select(item, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SelectListItemByName", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Wait
