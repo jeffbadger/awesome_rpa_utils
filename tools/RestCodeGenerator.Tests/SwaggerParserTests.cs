@@ -1,4 +1,6 @@
 using System.IO;
+using System.Linq;
+using System.Text.Json;
 using Xunit;
 
 namespace RestCodeGenerator.Tests
@@ -75,6 +77,64 @@ namespace RestCodeGenerator.Tests
             // not a Robot Studio component; the never-throws contract applies to the
             // generated component, not to this generator.
             Assert.Throws<FileNotFoundException>(() => SwaggerParser.ParseFile("nope.json"));
+        }
+
+        private static SwaggerDoc ParseJson(string json) =>
+            SwaggerParser.Parse(JsonDocument.Parse(json).RootElement);
+
+        [Fact]
+        public void Parse_Oa3JsonRequestBodyIsModeled_NonJsonRequestBodySkipped()
+        {
+            var doc = ParseJson("""
+                {
+                  "openapi": "3.0.0",
+                  "info": { "title": "T", "version": "1.0.0" },
+                  "paths": {
+                    "/json": {
+                      "post": {
+                        "requestBody": {
+                          "content": { "application/json": { "schema": { "type": "object" } } }
+                        }
+                      }
+                    },
+                    "/multipart": {
+                      "post": {
+                        "requestBody": {
+                          "content": { "multipart/form-data": { "schema": { "type": "object" } } }
+                        }
+                      }
+                    }
+                  }
+                }
+                """);
+
+            var jsonOp = Assert.Single(doc.Operations, o => o.Path == "/json");
+            Assert.True(jsonOp.HasBody);
+            Assert.DoesNotContain(doc.Operations, o => o.Path == "/multipart");
+            Assert.Contains("POST /multipart", doc.Skipped);
+        }
+
+        [Fact]
+        public void Parse_TemplatedOa3Server_AndHostless20Spec_YieldNullBaseUrl()
+        {
+            var templated = ParseJson("""
+                {
+                  "openapi": "3.0.0",
+                  "info": { "title": "T", "version": "1.0.0" },
+                  "servers": [ { "url": "https://{host}/v1" } ],
+                  "paths": {}
+                }
+                """);
+            Assert.Null(templated.DefaultBaseUrl);
+
+            var hostless20 = ParseJson("""
+                {
+                  "swagger": "2.0",
+                  "info": { "title": "T", "version": "1.0.0" },
+                  "paths": {}
+                }
+                """);
+            Assert.Null(hostless20.DefaultBaseUrl);
         }
     }
 }

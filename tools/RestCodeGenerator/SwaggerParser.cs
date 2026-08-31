@@ -24,6 +24,8 @@ public static class SwaggerParser
         if (maybe is not { } e || e.ValueKind != JsonValueKind.Object) return maybe;
         if (e.TryGetProperty("$ref", out var @ref))
         {
+            // JSON-Pointer escapes (~0 for ~, ~1 for /) are not decoded — this generator's
+            // specs only use simple names like "parameters/StatusFilter".
             var pointer = @ref.GetString()?.TrimStart('#', '/');   // e.g. "parameters/StatusFilter"
             if (string.IsNullOrEmpty(pointer)) return null;
             var current = root;
