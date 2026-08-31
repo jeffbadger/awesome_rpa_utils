@@ -8,11 +8,14 @@ Thanks for your interest in contributing!
 dotnet build src/AwesomeRpaUtils.sln
 ```
 
-Requires the .NET 10 SDK. All components target Windows-only TFMs
-(`net10.0-windows`, or `net10.0-windows10.0.19041.0` for `ocrutils`, which
-consumes WinRT's `Windows.Media.Ocr`). The solution *compiles* on macOS/Linux
-via `EnableWindowsTargeting` in the projects that need it, but running or
-manually verifying any component's actual behavior requires Windows.
+Requires the .NET 8 SDK and the .NET 10 SDK, both installed side by side. All
+components multi-target Windows-only TFMs (`net8.0-windows` and
+`net10.0-windows`, or `net8.0-windows10.0.19041.0`/`net10.0-windows10.0.19041.0`
+for `ocrutils`, which consumes WinRT's `Windows.Media.Ocr`). A single
+`dotnet build` builds both target frameworks. The solution *compiles* on
+macOS/Linux via `EnableWindowsTargeting` in the projects that need it, but
+running or manually verifying any component's actual behavior requires
+Windows.
 
 ## No automated test suite
 

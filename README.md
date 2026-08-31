@@ -26,9 +26,10 @@ native dialogs, respectively).
 
 ## Requirements
 
-- Windows (most projects target `net10.0-windows`; `ocrutils` targets the
-  versioned `net10.0-windows10.0.19041.0` to consume WinRT's `Windows.Media.Ocr`)
-- .NET 10 SDK
+- Windows (most projects multi-target `net8.0-windows` and `net10.0-windows`;
+  `ocrutils` targets the versioned `net8.0-windows10.0.19041.0`/
+  `net10.0-windows10.0.19041.0` to consume WinRT's `Windows.Media.Ocr`)
+- .NET 8 SDK and .NET 10 SDK, both installed side by side
 - Visual Studio 2022 (17.x) or later, or Pega Robot Studio, to consume the
   built components
 
@@ -41,34 +42,45 @@ dotnet build src/AwesomeRpaUtils.sln
 All projects share build settings via [Directory.Build.props](src/Directory.Build.props),
 which combines every project's output into a single `src/bin/` folder
 (intermediate `obj/` output stays per-project to avoid concurrent-build
-collisions).
+collisions). Each multi-targeted project builds both `net8.0-windows` and
+`net10.0-windows` outputs side by side under `src/bin/<Configuration>/<tfm>/`
+in a single `dotnet build` invocation — no extra flags needed.
 
 Prebuilt DLLs for each tagged version are available on the
-[Releases](../../releases) page.
+[Releases](../../releases) page as separate `net8.0`/`net10.0` archives; pick
+the one matching the .NET runtime your Pega Robot Runtime or consuming app
+uses.
 
 ## Packaging a release
 
-To build and create a ZIP containing only the ten automation DLLs produced by
+To build and create ZIPs containing only the ten automation DLLs produced by
 this repository, run from PowerShell:
 
 ```powershell
 ./scripts/Package-Release.ps1
 ```
 
-The command creates two archives:
+The command creates three archives:
 
-- `artifacts/AwesomeRpaUtils.zip` contains the ten project DLLs.
-- `artifacts/AwesomeRpaUtils-SupportLibraries.zip` contains the three NuGet runtime
-  DLLs needed by ServiceUtils.
+- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the ten project DLLs built
+  for `net8.0-windows`.
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same ten DLLs built for
+  `net10.0-windows`.
+- `artifacts/AwesomeRpaUtils-SupportLibraries.zip` contains the three NuGet
+  runtime DLLs needed by ServiceUtils (shared by both target frameworks).
 
-Both exclude test infrastructure, PDBs, and XML documentation. To package an
-existing Release build or choose other output paths, use:
+All three exclude test infrastructure, PDBs, and XML documentation. To
+package an existing Release build or choose other output paths, use:
 
 ```powershell
 ./scripts/Package-Release.ps1 -NoBuild `
-  -ArchivePath artifacts/AwesomeRpaUtils-v1.0.0.zip `
+  -ArchivePath "artifacts/AwesomeRpaUtils-{tfm}-v1.0.0.zip" `
   -SupportArchivePath artifacts/AwesomeRpaUtils-SupportLibraries-v1.0.0.zip
 ```
+
+`-ArchivePath` must contain a literal `{tfm}` placeholder — the script
+substitutes it with `net8.0` and `net10.0` to produce one archive per target
+framework.
 
 ## Documentation
 
