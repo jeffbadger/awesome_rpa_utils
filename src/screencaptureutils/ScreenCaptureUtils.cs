@@ -281,7 +281,9 @@ namespace ScreenCaptureAutomation
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture or clipboard copy failed.</param>
         /// <returns><c>true</c> on success. Never throws.</returns>
         /// <remarks>
-        /// Requires the calling thread to be STA, as with any Windows Forms clipboard access.
+        /// The clipboard write runs on an internal STA thread regardless of the calling
+        /// thread's apartment state, so the automation does not need to know or control it -
+        /// unlike raw Windows Forms clipboard access, which requires an STA caller.
         /// A capture failure (locked/secure desktop) or clipboard contention with another
         /// process is reported via <paramref name="message"/> rather than thrown.
         /// </remarks>
@@ -298,18 +300,7 @@ namespace ScreenCaptureAutomation
 
                 using (bmp)
                 {
-                    try
-                    {
-                        System.Windows.Forms.Clipboard.SetImage(bmp);
-                        message = null;
-                        return true;
-                    }
-                    catch (Exception ex)
-                    {
-                        message = "Could not copy to the clipboard: " + ex.Message +
-                                  " (the clipboard may be held by another process, or the thread is not STA.)";
-                        return false;
-                    }
+                    return TrySetClipboardImageOnStaThread(bmp, out message);
                 }
 
             }
@@ -321,18 +312,33 @@ namespace ScreenCaptureAutomation
         }
 
         /// <summary>
-        /// Captures the entire virtual screen and copies it to the Windows clipboard
-        /// as an image. Legacy overload that cannot report failures: it throws an
-        /// <see cref="InvalidOperationException"/> if the capture or clipboard copy
-        /// fails. Prefer <see cref="CaptureToClipboard(out string)"/>.
+        /// Sets the clipboard image on a dedicated STA thread, since Windows Forms
+        /// clipboard access requires an STA apartment and the calling thread's apartment
+        /// state is not under this component's control (Pega Robot Studio automations
+        /// commonly run MTA).
         /// </summary>
-        /// <remarks>Requires the calling thread to be STA, as with any Windows Forms clipboard access.</remarks>
-        [Category("Capture - Core")]
-        [Description("Captures the entire virtual screen and copies it to the clipboard as an image. Throws on failure - prefer the overload with a message parameter.")]
-        public void CaptureToClipboard()
+        private static bool TrySetClipboardImageOnStaThread(Bitmap bmp, out string message)
         {
-            if (!CaptureToClipboard(out string message))
-                throw new InvalidOperationException(message);
+            string staMessage = null;
+            bool ok = false;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    System.Windows.Forms.Clipboard.SetImage(bmp);
+                    ok = true;
+                }
+                catch (Exception ex)
+                {
+                    staMessage = "Could not copy to the clipboard: " + ex.Message +
+                                 " (the clipboard may be held by another process.)";
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+            message = staMessage;
+            return ok;
         }
 
         /// <summary>
@@ -510,6 +516,33 @@ namespace ScreenCaptureAutomation
         [Description("Polls a screen region until its appearance changes, or the timeout elapses. Returns True if it changed in time; never throws.")]
         public bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)
         {
+            return WaitForRegionToChange(left, top, width, height, timeoutMs, pollIntervalMs, out _, out message);
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForRegionToChange(int, int, int, int, int, int, out string)"/>,
+        /// but also reports whether the wait ended because the timeout elapsed, so the
+        /// automation can branch on timeout vs. execution failure without a null-message test.
+        /// </summary>
+        /// <param name="left">Left edge of the region in screen pixels.</param>
+        /// <param name="top">Top edge of the region in screen pixels.</param>
+        /// <param name="width">Region width in pixels.</param>
+        /// <param name="height">Region height in pixels.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
+        /// <param name="timedOut"><c>true</c> if this method returned <c>false</c> because the timeout elapsed; <c>false</c> on success or on a real failure (check <paramref name="message"/> for the latter).</param>
+        /// <param name="message"><c>null</c> if the poll completed (changed or genuinely timed out); otherwise a human-readable reason a real failure (bad dimensions) aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the region changed before the timeout; <c>false</c> if it timed out, or if a real failure aborted the poll (check <paramref name="timedOut"/>/<paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <remarks>
+        /// The actual wait can exceed <paramref name="timeoutMs"/> by up to one poll
+        /// interval plus the time of a single capture+hash pass, because the timeout
+        /// is checked between passes rather than pre-empting a pass in progress.
+        /// </remarks>
+        [Category("Capture - Verification")]
+        [Description("Polls a screen region until its appearance changes, or the timeout elapses; reports whether the wait timed out. Returns True if it changed in time; never throws.")]
+        public bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)
+        {
+            timedOut = default;
             message = default;
             try
             {
@@ -535,6 +568,7 @@ namespace ScreenCaptureAutomation
                     }
                     if (unchecked(Environment.TickCount - start) >= timeoutMs)
                     {
+                        timedOut = true;
                         message = null;
                         return false;
                     }
@@ -572,7 +606,36 @@ namespace ScreenCaptureAutomation
         [Description("Compares a screen region against a saved baseline image and reports whether the difference is within tolerance. Never throws.")]
         public bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)
         {
+            return CompareRegionToBaseline(left, top, width, height, baselineImagePath, tolerancePercent, out actualDifferencePercent, out _, out message);
+        }
+
+        /// <summary>
+        /// Same as <see cref="CompareRegionToBaseline(int, int, int, int, string, double, out double, out string)"/>,
+        /// but also reports whether the comparison actually ran to completion, so the
+        /// automation can branch on out-of-tolerance vs. execution failure without a
+        /// null-message test.
+        /// </summary>
+        /// <param name="left">Left edge of the region in screen pixels.</param>
+        /// <param name="top">Top edge of the region in screen pixels.</param>
+        /// <param name="width">Region width in pixels; must match the baseline image's width.</param>
+        /// <param name="height">Region height in pixels; must match the baseline image's height.</param>
+        /// <param name="baselineImagePath">Path to the reference image to compare against.</param>
+        /// <param name="tolerancePercent">Maximum percentage of differing pixels still considered a match (0-100).</param>
+        /// <param name="actualDifferencePercent">Receives the actual percentage of differing pixels found, or <c>0</c> if this method returns <c>false</c> due to a real failure (check <paramref name="message"/>).</param>
+        /// <param name="comparisonCompleted"><c>true</c> if the comparison ran and produced a real difference percentage (whether within tolerance or not); <c>false</c> if a real failure prevented it (check <paramref name="message"/>).</param>
+        /// <param name="message"><c>null</c> if the comparison completed (within or outside tolerance); otherwise a human-readable reason a real failure (missing baseline, size mismatch) prevented the comparison (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the actual difference is within <paramref name="tolerancePercent"/>; <c>false</c> if it isn't, or if a real failure prevented the comparison (check <paramref name="comparisonCompleted"/>/<paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <remarks>
+        /// Per-pixel comparison uses a small per-channel tolerance internally to absorb
+        /// anti-aliasing/font-rendering noise, so it is not thrown off by single-pixel
+        /// rendering jitter the way an exact byte-for-byte comparison would be.
+        /// </remarks>
+        [Category("Capture - Verification")]
+        [Description("Compares a screen region against a saved baseline image and reports whether the difference is within tolerance, plus whether the comparison completed. Never throws.")]
+        public bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out bool comparisonCompleted, out string message)
+        {
             actualDifferencePercent = default;
+            comparisonCompleted = default;
             message = default;
             try
             {
@@ -611,6 +674,7 @@ namespace ScreenCaptureAutomation
                             message = "Region comparison failed: " + ex.Message;
                             return false;
                         }
+                        comparisonCompleted = true;
                         message = null;
                         return actualDifferencePercent <= tolerancePercent;
                     }
@@ -679,6 +743,30 @@ namespace ScreenCaptureAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="DrawHighlightBox(string, int, int, int, int, int, out string, int)"/>,
+        /// but takes the color as RGB components (0-255 each, clamped) instead of a packed
+        /// <c>0x00BBGGRR</c> colorRef, for designers who find hexadecimal entry inconvenient.
+        /// </summary>
+        [Category("Capture - Annotation")]
+        [Description("Draws a rectangular highlight box onto a saved screenshot using RGB color components. Returns True on success; never throws.")]
+        public bool DrawHighlightBox(string imagePath, int left, int top, int right, int bottom, int red, int green, int blue, out string message, int lineWidth = 3)
+        {
+            return DrawHighlightBox(imagePath, left, top, right, bottom, PackColorRef(red, green, blue), out message, lineWidth);
+        }
+
+        /// <summary>
+        /// Same as <see cref="DrawHighlightBox(string, int, int, int, int, int, out string, int)"/>,
+        /// but takes the color as a <see cref="System.Drawing.Color"/>, e.g.
+        /// <c>Color.Red</c> or a named/system color, for designers with a <c>Color</c> proxy.
+        /// </summary>
+        [Category("Capture - Annotation")]
+        [Description("Draws a rectangular highlight box onto a saved screenshot using a System.Drawing.Color. Returns True on success; never throws.")]
+        public bool DrawHighlightBox(string imagePath, int left, int top, int right, int bottom, Color color, out string message, int lineWidth = 3)
+        {
+            return DrawHighlightBox(imagePath, left, top, right, bottom, PackColorRef(color.R, color.G, color.B), out message, lineWidth);
+        }
+
+        /// <summary>
         /// Draws an arrow pointing at the given coordinates onto a saved screenshot
         /// and overwrites it in place.
         /// </summary>
@@ -722,6 +810,30 @@ namespace ScreenCaptureAutomation
                 message = NeverThrowsGuard.Failure("DrawArrowToPoint", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="DrawArrowToPoint(string, int, int, int, out string, int, int)"/>,
+        /// but takes the color as RGB components (0-255 each, clamped) instead of a packed
+        /// <c>0x00BBGGRR</c> colorRef, for designers who find hexadecimal entry inconvenient.
+        /// </summary>
+        [Category("Capture - Annotation")]
+        [Description("Draws an arrow pointing at the given coordinates using RGB color components. Returns True on success; never throws.")]
+        public bool DrawArrowToPoint(string imagePath, int x, int y, int red, int green, int blue, out string message, int length = 40, int lineWidth = 3)
+        {
+            return DrawArrowToPoint(imagePath, x, y, PackColorRef(red, green, blue), out message, length, lineWidth);
+        }
+
+        /// <summary>
+        /// Same as <see cref="DrawArrowToPoint(string, int, int, int, out string, int, int)"/>,
+        /// but takes the color as a <see cref="System.Drawing.Color"/>, e.g.
+        /// <c>Color.Red</c> or a named/system color, for designers with a <c>Color</c> proxy.
+        /// </summary>
+        [Category("Capture - Annotation")]
+        [Description("Draws an arrow pointing at the given coordinates using a System.Drawing.Color. Returns True on success; never throws.")]
+        public bool DrawArrowToPoint(string imagePath, int x, int y, Color color, out string message, int length = 40, int lineWidth = 3)
+        {
+            return DrawArrowToPoint(imagePath, x, y, PackColorRef(color.R, color.G, color.B), out message, length, lineWidth);
         }
 
         /// <summary>
@@ -775,6 +887,31 @@ namespace ScreenCaptureAutomation
                 message = NeverThrowsGuard.Failure("RedactRegion", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="RedactRegion(string, int, int, int, int, out string, int)"/>,
+        /// but takes the fill color as RGB components (0-255 each, clamped) instead of a
+        /// packed <c>0x00BBGGRR</c> colorRef, for designers who find hexadecimal entry
+        /// inconvenient.
+        /// </summary>
+        [Category("Capture - Annotation")]
+        [Description("Fills a rectangular region of a saved screenshot with a solid RGB color to redact PII, overwriting the file in place. Returns True on success; never throws.")]
+        public bool RedactRegion(string imagePath, int left, int top, int width, int height, int red, int green, int blue, out string message)
+        {
+            return RedactRegion(imagePath, left, top, width, height, out message, PackColorRef(red, green, blue));
+        }
+
+        /// <summary>
+        /// Same as <see cref="RedactRegion(string, int, int, int, int, out string, int)"/>,
+        /// but takes the fill color as a <see cref="System.Drawing.Color"/>, e.g.
+        /// <c>Color.Black</c> or a named/system color, for designers with a <c>Color</c> proxy.
+        /// </summary>
+        [Category("Capture - Annotation")]
+        [Description("Fills a rectangular region of a saved screenshot with a solid System.Drawing.Color to redact PII, overwriting the file in place. Returns True on success; never throws.")]
+        public bool RedactRegion(string imagePath, int left, int top, int width, int height, Color color, out string message)
+        {
+            return RedactRegion(imagePath, left, top, width, height, out message, PackColorRef(color.R, color.G, color.B));
         }
 
         #endregion
@@ -943,6 +1080,15 @@ namespace ScreenCaptureAutomation
             int g = (colorRef >> 8) & 0xFF;
             int b = (colorRef >> 16) & 0xFF;
             return Color.FromArgb(r, g, b);
+        }
+
+        /// <summary>Packs RGB components (each clamped to 0-255) into a 0x00BBGGRR colorRef value.</summary>
+        private static int PackColorRef(int red, int green, int blue)
+        {
+            red = Math.Clamp(red, 0, 255);
+            green = Math.Clamp(green, 0, 255);
+            blue = Math.Clamp(blue, 0, 255);
+            return red | (green << 8) | (blue << 16);
         }
 
         private static double ComputeDifferencePercent(Bitmap a, Bitmap b)
