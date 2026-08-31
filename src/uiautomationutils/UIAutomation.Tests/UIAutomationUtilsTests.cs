@@ -45,11 +45,11 @@ namespace UIAutomation.Tests
             Assert.False(string.IsNullOrEmpty(m3));
             Assert.False(_uia.GetControlTypeName(null, out _, out string m4));
             Assert.False(string.IsNullOrEmpty(m4));
-            Assert.False(_uia.GetBoundingRectangle(null, out _, out string m5));
+            Assert.False(_uia.GetBoundingRectangleAsRectangle(null, out _, out string m5));
             Assert.False(string.IsNullOrEmpty(m5));
-            Assert.False(_uia.IsEnabled(null, out string m6));
+            Assert.False(_uia.IsEnabledSimple(null, out string m6));
             Assert.False(string.IsNullOrEmpty(m6));
-            Assert.False(_uia.IsOffscreen(null, out string m7));
+            Assert.False(_uia.IsOffscreenSimple(null, out string m7));
             Assert.False(string.IsNullOrEmpty(m7));
             Assert.False(_uia.IsElementAvailable(null));
             Assert.False(_uia.Invoke(null, out string m8));
@@ -62,7 +62,7 @@ namespace UIAutomation.Tests
             Assert.False(string.IsNullOrEmpty(m11));
             Assert.False(_uia.Toggle(null, out string m12));
             Assert.False(string.IsNullOrEmpty(m12));
-            Assert.False(_uia.IsToggled(null, out string m13));
+            Assert.False(_uia.IsToggledSimple(null, out string m13));
             Assert.False(string.IsNullOrEmpty(m13));
             Assert.False(_uia.Expand(null, out string m14));
             Assert.False(string.IsNullOrEmpty(m14));
@@ -70,7 +70,7 @@ namespace UIAutomation.Tests
             Assert.False(string.IsNullOrEmpty(m15));
             Assert.False(_uia.Select(null, out string m16));
             Assert.False(string.IsNullOrEmpty(m16));
-            Assert.False(_uia.IsSelected(null, out string m17));
+            Assert.False(_uia.IsSelectedSimple(null, out string m17));
             Assert.False(string.IsNullOrEmpty(m17));
             Assert.False(_uia.GetChildren(null, out _, out string m18));
             Assert.False(string.IsNullOrEmpty(m18));
@@ -144,9 +144,9 @@ namespace UIAutomation.Tests
         // --- Wait guards: an argument error aborts the poll immediately (no timeout stall) ---
 
         [Fact]
-        public void WaitForElementByAutomationId_NullParent_AbortsImmediatelyWithMessage()
+        public void WaitForElementByAutomationIdSimple_NullParent_AbortsImmediatelyWithMessage()
         {
-            Assert.False(_uia.WaitForElementByAutomationId(null, "ok", timeoutMs: 5000, pollIntervalMs: 10,
+            Assert.False(_uia.WaitForElementByAutomationIdSimple(null, "ok", timeoutMs: 5000, pollIntervalMs: 10,
                 out AutomationElement element, out string message));
 
             Assert.Null(element);
@@ -154,9 +154,9 @@ namespace UIAutomation.Tests
         }
 
         [Fact]
-        public void WaitForElementByName_NullParent_AbortsImmediatelyWithMessage()
+        public void WaitForElementByNameSimple_NullParent_AbortsImmediatelyWithMessage()
         {
-            Assert.False(_uia.WaitForElementByName(null, "ok", exactMatch: true, timeoutMs: 5000, pollIntervalMs: 10,
+            Assert.False(_uia.WaitForElementByNameSimple(null, "ok", exactMatch: true, timeoutMs: 5000, pollIntervalMs: 10,
                 out AutomationElement element, out string message));
 
             Assert.Null(element);

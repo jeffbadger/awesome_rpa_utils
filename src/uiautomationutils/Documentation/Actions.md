@@ -2,8 +2,8 @@
 
 Every method here returns `bool` with an `out string message` — never
 throws, including for a null element or an unsupported pattern (e.g. calling
-`Toggle` on a plain button). `IsToggled`/`IsSelected` keep their `bool` as
-the actual state; `message` is only set for a real error.
+`Toggle` on a plain button). `IsToggledSimple`/`IsSelectedSimple` keep their
+`bool` as the actual state; `message` is only set for a real error.
 
 ## Click a button
 
@@ -21,7 +21,7 @@ uia.GetValue(usernameField, out string current, out _);
 ## Check a checkbox only if it isn't already checked
 
 ```csharp
-if (!uia.IsToggled(rememberMeCheckbox, out _))
+if (!uia.IsToggledSimple(rememberMeCheckbox, out _))
 {
     uia.Toggle(rememberMeCheckbox, out _);
 }
@@ -48,8 +48,9 @@ if (!uia.Invoke(saveButton, out string message))
 
 ## Check toggled/selected state without a null-message test
 
-`IsToggled`/`IsSelected` have a `querySucceeded`-output overload that makes
-the existing null-message convention explicit as a Boolean:
+`IsToggled`/`IsSelected` are the `querySucceeded`-output overloads of
+`IsToggledSimple`/`IsSelectedSimple` that make the existing null-message
+convention explicit as a Boolean:
 
 ```csharp
 if (!uia.IsToggled(rememberMeCheckbox, out bool querySucceeded, out string message))
