@@ -355,7 +355,7 @@ namespace EventAutomation.Tests
             var utils = new EventUtils();
             try
             {
-                bool ok = utils.WaitForWindowCreated(null, 100, out EventData e, out bool timedOut, out string message);
+                bool ok = utils.WaitForWindowCreatedAsEventData(null, 100, out EventData e, out bool timedOut, out string message);
                 Assert.False(ok);
                 Assert.Null(e);
                 Assert.False(timedOut); // not a timeout — an engine-not-started error
@@ -368,12 +368,12 @@ namespace EventAutomation.Tests
         }
 
         [Fact]
-        public void GetNextEvent_unknown_subscription_returns_false_with_message()
+        public void GetNextEventAsEventData_unknown_subscription_returns_false_with_message()
         {
             var utils = new EventUtils();
             try
             {
-                bool ok = utils.GetNextEvent("nope", 0, out EventData e, out bool hasEvent, out string message);
+                bool ok = utils.GetNextEventAsEventData("nope", 0, out EventData e, out bool hasEvent, out string message);
                 Assert.False(ok);
                 Assert.Null(e);
                 Assert.False(hasEvent);
@@ -641,13 +641,13 @@ namespace EventAutomation.Tests
             try
             {
                 // Validation happens before the engine check, so this runs anywhere.
-                bool ok = utils.WaitForTitleChanged(null, "[Bad", 100, out EventData e, out bool timedOut, out string message);
+                bool ok = utils.WaitForTitleChangedAsEventData(null, "[Bad", 100, out EventData e, out bool timedOut, out string message);
                 Assert.False(ok);
                 Assert.Null(e);
                 Assert.False(timedOut); // an input error, not a timeout
                 Assert.NotNull(message);
                 // A valid regex with no engine still fails via the engine check.
-                bool ok2 = utils.WaitForStateChanged(null, "Visible", 100, out _, out bool timedOut2, out string message2);
+                bool ok2 = utils.WaitForStateChangedAsEventData(null, "Visible", 100, out _, out bool timedOut2, out string message2);
                 Assert.False(ok2);
                 Assert.False(timedOut2);
                 Assert.NotNull(message2);
@@ -664,7 +664,7 @@ namespace EventAutomation.Tests
             var utils = new EventUtils();
             try
             {
-                bool ok = utils.WaitForWindowCreated("{not json", 100, out EventData e, out bool timedOut, out string message);
+                bool ok = utils.WaitForWindowCreatedAsEventData("{not json", 100, out EventData e, out bool timedOut, out string message);
                 Assert.False(ok);
                 Assert.Null(e);
                 Assert.False(timedOut);
@@ -792,7 +792,7 @@ namespace EventAutomation.Tests
                 return; // notepad unavailable on this image
             try
             {
-                bool ok = utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData e, out bool timedOut, out _);
+                bool ok = utils.WaitForWindowCreatedAsEventData("{\"process\":\"notepad\"}", 10000, out EventData e, out bool timedOut, out _);
                 Assert.True(ok);
                 Assert.False(timedOut);
                 Assert.NotNull(e);
@@ -818,10 +818,10 @@ namespace EventAutomation.Tests
                 return;
             try
             {
-                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _, out _));
+                Assert.True(utils.WaitForWindowCreatedAsEventData("{\"process\":\"notepad\"}", 10000, out EventData created, out _, out _));
                 Assert.NotNull(created);
                 Thread.Sleep(300); // let the window finish coming up
-                bool ok = utils.WaitForWindowDestroyed("{\"process\":\"notepad\"}", 10000, out EventData destroyed, out bool timedOut, out _);
+                bool ok = utils.WaitForWindowDestroyedAsEventData("{\"process\":\"notepad\"}", 10000, out EventData destroyed, out bool timedOut, out _);
                 Kill(proc); // close the window → DESTROY event
                 Assert.True(ok);
                 Assert.False(timedOut);
@@ -850,7 +850,7 @@ namespace EventAutomation.Tests
                 return;
             try
             {
-                bool ok = utils.GetNextEvent("subA", 10000, out EventData e, out bool hasEvent, out _);
+                bool ok = utils.GetNextEventAsEventData("subA", 10000, out EventData e, out bool hasEvent, out _);
                 Assert.True(ok);
                 Assert.True(hasEvent);
                 Assert.NotNull(e);
@@ -878,7 +878,7 @@ namespace EventAutomation.Tests
                 return;
             try
             {
-                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _, out _));
+                Assert.True(utils.WaitForWindowCreatedAsEventData("{\"process\":\"notepad\"}", 10000, out EventData created, out _, out _));
                 Assert.NotNull(created);
                 IntPtr hwnd = new IntPtr((long)created.Hwnd);
                 Thread.Sleep(300);
@@ -915,7 +915,7 @@ namespace EventAutomation.Tests
                 return;
             try
             {
-                Assert.True(utils.GetNextEvent("s", 10000, out EventData e, out bool has, out _));
+                Assert.True(utils.GetNextEventAsEventData("s", 10000, out EventData e, out bool has, out _));
                 Assert.True(has);
                 Assert.NotNull(e);
                 Assert.True(utils.Stop(out _));
@@ -925,7 +925,7 @@ namespace EventAutomation.Tests
                     return;
                 try
                 {
-                    Assert.True(utils.GetNextEvent("s", 1500, out EventData e2, out bool has2, out _));
+                    Assert.True(utils.GetNextEventAsEventData("s", 1500, out EventData e2, out bool has2, out _));
                     Assert.False(has2);
                     Assert.Null(e2);
                 }
@@ -969,7 +969,7 @@ namespace EventAutomation.Tests
                 return;
             try
             {
-                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _, out _));
+                Assert.True(utils.WaitForWindowCreatedAsEventData("{\"process\":\"notepad\"}", 10000, out EventData created, out _, out _));
                 Assert.NotNull(created);
                 IntPtr hwnd = new IntPtr((long)created.Hwnd);
                 Thread.Sleep(300);
@@ -979,7 +979,7 @@ namespace EventAutomation.Tests
                     ShowWindow(hwnd, 5);
                 }
                 // The pump must still be delivering: a fresh event arrives promptly.
-                Assert.True(utils.GetNextEvent("stress", 5000, out EventData e, out bool hasEvent, out _));
+                Assert.True(utils.GetNextEventAsEventData("stress", 5000, out EventData e, out bool hasEvent, out _));
                 Assert.True(hasEvent, "pump stalled after stress");
                 Assert.NotNull(e);
                 // Ring buffer stays bounded at 500.

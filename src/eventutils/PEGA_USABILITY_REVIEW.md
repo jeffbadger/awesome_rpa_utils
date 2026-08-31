@@ -72,3 +72,15 @@ propagates through `EventFilter`'s button-child cache and
 the truncated `uint` before this pass. All six recommended changes are
 implemented additively: every original overload remains for backward
 compatibility or .NET consumers.
+
+## Addendum: naming ambiguity fix
+
+A later audit found that `GetNextEvent` and every `WaitForX` method above
+still violated the same overload-ambiguity concern the CommandLineUtils
+review flagged explicitly (two same-named methods differing only in
+`out`-parameter shape, indistinguishable by input alone). Fixed by renaming
+the `EventData`-object-returning overload of each to `...AsEventData`,
+leaving the Pega-friendly JSON+handle overload with the plain name - the same
+"most-usable-keeps-the-plain-name" convention applied across this fix wave.
+`GetNextEventsJson` and `SetDebounce`/`SetQueueLimits`'s enum overloads were
+already distinctly named or type-distinguishable and needed no change.

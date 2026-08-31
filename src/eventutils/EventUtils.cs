@@ -385,14 +385,19 @@ namespace EventAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="GetNextEvent(string, int, out string, out IntPtr, out bool, out string)"/>,
+        /// but returns the dequeued event as an <see cref="EventData"/> object instead of
+        /// JSON, for .NET callers with an object proxy available.
+        /// </summary>
+        /// <remarks>
         /// Blocks up to <paramref name="timeoutMs"/> for the next queued event.
         /// Returns True when the call succeeded; <paramref name="hasEvent"/> is
         /// True when <paramref name="eventData"/> holds an event (False on
         /// timeout). <paramref name="message"/> is null on success and a
         /// human-readable reason otherwise (e.g. unknown subscription). Never
         /// throws.
-        /// </summary>
-        public bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)
+        /// </remarks>
+        public bool GetNextEventAsEventData(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)
         {
             eventData = default;
             hasEvent = default;
@@ -409,22 +414,23 @@ namespace EventAutomation
                 }
                 catch (Exception ex)
                 {
-                    message = "GetNextEvent failed: " + ex.Message;
+                    message = "GetNextEventAsEventData failed: " + ex.Message;
                     return false;
                 }
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("GetNextEvent", ex);
+                message = NeverThrowsGuard.Failure("GetNextEventAsEventData", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="GetNextEvent(string, int, out EventData, out bool, out string)"/>,
-        /// but reports the event as a JSON string plus a chainable window-handle output,
-        /// for designers without an <see cref="EventData"/> proxy.
+        /// Blocks up to <paramref name="timeoutMs"/> for the next queued event, reported as
+        /// JSON plus a chainable window handle - the Pega-friendly counterpart to
+        /// <see cref="GetNextEventAsEventData"/>, for designers without an
+        /// <see cref="EventData"/> proxy.
         /// </summary>
         /// <param name="subscriptionId">The subscription to dequeue from.</param>
         /// <param name="timeoutMs">Maximum time to wait for an event, in milliseconds.</param>
@@ -443,7 +449,7 @@ namespace EventAutomation
             {
                 eventJson = "{}";
                 hwnd = IntPtr.Zero;
-                bool ok = GetNextEvent(subscriptionId, timeoutMs, out EventData eventData, out hasEvent, out message);
+                bool ok = GetNextEventAsEventData(subscriptionId, timeoutMs, out EventData eventData, out hasEvent, out message);
                 if (hasEvent && eventData != null)
                 {
                     eventJson = eventData.ToJson();
