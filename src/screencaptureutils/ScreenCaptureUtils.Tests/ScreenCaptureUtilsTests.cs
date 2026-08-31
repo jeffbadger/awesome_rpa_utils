@@ -96,12 +96,41 @@ namespace ScreenCaptureAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        [Fact]
+        public void WaitForRegionToChangeWithTimedOut_NegativeTimeout_ReturnsFalseWithoutTimeout()
+        {
+            bool changed = _capture.WaitForRegionToChange(0, 0, 100, 100, timeoutMs: -1, pollIntervalMs: 10, out bool timedOut, out string message);
+
+            // A negative timeout is invalid input, not a clean timeout.
+            Assert.False(changed);
+            Assert.False(timedOut);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         // --- Annotation/redaction: empty/inverted rect and missing image rejected ---
 
         [Fact]
         public void DrawHighlightBox_EmptyOrInvertedRect_ReturnsFalseWithMessage()
         {
             bool ok = _capture.DrawHighlightBox("any.png", 10, 10, 10, 20, 0x0000FF, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void DrawHighlightBoxRgb_EmptyOrInvertedRect_ReturnsFalseWithMessage()
+        {
+            bool ok = _capture.DrawHighlightBox("any.png", 10, 10, 10, 20, red: 0, green: 0, blue: 255, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void DrawHighlightBoxColor_EmptyOrInvertedRect_ReturnsFalseWithMessage()
+        {
+            bool ok = _capture.DrawHighlightBox("any.png", 10, 10, 10, 20, System.Drawing.Color.Blue, out string message);
 
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
@@ -115,6 +144,28 @@ namespace ScreenCaptureAutomation.Tests
         public void RedactRegion_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
         {
             bool ok = _capture.RedactRegion("any.png", 0, 0, width, height, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        public void RedactRegionRgb_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.RedactRegion("any.png", 0, 0, width, height, red: 0, green: 0, blue: 0, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        public void RedactRegionColor_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.RedactRegion("any.png", 0, 0, width, height, System.Drawing.Color.Black, out string message);
 
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
@@ -137,6 +188,28 @@ namespace ScreenCaptureAutomation.Tests
             string missing = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".png");
 
             bool ok = _capture.DrawArrowToPoint(missing, 10, 10, 0x0000FF, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void DrawArrowToPointRgb_MissingImage_ReturnsFalseWithMessage()
+        {
+            string missing = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".png");
+
+            bool ok = _capture.DrawArrowToPoint(missing, 10, 10, red: 0, green: 0, blue: 255, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void DrawArrowToPointColor_MissingImage_ReturnsFalseWithMessage()
+        {
+            string missing = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".png");
+
+            bool ok = _capture.DrawArrowToPoint(missing, 10, 10, System.Drawing.Color.Blue, out string message);
 
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
@@ -176,6 +249,32 @@ namespace ScreenCaptureAutomation.Tests
             bool ok = _capture.CompareRegionToBaseline(0, 0, 100, 100, missing, 5.0, out double actual, out string message);
 
             Assert.False(ok);
+            Assert.Equal(0.0, actual);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(-1.0)]
+        [InlineData(101.0)]
+        public void CompareRegionToBaselineWithCompleted_OutOfRangeTolerance_ReturnsFalseWithoutCompleting(double tolerancePercent)
+        {
+            bool ok = _capture.CompareRegionToBaseline(0, 0, 100, 100, "baseline.png", tolerancePercent, out double actual, out bool comparisonCompleted, out string message);
+
+            Assert.False(ok);
+            Assert.False(comparisonCompleted);
+            Assert.Equal(0.0, actual);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void CompareRegionToBaselineWithCompleted_MissingBaseline_ReturnsFalseWithoutCompleting()
+        {
+            string missing = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".png");
+
+            bool ok = _capture.CompareRegionToBaseline(0, 0, 100, 100, missing, 5.0, out double actual, out bool comparisonCompleted, out string message);
+
+            Assert.False(ok);
+            Assert.False(comparisonCompleted);
             Assert.Equal(0.0, actual);
             Assert.False(string.IsNullOrEmpty(message));
         }
