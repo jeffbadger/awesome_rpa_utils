@@ -22,9 +22,9 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void IsServiceInstalled_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        public void IsServiceInstalledSimple_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
-            bool installed = _svc.IsServiceInstalled(serviceName, out string message);
+            bool installed = _svc.IsServiceInstalledSimple(serviceName, out string message);
 
             Assert.False(installed);
             Assert.False(string.IsNullOrEmpty(message));
@@ -46,9 +46,9 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void IsRunning_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        public void IsRunningSimple_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
-            bool running = _svc.IsRunning(serviceName, out string message);
+            bool running = _svc.IsRunningSimple(serviceName, out string message);
 
             Assert.False(running);
             Assert.False(string.IsNullOrEmpty(message));
@@ -69,9 +69,9 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void TryGetStatus_NullOrEmptyName_ReturnsFalseWithDefaultStatus(string serviceName)
+        public void TryGetStatusAsServiceControllerStatus_NullOrEmptyName_ReturnsFalseWithDefaultStatus(string serviceName)
         {
-            bool got = _svc.TryGetStatus(serviceName, out ServiceControllerStatus status, out string message);
+            bool got = _svc.TryGetStatusAsServiceControllerStatus(serviceName, out ServiceControllerStatus status, out string message);
 
             Assert.False(got);
             Assert.Equal(ServiceControllerStatus.Stopped, status); // documented default
@@ -133,9 +133,9 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void StartService_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        public void StartServiceSimple_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
-            bool started = _svc.StartService(serviceName, timeoutMs: 1000, out string message);
+            bool started = _svc.StartServiceSimple(serviceName, timeoutMs: 1000, out string message);
 
             Assert.False(started);
             Assert.False(string.IsNullOrEmpty(message));
@@ -156,9 +156,9 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void StopService_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        public void StopServiceSimple_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
-            bool stopped = _svc.StopService(serviceName, timeoutMs: 1000, out string message);
+            bool stopped = _svc.StopServiceSimple(serviceName, timeoutMs: 1000, out string message);
 
             Assert.False(stopped);
             Assert.False(string.IsNullOrEmpty(message));
@@ -179,9 +179,9 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void RestartService_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        public void RestartServiceSimple_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
-            bool restarted = _svc.RestartService(serviceName, timeoutMs: 1000, out string message);
+            bool restarted = _svc.RestartServiceSimple(serviceName, timeoutMs: 1000, out string message);
 
             Assert.False(restarted);
             Assert.False(string.IsNullOrEmpty(message));
@@ -202,9 +202,9 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void PauseService_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        public void PauseServiceSimple_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
-            bool paused = _svc.PauseService(serviceName, out string message);
+            bool paused = _svc.PauseServiceSimple(serviceName, out string message);
 
             Assert.False(paused);
             Assert.False(string.IsNullOrEmpty(message));
@@ -225,9 +225,9 @@ namespace ServiceAutomation.Tests
         [Theory]
         [InlineData(null)]
         [InlineData("")]
-        public void ResumeService_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
+        public void ResumeServiceSimple_NullOrEmptyName_ReturnsFalseWithMessage(string serviceName)
         {
-            bool resumed = _svc.ResumeService(serviceName, out string message);
+            bool resumed = _svc.ResumeServiceSimple(serviceName, out string message);
 
             Assert.False(resumed);
             Assert.False(string.IsNullOrEmpty(message));
@@ -293,27 +293,27 @@ namespace ServiceAutomation.Tests
         // --- Negative timeout: false + message, returned without touching the SCM ---
 
         [Fact]
-        public void StartService_NegativeTimeout_ReturnsFalseWithMessage()
+        public void StartServiceSimple_NegativeTimeout_ReturnsFalseWithMessage()
         {
-            bool started = _svc.StartService("Anything", timeoutMs: -1, out string message);
+            bool started = _svc.StartServiceSimple("Anything", timeoutMs: -1, out string message);
 
             Assert.False(started);
             Assert.False(string.IsNullOrEmpty(message));
         }
 
         [Fact]
-        public void StopService_NegativeTimeout_ReturnsFalseWithMessage()
+        public void StopServiceSimple_NegativeTimeout_ReturnsFalseWithMessage()
         {
-            bool stopped = _svc.StopService("Anything", timeoutMs: -1, out string message);
+            bool stopped = _svc.StopServiceSimple("Anything", timeoutMs: -1, out string message);
 
             Assert.False(stopped);
             Assert.False(string.IsNullOrEmpty(message));
         }
 
         [Fact]
-        public void RestartService_NegativeTimeout_ReturnsFalseWithMessage()
+        public void RestartServiceSimple_NegativeTimeout_ReturnsFalseWithMessage()
         {
-            bool restarted = _svc.RestartService("Anything", timeoutMs: -1, out string message);
+            bool restarted = _svc.RestartServiceSimple("Anything", timeoutMs: -1, out string message);
 
             Assert.False(restarted);
             Assert.False(string.IsNullOrEmpty(message));

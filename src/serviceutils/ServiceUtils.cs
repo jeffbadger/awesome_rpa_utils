@@ -89,7 +89,10 @@ namespace ServiceAutomation
         #region Query
 
         /// <summary>
-        /// Returns <c>true</c> if a service with the given name is installed. Never throws.
+        /// Same as <see cref="IsServiceInstalled(string, out bool, out string)"/>, but without
+        /// the separate <c>querySucceeded</c> output - a genuine "not installed" answer and a
+        /// real query failure (invalid name, SCM unavailable) are both reported as a non-null
+        /// <paramref name="message"/>, so tell them apart by parsing it if needed. Never throws.
         /// </summary>
         /// <param name="serviceName">The service name (not display name) to check.</param>
         /// <param name="message"><c>null</c> when the service is installed; otherwise a human-readable reason it
@@ -98,12 +101,12 @@ namespace ServiceAutomation
         /// or the Service Control Manager couldn't be queried. Never throws.</returns>
         [Category("Service - Query")]
         [Description("Returns True if a service with the given name is installed. Never throws.")]
-        public bool IsServiceInstalled(string serviceName, out string message)
+        public bool IsServiceInstalledSimple(string serviceName, out string message)
         {
             message = default;
             try
             {
-                bool installed = TryGetStatus(serviceName, out ServiceControllerStatus _, out string statusMessage);
+                bool installed = TryGetStatusAsServiceControllerStatus(serviceName, out ServiceControllerStatus _, out string statusMessage);
                 // A missing service is the *answer* here, not a failure - only surface the
                 // message for genuinely broken cases (invalid name, SCM unavailable).
                 message = installed ? null : statusMessage;
@@ -112,14 +115,14 @@ namespace ServiceAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("IsServiceInstalled", ex);
+                message = NeverThrowsGuard.Failure("IsServiceInstalledSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="IsServiceInstalled(string, out string)"/>, but separates
-        /// "the query completed" from "the service is installed" into two outputs, so the
+        /// Returns <c>true</c> if a service with the given name is installed, separating "the
+        /// query completed" from "the service is installed" into two outputs, so the
         /// automation does not need to interpret <paramref name="message"/> to tell a genuine
         /// "not installed" answer apart from an invalid name or an SCM query failure.
         /// </summary>
@@ -148,11 +151,12 @@ namespace ServiceAutomation
         }
 
         /// <summary>
-        /// Returns <c>true</c> if a service with the given name is installed and currently running.
+        /// Same as <see cref="IsRunning(string, out bool, out string)"/>, but without the
+        /// separate <c>querySucceeded</c> output.
         /// <para>
         /// A <c>false</c> return with a null <paramref name="message"/> means the service is installed
         /// but not running; a <c>false</c> with a non-null message means the check itself failed
-        /// (invalid name, service doesn't exist). Unlike <see cref="TryGetStatus(string, out ServiceControllerStatus, out string)"/>, this does not
+        /// (invalid name, service doesn't exist). Unlike <see cref="TryGetStatusAsServiceControllerStatus(string, out ServiceControllerStatus, out string)"/>, this does not
         /// throw for a service that isn't installed.
         /// </para>
         /// Never throws.
@@ -163,7 +167,7 @@ namespace ServiceAutomation
         /// is null/empty, or no such service is installed. Never throws.</returns>
         [Category("Service - Query")]
         [Description("Returns True if a service with the given name is installed and currently running. Never throws.")]
-        public bool IsRunning(string serviceName, out string message)
+        public bool IsRunningSimple(string serviceName, out string message)
         {
             message = default;
             try
@@ -174,7 +178,7 @@ namespace ServiceAutomation
                     return false;
                 }
 
-                if (!TryGetStatus(serviceName, out ServiceControllerStatus status, out message))
+                if (!TryGetStatusAsServiceControllerStatus(serviceName, out ServiceControllerStatus status, out message))
                     return false; // message already set (missing service, SCM failure)
 
                 message = null; // an installed-but-stopped service is a valid answer, not an error
@@ -183,16 +187,17 @@ namespace ServiceAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("IsRunning", ex);
+                message = NeverThrowsGuard.Failure("IsRunningSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="IsRunning(string, out string)"/>, but separates "the query
-        /// completed" from "the service is running" into two outputs, so the automation does
-        /// not need to interpret <paramref name="message"/> to tell an installed-but-stopped
-        /// answer apart from an invalid name or a missing service.
+        /// Returns <c>true</c> if a service with the given name is installed and currently
+        /// running, separating "the query completed" from "the service is running" into two
+        /// outputs, so the automation does not need to interpret <paramref name="message"/>
+        /// to tell an installed-but-stopped answer apart from an invalid name or a missing
+        /// service.
         /// </summary>
         /// <param name="serviceName">The service name (not display name) to check.</param>
         /// <param name="querySucceeded"><c>true</c> if the query itself completed (whether or not the service turned out to be running); <c>false</c> if the name was null/empty, no such service is installed, or the query otherwise failed (check <paramref name="message"/>).</param>
@@ -202,20 +207,26 @@ namespace ServiceAutomation
         [Description("Returns True if a service is installed and running, plus whether the query itself succeeded. Never throws.")]
         public bool IsRunning(string serviceName, out bool querySucceeded, out string message)
         {
-            bool running = IsRunning(serviceName, out message);
+            bool running = IsRunningSimple(serviceName, out message);
             querySucceeded = message == null;
             return running;
         }
 
-        /// <summary>Gets a service's current status. Never throws.</summary>
+        /// <summary>
+        /// Same as <see cref="TryGetStatus(string, out ServiceStatus, out string)"/>, but
+        /// reports the status as <see cref="ServiceControllerStatus"/> (an external
+        /// <c>System.ServiceProcess</c> type) instead of the repository-owned
+        /// <see cref="ServiceStatus"/> enum, for .NET callers that already depend on that
+        /// assembly. Never throws.
+        /// </summary>
         /// <param name="serviceName">The service name (not display name).</param>
         /// <param name="status">The service's current status when returning <c>true</c>; <c>Stopped</c> (the default) otherwise.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
         /// <returns><c>true</c> if the status was read; <c>false</c> if the name is null/empty, no service with
         /// that name is installed, or the Service Control Manager couldn't be queried. Never throws.</returns>
         [Category("Service - Query")]
-        [Description("Gets a service's current status. Returns False with a message (not an exception) on failure.")]
-        public bool TryGetStatus(string serviceName, out ServiceControllerStatus status, out string message)
+        [Description("Gets a service's current status as ServiceControllerStatus. Returns False with a message (not an exception) on failure.")]
+        public bool TryGetStatusAsServiceControllerStatus(string serviceName, out ServiceControllerStatus status, out string message)
         {
             status = default;
             message = default;
@@ -254,16 +265,15 @@ namespace ServiceAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("TryGetStatus", ex);
+                message = NeverThrowsGuard.Failure("TryGetStatusAsServiceControllerStatus", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="TryGetStatus(string, out ServiceControllerStatus, out string)"/>,
-        /// but reports the status as the repository-owned <see cref="ServiceStatus"/> enum
-        /// instead of <see cref="ServiceControllerStatus"/>, so Pega Robot Studio does not need
-        /// a reference to the <c>System.ServiceProcess</c> assembly to consume it.
+        /// Gets a service's current status as the repository-owned <see cref="ServiceStatus"/>
+        /// enum, so Pega Robot Studio does not need a reference to the
+        /// <c>System.ServiceProcess</c> assembly to consume it. Never throws.
         /// </summary>
         /// <param name="serviceName">The service name (not display name).</param>
         /// <param name="status">The service's current status when returning <c>true</c>; <see cref="ServiceStatus.Stopped"/> (the default) otherwise.</param>
@@ -274,7 +284,7 @@ namespace ServiceAutomation
         [Description("Gets a service's current status as the repository-owned ServiceStatus enum. Returns False with a message (not an exception) on failure.")]
         public bool TryGetStatus(string serviceName, out ServiceStatus status, out string message)
         {
-            bool ok = TryGetStatus(serviceName, out ServiceControllerStatus scStatus, out message);
+            bool ok = TryGetStatusAsServiceControllerStatus(serviceName, out ServiceControllerStatus scStatus, out message);
             status = ok ? ToServiceStatus(scStatus) : ServiceStatus.Stopped;
             return ok;
         }
@@ -509,7 +519,7 @@ namespace ServiceAutomation
         /// runtime isn't elevated, or it didn't reach Running within the timeout. Never throws.</returns>
         [Category("Service - Control")]
         [Description("Starts a service and waits for it to reach Running. Idempotent; returns False with a message (not an exception) on failure or timeout.")]
-        public bool StartService(string serviceName, int timeoutMs, out string message)
+        public bool StartServiceSimple(string serviceName, int timeoutMs, out string message)
         {
             message = default;
             try
@@ -546,13 +556,13 @@ namespace ServiceAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("StartService", ex);
+                message = NeverThrowsGuard.Failure("StartServiceSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="StartService(string, int, out string)"/>, but reports the
+        /// Same as <see cref="StartServiceSimple(string, int, out string)"/>, but reports the
         /// already-running case via <paramref name="wasAlreadyRunning"/> instead of an
         /// informational <paramref name="message"/>, so <paramref name="message"/> stays
         /// <c>null</c> on every success path (standardized with the rest of this suite).
@@ -624,7 +634,7 @@ namespace ServiceAutomation
         /// the timeout. Never throws.</returns>
         [Category("Service - Control")]
         [Description("Stops a service and waits for it to reach Stopped. Idempotent; returns False with a message (not an exception) on failure or timeout.")]
-        public bool StopService(string serviceName, int timeoutMs, out string message)
+        public bool StopServiceSimple(string serviceName, int timeoutMs, out string message)
         {
             message = default;
             try
@@ -661,13 +671,13 @@ namespace ServiceAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("StopService", ex);
+                message = NeverThrowsGuard.Failure("StopServiceSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="StopService(string, int, out string)"/>, but reports the
+        /// Same as <see cref="StopServiceSimple(string, int, out string)"/>, but reports the
         /// already-stopped case via <paramref name="wasAlreadyStopped"/> instead of an
         /// informational <paramref name="message"/>, so <paramref name="message"/> stays
         /// <c>null</c> on every success path (standardized with the rest of this suite).
@@ -741,7 +751,7 @@ namespace ServiceAutomation
         /// elevated, or either phase failed or timed out. Never throws.</returns>
         [Category("Service - Control")]
         [Description("Stops then starts a service, skipping the start phase if the stop phase fails. Each phase gets its own timeoutMs budget. Never throws.")]
-        public bool RestartService(string serviceName, int timeoutMs, out string message)
+        public bool RestartServiceSimple(string serviceName, int timeoutMs, out string message)
         {
             message = default;
             try
@@ -787,13 +797,13 @@ namespace ServiceAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("RestartService", ex);
+                message = NeverThrowsGuard.Failure("RestartServiceSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="RestartService(string, int, out string)"/>, but reports whether
+        /// Same as <see cref="RestartServiceSimple(string, int, out string)"/>, but reports whether
         /// the stop phase found the service already stopped via
         /// <paramref name="wasAlreadyStopped"/> instead of an informational
         /// <paramref name="message"/>, so <paramref name="message"/> stays <c>null</c> on every
@@ -870,7 +880,7 @@ namespace ServiceAutomation
         /// isn't elevated. Never throws.</returns>
         [Category("Service - Control")]
         [Description("Pauses a running service. Idempotent; returns False with a message (not an exception) on failure.")]
-        public bool PauseService(string serviceName, out string message)
+        public bool PauseServiceSimple(string serviceName, out string message)
         {
             message = default;
             try
@@ -910,13 +920,13 @@ namespace ServiceAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("PauseService", ex);
+                message = NeverThrowsGuard.Failure("PauseServiceSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="PauseService(string, out string)"/>, but reports the
+        /// Same as <see cref="PauseServiceSimple(string, out string)"/>, but reports the
         /// already-paused case via <paramref name="wasAlreadyPaused"/> instead of an
         /// informational <paramref name="message"/>, so <paramref name="message"/> stays
         /// <c>null</c> on every success path (standardized with the rest of this suite).
@@ -989,7 +999,7 @@ namespace ServiceAutomation
         /// isn't elevated. Never throws.</returns>
         [Category("Service - Control")]
         [Description("Resumes a paused service. Idempotent; returns False with a message (not an exception) on failure.")]
-        public bool ResumeService(string serviceName, out string message)
+        public bool ResumeServiceSimple(string serviceName, out string message)
         {
             message = default;
             try
@@ -1029,13 +1039,13 @@ namespace ServiceAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("ResumeService", ex);
+                message = NeverThrowsGuard.Failure("ResumeServiceSimple", ex);
                 return false;
             }
         }
 
         /// <summary>
-        /// Same as <see cref="ResumeService(string, out string)"/>, but reports the
+        /// Same as <see cref="ResumeServiceSimple(string, out string)"/>, but reports the
         /// already-running case via <paramref name="wasAlreadyRunning"/> instead of an
         /// informational <paramref name="message"/>, so <paramref name="message"/> stays
         /// <c>null</c> on every success path (standardized with the rest of this suite).
@@ -1386,8 +1396,8 @@ namespace ServiceAutomation
         }
 
         /// <summary>
-        /// Idempotent start phase shared by <see cref="StartService(string, int, out string)"/> and
-        /// <see cref="RestartService(string, int, out string)"/>: an already-running (or already starting) service is
+        /// Idempotent start phase shared by <see cref="StartServiceSimple(string, int, out string)"/> and
+        /// <see cref="RestartServiceSimple(string, int, out string)"/>: an already-running (or already starting) service is
         /// success, so the common automation retry case doesn't blow up. Assumes the caller
         /// has already validated <paramref name="timeoutMs"/>.
         /// </summary>
@@ -1430,8 +1440,8 @@ namespace ServiceAutomation
         }
 
         /// <summary>
-        /// Idempotent stop phase shared by <see cref="StopService(string, int, out string)"/> and
-        /// <see cref="RestartService(string, int, out string)"/>: an already-stopped (or already stopping) service is
+        /// Idempotent stop phase shared by <see cref="StopServiceSimple(string, int, out string)"/> and
+        /// <see cref="RestartServiceSimple(string, int, out string)"/>: an already-stopped (or already stopping) service is
         /// success. Assumes the caller has already validated <paramref name="timeoutMs"/>.
         /// </summary>
         private static bool StopAndWait(ServiceController sc, string serviceName, int timeoutMs, out string message)
