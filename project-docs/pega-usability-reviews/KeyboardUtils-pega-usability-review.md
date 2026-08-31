@@ -44,11 +44,11 @@ enum expansion or a raw-key-code adapter.
    Windows keys. *(Out of scope for this pass.)*
 4. **Done.** Documented the `KeyDown`/`KeyUp` failure-connection requirement and
    the preference for bounded methods (`PressKey`/`HoldKey`) in the `KeyDown` XML
-   remarks, [README](README.md#notes--caveats), and
-   [Documentation/PressHoldCombo.md](Documentation/PressHoldCombo.md).
+   remarks, [README](../../src/keyboardutils/README.md#notes--caveats), and
+   [Documentation/PressHoldCombo.md](../../src/keyboardutils/Documentation/PressHoldCombo.md).
 5. **Done.** Flagged `PasteText`'s destructive clipboard behavior in its
-   designer-visible `[Description]` attribute, the [README](README.md) method
-   table, and [Documentation/ClipboardPaste.md](Documentation/ClipboardPaste.md).
+   designer-visible `[Description]` attribute, the [README](../../src/keyboardutils/README.md) method
+   table, and [Documentation/ClipboardPaste.md](../../src/keyboardutils/Documentation/ClipboardPaste.md).
 
 ## Verdict
 

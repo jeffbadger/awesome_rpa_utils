@@ -56,18 +56,18 @@ enum is not rendered as a selectable constant.
 
 ## Review order
 
-1. MouseUtils
-2. ScreenCaptureUtils
-3. KeyboardUtils
-4. WindowUtils
-5. OcrUtils
-6. DialogUtils
-7. UIAutomationUtils
-8. CommandLineUtils
-9. ServiceUtils
-10. EventUtils
+1. [MouseUtils](MouseUtils-pega-usability-review.md)
+2. [ScreenCaptureUtils](ScreenCaptureUtils-pega-usability-review.md)
+3. [KeyboardUtils](KeyboardUtils-pega-usability-review.md)
+4. [WindowUtils](WindowUtils-pega-usability-review.md)
+5. [OcrUtils](OcrUtils-pega-usability-review.md)
+6. [DialogUtils](DialogUtils-pega-usability-review.md)
+7. [UIAutomationUtils](UIAutomationUtils-pega-usability-review.md)
+8. [CommandLineUtils](CommandLineUtils-pega-usability-review.md)
+9. [ServiceUtils](ServiceUtils-pega-usability-review.md)
+10. [EventUtils](EventUtils-pega-usability-review.md)
 
-Each utility records its detailed findings in its own project directory.
+Each utility's detailed findings are in its own file in this folder.
 
 ## Completed review and remediation priority
 
@@ -90,5 +90,5 @@ All ten utility reviews are complete. Recommended implementation order:
    service status, verify modifier flags, and replace string policies/event names
    where useful.
 
-The individual records are located at
-`src/<utility>/PEGA_USABILITY_REVIEW.md`.
+The individual records are located in this folder as
+`<Utility>-pega-usability-review.md`.

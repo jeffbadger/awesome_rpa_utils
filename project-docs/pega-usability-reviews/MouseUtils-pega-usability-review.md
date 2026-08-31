@@ -37,7 +37,7 @@ methods for common combinations rather than integer-mask inputs.
    `GetWindowBounds`.
 3. **Done.** Added a producer → consumer example wiring
    `WindowUtils.FindWindowByTitle` into `GetWindowBounds`/`ClickAtClientPoint` to
-   [Documentation/WindowRelativeTargeting.md](Documentation/WindowRelativeTargeting.md).
+   [Documentation/WindowRelativeTargeting.md](../../src/mouseutils/Documentation/WindowRelativeTargeting.md).
 4. Verify flags-enum selection for `ModifierKeys` on the actual Robot Studio
    design surface. *(Out of scope for this pass.)*
 
