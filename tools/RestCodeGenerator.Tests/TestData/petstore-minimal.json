@@ -1,0 +1,66 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Petstore", "version": "1.0.0" },
+  "host": "petstore.example.com",
+  "basePath": "/v2",
+  "securityDefinitions": {
+    "api_key": { "type": "apiKey", "name": "api_key", "in": "header" },
+    "petstore_auth": {
+      "type": "oauth2",
+      "flow": "implicit",
+      "authorizationUrl": "https://petstore.example.com/oauth/dialog",
+      "scopes": { "read:pets": "read your pets" }
+    }
+  },
+  "parameters": {
+    "StatusFilter": {
+      "name": "status",
+      "in": "query",
+      "type": "string"
+    }
+  },
+  "paths": {
+    "/pet/{petId}": {
+      "parameters": [ { "name": "petId", "in": "path", "type": "integer", "required": true } ],
+      "get": {
+        "operationId": "getPetById",
+        "summary": "Returns a pet by ID.",
+        "parameters": [
+          { "$ref": "#/parameters/StatusFilter" },
+          { "name": "apiKey", "in": "query", "type": "string" }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": {
+        "operationId": "deletePet",
+        "summary": "Deletes a pet.",
+        "parameters": [ { "name": "apiKey2", "in": "query", "type": "string" } ],
+        "responses": { "204": { "description": "deleted" } }
+      },
+      "post": {
+        "summary": "Updates a pet with form data.",
+        "parameters": [ { "name": "body", "in": "body", "schema": { "type": "object" } } ],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/pet/findByStatus": {
+      "get": {
+        "operationId": "findPetsByStatus",
+        "summary": "Finds pets by status.",
+        "parameters": [ { "name": "X-Request-Source", "in": "header", "type": "string" } ],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/pet/{petId}/uploadImage": {
+      "post": {
+        "summary": "Uploads an image (multipart form). Not supported — must be skipped.",
+        "consumes": [ "multipart/form-data" ],
+        "parameters": [
+          { "name": "petId", "in": "path", "type": "integer", "required": true },
+          { "name": "file", "in": "formData", "type": "file" }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      }
+    }
+  }
+}

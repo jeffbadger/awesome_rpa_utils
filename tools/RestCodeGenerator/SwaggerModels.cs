@@ -9,7 +9,11 @@ public sealed record SwaggerDoc(
     string? DefaultBaseUrl,     // null when the spec has no concrete host/server (or a templated OA3 server URL)
     IReadOnlyList<SwaggerOperation> Operations,
     IReadOnlyList<SwaggerSecurityScheme> SecuritySchemes,
-    IReadOnlyList<string> SkippedOperations);   // "<METHOD> <path>" for non-JSON-body operations
+    IReadOnlyList<string> SkippedOperations)   // "<METHOD> <path>" for non-JSON-body operations
+{
+    /// <summary>Alias for <see cref="SkippedOperations"/>.</summary>
+    public IReadOnlyList<string> Skipped => SkippedOperations;
+}
 
 /// <summary>One declared security scheme. <see cref="Kind"/> drives which auth helper the renderer emits.</summary>
 public sealed record SwaggerSecurityScheme(
