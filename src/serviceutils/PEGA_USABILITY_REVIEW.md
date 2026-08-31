@@ -66,3 +66,43 @@ originals, and `ServiceStatus` gives Pega a dependency-free alternative to
 `ServiceControllerStatus` for the two enum-typed methods. All five
 recommended changes are implemented additively - every original overload
 remains available for .NET consumers or backward compatibility.
+
+## Addendum: naming ambiguity fix
+
+The additive overloads above solved usability, but several of them introduced
+a new problem: two same-named methods whose Pega-visible (non-`out`)
+parameter lists became identical, differing only in an `out` parameter's
+type or presence. C# overload resolution handles this fine, but Pega Robot
+Studio's designer surface cannot disambiguate two overloads by `out`
+parameter type/shape alone - both entries in the designer's method picker
+would look the same.
+
+Eight method groups in this component had this problem:
+`IsServiceInstalled`, `IsRunning`, `TryGetStatus`, `StartService`,
+`StopService`, `RestartService`, `PauseService`, `ResumeService`. In each
+case, one overload takes just `(string serviceName, ..., out string
+message)` and the other adds one extra `out` parameter (`querySucceeded`,
+`wasAlready...`) or returns a different `out` type (`ServiceControllerStatus`
+vs. `ServiceStatus`) - identical from Pega's point of view.
+
+Fixed by renaming the less-disambiguated overload (the one without the
+extra output) rather than the newer, more Pega-usable one, following this
+repository's convention of breaking changes over compatibility shims:
+
+| Old name | New name | Reason |
+|---|---|---|
+| `IsServiceInstalled(string, out string)` | `IsServiceInstalledSimple` | Missing the `querySucceeded` disambiguator |
+| `IsRunning(string, out string)` | `IsRunningSimple` | Missing the `querySucceeded` disambiguator |
+| `TryGetStatus(string, out ServiceControllerStatus, out string)` | `TryGetStatusAsServiceControllerStatus` | Return type, not an extra output, was the only difference |
+| `StartService(string, int, out string)` | `StartServiceSimple` | Missing the `wasAlreadyRunning` disambiguator |
+| `StopService(string, int, out string)` | `StopServiceSimple` | Missing the `wasAlreadyStopped` disambiguator |
+| `RestartService(string, int, out string)` | `RestartServiceSimple` | Missing the `wasAlreadyStopped` disambiguator |
+| `PauseService(string, out string)` | `PauseServiceSimple` | Missing the `wasAlreadyPaused` disambiguator |
+| `ResumeService(string, out string)` | `ResumeServiceSimple` | Missing the `wasAlreadyRunning` disambiguator |
+
+The plain (un-suffixed) name in each pair now belongs to the overload with
+the extra disambiguating output - the one most useful to a Pega automation -
+per the naming convention documented in the component `README.md`.
+`TryGetStatus(string, out ServiceStatus, out string)` (the repository-owned
+enum overload) was unaffected: it keeps the plain name since it was never
+part of a colliding pair.
