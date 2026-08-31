@@ -77,6 +77,34 @@ Equivalent to `FromWindowHandle` → `FindByName` (container) → `Expand` →
 [Actions](Actions.md) for those individual methods if you need to act on the
 container or item again afterward instead of just selecting once.
 
+## Check/uncheck a checkbox by name without a separate find step
+
+```csharp
+IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
+uia.ToggleByName(hWnd, "Remember me", out string message);
+```
+
+## Switch to a tab or pick a radio button by name, in one call
+
+`SelectByName` selects a target found directly by its own name, without
+needing a separate container name first - use it instead of
+`SelectListItemByName` when the target (a tab, a radio button, a list item
+you can already name uniquely) doesn't need a container lookup:
+
+```csharp
+IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
+uia.SelectByName(hWnd, "Advanced", out string message); // switches to the "Advanced" tab
+```
+
+## Check a checkbox/tab/button's state by name, in one call
+
+```csharp
+IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
+bool isChecked = uia.IsToggledByName(hWnd, "Remember me", out string message);
+bool isOnAdvancedTab = uia.IsSelectedByName(hWnd, "Advanced", out message);
+bool canClickSave = uia.IsEnabledByName(hWnd, "Save", out message);
+```
+
 ## Checking why a one-shot call failed
 
 ```csharp
