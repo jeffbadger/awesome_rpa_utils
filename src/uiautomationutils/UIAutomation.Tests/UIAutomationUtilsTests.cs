@@ -254,6 +254,41 @@ namespace UIAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        [Fact]
+        public void ToggleByName_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.ToggleByName(IntPtr.Zero, "ok", out string message));
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void SelectByName_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.SelectByName(IntPtr.Zero, "ok", out string message));
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void IsToggledByName_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.IsToggledByName(IntPtr.Zero, "ok", out string message));
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void IsSelectedByName_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.IsSelectedByName(IntPtr.Zero, "ok", out string message));
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void IsEnabledByName_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.IsEnabledByName(IntPtr.Zero, "ok", out string message));
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         // --- UiControlType mapping: every enum value maps, undefined values report a message ---
 
         [Fact]

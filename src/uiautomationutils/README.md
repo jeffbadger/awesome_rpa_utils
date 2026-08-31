@@ -80,6 +80,11 @@ A common UI Automation control type, mapped internally to
 | `SetValueByName` | `bool SetValueByName(IntPtr hWnd, string name, string value, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and sets its value, in one call. |
 | `GetValueByName` | `bool GetValueByName(IntPtr hWnd, string name, out string value, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and gets its value, in one call. |
 | `SelectListItemByName` | `bool SelectListItemByName(IntPtr hWnd, string containerName, string itemName, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a combo box/list box/tree by name, expands it if needed, then finds and selects an item within it by name, in one call. |
+| `ToggleByName` | `bool ToggleByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and toggles it (e.g. checks/unchecks a checkbox), in one call. |
+| `SelectByName` | `bool SelectByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and selects it (e.g. switches to a tab, picks a radio button), in one call - use `SelectListItemByName` instead when the target needs a separate container name to find. |
+| `IsToggledByName` | `bool IsToggledByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and returns True if it's toggled On, in one call. |
+| `IsSelectedByName` | `bool IsSelectedByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and returns True if it's selected, in one call. |
+| `IsEnabledByName` | `bool IsEnabledByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)` | Finds a descendant of a window by its visible name and returns True if it's enabled, in one call. |
 
 ### Properties
 
@@ -163,7 +168,8 @@ A common UI Automation control type, mapped internally to
 - **The `UIAutomationUtils - One-Shot` methods** (`GetChildrenFromWindowHandle`,
   `GetChildrenSummaryJsonFromWindowHandle`, `InvokeByAutomationId`,
   `SetValueByAutomationId`, `GetValueByAutomationId`, `InvokeByName`, `SetValueByName`,
-  `GetValueByName`, `SelectListItemByName`) take a window handle directly and
+  `GetValueByName`, `SelectListItemByName`, `ToggleByName`, `SelectByName`,
+  `IsToggledByName`, `IsSelectedByName`, `IsEnabledByName`) take a window handle directly and
   do the `FromWindowHandle` → find/act step internally, for the common case where an
   automation doesn't need to retain an intermediate `AutomationElement` proxy between
   steps. They complement, not replace, the composable Find/Properties/Actions API. The

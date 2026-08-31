@@ -1788,6 +1788,220 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Toggles a descendant of a top-level window matched by its visible <c>Name</c>, given
+        /// the window's handle, without retaining an intermediate <see cref="AutomationElement"/>
+        /// proxy. Equivalent to <see cref="FromWindowHandle"/>, <see cref="FindByName"/>, then
+        /// <see cref="Toggle"/>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="name">The visible name/text to match.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the toggle failed.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, no matching element is found, or it does not support TogglePattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by its visible name and toggles it (e.g. checks/unchecks a checkbox), in one call. Returns True on success; never throws.")]
+        public bool ToggleByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, name, out AutomationElement element, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{name}' was found.";
+                    return false;
+                }
+
+                return Toggle(element, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ToggleByName", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Selects a descendant of a top-level window matched by its visible <c>Name</c>, given
+        /// the window's handle, without retaining an intermediate <see cref="AutomationElement"/>
+        /// proxy. Equivalent to <see cref="FromWindowHandle"/>, <see cref="FindByName"/>, then
+        /// <see cref="Select"/>. Use this over <see cref="SelectListItemByName"/> when the target
+        /// (e.g. a tab or radio button) is uniquely findable by its own name within the window,
+        /// without needing to name a separate container first.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="name">The visible name/text to match.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the selection failed.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, no matching element is found, or it does not support SelectionItemPattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by its visible name and selects it (e.g. switches to a tab, picks a radio button), in one call. Returns True on success; never throws.")]
+        public bool SelectByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, name, out AutomationElement element, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{name}' was found.";
+                    return false;
+                }
+
+                return Select(element, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SelectByName", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if a descendant of a top-level window matched by its visible
+        /// <c>Name</c> is toggled On, given the window's handle, without retaining an
+        /// intermediate <see cref="AutomationElement"/> proxy. Equivalent to
+        /// <see cref="FromWindowHandle"/>, <see cref="FindByName"/>, then
+        /// <see cref="IsToggledSimple"/>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="name">The visible name/text to match.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely Off/indeterminate element).</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> if the element is On; <c>false</c> if it isn't, or if <paramref name="hWnd"/> is invalid/no matching element is found/it does not support TogglePattern (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by its visible name and returns True if it's toggled On, in one call. Never throws.")]
+        public bool IsToggledByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, name, out AutomationElement element, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{name}' was found.";
+                    return false;
+                }
+
+                return IsToggledSimple(element, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("IsToggledByName", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if a descendant of a top-level window matched by its visible
+        /// <c>Name</c> is currently selected, given the window's handle, without retaining an
+        /// intermediate <see cref="AutomationElement"/> proxy. Equivalent to
+        /// <see cref="FromWindowHandle"/>, <see cref="FindByName"/>, then
+        /// <see cref="IsSelectedSimple"/>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="name">The visible name/text to match.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely unselected element).</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> if the element is selected; <c>false</c> if it isn't, or if <paramref name="hWnd"/> is invalid/no matching element is found/it does not support SelectionItemPattern (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by its visible name and returns True if it's selected, in one call. Never throws.")]
+        public bool IsSelectedByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, name, out AutomationElement element, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{name}' was found.";
+                    return false;
+                }
+
+                return IsSelectedSimple(element, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("IsSelectedByName", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if a descendant of a top-level window matched by its visible
+        /// <c>Name</c> is enabled, given the window's handle, without retaining an intermediate
+        /// <see cref="AutomationElement"/> proxy. Equivalent to <see cref="FromWindowHandle"/>,
+        /// <see cref="FindByName"/>, then <see cref="IsEnabledSimple"/>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="name">The visible name/text to match.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely disabled element).</param>
+        /// <param name="exactMatch">If <c>true</c> (default), requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> if the element is enabled; <c>false</c> if it isn't, or if <paramref name="hWnd"/> is invalid/no matching element is found (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by its visible name and returns True if it's enabled, in one call. Never throws.")]
+        public bool IsEnabledByName(IntPtr hWnd, string name, out string message, bool exactMatch = true, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByName(window, name, out AutomationElement element, out message, exactMatch, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with name '{name}' was found.";
+                    return false;
+                }
+
+                return IsEnabledSimple(element, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("IsEnabledByName", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Wait
