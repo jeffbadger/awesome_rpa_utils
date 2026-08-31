@@ -22,15 +22,15 @@ window.SetAlwaysOnTop(hWnd, alwaysOnTop: false, out _);
 
 ```csharp
 System.Diagnostics.Process.Start("notepad.exe");
-if (window.WaitForWindow("Notepad", timeoutMs: 5000, pollIntervalMs: 100, out IntPtr hWnd))
+if (window.WaitForWindowSimple("Notepad", timeoutMs: 5000, pollIntervalMs: 100, out IntPtr hWnd))
 {
     window.ActivateWindow(hWnd, out _);
 }
 ```
 
-The original overload's `false` covers both a genuine timeout and a null/empty
+`WaitForWindowSimple`'s `false` covers both a genuine timeout and a null/empty
 `title` (polling refused), indistinguishably. The `message`-output overload
-tells them apart:
+(`WaitForWindow`) tells them apart:
 
 ```csharp
 if (!window.WaitForWindow("Notepad", timeoutMs: 5000, pollIntervalMs: 100, out IntPtr hWnd, out string message))
