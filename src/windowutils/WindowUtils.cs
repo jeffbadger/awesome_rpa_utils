@@ -159,6 +159,24 @@ namespace WindowAutomation
             return matches;
         }
 
+        /// <summary>
+        /// Finds the first top-level window owned by the given process ID, in enumeration
+        /// order, for the common single-window case. Returns <see cref="IntPtr.Zero"/> if
+        /// none matches. Use <see cref="FindWindowsByProcessId"/> when the process may own
+        /// more than one top-level window and all of them are needed.
+        /// </summary>
+        [Category("Window - Enumeration & Lookup")]
+        [Description("Finds the first top-level window owned by the given process ID.")]
+        public IntPtr FindFirstWindowByProcessId(int processId)
+        {
+            foreach (var hWnd in GetTopLevelWindows())
+            {
+                if (GetWindowProcessId(hWnd) == processId)
+                    return hWnd;
+            }
+            return IntPtr.Zero;
+        }
+
         /// <summary>Gets the handle of the current foreground (active) window.</summary>
         [Category("Window - Enumeration & Lookup")]
         [Description("Gets the handle of the current foreground (active) window.")]
@@ -200,6 +218,34 @@ namespace WindowAutomation
                 message = NeverThrowsGuard.Failure("GetWindowBounds", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetWindowBounds(IntPtr, out System.Drawing.Rectangle, out string)"/>,
+        /// but reports the bounds as scalar left/top/width/height outputs, for designers
+        /// without a <c>Rectangle</c> proxy.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to measure.</param>
+        /// <param name="left">Left edge of the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="top">Top edge of the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="width">Width of the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="height">Height of the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetWindowRect failed (e.g. an invalid handle). Never throws.</returns>
+        [Category("Window - State & Geometry")]
+        [Description("Gets the screen-space bounding rectangle of a window as scalar left/top/width/height. Returns True on success; never throws.")]
+        public bool GetWindowBounds(IntPtr hWnd, out int left, out int top, out int width, out int height, out string message)
+        {
+            left = default;
+            top = default;
+            width = default;
+            height = default;
+            bool ok = GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out message);
+            left = bounds.Left;
+            top = bounds.Top;
+            width = bounds.Width;
+            height = bounds.Height;
+            return ok;
         }
 
         /// <summary>Moves and/or resizes a window to the given screen-space rectangle.</summary>
@@ -303,6 +349,41 @@ namespace WindowAutomation
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Same as <see cref="GetWindowTitle"/>, but distinguishes an invalid/nonexistent
+        /// window handle from a legitimately empty title via the return value, instead of
+        /// collapsing both to an empty string.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to read.</param>
+        /// <param name="title">The window's title text (possibly empty), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if <paramref name="hWnd"/> is a valid, currently-existing window; <c>false</c> otherwise. Never throws.</returns>
+        [Category("Window - State & Geometry")]
+        [Description("Gets a window's title text, distinguishing an invalid handle from a legitimately empty title. Returns True on success; never throws.")]
+        public bool TryGetWindowTitle(IntPtr hWnd, out string title, out string message)
+        {
+            title = default;
+            message = default;
+            try
+            {
+                title = null;
+                if (!IsWindowNative(hWnd))
+                {
+                    message = "Invalid or nonexistent window handle.";
+                    return false;
+                }
+                title = GetWindowTitle(hWnd);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("TryGetWindowTitle", ex);
+                return false;
+            }
+        }
+
         /// <summary>Gets a window's window-class name.</summary>
         [Category("Window - State & Geometry")]
         [Description("Gets a window's window-class name.")]
@@ -313,6 +394,40 @@ namespace WindowAutomation
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Same as <see cref="GetWindowClassName"/>, but distinguishes an invalid/nonexistent
+        /// window handle from a legitimately empty class name via the return value.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to read.</param>
+        /// <param name="className">The window's window-class name, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if <paramref name="hWnd"/> is a valid, currently-existing window; <c>false</c> otherwise. Never throws.</returns>
+        [Category("Window - State & Geometry")]
+        [Description("Gets a window's window-class name, distinguishing an invalid handle from a legitimately empty class name. Returns True on success; never throws.")]
+        public bool TryGetWindowClassName(IntPtr hWnd, out string className, out string message)
+        {
+            className = default;
+            message = default;
+            try
+            {
+                className = null;
+                if (!IsWindowNative(hWnd))
+                {
+                    message = "Invalid or nonexistent window handle.";
+                    return false;
+                }
+                className = GetWindowClassName(hWnd);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("TryGetWindowClassName", ex);
+                return false;
+            }
+        }
+
         /// <summary>Gets the process ID that owns a window.</summary>
         [Category("Window - State & Geometry")]
         [Description("Gets the process ID that owns a window.")]
@@ -320,6 +435,41 @@ namespace WindowAutomation
         {
             GetWindowThreadProcessId(hWnd, out uint processId);
             return (int)processId;
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetWindowProcessId"/>, but distinguishes an invalid/nonexistent
+        /// window handle from process ID 0 (the System Idle Process, which owns no windows
+        /// in practice, but this makes the distinction explicit rather than relying on that)
+        /// via the return value.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to read.</param>
+        /// <param name="processId">The process ID that owns the window, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if <paramref name="hWnd"/> is a valid, currently-existing window; <c>false</c> otherwise. Never throws.</returns>
+        [Category("Window - State & Geometry")]
+        [Description("Gets the process ID that owns a window, distinguishing an invalid handle from process ID 0. Returns True on success; never throws.")]
+        public bool TryGetWindowProcessId(IntPtr hWnd, out int processId, out string message)
+        {
+            processId = default;
+            message = default;
+            try
+            {
+                if (!IsWindowNative(hWnd))
+                {
+                    message = "Invalid or nonexistent window handle.";
+                    return false;
+                }
+                processId = GetWindowProcessId(hWnd);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("TryGetWindowProcessId", ex);
+                return false;
+            }
         }
 
         /// <summary>Returns <c>true</c> if the window is visible.</summary>
@@ -468,9 +618,35 @@ namespace WindowAutomation
         [Description("Polls for a window matching the title until it appears or the timeout elapses.")]
         public bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd)
         {
+            return WaitForWindow(title, timeoutMs, pollIntervalMs, out hWnd, out _);
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForWindow(string, int, int, out IntPtr)"/>, but also
+        /// reports why a <c>false</c> return happened via <paramref name="message"/>, so the
+        /// automation can distinguish a genuine timeout from an invalid <paramref name="title"/>
+        /// without inferring it from <paramref name="hWnd"/> alone.
+        /// </summary>
+        /// <param name="title">The window title substring to match (case-insensitive); may not be null or empty.</param>
+        /// <param name="timeoutMs">Maximum time to poll, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Time to sleep between polls, in milliseconds; values below 1 are treated as 1.</param>
+        /// <param name="hWnd">The matching window's handle, or <see cref="IntPtr.Zero"/> if not found in time.</param>
+        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason polling was refused (a null/empty <paramref name="title"/>).</param>
+        /// <returns>
+        /// <c>true</c> if a matching window was found before the timeout; <c>false</c> on
+        /// timeout or if <paramref name="title"/> is null or empty (check <paramref name="message"/>
+        /// to tell them apart; an empty substring would match the first window in
+        /// enumeration order, so polling is refused).
+        /// </returns>
+        [Category("Window - Activation & Z-Order")]
+        [Description("Polls for a window matching the title until it appears or the timeout elapses, reporting why a False return happened.")]
+        public bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, out string message)
+        {
+            message = default;
             if (string.IsNullOrEmpty(title))
             {
                 hWnd = IntPtr.Zero;
+                message = "A title is required.";
                 return false;
             }
 
@@ -483,11 +659,13 @@ namespace WindowAutomation
                 if (found != IntPtr.Zero)
                 {
                     hWnd = found;
+                    message = null;
                     return true;
                 }
                 if (unchecked(Environment.TickCount - start) >= timeoutMs)
                 {
                     hWnd = IntPtr.Zero;
+                    message = null;
                     return false;
                 }
                 Thread.Sleep(pollIntervalMs);

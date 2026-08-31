@@ -1,5 +1,10 @@
 # Child Windows
 
+`GetChildWindows` returns `List<IntPtr>`, which needs a Pega collection proxy
+and a loop to consume. Prefer `FindChildWindow` for the common single-match
+case (below); reach for `GetChildWindows` only when the automation genuinely
+needs every descendant.
+
 ## List every control inside a window
 
 ```csharp

@@ -11,6 +11,13 @@ failure reason isn't needed.
 window.GetWindowBounds(hWnd, out System.Drawing.Rectangle bounds, out _);
 ```
 
+For designers without a `Rectangle` proxy, the scalar overload returns the
+same bounds as `left`/`top`/`width`/`height`:
+
+```csharp
+window.GetWindowBounds(hWnd, out int left, out int top, out int width, out int height, out _);
+```
+
 ## Move and resize a window in one call
 
 ```csharp
@@ -36,6 +43,20 @@ string title = window.GetWindowTitle(hWnd);
 string className = window.GetWindowClassName(hWnd);
 int pid = window.GetWindowProcessId(hWnd);
 ```
+
+These collapse an invalid/stale handle to the same empty-string/`0` result as
+a legitimately empty title, class name, or (theoretical) process ID `0`. When
+the automation needs to tell "invalid handle" apart from "genuinely empty,"
+use the `Try*` overloads instead:
+
+```csharp
+if (!window.TryGetWindowTitle(hWnd, out string title, out string message))
+{
+    Logger.Error($"Handle is no longer valid: {message}");
+}
+```
+
+`TryGetWindowClassName` and `TryGetWindowProcessId` follow the same pattern.
 
 ## Minimize, maximize, and restore
 
