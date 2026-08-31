@@ -53,3 +53,31 @@ caller's thread, the throwing overload is gone, annotation/redaction colors
 have RGB and `Color` alternatives to the hex `colorRef`, and the wait/compare
 methods can disambiguate a negative result from a failure without inspecting
 `message`. All five recommended changes are implemented.
+
+## Addendum: naming ambiguity fix
+
+The additive overloads above solved usability, but two of them introduced a
+new problem: two same-named methods whose Pega-visible (non-`out`)
+parameter lists became identical, differing only in an `out` parameter's
+presence. C# overload resolution handles this fine, but Pega Robot Studio's
+designer surface cannot disambiguate two overloads by `out` parameter shape
+alone - both entries in the designer's method picker would look the same.
+
+Two method groups in this component had this problem: `WaitForRegionToChange`
+and `CompareRegionToBaseline`. In each case, one overload takes just the
+region/comparison inputs plus `out string message`, and the other adds one
+extra `out` parameter (`timedOut`, `comparisonCompleted`) - identical from
+Pega's point of view.
+
+Fixed by renaming the less-disambiguated overload (the one without the
+extra output) rather than the newer, more Pega-usable one, following this
+repository's convention of breaking changes over compatibility shims:
+
+| Old name | New name | Reason |
+|---|---|---|
+| `WaitForRegionToChange(int, int, int, int, int, int, out string)` | `WaitForRegionToChangeSimple` | Missing the `timedOut` disambiguator |
+| `CompareRegionToBaseline(int, int, int, int, string, double, out double, out string)` | `CompareRegionToBaselineSimple` | Missing the `comparisonCompleted` disambiguator |
+
+The plain (un-suffixed) name in each pair now belongs to the overload with
+the extra disambiguating output - the one most useful to a Pega automation -
+per the naming convention documented in the component `README.md`.
