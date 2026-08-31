@@ -49,7 +49,8 @@ in a single `dotnet build` invocation — no extra flags needed.
 Prebuilt DLLs for each tagged version are available on the
 [Releases](../../releases) page as separate `net8.0`/`net10.0` archives; pick
 the one matching the .NET runtime your Pega Robot Runtime or consuming app
-uses.
+uses. A documentation archive ships alongside them (see below) so the method
+reference is available without needing the repository.
 
 ## Packaging a release
 
@@ -77,6 +78,25 @@ package an existing Release build or choose other output paths, use:
   -ArchivePath "artifacts/AwesomeRpaUtils-{tfm}-v1.0.0.zip" `
   -SupportArchivePath artifacts/AwesomeRpaUtils-SupportLibraries-v1.0.0.zip
 ```
+
+### Packaging documentation
+
+To create a self-contained documentation archive — the top-level README,
+every component's README and `Documentation/*.md` pages, and
+[`project-docs/`](project-docs/README.md) — run:
+
+```powershell
+./scripts/Package-Documentation.ps1
+```
+
+This creates `artifacts/AwesomeRpaUtils-Documentation.zip`, preserving the
+same relative folder layout as the repository so every link between bundled
+pages keeps working once extracted. Any link that points outside the bundle
+(a `.cs` source file, `LICENSE`, `TESTING.md`, `Directory.Build.props`, or a
+GitHub-relative URL like the Releases link above) is rewritten to plain text
+rather than shipped as a dangling reference — the bundle only ever links to
+other pages inside itself. Choose a different output path with
+`-ArchivePath`, e.g. `-ArchivePath artifacts/AwesomeRpaUtils-Documentation-v1.0.0.zip`.
 
 `-ArchivePath` must contain a literal `{tfm}` placeholder — the script
 substitutes it with `net8.0` and `net10.0` to produce one archive per target
