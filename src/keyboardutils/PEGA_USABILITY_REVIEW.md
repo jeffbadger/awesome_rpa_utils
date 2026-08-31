@@ -3,9 +3,10 @@
 ## Summary
 
 Most methods use strings, integers, Booleans, or designer-selectable enums and
-should be directly usable in Pega Robot Studio. `PressKeyCombo` is the exception:
-its `VirtualKey[]` input has no natural producer and is likely impractical without
-a configured array proxy or script.
+should be directly usable in Pega Robot Studio. `PressKeyCombo` takes its keys as a
+`params VirtualKey[]`, which Robot Studio can call with individual scalar key
+arguments the same way it would call a fixed-arity overload — no array proxy or
+script is needed.
 
 ## Method review
 
@@ -15,7 +16,7 @@ a configured array proxy or script.
 | `KeyUp` | Direct | Provides the required scalar-port cleanup operation for `KeyDown`. |
 | `PressKey` | Direct | Simple enum input. A failed release can still leave the key held, so the failure branch should call `KeyUp`. |
 | `PressKeyWithModifiers` | Direct, verify flags | This is the Pega-friendly shortcut API when `ModifierKeys` flags can be combined in the designer. Add named shortcut methods or separate modifier Boolean ports if the supported Robot Studio version only permits one enum constant. |
-| `PressKeyCombo` | Adapter needed | `params VirtualKey[]` is still an array parameter to Robot Studio. There is no public producer for that array. Add fixed-arity scalar methods for two-, three-, and possibly four-key chords, or accept a parseable string specification. |
+| `PressKeyCombo` | Direct | `params VirtualKey[]` lets Robot Studio pass individual scalar `VirtualKey` arguments (`PressKeyCombo(out _, VirtualKey.Control, VirtualKey.Shift, VirtualKey.Escape)`), same as a fixed-arity overload. No adapter needed. |
 | `HoldKey` | Direct | Enum and integer inputs are usable. It blocks the automation thread for the hold duration, and a failed release requires a `KeyUp` cleanup branch. |
 | `TypeText(string, out string)` and `TypeText(string, int, out string)` | Direct | Both overloads are Pega-friendly. The shorter overload is the normal choice; the delay overload supports controls that lose fast input. |
 | `PasteText` | Direct ports; operational risk | All ports are scalar and raw Win32 clipboard use avoids an STA requirement. Calling it can permanently destroy non-text clipboard content, and paste delivery can race clipboard restoration. Make the destructive clipboard limitation prominent on the method in the designer. |
@@ -32,20 +33,28 @@ enum expansion or a raw-key-code adapter.
 
 ## Recommended changes
 
-1. Add scalar fixed-arity combo methods, such as two-, three-, and four-key
-   variants, so Pega users do not need to construct `VirtualKey[]`.
+1. ~~Add scalar fixed-arity combo methods...~~ **Not needed.** `PressKeyCombo`
+   already takes a `params VirtualKey[]`, which Robot Studio calls with individual
+   scalar key arguments the same as a fixed-arity overload — see the Method review
+   table above.
 2. Verify that the supported Robot Studio designer can combine `ModifierKeys`
-   flags. Add Boolean modifier inputs or named helpers if it cannot.
+   flags. Add Boolean modifier inputs or named helpers if it cannot. *(Out of
+   scope for this pass.)*
 3. Expand `VirtualKey` for shortcuts involving OEM punctuation and other required
-   Windows keys.
-4. Document a failure connection from `PressKey`/`HoldKey` to `KeyUp`, and favor
-   bounded methods over separate `KeyDown`/`KeyUp` steps.
-5. Clearly flag `PasteText` as destructive when the clipboard holds non-text
-   data.
+   Windows keys. *(Out of scope for this pass.)*
+4. **Done.** Documented the `KeyDown`/`KeyUp` failure-connection requirement and
+   the preference for bounded methods (`PressKey`/`HoldKey`) in the `KeyDown` XML
+   remarks, [README](README.md#notes--caveats), and
+   [Documentation/PressHoldCombo.md](Documentation/PressHoldCombo.md).
+5. **Done.** Flagged `PasteText`'s destructive clipboard behavior in its
+   designer-visible `[Description]` attribute, the [README](README.md) method
+   table, and [Documentation/ClipboardPaste.md](Documentation/ClipboardPaste.md).
 
 ## Verdict
 
-`PressKeyCombo` is the only public method blocked by a difficult non-scalar
-input. The remaining APIs are directly usable, subject to verifying flags-enum
-editing. Stateful key-down operations and clipboard replacement are workflow
-safety concerns rather than port-type blockers.
+All public methods are directly usable in Robot Studio, including `PressKeyCombo`
+via its `params VirtualKey[]`. Stateful key-down operations and clipboard
+replacement are workflow safety concerns, now called out prominently in the
+docs, rather than port-type blockers. `ModifierKeys` flag-combining support and
+`VirtualKey` coverage of OEM/punctuation keys remain open questions for a future
+pass.

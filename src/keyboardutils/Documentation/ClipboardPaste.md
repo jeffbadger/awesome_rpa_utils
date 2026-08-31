@@ -1,5 +1,9 @@
 # Clipboard-Paste Fallback
 
+> **⚠ Destructive:** `PasteText` permanently destroys any non-text clipboard content
+> (an image, files) — see Restore behavior below. Snapshot it yourself first if the
+> automation might run while the clipboard holds something other than text.
+
 ## Paste text into a field that mangles synthetic keystrokes
 
 ```csharp

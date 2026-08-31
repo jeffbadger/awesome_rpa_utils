@@ -47,7 +47,7 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
 
 | Method | Signature | Description |
 |---|---|---|
-| `KeyDown` | `bool KeyDown(VirtualKey key, out string message)` | Presses and holds a key. Pair with `KeyUp`. Returns True on success; never throws. |
+| `KeyDown` | `bool KeyDown(VirtualKey key, out string message)` | Presses and holds a key. Pair with `KeyUp`, including on failure branches. Returns True on success; never throws. |
 | `KeyUp` | `bool KeyUp(VirtualKey key, out string message)` | Releases a key previously pressed with `KeyDown`. Returns True on success; never throws. |
 | `PressKey` | `bool PressKey(VirtualKey key, out string message)` | Presses and releases a key (~20 ms between down and up). Returns True on success; never throws. |
 | `PressKeyWithModifiers` | `bool PressKeyWithModifiers(VirtualKey key, ModifierKeys modifiers, out string message)` | Presses a key while holding modifier keys, injected as one atomic batch. Returns True on success; never throws. |
@@ -65,7 +65,7 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
 
 | Method | Signature | Description |
 |---|---|---|
-| `PasteText` | `bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, waits `postPasteDelayMilliseconds`, then restores the original clipboard contents. Returns True on success; never throws. |
+| `PasteText` | `bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, waits `postPasteDelayMilliseconds`, then restores the original clipboard contents. **Destroys non-text clipboard content (images, files) permanently.** Returns True on success; never throws. |
 
 ### State Query & Modifiers
 
@@ -88,7 +88,11 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
   fails partway through a batch, they send a best-effort release batch for every
   requested key and modifier and report cleanup failure in `message`.
 - **`PressKey`/`HoldKey`** attempt key release from guaranteed cleanup after a
-  successful key-down. A failed release makes the method return `false`.
+  successful key-down. A failed release makes the method return `false`. Prefer these
+  over a manual `KeyDown`/`KeyUp` pair when the automation does not need to hold the key
+  across other steps. If you do use `KeyDown` directly, wire a failure connection from
+  every step between it and its matching `KeyUp` to a cleanup `KeyUp` step — otherwise a
+  later failure leaves the key held down for the rest of the session.
 - **`TypeText`** sends one `SendInput` call per UTF-16 code unit; characters outside the
   Basic Multilingual Plane (many emoji, some CJK extension characters) are sent as two
   code units (a surrogate pair) in the canonical order — high surrogate down, low

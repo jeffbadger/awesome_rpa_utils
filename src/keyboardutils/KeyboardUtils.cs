@@ -279,6 +279,14 @@ namespace KeyboardAutomation
         /// <param name="key">The key to press down.</param>
         /// <param name="message"><c>null</c> on success; the failure reason if this returns <c>false</c>.</param>
         /// <returns><c>true</c> if the input was injected successfully.</returns>
+        /// <remarks>
+        /// A later step in the automation can fail before a matching <see cref="KeyUp"/> runs,
+        /// leaving the key held down for the rest of the session. Wire a failure connection from
+        /// any step between <see cref="KeyDown"/> and its <see cref="KeyUp"/> to a cleanup
+        /// <see cref="KeyUp"/> step. Prefer <see cref="PressKey"/> or <see cref="HoldKey"/>, which
+        /// perform this cleanup internally, over a manual <see cref="KeyDown"/>/<see cref="KeyUp"/>
+        /// pair when the automation does not need to hold the key across other steps.
+        /// </remarks>
         [Category("Keyboard - Press & Hold & Combo")]
         [Description("Presses and holds a key down. Returns True on success; never throws.")]
         public bool KeyDown(VirtualKey key, out string message)
@@ -654,7 +662,8 @@ namespace KeyboardAutomation
         /// when the paste also failed, both failures are retained in <paramref name="message"/>.
         /// </remarks>
         [Category("Keyboard - Clipboard")]
-        [Description("Sets the clipboard to the given text, sends Ctrl+V, then restores the original clipboard. Returns True on success; never throws.")]
+        [Description("Sets the clipboard to the given text, sends Ctrl+V, then restores the original clipboard. " +
+                     "WARNING: destroys non-text clipboard content (images, files) permanently. Returns True on success; never throws.")]
         public bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)
         {
             message = default;
