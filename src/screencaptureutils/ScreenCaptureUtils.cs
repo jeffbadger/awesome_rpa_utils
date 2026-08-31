@@ -514,13 +514,13 @@ namespace ScreenCaptureAutomation
         /// </remarks>
         [Category("Capture - Verification")]
         [Description("Polls a screen region until its appearance changes, or the timeout elapses. Returns True if it changed in time; never throws.")]
-        public bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)
+        public bool WaitForRegionToChangeSimple(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)
         {
             return WaitForRegionToChange(left, top, width, height, timeoutMs, pollIntervalMs, out _, out message);
         }
 
         /// <summary>
-        /// Same as <see cref="WaitForRegionToChange(int, int, int, int, int, int, out string)"/>,
+        /// Same as <see cref="WaitForRegionToChangeSimple(int, int, int, int, int, int, out string)"/>,
         /// but also reports whether the wait ended because the timeout elapsed, so the
         /// automation can branch on timeout vs. execution failure without a null-message test.
         /// </summary>
@@ -604,13 +604,13 @@ namespace ScreenCaptureAutomation
         /// </remarks>
         [Category("Capture - Verification")]
         [Description("Compares a screen region against a saved baseline image and reports whether the difference is within tolerance. Never throws.")]
-        public bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)
+        public bool CompareRegionToBaselineSimple(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)
         {
             return CompareRegionToBaseline(left, top, width, height, baselineImagePath, tolerancePercent, out actualDifferencePercent, out _, out message);
         }
 
         /// <summary>
-        /// Same as <see cref="CompareRegionToBaseline(int, int, int, int, string, double, out double, out string)"/>,
+        /// Same as <see cref="CompareRegionToBaselineSimple(int, int, int, int, string, double, out double, out string)"/>,
         /// but also reports whether the comparison actually ran to completion, so the
         /// automation can branch on out-of-tolerance vs. execution failure without a
         /// null-message test.

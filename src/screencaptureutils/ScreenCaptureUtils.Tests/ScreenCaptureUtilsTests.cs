@@ -88,9 +88,9 @@ namespace ScreenCaptureAutomation.Tests
         // --- WaitForRegionToChange: negative timeout rejected before any capture ---
 
         [Fact]
-        public void WaitForRegionToChange_NegativeTimeout_ReturnsFalseWithMessage()
+        public void WaitForRegionToChangeSimple_NegativeTimeout_ReturnsFalseWithMessage()
         {
-            bool changed = _capture.WaitForRegionToChange(0, 0, 100, 100, timeoutMs: -1, pollIntervalMs: 10, out string message);
+            bool changed = _capture.WaitForRegionToChangeSimple(0, 0, 100, 100, timeoutMs: -1, pollIntervalMs: 10, out string message);
 
             Assert.False(changed);
             Assert.False(string.IsNullOrEmpty(message));
@@ -232,9 +232,9 @@ namespace ScreenCaptureAutomation.Tests
         [InlineData(-1.0)]
         [InlineData(101.0)]
         [InlineData(double.NaN)]
-        public void CompareRegionToBaseline_OutOfRangeTolerance_ReturnsFalseWithMessage(double tolerancePercent)
+        public void CompareRegionToBaselineSimple_OutOfRangeTolerance_ReturnsFalseWithMessage(double tolerancePercent)
         {
-            bool ok = _capture.CompareRegionToBaseline(0, 0, 100, 100, "baseline.png", tolerancePercent, out double actual, out string message);
+            bool ok = _capture.CompareRegionToBaselineSimple(0, 0, 100, 100, "baseline.png", tolerancePercent, out double actual, out string message);
 
             Assert.False(ok);
             Assert.Equal(0.0, actual);
@@ -242,11 +242,11 @@ namespace ScreenCaptureAutomation.Tests
         }
 
         [Fact]
-        public void CompareRegionToBaseline_MissingBaseline_ReturnsFalseWithMessage()
+        public void CompareRegionToBaselineSimple_MissingBaseline_ReturnsFalseWithMessage()
         {
             string missing = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".png");
 
-            bool ok = _capture.CompareRegionToBaseline(0, 0, 100, 100, missing, 5.0, out double actual, out string message);
+            bool ok = _capture.CompareRegionToBaselineSimple(0, 0, 100, 100, missing, 5.0, out double actual, out string message);
 
             Assert.False(ok);
             Assert.Equal(0.0, actual);

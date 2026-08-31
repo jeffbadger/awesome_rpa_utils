@@ -42,9 +42,9 @@ All coordinates are absolute screen pixels, consistent with MouseUtils.
 | Method | Signature | Description |
 |---|---|---|
 | `GetRegionHash` | `bool GetRegionHash(int left, int top, int width, int height, out string hash, out string message)` | Computes a lightweight perceptual hash of a screen region, for cheap "did this change" checks. Returns True on success; never throws. |
-| `WaitForRegionToChange` | `bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until its appearance changes, or the timeout elapses. `message` is only set if a real failure aborted the poll early. Never throws. |
+| `WaitForRegionToChangeSimple` | `bool WaitForRegionToChangeSimple(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until its appearance changes, or the timeout elapses. `message` is only set if a real failure aborted the poll early. Never throws. |
 | `WaitForRegionToChange` | `bool WaitForRegionToChange(int left, int top, int width, int height, int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)` | Same, plus a `timedOut` output so the automation can branch on timeout vs. execution failure without a null-message test. Never throws. |
-| `CompareRegionToBaseline` | `bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)` | Compares a screen region against a saved baseline image and reports whether the difference is within tolerance. `message` is only set if a real failure (missing baseline, size mismatch) prevented the comparison. Never throws. |
+| `CompareRegionToBaselineSimple` | `bool CompareRegionToBaselineSimple(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out string message)` | Compares a screen region against a saved baseline image and reports whether the difference is within tolerance. `message` is only set if a real failure (missing baseline, size mismatch) prevented the comparison. Never throws. |
 | `CompareRegionToBaseline` | `bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out bool comparisonCompleted, out string message)` | Same, plus a `comparisonCompleted` output so the automation can branch on out-of-tolerance vs. execution failure without a null-message test. Never throws. |
 
 ### Annotation & Redaction
@@ -87,10 +87,11 @@ screenCapture.CaptureWindowToFile(hWnd, @"C:\evidence\order_entry.png", out stri
 - **Capture regions that lie entirely outside the virtual screen** (all monitors) are
   rejected with a message rather than capturing a solid black rectangle; a partially
   overlapping region is allowed, and the off-screen part comes back black.
-- **`WaitForRegionToChange`/`CompareRegionToBaseline`** overload the meaning of a `false`
-  return: it covers both a normal "didn't change"/"outside tolerance" outcome
+- **`WaitForRegionToChangeSimple`/`CompareRegionToBaselineSimple`** overload the meaning
+  of a `false` return: it covers both a normal "didn't change"/"outside tolerance" outcome
   (`message == null`) and a real failure that aborted the check early (`message` set) —
-  check `message` to tell them apart. Each has a second overload (`out bool timedOut` /
+  check `message` to tell them apart. Each has a disambiguated overload
+  (`WaitForRegionToChange`'s `out bool timedOut` / `CompareRegionToBaseline`'s
   `out bool comparisonCompleted`) that reports this directly, for designers who would
   rather branch on a Boolean than test `message` for `null`.
 - **`colorRef`** parameters use the same `0x00BBGGRR` format as MouseUtils'
