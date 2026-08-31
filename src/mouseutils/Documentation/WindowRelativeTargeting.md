@@ -9,6 +9,24 @@ Every method here except `GetWindowAtPoint` returns `bool` (success) with an
 examples below discard `message` via `out _` where the failure reason isn't
 needed.
 
+## Producer → consumer: `WindowUtils.FindWindowByTitle` into a `MouseUtils` handle input
+
+None of the `IntPtr hWnd` inputs on this page are meant to be typed in by hand —
+they're meant to come from a window lookup earlier in the same automation, most
+often `WindowUtils.FindWindowByTitle`:
+
+```csharp
+IntPtr hWnd = windowUtils.FindWindowByTitle("Order Entry", exactMatch: true);
+if (hWnd == IntPtr.Zero)
+{
+    Logger.Error("Order Entry window not found.");
+    return;
+}
+
+mouse.GetWindowBounds(hWnd, out int left, out int top, out int width, out int height, out _);
+mouse.ClickAtClientPoint(hWnd, clientX: width / 2, clientY: height - 20, MouseButton.Left, out _);
+```
+
 ## `GetWindowBounds(IntPtr hWnd)`
 
 **Scenario:** A flow needs to know how much room a resizable application
@@ -19,6 +37,10 @@ the operator (or a prior automation step) may have resized or moved it.
 mouse.GetWindowBounds(appWindowHandle, out System.Drawing.Rectangle bounds, out _);
 Logger.Info($"Target window is at {bounds.Location}, size {bounds.Size}");
 ```
+
+A `bool GetWindowBounds(IntPtr hWnd, out int left, out int top, out int width, out int height, out string message)`
+scalar overload is also available for designers without a `Rectangle` proxy — used
+in the producer → consumer example above.
 
 ## `ClientPointToScreen(IntPtr hWnd, int clientX, int clientY, out int screenX, out int screenY)`
 

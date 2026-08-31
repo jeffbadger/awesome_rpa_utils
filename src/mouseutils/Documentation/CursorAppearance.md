@@ -135,6 +135,9 @@ mouse.GetCursorClip(out System.Drawing.Rectangle clip, out _);
 Logger.Info($"Cursor currently confined to {clip}");
 ```
 
+A `bool GetCursorClip(out int left, out int top, out int width, out int height, out string message)`
+scalar overload is also available for designers without a `Rectangle` proxy.
+
 ## Checking why a cursor change failed
 
 ```csharp
