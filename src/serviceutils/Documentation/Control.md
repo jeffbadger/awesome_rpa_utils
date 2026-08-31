@@ -29,6 +29,14 @@ svc.ResumeService("MyBackgroundAgent", out string msg);
 svc.WaitForServiceStatus("MyBackgroundAgent", ServiceControllerStatus.Running, timeoutMs: 10000, out msg);
 ```
 
+The `ServiceStatus` overload waits on the repository-owned enum instead, for a
+Pega deployment without the `System.ServiceProcess` assembly:
+
+```csharp
+svc.ResumeService("MyBackgroundAgent", out string msg);
+svc.WaitForServiceStatus("MyBackgroundAgent", ServiceStatus.Running, timeoutMs: 10000, out msg);
+```
+
 ## Handle a start attempt on an already-running service without a guard
 
 ```csharp
@@ -36,3 +44,25 @@ svc.WaitForServiceStatus("MyBackgroundAgent", ServiceControllerStatus.Running, t
 // of throwing, so retried automations don't need a status check up front.
 svc.StartService("MyBackgroundAgent", timeoutMs: 5000, out string msg);
 ```
+
+## Keep `message` null on success, even for the idempotent "already there" case
+
+If a project-wide convention treats any non-null `message` as failure, use the
+`wasAlready...`-output overloads instead - `message` stays `null` on every
+success path, and the idempotent case is reported through its own output:
+
+```csharp
+if (svc.StartService("MyBackgroundAgent", timeoutMs: 5000, out bool wasAlreadyRunning, out string msg))
+{
+    if (wasAlreadyRunning)
+        Logger.Info("MyBackgroundAgent was already running.");
+}
+else
+{
+    Logger.Error($"Failed to start MyBackgroundAgent: {msg}");
+}
+```
+
+The same pattern is available on `StopService` (`wasAlreadyStopped`),
+`RestartService` (`wasAlreadyStopped`, from the stop phase), `PauseService`
+(`wasAlreadyPaused`), and `ResumeService` (`wasAlreadyRunning`).
