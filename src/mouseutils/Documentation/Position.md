@@ -17,13 +17,13 @@ mouse.GetY(out int y, out _);
 Logger.Warn($"Selector timed out; cursor was at ({x}, {y}) when it failed.");
 ```
 
-## `GetPosition()`
+## `GetPositionAsPoint()`
 
 **Scenario:** Before clicking a draggable splitter in a legacy Win32 app, the
 automation captures the current position so it can restore it if the drag fails.
 
 ```csharp
-mouse.GetPosition(out System.Drawing.Point before, out _);
+mouse.GetPositionAsPoint(out System.Drawing.Point before, out _);
 if (!mouse.DragAndDrop(before.X, before.Y, before.X + 200, before.Y, out string message))
 {
     mouse.MoveTo(before.X, before.Y, out _);

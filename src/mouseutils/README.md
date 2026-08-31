@@ -46,7 +46,7 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 |---|---|---|
 | `GetX` | `bool GetX(out int x, out string message)` | Gets the current X coordinate of the cursor. |
 | `GetY` | `bool GetY(out int y, out string message)` | Gets the current Y coordinate of the cursor. |
-| `GetPosition` | `bool GetPosition(out Point position, out string message)` | Gets the current cursor position as a `System.Drawing.Point`. |
+| `GetPositionAsPoint` | `bool GetPositionAsPoint(out Point position, out string message)` | Gets the current cursor position as a `System.Drawing.Point`. |
 | `GetPosition` | `bool GetPosition(out int x, out int y, out string message)` | Gets the current cursor position as scalar X/Y from one atomic native read, for designers without a `Point` proxy. |
 | `MoveTo` | `bool MoveTo(int x, int y, out string message)` | Instantly moves the cursor to the given screen coordinates. |
 | `MoveBy` | `bool MoveBy(int deltaX, int deltaY, out string message)` | Moves the cursor by the given offsets relative to its current position. |
@@ -117,7 +117,7 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 | `IsCursorVisible` | `bool IsCursorVisible()` | Returns `false` if the cursor was hidden via this component's `HideCursor` method. |
 | `ClipCursor` | `bool ClipCursor(int left, int top, int right, int bottom, out string message)` | Confines the cursor to the given screen rectangle until `ReleaseCursorClip` is called. |
 | `ReleaseCursorClip` | `bool ReleaseCursorClip(out string message)` | Removes cursor confinement set by `ClipCursor`. |
-| `GetCursorClip` | `bool GetCursorClip(out Rectangle clip, out string message)` | Gets the rectangle the cursor is currently confined to (full virtual screen when unclipped). |
+| `GetCursorClipAsRectangle` | `bool GetCursorClipAsRectangle(out Rectangle clip, out string message)` | Gets the rectangle the cursor is currently confined to (full virtual screen when unclipped). |
 | `GetCursorClip` | `bool GetCursorClip(out int left, out int top, out int width, out int height, out string message)` | Same, as scalar outputs for designers without a `Rectangle` proxy. |
 
 ### Button State / Screen Info
@@ -156,7 +156,7 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 
 | Method | Signature | Description |
 |---|---|---|
-| `GetWindowBounds` | `bool GetWindowBounds(IntPtr hWnd, out Rectangle bounds, out string message)` | Gets the screen-space bounding rectangle of a window. |
+| `GetWindowBoundsAsRectangle` | `bool GetWindowBoundsAsRectangle(IntPtr hWnd, out Rectangle bounds, out string message)` | Gets the screen-space bounding rectangle of a window. |
 | `GetWindowBounds` | `bool GetWindowBounds(IntPtr hWnd, out int left, out int top, out int width, out int height, out string message)` | Same, as scalar outputs for designers without a `Rectangle` proxy. |
 | `ClientPointToScreen` | `bool ClientPointToScreen(IntPtr hWnd, int clientX, int clientY, out int screenX, out int screenY, out string message)` | Converts a point in a window's client area to screen coordinates. |
 | `ScreenPointToClient` | `bool ScreenPointToClient(IntPtr hWnd, int screenX, int screenY, out int clientX, out int clientY, out string message)` | Converts a screen coordinate to a point relative to a window's client area. |

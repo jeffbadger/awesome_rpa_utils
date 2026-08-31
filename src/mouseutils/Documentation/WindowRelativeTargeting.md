@@ -27,14 +27,14 @@ mouse.GetWindowBounds(hWnd, out int left, out int top, out int width, out int he
 mouse.ClickAtClientPoint(hWnd, clientX: width / 2, clientY: height - 20, MouseButton.Left, out _);
 ```
 
-## `GetWindowBounds(IntPtr hWnd)`
+## `GetWindowBoundsAsRectangle(IntPtr hWnd)`
 
 **Scenario:** A flow needs to know how much room a resizable application
 window currently occupies before computing a click target inside it, since
 the operator (or a prior automation step) may have resized or moved it.
 
 ```csharp
-mouse.GetWindowBounds(appWindowHandle, out System.Drawing.Rectangle bounds, out _);
+mouse.GetWindowBoundsAsRectangle(appWindowHandle, out System.Drawing.Rectangle bounds, out _);
 Logger.Info($"Target window is at {bounds.Location}, size {bounds.Size}");
 ```
 
