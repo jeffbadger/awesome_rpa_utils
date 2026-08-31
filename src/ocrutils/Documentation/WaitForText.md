@@ -21,3 +21,24 @@ if (!appeared)
     throw new InvalidOperationException("Confirmation message never appeared.");
 }
 ```
+
+## Branching on timeout vs. failure without a null-message check
+
+The `timedOut`-output overload reports which case caused a `false` return directly,
+for designers that would rather branch on a Boolean than test `message` for `null`:
+
+```csharp
+bool appeared = ocr.WaitForTextToAppear(
+    left: 400, top: 300, width: 600, height: 100,
+    expectedText: "Submitted successfully",
+    timeoutMs: 10000, pollIntervalMs: 500,
+    out bool timedOut, out string message);
+
+if (!appeared)
+{
+    if (timedOut)
+        Logger.Warn("Confirmation message never appeared within 10s.");
+    else
+        Logger.Error($"OCR poll aborted: {message}");
+}
+```

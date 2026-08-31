@@ -13,11 +13,11 @@ return framework objects or nested collections.
 |---|---|---|
 | `GetTextFromRegion` | Direct | Coordinates, language tag, text, message, and result are scalar. This is the preferred Pega surface for screen OCR. |
 | `GetTextFromImageFile` | Direct | File path and optional BCP-47 tag are strings, and recognized text is returned as a string. No bitmap object escapes the component. |
-| `GetStructuredTextFromRegion` | Proxy friction | `OcrResult` requires a proxy; its `Lines` contain `OcrLine` objects, whose `Words` and `Rectangle` properties require additional nested proxies and loops. Add scalar accessors or a JSON/tabular representation for Pega workflows that need structure. |
-| `FindTextLocation` | Proxy-friction output | All inputs are scalar, but `Rectangle` must be proxied before its coordinates can be used for a click or capture. Add an overload returning left, top, width, and height as integers. |
-| `GetAvailableLanguages` | Proxy friction | `List<string>` requires collection proxy configuration and iteration. Returning an empty list also hides query failure. Add a delimited/JSON string or scalar count/index accessors. |
-| `TryGetAvailableLanguages` | Proxy friction | The Boolean/message pattern exposes failure, but the useful output remains `List<string>`. It does not solve the Pega port problem. |
-| `WaitForTextToAppear` | Direct | Every port is scalar. `false` represents either timeout or operational failure, so the automation must inspect `message`; an explicit status or `timedOut` output would simplify branching. |
+| `GetStructuredTextFromRegion` | Proxy friction; JSON overload added | `OcrResult` still requires a proxy for .NET consumers who want it, but `GetStructuredTextFromRegionAsJson` now returns the same lines/words/bounds as a single JSON string for Pega workflows. |
+| `FindTextLocation` | Direct scalar overload added | Added an overload returning `foundLeft`/`foundTop`/`foundWidth`/`foundHeight` as integers; the `Rectangle` overload remains for callers with a proxy. |
+| `GetAvailableLanguages` | Direct scalar overload added | Added `GetAvailableLanguagesDelimited`, returning the same tags as one delimited string; the `List<string>` overloads remain for .NET/advanced consumers. |
+| `TryGetAvailableLanguages` | Direct scalar overload added | Same as above — `GetAvailableLanguagesDelimited` wraps this method and joins its list. |
+| `WaitForTextToAppear` | Direct, disambiguated | Added a `timedOut`-output overload so the automation can branch on timeout vs. execution failure without a null-message test; the original `message`-only overload remains and delegates to it. |
 
 ## Structured-result adapter options
 
@@ -34,16 +34,23 @@ cover the most common OCR-to-click workflow with the least designer work.
 
 ## Recommended changes
 
-1. Add scalar coordinate outputs for `FindTextLocation`.
-2. Add a structured-result JSON method or scalar indexed access API.
-3. Add a scalar representation of installed language tags; retain the list APIs
-   for advanced consumers.
-4. Distinguish timeout from execution failure in `WaitForTextToAppear` without
-   requiring a null-message test.
+1. **Done.** Added scalar coordinate outputs for `FindTextLocation`
+   (`out int foundLeft, foundTop, foundWidth, foundHeight`).
+2. **Done.** Added `GetStructuredTextFromRegionAsJson`, serializing the same
+   lines/words/bounds `GetStructuredTextFromRegion` returns to a JSON string.
+3. **Done.** Added `GetAvailableLanguagesDelimited`, joining the installed tags
+   into one delimited string (default comma); the list APIs remain for
+   advanced consumers.
+4. **Done.** Added a `timedOut`-output overload of `WaitForTextToAppear` so the
+   automation can branch on timeout vs. execution failure without a
+   null-message test.
 
 ## Verdict
 
-Plain-text OCR is directly usable and no caller must construct a complex input.
-Positioned and structured OCR are technically proxy-accessible but unnecessarily
-difficult. The highest-value adapter is a scalar-coordinate overload for
-`FindTextLocation`.
+Plain-text OCR was already directly usable. Positioned and structured OCR —
+previously proxy-accessible but unnecessarily difficult — now have scalar/JSON
+overloads alongside their object-returning originals: `FindTextLocation`'s
+scalar-coordinate overload, `GetStructuredTextFromRegionAsJson`,
+`GetAvailableLanguagesDelimited`, and `WaitForTextToAppear`'s `timedOut`
+overload. All four recommended changes are implemented; the object/list/
+Rectangle-returning overloads remain for .NET consumers with a proxy.
