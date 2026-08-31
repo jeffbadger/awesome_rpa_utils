@@ -243,7 +243,7 @@ namespace EventAutomation
                 EventId = Guid.NewGuid().ToString("N"),
                 Category = EventCategoryMap.EventName(eventType),
                 Timestamp = DateTime.UtcNow.Ticks,
-                Hwnd = unchecked((uint)hwnd.ToInt64())
+                Hwnd = hwnd.ToInt64()
             };
             data.ClassName = GetClassName(hwnd);
             data.Title = GetTitle(hwnd);

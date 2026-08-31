@@ -20,6 +20,27 @@ produces *triggers* (a dialog appeared, a window was created), and the other
 utils act on them — `screencaptureutils` to capture, `dialogutils` to dismiss,
 `keyboardutils`/`mouseutils` to drive input.
 
+## Types
+
+### `EventCategory`
+A family of WinEvents `Start`/`Subscribe` can watch, passed as a CSV of these
+names: `Windows`, `Foreground`, `Dialogs`, `Titles`, `States`, `Menus`,
+`WindowOps`, `Session`.
+
+### `EventName`
+A specific WinEvent name (as reported in `EventData.Category`), for
+designer-selectable input to `SetDebounce`'s enum overload instead of a
+free-form string: `WindowCreated`, `WindowDestroyed`, `WindowShown`,
+`WindowHidden`, `ForegroundChanged`, `FocusChanged`, `DialogAppeared`,
+`DialogClosed`, `TitleChanged`, `StateChanged`, `ValueChanged`, `MenuOpened`,
+`MenuClosed`, `MenuPopupOpened`, `MenuPopupClosed`, `WindowMinimized`,
+`WindowRestored`, `WindowMoved`, `WindowMoveEnded`, `SessionSwitched`.
+
+### `EventOverflowPolicy`
+What a subscription's queue does when full, for `SetQueueLimits`'s enum
+overload: `DropOldest`, `DropNewest`, `Block` (behaves exactly like
+`DropNewest` - documented under [Tuning / ops](#tuning--ops)).
+
 ## 30-second overview
 
 ```csharp
@@ -126,17 +147,29 @@ was subscribed.
 
 ## Filters
 
-Filters are built fluently or parsed from the compact JSON form that crosses the
-Pega boundary. All fields are optional — an unset field is a wildcard.
+Filters are built fluently, from scalar parameters, or parsed from the compact
+JSON form that crosses the Pega boundary. All fields are optional — an unset
+field is a wildcard.
 
 ```csharp
-// Fluent
+// Fluent (.NET callers)
 EventFilter.Create().Process("saplogon").Class("#32770").TitleContains("Save As");
 
-// JSON (unknown keys are ignored; malformed JSON or an invalid titleMatches
+// Scalar (Pega-friendly - no hand-authored JSON)
+string filterJson = events.BuildFilterJson(process: "notepad", className: "#32770", titleContains: "Save");
+events.Subscribe("Windows", filterJson, "sub", out _);
+
+// JSON directly (unknown keys are ignored; malformed JSON or an invalid titleMatches
 // regex makes Subscribe/WaitForX return False with a message)
-events.Subscribe("Windows", "{\"process\":\"notepad\",\"class\":\"#32770\",\"titleContains\":\"Save\"}", "sub");
+events.Subscribe("Windows", "{\"process\":\"notepad\",\"class\":\"#32770\",\"titleContains\":\"Save\"}", "sub", out _);
 ```
+
+`BuildFilterJson(process, processesCsv, className, titleContains, titleMatches, hasButtonChildren, excludeSelf)`
+builds the same JSON by hand-authoring none of it — every parameter is
+optional (omitted = not filtered on), and `processesCsv` (a comma-separated
+list) is the scalar alternative to `EventFilter.AnyOfProcesses(params string[])`,
+which isn't Pega-friendly. It never throws, returning `"{}"` (match-all) if
+every parameter is omitted.
 
 Supported JSON keys: `process`, `processes` (array), `class`, `titleContains`,
 `titleMatches` (regex, IgnoreCase|Compiled, 250 ms match timeout),
@@ -163,6 +196,18 @@ filter matches nothing.
 | `WasWindowCreated` | `bool WasWindowCreated(string filterJson, int withinLastMs, out bool wasCreated, out string message)` | Non-blocking lookback over the ring buffer. |
 | `CancelWaits` | `bool CancelWaits(out string message)` | Releases all pending waits (each reports a timeout). |
 
+Every `WaitForX` method above also has an overload that reports the matched
+event as JSON plus a chainable `IntPtr` window handle, for designers without
+an `EventData` proxy — same name, `out string eventJson, out IntPtr hwnd`
+instead of `out EventData eventData`. For example:
+
+```csharp
+bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000,
+    out string eventJson, out IntPtr hwnd, out bool timedOut, out _);
+if (ok && !timedOut)
+    window.ActivateWindow(hwnd, out _); // hwnd is ready to pass to WindowUtils directly
+```
+
 A wait returns False with `timedOut = true` on timeout (`eventData` is null and
 `message` explains the timeout); it returns False with `timedOut = false` on an
 error such as the engine not being started. A `timeoutMs` of 0 or negative is
@@ -179,7 +224,9 @@ process waits** — these are UI-event waits; a process that never creates a win
 | `Subscribe` | `bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId, out string message)` | Registers a subscription. Returns True on success; `message` is null on success, a reason otherwise (malformed filter JSON, duplicate id, invalid category). Never throws. |
 | `Unsubscribe` | `bool Unsubscribe(string subscriptionId, out string message)` | Removes a subscription and drops its queue; a blocked `GetNextEvent` is woken and returns False with a message. Returns True if it existed; `message` is null on success, a reason otherwise. |
 | `GetNextEvent` | `bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)` | Blocks up to `timeoutMs` for the next queued event. Returns True when the call succeeded; `hasEvent` is True when `eventData` holds an event (False on timeout). `message` is null on success, a reason otherwise (unknown subscription). |
+| `GetNextEvent` | `bool GetNextEvent(string subscriptionId, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool hasEvent, out string message)` | Same, reporting the event as JSON plus a chainable window handle, for designers without an `EventData` proxy. |
 | `GetNextEvents` | `bool GetNextEvents(string subscriptionId, int maxCount, int drainMs, out EventData[] events, out string message)` | Drains up to `maxCount` events into `events`. Returns True on success; `message` is null on success, a reason otherwise. |
+| `GetNextEventsJson` | `bool GetNextEventsJson(string subscriptionId, int maxCount, int drainMs, out string json, out string message)` | Same, as a JSON array (the same shape `DumpRecentEvents` produces), for designers without an `EventData[]` proxy. |
 | `HasEvents` | `bool HasEvents(string subscriptionId, out int count, out string message)` | Reports queued-event count. Returns True when the subscription exists; `message` is null on success, a reason otherwise (unknown subscription). |
 | `ClearQueue` | `bool ClearQueue(string subscriptionId, out string message)` | Drops all queued events. Returns True when the subscription exists; `message` is null on success, a reason otherwise. |
 
@@ -188,7 +235,9 @@ process waits** — these are UI-event waits; a process that never creates a win
 | Method | Signature | Description |
 |---|---|---|
 | `SetDebounce` | `bool SetDebounce(string eventName, int debounceMs, out string message)` | Dedupes per (hwnd, event-name). Defaults: 150 ms for `WindowShown`/`WindowHidden`, 0 otherwise. Save dialogs fire 4-6 SHOWs in ~200 ms; debounce coalesces them to 1. Returns True on success; `message` is null on success, a reason otherwise. |
+| `SetDebounce` | `bool SetDebounce(EventName eventName, int debounceMs, out string message)` | Same, taking the repository-owned `EventName` enum instead of a free-form, typo-prone string. |
 | `SetQueueLimits` | `bool SetQueueLimits(int maxEvents, string overflowPolicy, out string message)` | Per-subscription queue bound + policy: `"DropOldest"` (default), `"DropNewest"`, `"Block"`. `"Block"` is accepted for compatibility but behaves exactly like `"DropNewest"` — the hook thread must never block, so a full queue always drops the arriving event. Returns True on success; `message` is null on success, a reason otherwise (invalid arguments). |
+| `SetQueueLimits` | `bool SetQueueLimits(int maxEvents, EventOverflowPolicy overflowPolicy, out string message)` | Same, taking the repository-owned `EventOverflowPolicy` enum (`DropOldest`, `DropNewest`, `Block`) instead of a free-form string. |
 | `DumpRecentEvents` | `bool DumpRecentEvents(int count, out string json, out string message)` | Last N events as a JSON array in `json` (ring buffer, max 500). Returns True on success; `message` is null on success, a reason otherwise. |
 
 ## Notes & Caveats
@@ -202,13 +251,21 @@ process waits** — these are UI-event waits; a process that never creates a win
   error from `Marshal.GetLastWin32Error()`.
 - **`EventData` objects are per-consumer copies** — subscriptions and
   waiters each receive their own clone, so mutating one delivered event cannot
-  affect another consumer. Treat the object as read-only anyway.
+  affect another consumer. Treat the object as read-only anyway (its members
+  are properties with an `internal` setter, so external code cannot mutate
+  them even by choice).
+- **`EventData.Hwnd` is a signed 64-bit `long`**, not a 32-bit value — a
+  32-bit field would truncate a real 64-bit window handle on 64-bit Windows.
+  Reconstruct a chainable `IntPtr` for WindowUtils/UIAutomationUtils with
+  `new IntPtr(eventData.Hwnd)`, or use a JSON+handle overload (below) that
+  already returns one.
 - **`Unsubscribe` wakes a blocked `GetNextEvent`** — instead of waiting out its
   full timeout on a removed subscription, the blocked call returns False with a
   message promptly.
 - **`EVENT_OBJECT_VALUECHANGE` is opt-in only** — every keystroke fires it, so it
   is not part of the `States` category by default. To receive it, subscribe to
-  `States` and call `SetDebounce("ValueChanged", ms)`.
+  `States` and call `SetDebounce("ValueChanged", ms)` (or the `EventName`-enum
+  overload: `SetDebounce(EventName.ValueChanged, ms, out _)`).
 - **`EVENT_OBJECT_LOCATIONCHANGE` is never subscribed** in any category mask — it
   fires constantly (every move/resize of every window) and would flood the pump.
 - **Destroyed-window events still carry Title/ProcessName** — enrichment happens
