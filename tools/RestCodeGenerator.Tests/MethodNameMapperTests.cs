@@ -16,6 +16,7 @@ namespace RestCodeGenerator.Tests
         [InlineData(null, "/pet/{petId}", "POST", "PostPetPetId")]
         [InlineData(null, "/pet/{petId}", "DELETE", "DeletePetPetId")]
         [InlineData("user-login_GET!", "/user/login", "GET", "UserLoginGet")]
+        [InlineData("9lives", "/cats", "GET", "X9lives")]
         public void Map_ReturnsExpectedNames(string? id, string path, string method, string expected)
         {
             var map = MethodNameMapper.Map(new[] { Op(method, path, id) });
@@ -26,10 +27,14 @@ namespace RestCodeGenerator.Tests
         public void Map_CollidingNames_GetNumericSuffixes()
         {
             // args follow the helper's (method, path, id) convention, as in the Theory above
-            var ops = new[] { Op("GET", "/a", "doThing"), Op("GET", "/b", "doThing") };
+            var ops = new[]
+            {
+                Op("GET", "/a", "doThing"), Op("GET", "/b", "doThing"), Op("GET", "/c", "doThing"),
+            };
             var map = MethodNameMapper.Map(ops);
             Assert.Equal("DoThing", map[ops[0]]);
             Assert.Equal("DoThing2", map[ops[1]]);
+            Assert.Equal("DoThing3", map[ops[2]]);
         }
 
         [Fact]

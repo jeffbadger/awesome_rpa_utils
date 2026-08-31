@@ -6,7 +6,7 @@ namespace RestCodeGenerator;
 
 public static class MethodNameMapper
 {
-    public static readonly string[] Reserved =
+    public static IReadOnlyList<string> Reserved = new[]
     {
         "SetBaseUrl", "SetBearerAuthentication", "SetBasicAuthentication",
         "SetCustomAuthentication", "SetApiKeyAuthentication",
@@ -36,7 +36,7 @@ public static class MethodNameMapper
     private static string FromVerbAndPath(SwaggerOperation op)
     {
         var sb = new StringBuilder();
-        sb.Append(char.ToUpper(op.HttpMethod[0])).Append(op.HttpMethod[1..].ToLower());
+        sb.Append(char.ToUpperInvariant(op.HttpMethod[0])).Append(op.HttpMethod[1..].ToLowerInvariant());
         foreach (var segment in op.Path.Split('/', System.StringSplitOptions.RemoveEmptyEntries))
         {
             var cleaned = segment.Replace("{", "").Replace("}", "");
@@ -73,7 +73,7 @@ public static class MethodNameMapper
         {
             var word = words[i];
             var rest = word[1..];
-            sb.Append(char.ToUpper(word[0]));
+            sb.Append(char.ToUpperInvariant(word[0]));
             // an all-uppercase remainder reads as an acronym (GET, ID …): title-case it
             if (i > 0 && rest.Length > 0 && rest == rest.ToUpperInvariant())
                 sb.Append(rest.ToLowerInvariant());
