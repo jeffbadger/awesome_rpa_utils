@@ -133,13 +133,19 @@ public static class ComponentRenderer
     /// </summary>
     private static string AlwaysPresentHelpers(bool hasApiKeyHeader, bool hasApiKeyQuery, bool hasOAuth2)
     {
+        // Markers are matched WITHOUT a trailing newline so the replacement is CRLF-safe
+        // (raw strings preserve the source file's line endings). When the scheme is not
+        // declared, a comment line remains instead of a live statement.
         return AlwaysPresentHelpersCore
-            .Replace("            //[[API_KEY_HEADER_CLEAR]]\n", hasApiKeyHeader
-                ? "            _apiKeyHeaderName = \"\"; _apiKeyHeaderValue = \"\";\n" : "")
-            .Replace("            //[[API_KEY_QUERY_CLEAR]]\n", hasApiKeyQuery
-                ? "            _apiKeyQueryName = \"\"; _apiKeyQueryValue = \"\";\n" : "")
-            .Replace("            //[[OAUTH_CLEAR]]\n", hasOAuth2
-                ? "            _oauthAccessToken = \"\";\n" : "");
+            .Replace("            //[[API_KEY_HEADER_CLEAR]]", hasApiKeyHeader
+                ? "            _apiKeyHeaderName = \"\"; _apiKeyHeaderValue = \"\";"
+                : "            // (no api-key-header scheme declared)")
+            .Replace("            //[[API_KEY_QUERY_CLEAR]]", hasApiKeyQuery
+                ? "            _apiKeyQueryName = \"\"; _apiKeyQueryValue = \"\";"
+                : "            // (no api-key-query scheme declared)")
+            .Replace("            //[[OAUTH_CLEAR]]", hasOAuth2
+                ? "            _oauthAccessToken = \"\";"
+                : "            // (no client-credentials oauth2 scheme declared)");
     }
 
     private const string AlwaysPresentHelpersCore =
@@ -334,9 +340,13 @@ public static class ComponentRenderer
         else
         {
             sb.AppendLine("NewHeaders()");
-            foreach (var h in headers)
-                sb.AppendLine("                .WithHeader(" + Lit(h.Original) + ", " + h.Param + ")");
-            sb.AppendLine("                , out responseJson, out statusCode, out message);");
+            for (var i = 0; i < headers.Count; i++)
+            {
+                var line = "                .WithHeader(" + Lit(headers[i].Original) + ", " + headers[i].Param + ")";
+                sb.AppendLine(i == headers.Count - 1
+                    ? line + ", out responseJson, out statusCode, out message);"
+                    : line);
+            }
         }
         sb.AppendLine("        }");
     }
@@ -439,11 +449,11 @@ public static class ComponentRenderer
 
     private const string OAuth401Retry =
 """
-                if (ok && statusCode == 401 && _oauthTokenUrl != "" && TryRefreshOAuth2Token(out var refreshMessage))
+                if (ok && statusCode == 401 && _oauthTokenUrl != "" && TryRefreshOAuth2Token(out _))
                 {
-                    // one silent token refresh + single retry on 401 with client-credentials auth configured
+                    // one silent token refresh + single retry on 401 with client-credentials auth configured;
+                    // on a failed retry, keep the failure message Execute already wrote
                     ok = Execute(httpMethod, uri, bodyJson, headers, out responseJson, out statusCode, out _);
-                    if (!ok) message = refreshMessage;
                 }
 """;
 
@@ -590,9 +600,11 @@ public static class ComponentRenderer
 
     // ---- Escaping helpers ----
 
-    /// <summary>Quotes a value as a C# string literal for embedding in generated code.</summary>
+    /// <summary>Quotes a value as a C# string literal for embedding in generated code (line breaks included, so multi-line summaries stay single-line).</summary>
     private static string Lit(string? s) =>
-        "\"" + (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        "\"" + (s ?? "")
+            .Replace("\\", "\\\\").Replace("\"", "\\\"")
+            .Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t") + "\"";
 
     /// <summary>Escapes a value for use inside an XML doc comment.</summary>
     private static string Xml(string? s) => (s ?? "")

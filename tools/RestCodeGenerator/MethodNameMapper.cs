@@ -11,7 +11,8 @@ public static class MethodNameMapper
         "SetBaseUrl", "SetBearerAuthentication", "SetBasicAuthentication",
         "SetCustomAuthentication", "SetApiKeyAuthentication",
         "SetApiKeyQueryAuthentication", "SetOAuth2ClientCredentials",
-        "ClearAuthentication", "SetTimeoutSeconds", "GetLastStatusCode",
+        "ClearAuthentication", "SetTimeoutSeconds", "LastStatusCode",
+        "HeaderBuilder", "QueryBuilder",
     };
 
     public static IReadOnlyDictionary<SwaggerOperation, string> Map(

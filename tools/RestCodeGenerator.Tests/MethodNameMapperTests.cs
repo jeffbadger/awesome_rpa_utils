@@ -17,6 +17,8 @@ namespace RestCodeGenerator.Tests
         [InlineData(null, "/pet/{petId}", "DELETE", "DeletePetPetId")]
         [InlineData("user-login_GET!", "/user/login", "GET", "UserLoginGet")]
         [InlineData("9lives", "/cats", "GET", "X9lives")]
+        [InlineData("lastStatusCode", "/y", "GET", "LastStatusCode2")]   // collides with the LastStatusCode property
+        [InlineData("headerBuilder", "/y", "GET", "HeaderBuilder2")]     // collides with the private core type
         public void Map_ReturnsExpectedNames(string? id, string path, string method, string expected)
         {
             var map = MethodNameMapper.Map(new[] { Op(method, path, id) });

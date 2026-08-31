@@ -6,6 +6,7 @@ namespace RestCodeGenerator.Tests
     public class ComponentRendererTests
     {
         private static readonly string Petstore = Path.Combine("TestData", "petstore-minimal.json");
+        private static readonly string AuthApi = Path.Combine("TestData", "auth-minimal.json");
 
         [Fact]
         public void Render_EmitsExpectedNamespaceClassAndFile()
@@ -48,6 +49,26 @@ namespace RestCodeGenerator.Tests
             Assert.Contains("public bool SetApiKeyAuthentication(string name, string value, out string message)", output.Source);
             // ...but its oauth2 scheme is implicit-flow → "unsupported" → no client-credentials helper:
             Assert.DoesNotContain("SetOAuth2ClientCredentials", output.Source);
+            // scheme-conditional marker lines must never survive rendering (CRLF-safe replacement):
+            Assert.DoesNotContain("//[[", output.Source);
+        }
+
+        [Fact]
+        public void Render_EmitsQueryApiKeyAndClientCredentialsScheme_Machinery()
+        {
+            var output = ComponentRenderer.Render(SwaggerParser.ParseFile(AuthApi), "auth-api");
+            Assert.Contains("public bool SetApiKeyQueryAuthentication(string name, string value, out string message)", output.Source);
+            Assert.Contains("public bool SetOAuth2ClientCredentials(string clientId, string clientSecret, string tokenUrl, out string message)", output.Source);
+            Assert.Contains("private bool TryRefreshOAuth2Token(out string message)", output.Source);
+            Assert.Contains(
+                "if (ok && statusCode == 401 && _oauthTokenUrl != \"\" && TryRefreshOAuth2Token(out _))",
+                output.Source);
+            // ClearAuthentication clears the cached token (marker-replaced), after the api-key-query lines:
+            var normalized = output.Source.Replace("\r\n", "\n");
+            Assert.Contains(
+                "_apiKeyQueryName = \"\"; _apiKeyQueryValue = \"\";\n            _oauthAccessToken = \"\";",
+                normalized);
+            Assert.DoesNotContain("//[[", output.Source);
         }
 
         [Fact]
