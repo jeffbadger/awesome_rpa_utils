@@ -22,7 +22,10 @@ namespace RestCodeGenerator.Tests
             var output = ComponentRenderer.Render(SwaggerParser.ParseFile(Petstore), "pet-store");
             Assert.Contains("public bool GetPetById(string petId, string status, string apiKey, out string responseJson, out int statusCode, out string message)", output.Source);
             Assert.Contains("public bool PostPetPetId(string petId, string bodyJson, out string responseJson, out int statusCode, out string message)", output.Source);
-            Assert.Contains("public bool DeletePetPetId(string petId, string apiKey2, out string responseJson, out int statusCode, out string message)", output.Source);
+            // "DeletePet" not "DeletePetPetId": the fixture's delete op has operationId "deletePet",
+            // and the Task 3 mapper contract (operationId first) governs the rendered name —
+            // the plan's DeletePetPetId expectation was an authoring bug (corrected per review).
+            Assert.Contains("public bool DeletePet(string petId, string apiKey2, out string responseJson, out int statusCode, out string message)", output.Source);
             Assert.Contains("public bool FindPetsByStatus(string xRequestSource, out string responseJson, out int statusCode, out string message)", output.Source);
         }
 
