@@ -9,6 +9,7 @@ top-level [README](../README.md).
 - [Actions](Actions.md) — invoking, setting values, toggling, expanding, and selecting
 - [Wait](Wait.md) — polling for an element to appear
 - [Visual](Visual.md) — highlighting an element on screen
+- [OneShot](OneShot.md) — window-handle-scoped find-and-act methods that skip the intermediate element proxy
 
 All examples assume a `UIAutomationUtils` instance named `uia`, as it would
 appear dropped onto a Pega Robot Studio automation's design surface (or

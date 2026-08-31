@@ -45,3 +45,17 @@ if (!uia.Invoke(saveButton, out string message))
     Logger.Warn($"Invoke failed: {message}");
 }
 ```
+
+## Check toggled/selected state without a null-message test
+
+`IsToggled`/`IsSelected` have a `querySucceeded`-output overload that makes
+the existing null-message convention explicit as a Boolean:
+
+```csharp
+if (!uia.IsToggled(rememberMeCheckbox, out bool querySucceeded, out string message))
+{
+    if (!querySucceeded)
+        Logger.Error($"Could not check the checkbox state: {message}");
+    // else: querySucceeded is true and the checkbox is genuinely unchecked.
+}
+```

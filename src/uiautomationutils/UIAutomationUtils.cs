@@ -51,6 +51,20 @@ namespace UIAutomation
         TreeItem,
         /// <summary>A top-level window (ControlType.Window).</summary>
         Window,
+        /// <summary>A data grid (ControlType.DataGrid).</summary>
+        DataGrid,
+        /// <summary>A data grid row/cell item (ControlType.DataItem).</summary>
+        DataItem,
+        /// <summary>A logical grouping of other controls (ControlType.Group).</summary>
+        Group,
+        /// <summary>A column/row header, e.g. in a grid (ControlType.Header).</summary>
+        Header,
+        /// <summary>A slider (ControlType.Slider).</summary>
+        Slider,
+        /// <summary>A spinner/numeric up-down control (ControlType.Spinner).</summary>
+        Spinner,
+        /// <summary>A toolbar (ControlType.ToolBar).</summary>
+        ToolBar,
         /// <summary>An application-defined custom control (ControlType.Custom).</summary>
         Custom
     }
@@ -465,6 +479,140 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Gets the number of elements in a list produced by <see cref="GetChildren"/> or
+        /// <see cref="FindAllByControlType"/>, for designers who would rather loop by scalar
+        /// index than iterate a collection proxy directly.
+        /// </summary>
+        /// <param name="elements">A list of elements, typically from <see cref="GetChildren"/> or <see cref="FindAllByControlType"/>.</param>
+        /// <param name="count">The number of elements in the list, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="elements"/> is null. Never throws.</returns>
+        [Category("UIAutomation - Find")]
+        [Description("Gets the number of elements in a list from GetChildren/FindAllByControlType. Returns True on success; never throws.")]
+        public bool GetElementCount(List<AutomationElement> elements, out int count, out string message)
+        {
+            count = default;
+            message = default;
+            try
+            {
+                if (elements == null)
+                {
+                    message = "An element list is required.";
+                    return false;
+                }
+                count = elements.Count;
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetElementCount", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets the element at a given index in a list produced by <see cref="GetChildren"/> or
+        /// <see cref="FindAllByControlType"/>, for designers who would rather loop by scalar
+        /// index than iterate a collection proxy directly. Pair with
+        /// <see cref="GetElementCount"/> to drive the loop bound.
+        /// </summary>
+        /// <param name="elements">A list of elements, typically from <see cref="GetChildren"/> or <see cref="FindAllByControlType"/>.</param>
+        /// <param name="index">The zero-based index of the element to get.</param>
+        /// <param name="element">The element at <paramref name="index"/>, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the lookup failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="elements"/> is null or <paramref name="index"/> is out of range. Never throws.</returns>
+        [Category("UIAutomation - Find")]
+        [Description("Gets the element at a given index in a list from GetChildren/FindAllByControlType. Returns True on success; never throws.")]
+        public bool GetElementAt(List<AutomationElement> elements, int index, out AutomationElement element, out string message)
+        {
+            element = default;
+            message = default;
+            try
+            {
+                element = null;
+                if (elements == null)
+                {
+                    message = "An element list is required.";
+                    return false;
+                }
+                if (index < 0 || index >= elements.Count)
+                {
+                    message = $"Index {index} is out of range for a list of {elements.Count} element(s).";
+                    return false;
+                }
+                element = elements[index];
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetElementAt", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetChildren"/>, but summarizes each immediate child's Name,
+        /// AutomationId, ClassName, control type, and bounding rectangle into a JSON string,
+        /// for designers who cannot construct an <see cref="AutomationElement"/> collection
+        /// proxy just to see what's there.
+        /// </summary>
+        /// <param name="parent">The element whose children to enumerate.</param>
+        /// <param name="json">
+        /// The children as JSON: <c>[{"name":"...","automationId":"...","className":"...","controlType":"...","bounds":{"left":0,"top":0,"width":0,"height":0}}]</c>.
+        /// A child that has no on-screen bounding rectangle reports <c>"bounds":null</c>.
+        /// <c>null</c> if this method returns <c>false</c>.
+        /// </param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="parent"/> is null. Never throws.</returns>
+        [Category("UIAutomation - Find")]
+        [Description("Gets all immediate children of an element, summarized as a JSON array (name/automationId/className/controlType/bounds). Returns True on success; never throws.")]
+        public bool GetChildrenSummaryJson(AutomationElement parent, out string json, out string message)
+        {
+            json = default;
+            message = default;
+            try
+            {
+                json = null;
+                if (!GetChildren(parent, out List<AutomationElement> children, out message))
+                    return false;
+
+                var payload = children.ConvertAll(child =>
+                {
+                    GetName(child, out string name, out _);
+                    GetAutomationId(child, out string automationId, out _);
+                    GetClassName(child, out string className, out _);
+                    GetControlTypeName(child, out string controlType, out _);
+                    object bounds = GetBoundingRectangle(child, out System.Drawing.Rectangle rc, out _)
+                        ? (object)new { left = rc.Left, top = rc.Top, width = rc.Width, height = rc.Height }
+                        : null;
+
+                    return new
+                    {
+                        name,
+                        automationId,
+                        className,
+                        controlType,
+                        bounds
+                    };
+                });
+
+                json = System.Text.Json.JsonSerializer.Serialize(payload);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetChildrenSummaryJson", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Properties
@@ -663,6 +811,34 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="GetBoundingRectangle(AutomationElement, out System.Drawing.Rectangle, out string)"/>,
+        /// but reports the bounds as scalar left/top/width/height outputs, for designers
+        /// without a <c>Rectangle</c> proxy.
+        /// </summary>
+        /// <param name="element">The element to read.</param>
+        /// <param name="left">Left edge of the bounding rectangle, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="top">Top edge of the bounding rectangle, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="width">Width of the bounding rectangle, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="height">Height of the bounding rectangle, or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="element"/> is null, or it has no on-screen bounding rectangle. Never throws.</returns>
+        [Category("UIAutomation - Properties")]
+        [Description("Gets an element's screen-space bounding rectangle as scalar left/top/width/height. Returns True on success; never throws.")]
+        public bool GetBoundingRectangle(AutomationElement element, out int left, out int top, out int width, out int height, out string message)
+        {
+            left = default;
+            top = default;
+            width = default;
+            height = default;
+            bool ok = GetBoundingRectangle(element, out System.Drawing.Rectangle bounds, out message);
+            left = bounds.Left;
+            top = bounds.Top;
+            width = bounds.Width;
+            height = bounds.Height;
+            return ok;
+        }
+
         /// <summary>Returns <c>true</c> if the element is enabled.</summary>
         /// <param name="element">The element to read.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely disabled element).</param>
@@ -693,6 +869,24 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="IsEnabled(AutomationElement, out string)"/>, but separates
+        /// "the query succeeded" from "the element is enabled" into two outputs, so the
+        /// automation does not need to interpret <paramref name="message"/> for <c>null</c>.
+        /// </summary>
+        /// <param name="element">The element to read.</param>
+        /// <param name="querySucceeded"><c>true</c> if the query itself completed (whether or not the element turned out to be enabled); <c>false</c> if <paramref name="element"/> is null or the query failed (check <paramref name="message"/>).</param>
+        /// <param name="message"><c>null</c> whenever <paramref name="querySucceeded"/> is <c>true</c>; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if the element is enabled; <c>false</c> if it isn't, or if the query failed (check <paramref name="querySucceeded"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - Properties")]
+        [Description("Returns True if the element is enabled, plus whether the query itself succeeded. Never throws.")]
+        public bool IsEnabled(AutomationElement element, out bool querySucceeded, out string message)
+        {
+            bool enabled = IsEnabled(element, out message);
+            querySucceeded = message == null;
+            return enabled;
+        }
+
         /// <summary>Returns <c>true</c> if the element is offscreen.</summary>
         /// <param name="element">The element to read.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed (in which case this method returns <c>false</c>, same as a genuinely onscreen element).</param>
@@ -721,6 +915,24 @@ namespace UIAutomation
                 message = NeverThrowsGuard.Failure("IsOffscreen", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="IsOffscreen(AutomationElement, out string)"/>, but separates
+        /// "the query succeeded" from "the element is offscreen" into two outputs, so the
+        /// automation does not need to interpret <paramref name="message"/> for <c>null</c>.
+        /// </summary>
+        /// <param name="element">The element to read.</param>
+        /// <param name="querySucceeded"><c>true</c> if the query itself completed (whether or not the element turned out to be offscreen); <c>false</c> if <paramref name="element"/> is null or the query failed (check <paramref name="message"/>).</param>
+        /// <param name="message"><c>null</c> whenever <paramref name="querySucceeded"/> is <c>true</c>; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if the element is offscreen; <c>false</c> if it isn't, or if the query failed (check <paramref name="querySucceeded"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - Properties")]
+        [Description("Returns True if the element is offscreen, plus whether the query itself succeeded. Never throws.")]
+        public bool IsOffscreen(AutomationElement element, out bool querySucceeded, out string message)
+        {
+            bool offscreen = IsOffscreen(element, out message);
+            querySucceeded = message == null;
+            return offscreen;
         }
 
         /// <summary>
@@ -970,6 +1182,24 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="IsToggled(AutomationElement, out string)"/>, but separates
+        /// "the query succeeded" from "the element is On" into two outputs, so the automation
+        /// does not need to interpret <paramref name="message"/> for <c>null</c>.
+        /// </summary>
+        /// <param name="element">The element to read.</param>
+        /// <param name="querySucceeded"><c>true</c> if the query itself completed (whether or not the element turned out to be On); <c>false</c> if <paramref name="element"/> is null, it doesn't support TogglePattern, or the query otherwise failed (check <paramref name="message"/>).</param>
+        /// <param name="message"><c>null</c> whenever <paramref name="querySucceeded"/> is <c>true</c>; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if the element is On; <c>false</c> if it isn't, or if the query failed (check <paramref name="querySucceeded"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - Actions")]
+        [Description("Returns True if a toggleable element is currently On, plus whether the query itself succeeded. Never throws.")]
+        public bool IsToggled(AutomationElement element, out bool querySucceeded, out string message)
+        {
+            bool isOn = IsToggled(element, out message);
+            querySucceeded = message == null;
+            return isOn;
+        }
+
         /// <summary>Expands an element (e.g. a combo box or tree node) via <c>ExpandCollapsePattern</c>.</summary>
         /// <param name="element">The element to expand.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the expand failed.</param>
@@ -1136,6 +1366,226 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="IsSelected(AutomationElement, out string)"/>, but separates
+        /// "the query succeeded" from "the element is selected" into two outputs, so the
+        /// automation does not need to interpret <paramref name="message"/> for <c>null</c>.
+        /// </summary>
+        /// <param name="element">The element to read.</param>
+        /// <param name="querySucceeded"><c>true</c> if the query itself completed (whether or not the element turned out to be selected); <c>false</c> if <paramref name="element"/> is null, it doesn't support SelectionItemPattern, or the query otherwise failed (check <paramref name="message"/>).</param>
+        /// <param name="message"><c>null</c> whenever <paramref name="querySucceeded"/> is <c>true</c>; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if the element is selected; <c>false</c> if it isn't, or if the query failed (check <paramref name="querySucceeded"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - Actions")]
+        [Description("Returns True if a selectable element is currently selected, plus whether the query itself succeeded. Never throws.")]
+        public bool IsSelected(AutomationElement element, out bool querySucceeded, out string message)
+        {
+            bool isSelected = IsSelected(element, out message);
+            querySucceeded = message == null;
+            return isSelected;
+        }
+
+        #endregion
+
+        #region One-Shot (Window-Handle-Scoped)
+
+        /// <summary>
+        /// Gets all immediate children of a top-level window, given its handle, without
+        /// retaining an intermediate <see cref="AutomationElement"/> proxy for the window
+        /// itself. Equivalent to <see cref="FromWindowHandle"/> followed by
+        /// <see cref="GetChildren"/>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to enumerate, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="children">The window's immediate children, in tree order (empty if it has none), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is zero or invalid. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Gets all immediate children of a top-level window from its handle, in one call. Returns True on success; never throws.")]
+        public bool GetChildrenFromWindowHandle(IntPtr hWnd, out List<AutomationElement> children, out string message)
+        {
+            children = default;
+            message = default;
+            try
+            {
+                children = null;
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+
+                return GetChildren(window, out children, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetChildrenFromWindowHandle", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetChildrenFromWindowHandle"/>, but summarizes the children as a
+        /// JSON string via <see cref="GetChildrenSummaryJson"/>, for designers who cannot
+        /// construct any <see cref="AutomationElement"/> proxy at all.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to enumerate, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="json">The children as JSON (see <see cref="GetChildrenSummaryJson"/> for the shape), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is zero or invalid. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Gets all immediate children of a top-level window from its handle, summarized as JSON, in one call. Returns True on success; never throws.")]
+        public bool GetChildrenSummaryJsonFromWindowHandle(IntPtr hWnd, out string json, out string message)
+        {
+            json = default;
+            message = default;
+            try
+            {
+                json = null;
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+
+                return GetChildrenSummaryJson(window, out json, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetChildrenSummaryJsonFromWindowHandle", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Invokes a descendant of a top-level window matched by <c>AutomationId</c>, given the
+        /// window's handle, without retaining an intermediate <see cref="AutomationElement"/>
+        /// proxy. Equivalent to <see cref="FromWindowHandle"/>, <see cref="FindByAutomationId"/>,
+        /// then <see cref="Invoke"/>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="automationId">The AutomationId to match (exact).</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the invoke failed.</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, no matching element is found, or it does not support InvokePattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by AutomationId and invokes it, in one call. Returns True on success; never throws.")]
+        public bool InvokeByAutomationId(IntPtr hWnd, string automationId, out string message, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByAutomationId(window, automationId, out AutomationElement element, out message, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with AutomationId '{automationId}' was found.";
+                    return false;
+                }
+
+                return Invoke(element, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("InvokeByAutomationId", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Sets the value of a descendant of a top-level window matched by
+        /// <c>AutomationId</c>, given the window's handle, without retaining an intermediate
+        /// <see cref="AutomationElement"/> proxy. Equivalent to <see cref="FromWindowHandle"/>,
+        /// <see cref="FindByAutomationId"/>, then <see cref="SetValue"/>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="automationId">The AutomationId to match (exact).</param>
+        /// <param name="value">The value to set.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the set failed.</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, no matching element is found, or it does not support ValuePattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by AutomationId and sets its value, in one call. Returns True on success; never throws.")]
+        public bool SetValueByAutomationId(IntPtr hWnd, string automationId, string value, out string message, bool descendantsOnly = true)
+        {
+            message = default;
+            try
+            {
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByAutomationId(window, automationId, out AutomationElement element, out message, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with AutomationId '{automationId}' was found.";
+                    return false;
+                }
+
+                return SetValue(element, value, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SetValueByAutomationId", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets the value of a descendant of a top-level window matched by
+        /// <c>AutomationId</c>, given the window's handle, without retaining an intermediate
+        /// <see cref="AutomationElement"/> proxy. Equivalent to <see cref="FromWindowHandle"/>,
+        /// <see cref="FindByAutomationId"/>, then <see cref="GetValue"/>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to search within, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="automationId">The AutomationId to match (exact).</param>
+        /// <param name="value">The element's value, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <param name="descendantsOnly">If <c>true</c> (default), searches the full subtree; if <c>false</c>, searches only immediate children.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is invalid, no matching element is found, or it does not support ValuePattern. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Finds a descendant of a window by AutomationId and gets its value, in one call. Returns True on success; never throws.")]
+        public bool GetValueByAutomationId(IntPtr hWnd, string automationId, out string value, out string message, bool descendantsOnly = true)
+        {
+            value = default;
+            message = default;
+            try
+            {
+                value = null;
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+                if (!FindByAutomationId(window, automationId, out AutomationElement element, out message, descendantsOnly))
+                {
+                    if (message == null)
+                        message = $"No element with AutomationId '{automationId}' was found.";
+                    return false;
+                }
+
+                return GetValue(element, out value, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetValueByAutomationId", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Wait
@@ -1152,7 +1602,28 @@ namespace UIAutomation
         [Description("Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses. Never throws.")]
         public bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)
         {
+            return WaitForElementByAutomationId(parent, automationId, timeoutMs, pollIntervalMs, out element, out _, out message);
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForElementByAutomationId(AutomationElement, string, int, int, out AutomationElement, out string)"/>,
+        /// but also reports whether the wait ended because the timeout elapsed, so the
+        /// automation can branch on timeout vs. a real argument error without a null-message test.
+        /// </summary>
+        /// <param name="parent">The element to search within.</param>
+        /// <param name="automationId">The AutomationId to match (exact).</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
+        /// <param name="element">The matching element, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="timedOut"><c>true</c> if this method returned <c>false</c> because the timeout elapsed; <c>false</c> on success or on a real argument error (check <paramref name="message"/> for the latter).</param>
+        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason a real argument error aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if a matching element was found before the timeout; <c>false</c> if it timed out, or if a real argument error aborted the poll (check <paramref name="timedOut"/>/<paramref name="message"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - Wait")]
+        [Description("Polls for a descendant element matching the given AutomationId until it appears or the timeout elapses; reports whether the wait timed out. Never throws.")]
+        public bool WaitForElementByAutomationId(AutomationElement parent, string automationId, int timeoutMs, int pollIntervalMs, out AutomationElement element, out bool timedOut, out string message)
+        {
             element = default;
+            timedOut = default;
             message = default;
             try
             {
@@ -1172,6 +1643,7 @@ namespace UIAutomation
                     if (unchecked(Environment.TickCount - start) >= timeoutMs)
                     {
                         element = null;
+                        timedOut = true;
                         message = null;
                         return false;
                     }
@@ -1199,7 +1671,29 @@ namespace UIAutomation
         [Description("Polls for a descendant element matching the given Name until it appears or the timeout elapses. Never throws.")]
         public bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out string message)
         {
+            return WaitForElementByName(parent, name, exactMatch, timeoutMs, pollIntervalMs, out element, out _, out message);
+        }
+
+        /// <summary>
+        /// Same as <see cref="WaitForElementByName(AutomationElement, string, bool, int, int, out AutomationElement, out string)"/>,
+        /// but also reports whether the wait ended because the timeout elapsed, so the
+        /// automation can branch on timeout vs. a real argument error without a null-message test.
+        /// </summary>
+        /// <param name="parent">The element to search within.</param>
+        /// <param name="name">The name to match.</param>
+        /// <param name="exactMatch">If <c>true</c>, requires an exact match; if <c>false</c>, matches any element whose name contains <paramref name="name"/> (case-insensitive).</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
+        /// <param name="element">The matching element, or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="timedOut"><c>true</c> if this method returned <c>false</c> because the timeout elapsed; <c>false</c> on success or on a real argument error (check <paramref name="message"/> for the latter).</param>
+        /// <param name="message"><c>null</c> if the poll completed (found or genuinely timed out); otherwise a human-readable reason a real argument error aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if a matching element was found before the timeout; <c>false</c> if it timed out, or if a real argument error aborted the poll (check <paramref name="timedOut"/>/<paramref name="message"/> to tell them apart). Never throws.</returns>
+        [Category("UIAutomation - Wait")]
+        [Description("Polls for a descendant element matching the given Name until it appears or the timeout elapses; reports whether the wait timed out. Never throws.")]
+        public bool WaitForElementByName(AutomationElement parent, string name, bool exactMatch, int timeoutMs, int pollIntervalMs, out AutomationElement element, out bool timedOut, out string message)
+        {
             element = default;
+            timedOut = default;
             message = default;
             try
             {
@@ -1219,6 +1713,7 @@ namespace UIAutomation
                     if (unchecked(Environment.TickCount - start) >= timeoutMs)
                     {
                         element = null;
+                        timedOut = true;
                         message = null;
                         return false;
                     }
@@ -1317,6 +1812,30 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="HighlightElement(AutomationElement, out string, int, int, int, int)"/>,
+        /// but takes the color as RGB components (0-255 each, clamped) instead of a packed
+        /// <c>0xBBGGRR</c> colorRef, for designers who find hexadecimal entry inconvenient.
+        /// </summary>
+        [Category("UIAutomation - Visual")]
+        [Description("Flashes an inverting rectangle around an element using RGB color components. Returns True on success; never throws.")]
+        public bool HighlightElement(AutomationElement element, int red, int green, int blue, out string message, int flashes = 3, int flashMs = 200, int lineWidth = 3)
+        {
+            return HighlightElement(element, out message, flashes, flashMs, lineWidth, PackColorRef(red, green, blue));
+        }
+
+        /// <summary>
+        /// Same as <see cref="HighlightElement(AutomationElement, out string, int, int, int, int)"/>,
+        /// but takes the color as a <see cref="System.Drawing.Color"/>, e.g. <c>Color.Red</c> or
+        /// a named/system color, for designers with a <c>Color</c> proxy.
+        /// </summary>
+        [Category("UIAutomation - Visual")]
+        [Description("Flashes an inverting rectangle around an element using a System.Drawing.Color. Returns True on success; never throws.")]
+        public bool HighlightElement(AutomationElement element, System.Drawing.Color color, out string message, int flashes = 3, int flashMs = 200, int lineWidth = 3)
+        {
+            return HighlightElement(element, out message, flashes, flashMs, lineWidth, PackColorRef(color.R, color.G, color.B));
+        }
+
         #endregion
 
         #region Internal Helpers
@@ -1341,6 +1860,13 @@ namespace UIAutomation
             [UiControlType.Tree] = ControlType.Tree,
             [UiControlType.TreeItem] = ControlType.TreeItem,
             [UiControlType.Window] = ControlType.Window,
+            [UiControlType.DataGrid] = ControlType.DataGrid,
+            [UiControlType.DataItem] = ControlType.DataItem,
+            [UiControlType.Group] = ControlType.Group,
+            [UiControlType.Header] = ControlType.Header,
+            [UiControlType.Slider] = ControlType.Slider,
+            [UiControlType.Spinner] = ControlType.Spinner,
+            [UiControlType.ToolBar] = ControlType.ToolBar,
             [UiControlType.Custom] = ControlType.Custom,
         };
 
@@ -1354,6 +1880,15 @@ namespace UIAutomation
             }
             message = $"Unrecognized control type: {controlType}.";
             return false;
+        }
+
+        /// <summary>Packs RGB components (each clamped to 0-255) into a 0xBBGGRR colorRef value.</summary>
+        private static int PackColorRef(int red, int green, int blue)
+        {
+            red = Math.Clamp(red, 0, 255);
+            green = Math.Clamp(green, 0, 255);
+            blue = Math.Clamp(blue, 0, 255);
+            return red | (green << 8) | (blue << 16);
         }
 
         /// <summary>

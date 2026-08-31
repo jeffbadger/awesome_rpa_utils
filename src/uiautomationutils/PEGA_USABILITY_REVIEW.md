@@ -16,44 +16,60 @@ results and `Rectangle` output add further proxy friction.
 | `FromWindowHandle` | Chainable bridge | Converts a handle from WindowUtils/DialogUtils into an element proxy. This is the strongest scoped entry point; document the exact producer-data-port to consumer-data-port connection. |
 | `FromPoint` | Proxy-producing entry point | Scalar coordinates produce an element proxy and bridge naturally from MouseUtils. |
 | `FindByAutomationId`, `FindByName`, `FindByClassName`, `FindByControlType` | Chainable with proxy dependency | A parent element produces another element. Criteria are scalar or enum values. Pega must execute the parent-producing step before the proxy value is valid. `false` combines not-found with argument/UIA failure and requires inspecting `message`. |
-| `FindAllByControlType` | Significant proxy friction | Accepts an element proxy and returns `List<AutomationElement>`, requiring both object and collection proxy handling. Add indexed/scalar alternatives for common iteration workflows. |
-| `GetChildren` | Significant proxy friction | Same nested proxy issue as `FindAllByControlType`; there is no scalar count/item accessor. |
+| `FindAllByControlType` | Proxy friction; scalar alternatives added | Accepts an element proxy and returns `List<AutomationElement>`. `GetElementCount`/`GetElementAt` now provide indexed scalar access to the result; `GetChildren`'s JSON summary method covers the "just show me what's there" case. |
+| `GetChildren` | Proxy friction; scalar/JSON alternatives added | `GetElementCount`/`GetElementAt` give scalar count/index access to the result; `GetChildrenSummaryJson` returns each child's name/automationId/className/controlType/bounds as a JSON string for designers without any element proxy at all. |
 | `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName` | Chainable | Consume an element proxy and return strings. Once the element chain exists, these are straightforward. |
-| `GetBoundingRectangle` | Chainable input; proxy-friction output | Returns `System.Drawing.Rectangle`, forcing another framework-object proxy before coordinates can feed MouseUtils or ScreenCaptureUtils. Add integer coordinate outputs. |
-| `IsEnabled`, `IsOffscreen` | Chainable, ambiguous Boolean | `false` can mean either the actual state or failure; callers must inspect `message`. Separate success and state outputs would create clearer Pega branches. |
+| `GetBoundingRectangle` | Chainable input; scalar overload added | The original `Rectangle` overload remains; a new overload returns `left`/`top`/`width`/`height` as integers directly, for designers without a `Rectangle` proxy. |
+| `IsEnabled`, `IsOffscreen` | Chainable, disambiguated | The original ambiguous-Boolean overloads remain; each now has a `querySucceeded`-output overload making the existing null-message convention explicit as a Boolean. |
 | `IsElementAvailable` | Chainable | A simple Boolean stale-reference check. The element still must originate from an earlier producer and should be re-found rather than stored long-term. |
-| `Invoke`, `SetValue`, `GetValue`, `Toggle`, `Expand`, `Collapse`, `Select` | Chainable | Element input is intentionally produced by a find operation; other ports are scalar. Unsupported UIA patterns are reported through Boolean/message. |
-| `IsToggled`, `IsSelected` | Chainable, ambiguous Boolean | `false` represents both a legitimate state and an unsupported/stale/error result. Add a separate state output under the Boolean/message success convention. |
-| `WaitForElementByAutomationId`, `WaitForElementByName` | Chainable | Parent and result are element proxies; search/timing inputs are scalar. Timeout and failure both return `false`, distinguished only by `message`. |
-| `HighlightElement` | Chainable but awkward | Consumes an element proxy. Timing values are scalar, but `colorRef` uses non-obvious Win32 BGR ordering. It also blocks the automation thread while flashing. |
+| `Invoke`, `SetValue`, `GetValue`, `Toggle`, `Expand`, `Collapse`, `Select` | Chainable; one-shot alternatives added for the first three | Element input is intentionally produced by a find operation; other ports are scalar. Unsupported UIA patterns are reported through Boolean/message. `InvokeByAutomationId`/`SetValueByAutomationId`/`GetValueByAutomationId` now let a window-handle-scoped automation skip the intermediate element proxy for these three. |
+| `IsToggled`, `IsSelected` | Chainable, disambiguated | The original ambiguous-Boolean overloads remain; each now has a `querySucceeded`-output overload. |
+| `WaitForElementByAutomationId`, `WaitForElementByName` | Chainable, disambiguated | Each now has a `timedOut`-output overload distinguishing timeout from a real argument error without a null-message test; the original message-only overloads remain. |
+| `HighlightElement` | Chainable, additional overloads added | The original `colorRef` overload remains; new RGB-component and `System.Drawing.Color` overloads avoid the non-obvious Win32 BGR-ordering hex entry. It still blocks the automation thread while flashing (unchanged). |
 
 ## Missing Pega-oriented surfaces
 
-One-shot methods such as `InvokeByAutomationId`, `SetValueByAutomationId`, or
-`GetValueByAutomationId`, scoped by a window handle, would let common automations
-avoid retaining an `AutomationElement` proxy between steps. They should complement,
-not replace, the composable element API.
+**Done.** Added `InvokeByAutomationId`, `SetValueByAutomationId`, and
+`GetValueByAutomationId`, scoped by a window handle, so common automations
+don't need to retain an `AutomationElement` proxy between steps. Also added
+`GetChildrenFromWindowHandle` and `GetChildrenSummaryJsonFromWindowHandle` -
+the same one-shot pattern applied to listing a window's children, which
+directly answers the recurring "find a top-level window, then list its child
+elements" workflow in a single call. These complement, rather than replace,
+the composable element API.
 
-`UiControlType` also omits several UIA control types that may occur in business
-applications, such as DataGrid, DataItem, Group, Header, Slider, Spinner, and
-ToolBar. Those elements can still be found by other properties, but not through
-the control-type methods.
+**Done.** `UiControlType` now includes `DataGrid`, `DataItem`, `Group`,
+`Header`, `Slider`, `Spinner`, and `ToolBar`, alongside the original 19
+values.
 
 ## Recommended changes
 
-1. Add scalar bounds outputs to `GetBoundingRectangle`.
-2. Add count/index accessors or scalar summaries for element collections.
-3. Add a small set of handle-scoped one-shot find-and-act methods for common Pega
-   workflows.
-4. Separate operation success from the actual state returned by `IsEnabled`,
+1. **Done.** Added a scalar `left`/`top`/`width`/`height` overload of
+   `GetBoundingRectangle`.
+2. **Done.** Added `GetElementCount`/`GetElementAt` (indexed scalar access
+   to a `List<AutomationElement>` from `GetChildren`/`FindAllByControlType`)
+   and `GetChildrenSummaryJson` (a JSON summary of an element's children).
+3. **Done.** Added `InvokeByAutomationId`, `SetValueByAutomationId`,
+   `GetValueByAutomationId`, `GetChildrenFromWindowHandle`, and
+   `GetChildrenSummaryJsonFromWindowHandle` - see "Missing Pega-oriented
+   surfaces" above.
+4. **Done.** Added `querySucceeded`-output overloads of `IsEnabled`,
    `IsOffscreen`, `IsToggled`, and `IsSelected`.
-5. Distinguish timeout from lookup failure in wait methods.
-6. Expand `UiControlType` for common business-application controls.
-7. Add RGB-component or named-color inputs for `HighlightElement`.
+5. **Done.** Added `timedOut`-output overloads of
+   `WaitForElementByAutomationId` and `WaitForElementByName`.
+6. **Done.** Expanded `UiControlType` for common business-application
+   controls - see "Missing Pega-oriented surfaces" above.
+7. **Done.** Added RGB-component and `System.Drawing.Color` overloads of
+   `HighlightElement`, alongside the original packed `colorRef` overload.
 
 ## Verdict
 
-The API is chainable, but UIAutomationUtils necessarily has the repository's
-highest object-proxy dependency. No `AutomationElement` consumer is orphaned from
-a producer. Scalar bounds, collection adapters, and a few one-shot operations
-would substantially reduce Pega design-surface complexity.
+The API is chainable, and UIAutomationUtils still necessarily has the
+repository's highest object-proxy dependency - no `AutomationElement`
+consumer is orphaned from a producer. All seven recommended changes and both
+missing-surface items are implemented additively: every original overload
+remains for .NET consumers or backward compatibility, while the new scalar
+bounds, collection adapters (indexed access and JSON summaries), one-shot
+handle-scoped methods, disambiguating outputs, expanded control-type
+coverage, and color overloads substantially reduce Pega design-surface
+complexity for the common cases.
