@@ -73,7 +73,7 @@ Both paths need only the .NET SDK; the emitted project targets
 | **Non-JSON bodies** (`multipart`, form-urlencoded, binary) | Operation **skipped**, listed in the auto-generated comment at the top of the file |
 | File-level / path-level `$ref` parameters | Resolved to their definition before parameter extraction |
 | OAuth2 / API-key security schemes | Parsed into scheme-specific auth helpers — see [Authentication](#authentication) |
-| OA3 `servers[].url` with `{variables}` | No default base URL — the first `SetBaseUrl` call is mandatory |
+| OA3 `servers[].url` with `{variables}` or relative (e.g. petstore's `/api/v3`) | No default base URL — the first `SetBaseUrl` call is mandatory |
 | HEAD / OPTIONS / DELETE (no body) | Same method shape minus `bodyJson` |
 | 4xx/5xx responses | Transport success (`true`), visible via the `statusCode` out |
 | `operationId` naming, collisions, reserved names | Mapped by `MethodNameMapper` (see below) |
