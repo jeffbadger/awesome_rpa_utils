@@ -213,5 +213,88 @@ namespace RestCodeGenerator.Tests
                 """);
             Assert.Null(hostless20.DefaultBaseUrl);
         }
+
+        // ---- the official swagger-api OpenAPI 3.0 petstore spec, end-to-end ----
+
+        private static SwaggerDoc ParseOfficialPetstore() =>
+            SwaggerParser.ParseFile(Path.Combine("TestData", "petstore-openapi.json"));
+
+        [Fact]
+        public void OfficialPetstore_ExtractsInfoMetadata()
+        {
+            var doc = ParseOfficialPetstore();
+            Assert.Equal("Swagger Petstore - OpenAPI 3.0", doc.Title);
+            Assert.Equal("1.0.27", doc.Version);
+            Assert.Equal("https://swagger.io/terms/", doc.TermsOfService);
+            // contact is email-only in the real spec — the other parts stay null
+            Assert.Null(doc.ContactName);
+            Assert.Equal("apiteam@swagger.io", doc.ContactEmail);
+            Assert.Null(doc.ContactUrl);
+            Assert.Equal("Apache 2.0", doc.LicenseName);
+            Assert.Equal("https://www.apache.org/licenses/LICENSE-2.0.html", doc.LicenseUrl);
+        }
+
+        [Fact]
+        public void OfficialPetstore_RelativeServerUrl_YieldsNullBaseUrl()
+        {
+            // servers[0].url is "/api/v3" — no origin, so it cannot be a default base URL
+            // (a relative DefaultBaseUrl would produce un-requestable URIs downstream).
+            Assert.Null(ParseOfficialPetstore().DefaultBaseUrl);
+        }
+
+        [Fact]
+        public void OfficialPetstore_SecuritySchemes_ApiKeyHeader_ImplicitOauth2Unsupported()
+        {
+            var doc = ParseOfficialPetstore();
+            Assert.Equal(2, doc.SecuritySchemes.Count);
+            Assert.Equal("apiKeyHeader", Assert.Single(doc.SecuritySchemes, s => s.Name == "api_key").Kind);
+            // implicit oauth2 flow — parsed but not given a generated helper
+            Assert.Equal("unsupported", Assert.Single(doc.SecuritySchemes, s => s.Name == "petstore_auth").Kind);
+        }
+
+        [Fact]
+        public void OfficialPetstore_Models18Ops_AddPetBody_PutPetNotSkipped()
+        {
+            var doc = ParseOfficialPetstore();   // 19 operations, all but one JSON-capable
+            Assert.Equal(18, doc.Operations.Count);
+            // addPet offers json+xml+form-urlencoded; JSON is present, so it's modeled
+            // (json preferred; the alternative content types don't demote it to a skip)
+            var addPet = Assert.Single(doc.Operations, o => o.OperationId == "addPet");
+            Assert.False(doc.Skipped.Contains("POST /pet"));
+            Assert.True(addPet.HasBody);
+            // updatePet (PUT /pet) also offers json+xml+form — likewise modeled with a body
+            var updatePet = Assert.Single(doc.Operations, o => o.OperationId == "updatePet");
+            Assert.True(updatePet.HasBody);
+        }
+
+        [Fact]
+        public void OfficialPetstore_OctetStreamUploadImage_IsSkipped()
+        {
+            var doc = ParseOfficialPetstore();
+            var skipped = Assert.Single(doc.SkippedOperations);
+            Assert.Equal("POST /pet/{petId}/uploadImage", skipped);
+            Assert.DoesNotContain(doc.Operations, o => o.OperationId == "uploadFile");
+        }
+
+        [Fact]
+        public void OfficialPetstore_BucketsPathAndQueryParams()
+        {
+            var doc = ParseOfficialPetstore();
+            var getPetById = Assert.Single(doc.Operations, o => o.OperationId == "getPetById");
+            Assert.Equal("petId", Assert.Single(getPetById.PathParams).Name);
+            Assert.True(Assert.Single(getPetById.PathParams).IsPath);
+            var findByStatus = Assert.Single(doc.Operations, o => o.OperationId == "findPetsByStatus");
+            Assert.Equal("status", Assert.Single(findByStatus.QueryParams).Name);
+        }
+
+        [Fact]
+        public void OfficialPetstore_MethodNames_FromOperationIds()
+        {
+            var doc = ParseOfficialPetstore();
+            var map = MethodNameMapper.Map(doc.Operations);
+            Assert.Equal("AddPet", map[Assert.Single(doc.Operations, o => o.OperationId == "addPet")]);
+            Assert.Equal("UpdatePet", map[Assert.Single(doc.Operations, o => o.OperationId == "updatePet")]);
+            Assert.Equal("GetPetById", map[Assert.Single(doc.Operations, o => o.OperationId == "getPetById")]);
+        }
     }
 }

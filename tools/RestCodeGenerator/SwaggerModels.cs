@@ -6,7 +6,7 @@ namespace RestCodeGenerator;
 public sealed record SwaggerDoc(
     string Title,
     string Version,
-    string? DefaultBaseUrl,     // null when the spec has no concrete host/server (or a templated OA3 server URL)
+    string? DefaultBaseUrl,     // null when the spec has no absolute http(s) OA3 server URL (templated or relative, e.g. "/api/v3")
     IReadOnlyList<SwaggerOperation> Operations,
     IReadOnlyList<SwaggerSecurityScheme> SecuritySchemes,
     IReadOnlyList<string> SkippedOperations,   // "<METHOD> <path>" for non-JSON-body operations

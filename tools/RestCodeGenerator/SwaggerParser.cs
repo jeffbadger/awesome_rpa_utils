@@ -100,9 +100,15 @@ public static class SwaggerParser
                  servers.ValueKind == JsonValueKind.Array && servers.GetArrayLength() > 0)
         {
             var url = servers[0].GetPropertyOrNull("url")?.GetString();
-            // A templated server URL ({variable}) has no concrete value in the spec,
-            // so the generated component must require an explicit SetBaseUrl instead.
-            baseUrl = url != null && !url.Contains('{', StringComparison.Ordinal) ? url : null;
+            // Only an absolute http(s):// server URL can serve as the base for request
+            // URIs. A relative one (e.g. petstore-openapi.json's "/api/v3") or a
+            // templated one ({variable}) has no resolvable origin in the spec, so the
+            // generated component must require an explicit SetBaseUrl instead.
+            baseUrl = url != null &&
+                      Uri.TryCreate(url, UriKind.Absolute, out var abs) &&
+                      abs.Scheme is "http" or "https"
+                ? url
+                : null;
         }
 
         var operations = new List<SwaggerOperation>();
