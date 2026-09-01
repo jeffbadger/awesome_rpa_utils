@@ -14,7 +14,35 @@ namespace RestCodeGenerator.Tests
             var output = ComponentRenderer.Render(SwaggerParser.ParseFile(Petstore), "pet-store");
             Assert.Contains("namespace PetStoreRestAutomation", output.Source);
             Assert.Contains("public class PetStoreRestUtils", output.Source);
+            // Default (no designerComponent flag) must stay plain Script-component output:
+            Assert.DoesNotContain(": System.ComponentModel.Component", output.Source);
             Assert.Equal("PetStoreRestUtils", output.FileNameBase);
+        }
+
+        [Fact]
+        public void Render_DesignerComponent_InheritsSystemComponent()
+        {
+            var output = ComponentRenderer.Render(SwaggerParser.ParseFile(Petstore), "pet-store", designerComponent: true);
+            Assert.Contains("public class PetStoreRestUtils : System.ComponentModel.Component", output.Source);
+            // instance-level client + standard Dispose pattern (Component teardown releases it):
+            Assert.Contains("private readonly HttpClient _httpClient = new HttpClient();", output.Source);
+            Assert.Contains("protected override void Dispose(bool disposing)", output.Source);
+            Assert.Contains("_httpClient.Dispose();", output.Source);
+            // the static client must be fully replaced in designer mode:
+            Assert.DoesNotContain("static readonly HttpClient", output.Source);
+        }
+
+        [Fact]
+        public void Render_Default_DoesNotInheritSystemComponent()
+        {
+            // Explicit default-off guard: Render(doc, apiName) stays plain Script-component output.
+            var output = ComponentRenderer.Render(SwaggerParser.ParseFile(Petstore), "pet-store");
+            Assert.Contains("public class PetStoreRestUtils", output.Source);
+            Assert.DoesNotContain(": System.ComponentModel.Component", output.Source);
+            Assert.DoesNotContain("Dispose(bool disposing)", output.Source);
+            // default keeps the shared static client (byte-identical to pre-flag output):
+            Assert.DoesNotContain("_httpClient", output.Source);
+            Assert.Contains("private static readonly HttpClient _client = new HttpClient();", output.Source);
         }
 
         [Fact]

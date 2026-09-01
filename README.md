@@ -116,7 +116,10 @@ component (or compile with the emitted `.csproj`):
 
 Generated methods take designer-friendly primitive parameters, return raw
 JSON the automation parses with Robot Studio's built-in JSON methods, and
-need no NuGet packages. See [tools/README.md](tools/README.md).
+need no NuGet packages; pass `-Component` to the wrapper (or `--component` to
+the CLI) to also emit the class as deriving from `System.ComponentModel.Component`
+with a per-instance HttpClient and Dispose pattern, for the DLL-fallback
+component tray. See [tools/README.md](tools/README.md).
 
 ## Documentation
 

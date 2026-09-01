@@ -14,7 +14,12 @@ namespace RestCodeGenerator;
 /// </summary>
 public static class ComponentRenderer
 {
-    public static (string FileNameBase, string Source, string Project) Render(SwaggerDoc doc, string apiName)
+    /// <param name="designerComponent">When true, the class derives from
+    /// <c>System.ComponentModel.Component</c> and follows the Dispose pattern: the
+    /// HttpClient becomes instance-level so Dispose can release it (Robot Studio
+    /// disposes tray components on teardown). Default false keeps Script-component
+    /// paste-in output with the shared static client.</param>
+    public static (string FileNameBase, string Source, string Project) Render(SwaggerDoc doc, string apiName, bool designerComponent = false)
     {
         var root = MethodNameMapper.Pascalize(apiName) ?? "Api";
         var className = root + "RestUtils";
@@ -28,15 +33,16 @@ public static class ComponentRenderer
 
         var sb = new StringBuilder();
         AppendFileHeader(sb, doc, unsupportedSchemes);
-        AppendNamespaceAndClass(sb, doc, @namespace, className);
-        AppendFields(sb, doc, hasApiKeyHeader, hasApiKeyQuery, hasOAuth2);
+        AppendNamespaceAndClass(sb, doc, @namespace, className, designerComponent);
+        AppendFields(sb, doc, hasApiKeyHeader, hasApiKeyQuery, hasOAuth2, designerComponent);
         sb.AppendLine();
         sb.AppendLine(AlwaysPresentHelpers(hasApiKeyHeader, hasApiKeyQuery, hasOAuth2));
         if (hasApiKeyHeader) sb.AppendLine("\n" + ApiKeyHeaderHelper);
         if (hasApiKeyQuery) sb.AppendLine("\n" + ApiKeyQueryHelper);
         if (hasOAuth2) sb.AppendLine("\n" + OAuth2Helper);
         AppendEndpointMethods(sb, doc);
-        AppendPrivateCore(sb, hasApiKeyHeader, hasApiKeyQuery, hasOAuth2);
+        AppendPrivateCore(sb, hasApiKeyHeader, hasApiKeyQuery, hasOAuth2, designerComponent);
+        if (designerComponent) sb.AppendLine("\n" + DisposePattern);
         sb.AppendLine("    }");
         sb.AppendLine("}");
 
@@ -66,7 +72,8 @@ public static class ComponentRenderer
         sb.AppendLine();
     }
 
-    private static void AppendNamespaceAndClass(StringBuilder sb, SwaggerDoc doc, string @namespace, string className)
+    private static void AppendNamespaceAndClass(
+        StringBuilder sb, SwaggerDoc doc, string @namespace, string className, bool designerComponent)
     {
         var title = doc.Title ?? "Api";
         var version = doc.Version ?? "1.0.0";
@@ -88,12 +95,14 @@ public static class ComponentRenderer
         sb.AppendLine("    /// </summary>");
         sb.AppendLine("    [System.ComponentModel.Description(" +
                       Lit("Generated REST client for " + title + " (" + title + " " + version + "). Never throws.") + ")]");
-        sb.AppendLine("    public class " + className);
+        sb.AppendLine("    public class " + className +
+                      (designerComponent ? " : System.ComponentModel.Component" : ""));
         sb.AppendLine("    {");
     }
 
     private static void AppendFields(
-        StringBuilder sb, SwaggerDoc doc, bool hasApiKeyHeader, bool hasApiKeyQuery, bool hasOAuth2)
+        StringBuilder sb, SwaggerDoc doc, bool hasApiKeyHeader, bool hasApiKeyQuery, bool hasOAuth2,
+        bool designerComponent)
     {
         if (string.IsNullOrEmpty(doc.DefaultBaseUrl))
             sb.AppendLine("        private string _baseUrl = \"\";");
@@ -120,7 +129,15 @@ public static class ComponentRenderer
         }
         sb.AppendLine("        private int _lastStatusCode;");
         sb.AppendLine("        private int _timeoutSeconds = 30;");
-        sb.AppendLine("        private static readonly HttpClient _client = new HttpClient();");
+        if (designerComponent)
+        {
+            // instance-level client so the Dispose pattern below has something real to release
+            sb.AppendLine("        private readonly HttpClient _httpClient = new HttpClient();");
+        }
+        else
+        {
+            sb.AppendLine("        private static readonly HttpClient _client = new HttpClient();");
+        }
     }
 
     // ---- Always-present public helpers ----
@@ -369,24 +386,53 @@ public static class ComponentRenderer
 
     // ---- Private HTTP core (emitted once per generated file) ----
 
-    private static void AppendPrivateCore(StringBuilder sb, bool hasApiKeyHeader, bool hasApiKeyQuery, bool hasOAuth2)
+    private static void AppendPrivateCore(
+        StringBuilder sb, bool hasApiKeyHeader, bool hasApiKeyQuery, bool hasOAuth2, bool designerComponent)
     {
+        // Designer mode swaps the static HttpClient for the instance-level _httpClient
+        // (so Dispose can release it); the raw-string core is authored with _client and
+        // rewritten here, keeping default output byte-identical to before.
+        string Client(string text) => designerComponent ? text.Replace("_client.", "_httpClient.") : text;
         sb.AppendLine();
-        sb.AppendLine(CoreBuilders);
+        sb.AppendLine(Client(CoreBuilders));
         sb.AppendLine();
-        sb.AppendLine(SendOpen);
-        if (hasApiKeyQuery) sb.AppendLine(ApiKeyQuerySend);
-        sb.AppendLine(SendCallExecute);
-        if (hasOAuth2) sb.AppendLine(OAuth401Retry);
-        sb.AppendLine(SendClose);
-        sb.AppendLine(ExecuteOpen);
-        if (hasOAuth2) sb.AppendLine(OAuthExpiryCheck);
-        sb.AppendLine(ExecuteNewRequest);
-        if (hasApiKeyHeader) sb.AppendLine(ApiKeyHeaderSend);
-        sb.AppendLine(hasOAuth2 ? ExecuteAuthWithOAuth : ExecuteAuthWithoutOAuth);
-        sb.AppendLine(ExecuteTail);
-        if (hasOAuth2) sb.AppendLine(OAuthTokenMethods);
+        sb.AppendLine(Client(SendOpen));
+        if (hasApiKeyQuery) sb.AppendLine(Client(ApiKeyQuerySend));
+        sb.AppendLine(Client(SendCallExecute));
+        if (hasOAuth2) sb.AppendLine(Client(OAuth401Retry));
+        sb.AppendLine(Client(SendClose));
+        sb.AppendLine(Client(ExecuteOpen));
+        if (hasOAuth2) sb.AppendLine(Client(OAuthExpiryCheck));
+        sb.AppendLine(Client(ExecuteNewRequest));
+        if (hasApiKeyHeader) sb.AppendLine(Client(ApiKeyHeaderSend));
+        sb.AppendLine(Client(hasOAuth2 ? ExecuteAuthWithOAuth : ExecuteAuthWithoutOAuth));
+        sb.AppendLine(Client(ExecuteTail));
+        if (hasOAuth2) sb.AppendLine(Client(OAuthTokenMethods));
     }
+
+    /// <summary>
+    /// Standard Dispose pattern, emitted only in designerComponent mode where the
+    /// instance-level HttpClient has resources to release. Robot Studio disposes
+    /// component-tray components on teardown, which then also closes the HTTP connections.
+    /// </summary>
+    private const string DisposePattern =
+"""
+        private bool _disposed;
+
+        /// <summary>Releases the instance HttpClient. Robot Studio disposes the component on teardown. Never throws.</summary>
+        protected override void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _httpClient.Dispose();
+                }
+                _disposed = true;
+            }
+            base.Dispose(disposing);
+        }
+""";
 
     private const string CoreBuilders =
 """

@@ -9,8 +9,17 @@ release archive.
 ## Usage
 
 ```powershell
-dotnet run --project tools/RestCodeGenerator -- <swaggerPath> <apiName> <outputDirectory>
+dotnet run --project tools/RestCodeGenerator -- <swaggerPath> <apiName> <outputDirectory> [--component]
 ```
+
+Pass the optional `--component` flag (or the wrapper's `-Component` switch) to
+make the generated class derive from `System.ComponentModel.Component`,
+shaping the fallback DLL like a Robot Studio component-tray component. It also
+switches the HttpClient from the shared static to a per-instance one and emits
+the standard Dispose pattern — Robot Studio disposes tray components on
+teardown, releasing that instance's HTTP connections. This is only relevant
+when you build the DLL fallback; Script-component paste-in does not need it.
+The flag is off by default, which leaves the class line plain.
 
 The `<apiName>` becomes the class name: it is PascalCased and suffixed with
 `RestUtils`, so `pet-store` produces class `PetStoreRestUtils` in namespace
@@ -19,15 +28,20 @@ The `<apiName>` becomes the class name: it is PascalCased and suffixed with
 - `<ApiName>RestUtils.cs` — the entire component.
 - `<ApiName>RestUtils.csproj` — fallback/CI boilerplate that builds the same source.
 
-Exit code is `1` on wrong argument count, on a spec that fails to parse, or
-when the spec contains no usable operations (for example when every operation
-had a non-JSON body and was skipped); otherwise `0`.
+Exit code is `1` on wrong argument count or an unrecognized flag, on a spec
+that fails to parse, or when the spec contains no usable operations (for
+example when every operation had a non-JSON body and was skipped); otherwise
+`0`.
 
 The `scripts/Generate-RestComponent.ps1` wrapper runs the same generator and
 prints next steps:
 
 ```powershell
 ./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store
+
+# same, with the -Component switch (adds --component to the invocation:
+# Component-tray-shaped class for the DLL fallback)
+./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store -Component
 ```
 
 `-OutputDirectory` defaults to `generated/<apiName>`; everything below

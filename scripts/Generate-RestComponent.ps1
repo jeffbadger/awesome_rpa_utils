@@ -6,13 +6,18 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ApiName,
 
+    # Emit the class as `... : System.ComponentModel.Component` (Robot Studio component-tray shape).
+    [switch]$Component,
+
     [string]$OutputDirectory = "generated/$ApiName"
 )
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
-dotnet run --project (Join-Path $repositoryRoot "tools/RestCodeGenerator") -- $SwaggerPath $ApiName $OutputDirectory | Tee-Object -Variable generatorOutput
+$generatorArgs = @($SwaggerPath, $ApiName, $OutputDirectory)
+if ($Component) { $generatorArgs += "--component" }
+dotnet run --project (Join-Path $repositoryRoot "tools/RestCodeGenerator") -- @generatorArgs | Tee-Object -Variable generatorOutput
 if ($LASTEXITCODE -ne 0) { throw "RestCodeGenerator failed with exit code $LASTEXITCODE." }
 
 $fileNameBase = "$($ApiName)RestUtils"
