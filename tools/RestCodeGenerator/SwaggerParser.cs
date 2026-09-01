@@ -41,10 +41,48 @@ public static class SwaggerParser
         return maybe;
     }
 
+    /// <summary>Reads an optional string property; a missing property or a value whose
+    /// JSON type is not string yields null instead of throwing
+    /// (<c>JsonElement.GetString()</c> throws <c>InvalidOperationException</c> on
+    /// non-string values such as numbers, objects, or arrays).</summary>
+    private static string? GetStringOrNull(JsonElement parent, string name)
+    {
+        if (parent.ValueKind != JsonValueKind.Object || !parent.TryGetProperty(name, out var v) ||
+            v.ValueKind != JsonValueKind.String)
+            return null;
+        return v.GetString();
+    }
+
     public static SwaggerDoc Parse(JsonElement root)
     {
-        var title = root.GetPropertyOrNull("info")?.GetPropertyOrNull("title")?.GetString() ?? "Api";
-        var version = root.GetPropertyOrNull("info")?.GetPropertyOrNull("version")?.GetString() ?? "1.0.0";
+        var title = "Api";
+        var version = "1.0.0";
+
+        // `info` metadata — the same shape in Swagger 2.0 and OpenAPI 3.x. Direct values
+        // (not $refs), so the ~0/~1 JSON-Pointer caveat does not apply. Every field is
+        // best-effort: a missing or wrong-typed value, or a malformed sub-object,
+        // yields nulls (title/version keep their fallbacks), never a throw.
+        string? description = null, termsOfService = null,
+            contactName = null, contactEmail = null, contactUrl = null,
+            licenseName = null, licenseUrl = null;
+        if (root.GetPropertyOrNull("info") is { ValueKind: JsonValueKind.Object } info)
+        {
+            title = GetStringOrNull(info, "title") ?? "Api";
+            version = GetStringOrNull(info, "version") ?? "1.0.0";
+            description = GetStringOrNull(info, "description");
+            termsOfService = GetStringOrNull(info, "termsOfService");
+            if (info.GetPropertyOrNull("contact") is { ValueKind: JsonValueKind.Object } contact)
+            {
+                contactName = GetStringOrNull(contact, "name");
+                contactEmail = GetStringOrNull(contact, "email");
+                contactUrl = GetStringOrNull(contact, "url");
+            }
+            if (info.GetPropertyOrNull("license") is { ValueKind: JsonValueKind.Object } license)
+            {
+                licenseName = GetStringOrNull(license, "name");
+                licenseUrl = GetStringOrNull(license, "url");
+            }
+        }
 
         string? baseUrl = null;
         if (root.GetPropertyOrNull("host") is { } host)                          // Swagger 2.0
@@ -135,7 +173,16 @@ public static class SwaggerParser
                 }
             }
         }
-        return new SwaggerDoc(title, version, baseUrl, operations, ParseSecuritySchemes(root), skipped);
+        return new SwaggerDoc(title, version, baseUrl, operations, ParseSecuritySchemes(root), skipped)
+        {
+            Description = description,
+            TermsOfService = termsOfService,
+            ContactName = contactName,
+            ContactEmail = contactEmail,
+            ContactUrl = contactUrl,
+            LicenseName = licenseName,
+            LicenseUrl = licenseUrl,
+        };
     }
 
     private static List<SwaggerSecurityScheme> ParseSecuritySchemes(JsonElement root)

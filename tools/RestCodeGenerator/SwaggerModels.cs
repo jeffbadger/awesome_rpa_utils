@@ -9,7 +9,16 @@ public sealed record SwaggerDoc(
     string? DefaultBaseUrl,     // null when the spec has no concrete host/server (or a templated OA3 server URL)
     IReadOnlyList<SwaggerOperation> Operations,
     IReadOnlyList<SwaggerSecurityScheme> SecuritySchemes,
-    IReadOnlyList<string> SkippedOperations)   // "<METHOD> <path>" for non-JSON-body operations
+    IReadOnlyList<string> SkippedOperations,   // "<METHOD> <path>" for non-JSON-body operations
+
+    // ---- `info` metadata (all null when absent from the spec) ----
+    string? Description = null,
+    string? TermsOfService = null,       // spec stores it as-is: a URL string per the swagger spec
+    string? ContactName = null,          // `info.contact.{name,email,url}`, parts individually optional
+    string? ContactEmail = null,
+    string? ContactUrl = null,
+    string? LicenseName = null,          // `info.license.{name,url}`
+    string? LicenseUrl = null)
 {
     /// <summary>Alias for <see cref="SkippedOperations"/>.</summary>
     public IReadOnlyList<string> Skipped => SkippedOperations;
