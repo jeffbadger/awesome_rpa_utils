@@ -2,11 +2,34 @@
 
 `RestCodeGenerator` reads a Swagger 2.0 / OpenAPI 3.x specification and emits a
 ready-to-use Robot Studio REST component: one never-throw method per operation,
-plus a set of runtime helpers, in a single self-contained `.cs` file. The tool
-is a development utility — it is not a Robot Studio component and ships in no
-release archive.
+plus a set of runtime helpers, in a single self-contained `.cs` file. It is a
+design-time command-line tool, not a Robot Studio component itself — it never
+runs alongside a robot, only to generate or regenerate one's source.
 
 ## Usage
+
+**From a release archive.** `AwesomeRpaUtils-RestCodeGenerator.zip` (bundled
+inside each `AwesomeRpaUtils-<tfm>.zip` release) contains only the published
+tool — `RestCodeGenerator.dll`, `.deps.json`, `.runtimeconfig.json`, and this
+README — no `.csproj`, so `dotnet run --project` will not work here. Run the
+published DLL directly, wherever a .NET 10 runtime is installed:
+
+```powershell
+dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]
+```
+
+**From this repository's source.** `scripts/Generate-RestComponent.ps1` builds
+and runs the tool via `dotnet run --project`, then prints next steps:
+
+```powershell
+./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store
+
+# same, with the -Component switch (adds --component to the invocation:
+# Component-tray-shaped class for the DLL fallback)
+./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store -Component
+```
+
+Equivalently, run the generator directly:
 
 ```powershell
 dotnet run --project tools/RestCodeGenerator -- <swaggerPath> <apiName> <outputDirectory> [--component]
@@ -32,17 +55,6 @@ Exit code is `1` on wrong argument count or an unrecognized flag, on a spec
 that fails to parse, or when the spec contains no usable operations (for
 example when every operation had a non-JSON body and was skipped); otherwise
 `0`.
-
-The `scripts/Generate-RestComponent.ps1` wrapper runs the same generator and
-prints next steps:
-
-```powershell
-./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store
-
-# same, with the -Component switch (adds --component to the invocation:
-# Component-tray-shaped class for the DLL fallback)
-./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store -Component
-```
 
 `-OutputDirectory` defaults to `generated/<apiName>`; everything below
 `generated/` is git-ignored.
@@ -73,7 +85,7 @@ Both paths need only the .NET SDK; the emitted project targets
 | **Non-JSON bodies** (`multipart`, form-urlencoded, binary) | Operation **skipped**, listed in the auto-generated comment at the top of the file |
 | File-level / path-level `$ref` parameters | Resolved to their definition before parameter extraction |
 | OAuth2 / API-key security schemes | Parsed into scheme-specific auth helpers — see [Authentication](#authentication) |
-| OA3 `servers[].url` with `{variables}` or relative (e.g. petstore's `/api/v3`) | No default base URL — the first `SetBaseUrl` call is mandatory |
+| OA3 `servers[].url` with `{variables}` or relative (e.g. petstore's `/api/v3`) | No default base URL — setting the `BaseUrl` property is mandatory |
 | HEAD / OPTIONS / DELETE (no body) | Same method shape minus `bodyJson` |
 | 4xx/5xx responses | Transport success (`true`), visible via the `statusCode` out |
 | `operationId` naming, collisions, reserved names | Mapped by `MethodNameMapper` (see below) |
@@ -88,33 +100,49 @@ Helpers are emitted from the spec's declared `securityDefinitions` (Swagger
 2.0) or `components.securitySchemes` (OpenAPI 3.x). The always-present baseline
 also covers specs that declare nothing.
 
-**Always present, in every generated component (all never-throw, `bool` +
+Static configuration — values that are typically known at design time rather
+than computed mid-flow — is exposed as plain public **properties** (settable
+directly on the component, e.g. in Robot Studio's property grid, with no
+workflow step needed) instead of `Set*` methods. Runtime auth *modes*, which
+are mutually exclusive and often populated from a vault at flow time, stay
+`Set*` methods so they keep the never-throw `bool` + `out string message`
+contract.
+
+**Design-time properties, always present (plain get/set, never throw — no
+`out message`, invalid input is clamped/normalized instead of rejected):**
+
+| Property | Purpose |
+|---|---|
+| `BaseUrl` | Required when the spec's base URL was templated; the concrete base URL from the spec is prefilled. Trailing slashes are trimmed |
+| `TimeoutSeconds` | Request timeout; clamped to 1–600 (default 30) |
+| `LastStatusCode` | Read-only `int`; `0` before any call |
+
+**Always-present runtime auth helpers (all never-throw, `bool` +
 `out string message`):**
 
 | Helper | Purpose |
 |---|---|
-| `SetBaseUrl(url)` | Required when the spec's base URL was templated; the concrete base URL from the spec is prefilled |
 | `SetBearerAuthentication(token)` | Raw bearer token on the `Authorization` header |
 | `SetBasicAuthentication(username, password)` | HTTP Basic |
 | `SetCustomAuthentication(headerValue)` | Any other scheme — sets the raw `Authorization` value |
 | `ClearAuthentication()` | Drops every configured credential |
-| `SetTimeoutSeconds(seconds)` | Request timeout; rejected outside 1–600 (default 30) |
-| `LastStatusCode` | Designer-readable `int` property; `0` before any call |
 
 **Scheme-conditional — emitted only when the spec declares a matching scheme:**
 
-| Declared scheme | Generated helper |
+| Declared scheme | Generated surface |
 |---|---|
 | `http basic` / Swagger 2.0 `basic` | `SetBasicAuthentication(username, password)` |
 | `http bearer` | `SetBearerAuthentication(token)` |
-| `apiKey` `in: header` | `SetApiKeyAuthentication(name, value)` — sent as that named header on every call |
-| `apiKey` `in: query` | `SetApiKeyQueryAuthentication(name, value)` — appended to every call's query string |
-| `oauth2` with `client_credentials` flow | `SetOAuth2ClientCredentials(clientId, clientSecret, tokenUrl)` |
+| `apiKey` `in: header` | `ApiKeyHeaderName` / `ApiKeyHeaderValue` properties — sent as that named header on every call |
+| `apiKey` `in: query` | `ApiKeyQueryName` / `ApiKeyQueryValue` properties — appended to every call's query string |
+| `oauth2` with `client_credentials` flow | `OAuthClientId` / `OAuthClientSecret` / `OAuthTokenUrl` properties |
 
-`SetOAuth2ClientCredentials` form-POSTs to the token endpoint and caches the
-access token, refreshing it automatically before expiry (30-second safety
-margin; a 5-minute token lifetime is assumed when the spec specifies no
-`expires_in`) and retrying a call once, silently, after a 401.
+The OAuth2 client-credentials properties form-POST to the token endpoint and
+cache the access token, refreshing it automatically before expiry (30-second
+safety margin; a 5-minute token lifetime is assumed when the spec specifies no
+`expires_in`) and retrying a call once, silently, after a 401. Setting any of
+the three properties invalidates the cached token so the next call
+re-authenticates.
 
 **Worked example.** Declaring this in the spec:
 
@@ -124,11 +152,12 @@ margin; a 5-minute token lifetime is assumed when the spec specifies no
 }
 ```
 
-generates the `SetApiKeyAuthentication` helper, called with the header name
-from the spec and the key value supplied at runtime:
+generates the `ApiKeyHeaderName` / `ApiKeyHeaderValue` properties, set with the
+header name from the spec and the key value supplied at runtime:
 
 ```csharp
-ok = petStoreRestUtils.SetApiKeyAuthentication("X-API-Key", apiKeyValue, out message);
+petStoreRestUtils.ApiKeyHeaderName = "X-API-Key";
+petStoreRestUtils.ApiKeyHeaderValue = apiKeyValue;
 ```
 
 **Unsupported — no helper generated**, listed as unsupported in the generated
@@ -161,8 +190,9 @@ One method per operation, with a fixed shape per HTTP-method group:
 - Method names come from `operationId` (or verb + path when absent) and are
   PascalCased. Collisions are resolved by numeric suffix — `Name2`, `Name3` —
   so the file never contains two same-shaped overloads, which would be
-  unselectable on the designer. Helper names (`SetBaseUrl`, `HeaderBuilder`,
-  `QueryBuilder`, and the rest) are reserved and never collide.
+  unselectable on the designer. Helper and property names (`BaseUrl`,
+  `HeaderBuilder`, `QueryBuilder`, and the rest) are reserved and never
+  collide.
 
 ## API metadata
 

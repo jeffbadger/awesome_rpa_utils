@@ -36,10 +36,9 @@ public static class ComponentRenderer
         AppendNamespaceAndClass(sb, doc, @namespace, className, designerComponent);
         AppendFields(sb, doc, hasApiKeyHeader, hasApiKeyQuery, hasOAuth2, designerComponent);
         sb.AppendLine();
+        sb.AppendLine(DesignTimeProperties(hasApiKeyHeader, hasApiKeyQuery, hasOAuth2));
+        sb.AppendLine();
         sb.AppendLine(AlwaysPresentHelpers(hasApiKeyHeader, hasApiKeyQuery, hasOAuth2));
-        if (hasApiKeyHeader) sb.AppendLine("\n" + ApiKeyHeaderHelper);
-        if (hasApiKeyQuery) sb.AppendLine("\n" + ApiKeyQueryHelper);
-        if (hasOAuth2) sb.AppendLine("\n" + OAuth2Helper);
         AppendEndpointMethods(sb, doc);
         AppendPrivateCore(sb, hasApiKeyHeader, hasApiKeyQuery, hasOAuth2, designerComponent);
         if (designerComponent) sb.AppendLine("\n" + DisposePattern);
@@ -115,6 +114,9 @@ public static class ComponentRenderer
         sb.AppendLine("    /// methods. Every public method follows the Never-Throws Standard: success");
         sb.AppendLine("    /// returns true with message null; failure returns false with a reason.");
         sb.AppendLine("    /// Pass \"\" for any optional string parameter to omit it.");
+        sb.AppendLine("    /// BaseUrl, TimeoutSeconds, and any scheme-specific credentials are public");
+        sb.AppendLine("    /// properties — set them (design time or at the start of a run) before calling");
+        sb.AppendLine("    /// an endpoint method.");
         sb.AppendLine("    /// </summary>");
         var remarks = ClassRemarksLines(doc);
         if (remarks.Count > 0)
@@ -248,14 +250,6 @@ public static class ComponentRenderer
 """
         // ---- Always-present helpers (never throws) ----
 
-        /// <summary>Sets the base URL used for every request. Required when BaseUrl was templated in the source spec. Never throws.</summary>
-        public bool SetBaseUrl(string url, out string message)
-        {
-            if (string.IsNullOrWhiteSpace(url)) { message = "SetBaseUrl: url must be a non-empty string."; return false; }
-            _baseUrl = url.TrimEnd('/');
-            message = null; return true;
-        }
-
         /// <summary>Sets the Authorization header to "Bearer &lt;token&gt;". Never throws.</summary>
         public bool SetBearerAuthentication(string token, out string message)
         {
@@ -297,14 +291,6 @@ public static class ComponentRenderer
             message = null; return true;
         }
 
-        /// <summary>Sets the request timeout in seconds (1–600). Never throws.</summary>
-        public bool SetTimeoutSeconds(int seconds, out string message)
-        {
-            if (seconds < 1 || seconds > 600) { message = "SetTimeoutSeconds: seconds must be between 1 and 600."; return false; }
-            _timeoutSeconds = seconds;
-            message = null; return true;
-        }
-
         /// <summary>The HTTP status code of the most recent endpoint call; 0 before the first call. Never throws.</summary>
         public int LastStatusCode
         {
@@ -312,49 +298,122 @@ public static class ComponentRenderer
         }
 """;
 
-    // ---- Scheme-conditional auth helpers ----
+    // ---- Design-time properties ----
+
+    /// <summary>
+    /// Public properties for the static, usually-known-at-design-time configuration:
+    /// base URL, timeout, and (when declared) the scheme-conditional credential fields.
+    /// These are plain get/set — Robot Studio's property grid can set them at design
+    /// time without a workflow step — so they clamp/normalize silently instead of
+    /// returning a bool + message the way the runtime auth-mode helpers do.
+    /// </summary>
+    private static string DesignTimeProperties(bool hasApiKeyHeader, bool hasApiKeyQuery, bool hasOAuth2)
+    {
+        var sb = new StringBuilder();
+        sb.Append(BaseUrlAndTimeoutProperties);
+        if (hasApiKeyHeader) sb.Append("\n" + ApiKeyHeaderProperties);
+        if (hasApiKeyQuery) sb.Append("\n" + ApiKeyQueryProperties);
+        if (hasOAuth2) sb.Append("\n" + OAuth2Properties);
+        return sb.ToString();
+    }
+
+    private const string BaseUrlAndTimeoutProperties =
+"""
+        // ---- Design-time properties (never throw; set directly, no out-message) ----
+
+        /// <summary>The base URL prefixed to every request path. Required when the source
+        /// spec had no concrete base URL (e.g. a templated OA3 server) — the class doc
+        /// comment then flags it as mandatory. Trailing slashes are trimmed. Never throws.</summary>
+        [System.ComponentModel.Description("The base URL prefixed to every request path.")]
+        public string BaseUrl
+        {
+            get { return _baseUrl; }
+            set { _baseUrl = string.IsNullOrWhiteSpace(value) ? "" : value.TrimEnd('/'); }
+        }
+
+        /// <summary>Request timeout in seconds; silently clamped to 1–600 (default 30). Never throws.</summary>
+        [System.ComponentModel.Description("Request timeout in seconds (1-600, default 30).")]
+        public int TimeoutSeconds
+        {
+            get { return _timeoutSeconds; }
+            set { _timeoutSeconds = value < 1 ? 1 : (value > 600 ? 600 : value); }
+        }
+""";
 
     /// <summary>Emitted when the spec declares an apiKey scheme with `in: header`.</summary>
-    private const string ApiKeyHeaderHelper =
+    private const string ApiKeyHeaderProperties =
 """
-        /// <summary>Sets an API key sent as a named header on every call. Never throws.</summary>
-        public bool SetApiKeyAuthentication(string name, string value, out string message)
+        /// <summary>Name of the header carrying the API key sent on every call. Never throws.</summary>
+        [System.ComponentModel.Description("Name of the header carrying the API key sent on every call.")]
+        public string ApiKeyHeaderName
         {
-            if (string.IsNullOrWhiteSpace(name)) { message = "SetApiKeyAuthentication: name must be non-empty."; return false; }
-            _apiKeyHeaderName = name.Trim();
-            _apiKeyHeaderValue = value ?? "";
-            message = null; return true;
+            get { return _apiKeyHeaderName; }
+            set { _apiKeyHeaderName = value ?? ""; }
+        }
+
+        /// <summary>Value of the API key sent as that named header on every call. Never throws.</summary>
+        [System.ComponentModel.Description("Value of the API key sent as a named header on every call.")]
+        public string ApiKeyHeaderValue
+        {
+            get { return _apiKeyHeaderValue; }
+            set { _apiKeyHeaderValue = value ?? ""; }
         }
 """;
 
     /// <summary>Emitted when the spec declares an apiKey scheme with `in: query`.</summary>
-    private const string ApiKeyQueryHelper =
+    private const string ApiKeyQueryProperties =
 """
-        /// <summary>Sets an API key appended to the query string of every call. Never throws.</summary>
-        public bool SetApiKeyQueryAuthentication(string name, string value, out string message)
+        /// <summary>Name of the query-string parameter carrying the API key appended to every call. Never throws.</summary>
+        [System.ComponentModel.Description("Name of the query parameter carrying the API key appended to every call.")]
+        public string ApiKeyQueryName
         {
-            if (string.IsNullOrWhiteSpace(name)) { message = "SetApiKeyQueryAuthentication: name must be non-empty."; return false; }
-            _apiKeyQueryName = name.Trim();
-            _apiKeyQueryValue = value ?? "";
-            message = null; return true;
+            get { return _apiKeyQueryName; }
+            set { _apiKeyQueryName = value ?? ""; }
+        }
+
+        /// <summary>Value of the API key appended to the query string of every call. Never throws.</summary>
+        [System.ComponentModel.Description("Value of the API key appended to the query string of every call.")]
+        public string ApiKeyQueryValue
+        {
+            get { return _apiKeyQueryValue; }
+            set { _apiKeyQueryValue = value ?? ""; }
         }
 """;
 
     /// <summary>Emitted when the spec declares an oauth2 scheme with the client-credentials (or "application") flow.</summary>
-    private const string OAuth2Helper =
+    private const string OAuth2Properties =
 """
-        /// <summary>Configures OAuth2 client-credentials authentication. The access token is fetched on the
-        /// next call, cached, and refreshed automatically when expired or after a single 401-then-retry. Never throws.</summary>
-        public bool SetOAuth2ClientCredentials(string clientId, string clientSecret, string tokenUrl, out string message)
+        /// <summary>OAuth2 client-credentials client ID. Setting it invalidates any cached access
+        /// token, so the next call re-authenticates against the token endpoint. Never throws.</summary>
+        [System.ComponentModel.Description("OAuth2 client-credentials client ID.")]
+        public string OAuthClientId
         {
-            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret) || string.IsNullOrWhiteSpace(tokenUrl))
-            { message = "SetOAuth2ClientCredentials: clientId, clientSecret, and tokenUrl must all be non-empty."; return false; }
-            _oauthClientId = clientId.Trim();
-            _oauthClientSecret = clientSecret;
-            _oauthTokenUrl = tokenUrl.Trim();
+            get { return _oauthClientId; }
+            set { _oauthClientId = value ?? ""; InvalidateOAuthToken(); }
+        }
+
+        /// <summary>OAuth2 client-credentials client secret. Setting it invalidates any cached access
+        /// token, so the next call re-authenticates against the token endpoint. Never throws.</summary>
+        [System.ComponentModel.Description("OAuth2 client-credentials client secret.")]
+        public string OAuthClientSecret
+        {
+            get { return _oauthClientSecret; }
+            set { _oauthClientSecret = value ?? ""; InvalidateOAuthToken(); }
+        }
+
+        /// <summary>OAuth2 token endpoint URL. Setting it invalidates any cached access token, so
+        /// the next call re-authenticates against the (new) token endpoint. Never throws.</summary>
+        [System.ComponentModel.Description("OAuth2 token endpoint URL.")]
+        public string OAuthTokenUrl
+        {
+            get { return _oauthTokenUrl; }
+            set { _oauthTokenUrl = value ?? ""; InvalidateOAuthToken(); }
+        }
+
+        private void InvalidateOAuthToken()
+        {
             _oauthAccessToken = "";
             _oauthTokenExpiresAtUtc = System.DateTime.MinValue;
-            message = null; return true;
         }
 """;
 
@@ -553,7 +612,7 @@ public static class ComponentRenderer
             statusCode = 0;
             if (string.IsNullOrEmpty(_baseUrl))
             {
-                message = "Base URL is not set. Call SetBaseUrl first.";
+                message = "Base URL is not set. Set the BaseUrl property first.";
                 return false;
             }
 """;

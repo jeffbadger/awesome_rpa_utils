@@ -104,7 +104,7 @@ public static class SwaggerParser
             // request URIs. A relative one (e.g. petstore-openapi.json's "/api/v3") has
             // no origin, and a templated one ({variable} — which Uri.TryCreate accepts
             // when the braces sit in the path) has no concrete value in the spec, so the
-            // generated component must require an explicit SetBaseUrl instead.
+            // generated component must require an explicit BaseUrl instead.
             baseUrl = url != null &&
                       !url.Contains('{', StringComparison.Ordinal) &&
                       Uri.TryCreate(url, UriKind.Absolute, out var abs) &&
