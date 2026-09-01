@@ -243,6 +243,34 @@ namespace RestCodeGenerator.Tests
         }
 
         [Fact]
+        public void Parse_TemplatedAbsoluteServerUrl_YieldsNullBaseUrl_AbsoluteWithPathIsKept()
+        {
+            // Uri.TryCreate accepts braces in the path, so a templated absolute URL would
+            // otherwise leak through as a bogus DefaultBaseUrl; the '{' guard keeps it null.
+            // (The templated-host case was already covered by Parse_TemplatedOa3Server_….)
+            var templated = ParseJson("""
+                {
+                  "openapi": "3.0.0",
+                  "info": { "title": "T", "version": "1.0.0" },
+                  "servers": [ { "url": "https://api.example.com/v{version}" } ],
+                  "paths": {}
+                }
+                """);
+            Assert.Null(templated.DefaultBaseUrl);
+
+            // an absolute http(s) URL — even with a path — is the one usable shape
+            var absolute = ParseJson("""
+                {
+                  "openapi": "3.0.0",
+                  "info": { "title": "T", "version": "1.0.0" },
+                  "servers": [ { "url": "https://petstore.example/api/v3" } ],
+                  "paths": {}
+                }
+                """);
+            Assert.Equal("https://petstore.example/api/v3", absolute.DefaultBaseUrl);
+        }
+
+        [Fact]
         public void OfficialPetstore_SecuritySchemes_ApiKeyHeader_ImplicitOauth2Unsupported()
         {
             var doc = ParseOfficialPetstore();
