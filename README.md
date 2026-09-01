@@ -61,7 +61,7 @@ this repository, run from PowerShell:
 ./scripts/Package-Release.ps1
 ```
 
-The command creates three archives:
+The command creates four archives:
 
 - `artifacts/AwesomeRpaUtils-net8.0.zip` contains the ten project DLLs built
   for `net8.0-windows`.
@@ -69,8 +69,13 @@ The command creates three archives:
   `net10.0-windows`.
 - `artifacts/AwesomeRpaUtils-SupportLibraries.zip` contains the three NuGet
   runtime DLLs needed by ServiceUtils (shared by both target frameworks).
+- `artifacts/AwesomeRpaUtils-RestCodeGenerator.zip` contains the design-time
+  [REST code generator](tools/README.md) — `RestCodeGenerator.dll` plus its
+  usage README — run with
+  `dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]`.
+  Pass an empty `-GeneratorArchivePath` to skip this archive.
 
-All three exclude test infrastructure, PDBs, and XML documentation. To
+All four exclude test infrastructure, PDBs, and XML documentation. To
 package an existing Release build or choose other output paths, use:
 
 ```powershell
@@ -78,6 +83,10 @@ package an existing Release build or choose other output paths, use:
   -ArchivePath "artifacts/AwesomeRpaUtils-{tfm}-v1.0.0.zip" `
   -SupportArchivePath artifacts/AwesomeRpaUtils-SupportLibraries-v1.0.0.zip
 ```
+
+With `-NoBuild`, the generator archive is staged from the tool's existing
+`tools/RestCodeGenerator/bin/<Configuration>/net10.0` output rather than
+re-published, since the generator lives outside `src/AwesomeRpaUtils.sln`.
 
 ### Packaging documentation
 

@@ -7,6 +7,8 @@ param(
 
     [string]$SupportArchivePath = "artifacts/AwesomeRpaUtils-SupportLibraries.zip",
 
+    [string]$GeneratorArchivePath = "artifacts/AwesomeRpaUtils-RestCodeGenerator.zip",
+
     [switch]$NoBuild
 )
 
@@ -55,6 +57,18 @@ $supportAssemblies = @(
     "system.serviceprocess.servicecontroller/9.0.0/runtimes/win/lib/net9.0/System.ServiceProcess.ServiceController.dll"
     "system.diagnostics.eventlog/9.0.0/runtimes/win/lib/net9.0/System.Diagnostics.EventLog.dll"
     "system.diagnostics.eventlog/9.0.0/runtimes/win/lib/net9.0/System.Diagnostics.EventLog.Messages.dll"
+)
+
+# The RestCodeGenerator is a design-time command-line tool, not a component the
+# Robot Studio runtime loads, so it ships in its own archive rather than alongside
+# the component DLLs. It targets net10.0 only and runs with
+# `dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]`.
+# The archive holds exactly the three files needed to run it that way plus the
+# tool's README; PDBs, ref assemblies, and build intermediates are left out.
+$generatorFiles = @(
+    "RestCodeGenerator.dll"
+    "RestCodeGenerator.deps.json"
+    "RestCodeGenerator.runtimeconfig.json"
 )
 
 if (-not $NoBuild) {
@@ -137,5 +151,66 @@ try {
 finally {
     if (Test-Path -LiteralPath $supportStagingDirectory) {
         Remove-Item -LiteralPath $supportStagingDirectory -Recurse -Force
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($GeneratorArchivePath)) {
+    Write-Host "GeneratorArchivePath is empty; skipping the RestCodeGenerator archive."
+}
+else {
+    # Unlike the components, the generator lives outside src/AwesomeRpaUtils.sln,
+    # so the solution build above never produces its output. -NoBuild therefore
+    # reuses whatever the tool's own bin output already holds instead of compiling.
+    $generatorProjectPath = Join-Path $repositoryRoot "tools/RestCodeGenerator/RestCodeGenerator.csproj"
+    $generatorArchiveFullPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $GeneratorArchivePath))
+    $generatorStagingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("AwesomeRpaUtils-Generator-" + [guid]::NewGuid().ToString("N"))
+    $generatorBuildDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("AwesomeRpaUtils-Generator-Build-" + [guid]::NewGuid().ToString("N"))
+
+    try {
+        if ($NoBuild) {
+            $generatorOutputDirectory = Join-Path $repositoryRoot "tools/RestCodeGenerator/bin/$Configuration/net10.0"
+            if (-not (Test-Path -LiteralPath (Join-Path $generatorOutputDirectory "RestCodeGenerator.dll") -PathType Leaf)) {
+                throw "Generator output was not found at '$generatorOutputDirectory'. Build the generator first or omit -NoBuild."
+            }
+        }
+        else {
+            $generatorOutputDirectory = $generatorBuildDirectory
+            & dotnet publish $generatorProjectPath --configuration $Configuration --framework net10.0 -p:UseAppHost=false --output $generatorOutputDirectory
+            if ($LASTEXITCODE -ne 0) {
+                throw "RestCodeGenerator publish failed with exit code $LASTEXITCODE."
+            }
+        }
+
+        New-Item -ItemType Directory -Path $generatorStagingDirectory | Out-Null
+
+        foreach ($generatorFile in $generatorFiles) {
+            $sourcePath = Join-Path $generatorOutputDirectory $generatorFile
+            if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+                throw "Expected generator file '$generatorFile' was not found at '$generatorOutputDirectory'."
+            }
+
+            Copy-Item -LiteralPath $sourcePath -Destination $generatorStagingDirectory
+        }
+
+        Copy-Item -LiteralPath (Join-Path $repositoryRoot "tools/README.md") -Destination (Join-Path $generatorStagingDirectory "README.md")
+
+        $generatorArchiveDirectory = Split-Path -Parent $generatorArchiveFullPath
+        New-Item -ItemType Directory -Path $generatorArchiveDirectory -Force | Out-Null
+
+        if (Test-Path -LiteralPath $generatorArchiveFullPath) {
+            Remove-Item -LiteralPath $generatorArchiveFullPath -Force
+        }
+
+        Compress-Archive -Path (Join-Path $generatorStagingDirectory "*") -DestinationPath $generatorArchiveFullPath
+        Write-Host "Created $generatorArchiveFullPath with the RestCodeGenerator tool ($($generatorFiles.Count) files plus README)."
+    }
+    finally {
+        if (Test-Path -LiteralPath $generatorStagingDirectory) {
+            Remove-Item -LiteralPath $generatorStagingDirectory -Recurse -Force
+        }
+
+        if (Test-Path -LiteralPath $generatorBuildDirectory) {
+            Remove-Item -LiteralPath $generatorBuildDirectory -Recurse -Force
+        }
     }
 }
