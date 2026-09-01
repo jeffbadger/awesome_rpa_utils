@@ -27,16 +27,17 @@ $releaseAssemblies = @(
     "CommandLineAutomation.dll"
     "ServiceAutomation.dll"
     "EventAutomation.dll"
+    "EventLogAutomation.dll"
 )
 
 # Every component project multi-targets these two TFMs (OcrUtils uses the versioned
 # net8.0-windows10.0.19041.0 / net10.0-windows10.0.19041.0 monikers instead, for its
 # WinRT OCR dependency, hence the wildcard rather than an exact folder-name match).
-# Each channel becomes its own self-contained archive on the release page: the ten
+# Each channel becomes its own self-contained archive on the release page: the
 # component DLLs for that TFM at the archive root plus every framework-shared or
 # design-time artifact bundled inside as its own zip, so a channel archive alone
 # is a complete release.
-# Each channel becomes its own self-contained archive on the release page: the ten
+# Each channel becomes its own self-contained archive on the release page: the
 # component DLLs for that TFM at the archive root plus every framework-shared or
 # design-time artifact bundled inside as its own zip, so a channel archive alone
 # is a complete release. SupportTfm picks the Windows support-DLL flavor embedded
