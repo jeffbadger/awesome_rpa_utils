@@ -42,9 +42,9 @@ namespace RestCodeGenerator.Tests
         [Fact]
         public void Map_ReservesHelperMethodNames()
         {
-            var ops = new[] { Op("GET", "/x", "setBaseUrl") };
+            var ops = new[] { Op("GET", "/x", "baseUrl") };
             var map = MethodNameMapper.Map(ops);
-            Assert.Equal("SetBaseUrl2", map[ops[0]]);
+            Assert.Equal("BaseUrl2", map[ops[0]]);
         }
     }
 }

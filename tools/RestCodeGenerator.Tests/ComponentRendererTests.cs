@@ -78,13 +78,18 @@ namespace RestCodeGenerator.Tests
         public void Render_EmitsAlwaysPresentHelpers_AndNeverThrowsContract()
         {
             var output = ComponentRenderer.Render(SwaggerParser.ParseFile(Petstore), "pet-store");
-            Assert.Contains("public bool SetBaseUrl(string url, out string message)", output.Source);
+            // BaseUrl/TimeoutSeconds are design-time properties, not never-throw Set* methods:
+            Assert.Contains("public string BaseUrl", output.Source);
+            Assert.Contains("public int TimeoutSeconds", output.Source);
+            Assert.DoesNotContain("SetBaseUrl", output.Source);
+            Assert.DoesNotContain("SetTimeoutSeconds", output.Source);
             Assert.Contains("public bool SetBearerAuthentication(string token, out string message)", output.Source);
             Assert.Contains("public bool SetCustomAuthentication(string headerValue, out string message)", output.Source);
-            // Petstore declares an apiKey-in-header scheme ("api_key") → its scheme-specific helper is emitted:
-            Assert.Contains("public bool SetApiKeyAuthentication(string name, string value, out string message)", output.Source);
-            // ...but its oauth2 scheme is implicit-flow → "unsupported" → no client-credentials helper:
-            Assert.DoesNotContain("SetOAuth2ClientCredentials", output.Source);
+            // Petstore declares an apiKey-in-header scheme ("api_key") → its scheme-specific properties are emitted:
+            Assert.Contains("public string ApiKeyHeaderName", output.Source);
+            Assert.Contains("public string ApiKeyHeaderValue", output.Source);
+            // ...but its oauth2 scheme is implicit-flow → "unsupported" → no client-credentials properties:
+            Assert.DoesNotContain("OAuthClientId", output.Source);
             // scheme-conditional marker lines must never survive rendering (CRLF-safe replacement):
             Assert.DoesNotContain("//[[", output.Source);
         }
@@ -93,8 +98,13 @@ namespace RestCodeGenerator.Tests
         public void Render_EmitsQueryApiKeyAndClientCredentialsScheme_Machinery()
         {
             var output = ComponentRenderer.Render(SwaggerParser.ParseFile(AuthApi), "auth-api");
-            Assert.Contains("public bool SetApiKeyQueryAuthentication(string name, string value, out string message)", output.Source);
-            Assert.Contains("public bool SetOAuth2ClientCredentials(string clientId, string clientSecret, string tokenUrl, out string message)", output.Source);
+            Assert.Contains("public string ApiKeyQueryName", output.Source);
+            Assert.Contains("public string ApiKeyQueryValue", output.Source);
+            Assert.Contains("public string OAuthClientId", output.Source);
+            Assert.Contains("public string OAuthClientSecret", output.Source);
+            Assert.Contains("public string OAuthTokenUrl", output.Source);
+            // setting any OAuth2 config property invalidates the cached access token:
+            Assert.Contains("set { _oauthClientId = value ?? \"\"; InvalidateOAuthToken(); }", output.Source);
             Assert.Contains("private bool TryRefreshOAuth2Token(out string message)", output.Source);
             Assert.Contains(
                 "if (ok && statusCode == 401 && _oauthTokenUrl != \"\" && TryRefreshOAuth2Token(out _))",

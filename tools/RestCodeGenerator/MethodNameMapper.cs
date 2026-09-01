@@ -8,10 +8,10 @@ public static class MethodNameMapper
 {
     public static IReadOnlyList<string> Reserved = new[]
     {
-        "SetBaseUrl", "SetBearerAuthentication", "SetBasicAuthentication",
-        "SetCustomAuthentication", "SetApiKeyAuthentication",
-        "SetApiKeyQueryAuthentication", "SetOAuth2ClientCredentials",
-        "ClearAuthentication", "SetTimeoutSeconds", "LastStatusCode",
+        "BaseUrl", "TimeoutSeconds", "SetBearerAuthentication", "SetBasicAuthentication",
+        "SetCustomAuthentication", "ApiKeyHeaderName", "ApiKeyHeaderValue",
+        "ApiKeyQueryName", "ApiKeyQueryValue", "OAuthClientId", "OAuthClientSecret",
+        "OAuthTokenUrl", "ClearAuthentication", "LastStatusCode",
         "HeaderBuilder", "QueryBuilder",
     };
 
