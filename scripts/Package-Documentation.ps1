@@ -6,7 +6,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$archiveFullPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $ArchivePath))
+# Join-Path always appends the child to the parent, even when the child is
+# already a rooted path on Unix, so resolve rooted -ArchivePath values
+# directly rather than joining them onto the current location.
+if ([System.IO.Path]::IsPathRooted($ArchivePath)) {
+    $archiveFullPath = [System.IO.Path]::GetFullPath($ArchivePath)
+}
+else {
+    $archiveFullPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $ArchivePath))
+}
 
 # Returns $null for a path outside the repository root (e.g. a link like
 # "../../releases" that climbs above it) rather than throwing - callers must

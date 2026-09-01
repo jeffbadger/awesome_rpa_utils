@@ -47,41 +47,46 @@ collisions). Each multi-targeted project builds both `net8.0-windows` and
 in a single `dotnet build` invocation — no extra flags needed.
 
 Prebuilt DLLs for each tagged version are available on the
-[Releases](../../releases) page as separate `net8.0`/`net10.0` archives; pick
-the one matching the .NET runtime your Pega Robot Runtime or consuming app
-uses. A documentation archive ships alongside them (see below) so the method
+[Releases](../../releases) page as `net8.0`/`net10.0` archives; pick the one
+matching the .NET runtime your Pega Robot Runtime or consuming app uses.
+Each archive is self-contained — it also bundles the support libraries, the
+REST code generator, and a documentation archive (see below) — so the method
 reference is available without needing the repository.
 
 ## Packaging a release
 
-To build and create ZIPs containing only the ten automation DLLs produced by
-this repository, run from PowerShell:
+To build and create everything this repository produces, run from PowerShell:
 
 ```powershell
 ./scripts/Package-Release.ps1
 ```
 
-The command creates four archives:
+The command creates two self-contained archives — one per target framework,
+each holding the complete release:
 
 - `artifacts/AwesomeRpaUtils-net8.0.zip` contains the ten project DLLs built
-  for `net8.0-windows`.
-- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same ten DLLs built for
-  `net10.0-windows`.
-- `artifacts/AwesomeRpaUtils-SupportLibraries.zip` contains the three NuGet
-  runtime DLLs needed by ServiceUtils (shared by both target frameworks).
-- `artifacts/AwesomeRpaUtils-RestCodeGenerator.zip` contains the design-time
-  [REST code generator](tools/README.md) — `RestCodeGenerator.dll` plus its
-  usage README — run with
-  `dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]`.
-  Pass an empty `-GeneratorArchivePath` to skip this archive.
+  for `net8.0-windows` plus three bundled archives:
+  `AwesomeRpaUtils-SupportLibraries.zip` (the three NuGet runtime DLLs needed
+  by ServiceUtils, packaged in the flavor matching the enclosing archive's
+  target framework), `AwesomeRpaUtils-RestCodeGenerator.zip` (the design-time
+  [REST code generator](tools/README.md)), and
+  `AwesomeRpaUtils-Documentation.zip` (the documentation bundle described
+  below).
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same ten DLLs built
+  for `net10.0-windows` with the same three bundled archives (the support
+  DLLs in the newest flavor the packages ship, which the .NET 10 runtime
+  loads; the .NET 8 runtime only loads the `net8.0` flavor).
 
-All four exclude test infrastructure, PDBs, and XML documentation. To
-package an existing Release build or choose other output paths, use:
+Everything excludes test infrastructure, PDBs, and XML documentation. The
+`RestCodeGenerator` targets .NET 10, so it is runnable via
+`dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]`
+wherever a .NET 10 runtime is installed, regardless of which archive it came
+from. To package an existing Release build or choose another output path,
+use:
 
 ```powershell
 ./scripts/Package-Release.ps1 -NoBuild `
-  -ArchivePath "artifacts/AwesomeRpaUtils-{tfm}-v1.0.0.zip" `
-  -SupportArchivePath artifacts/AwesomeRpaUtils-SupportLibraries-v1.0.0.zip
+  -ArchivePath "artifacts/AwesomeRpaUtils-{tfm}-v1.0.0.zip"
 ```
 
 With `-NoBuild`, the generator archive is staged from the tool's existing
