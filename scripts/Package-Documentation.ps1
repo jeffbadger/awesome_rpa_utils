@@ -23,12 +23,16 @@ function Get-RepoRelativePath([string]$FullPath) {
 }
 
 # This is the documentation release contract: only the method-reference pages
-# belong in the bundle - the top-level README, every component's README plus
-# its Documentation/*.md worked examples, and project-docs/ (coding standards
+# belong in the bundle - the top-level README (which links to the tool
+# documentation), tools/README.md, every component's README plus its
+# Documentation/*.md worked examples, and project-docs/ (coding standards
 # and Pega usability reviews). Source files, LICENSE, TESTING.md, build config,
 # and the repo's own GitHub URLs are deliberately excluded, and any link to
 # something outside this set gets unlinked (not left dangling) below.
-$topLevelReadme = Join-Path $repositoryRoot "README.md"
+$topLevelReadmes = @(
+    Join-Path $repositoryRoot "README.md"
+    Join-Path $repositoryRoot "tools/README.md"
+) | Where-Object { Test-Path -LiteralPath $_ }
 $componentReadmes = @(
     Get-ChildItem -Path (Join-Path $repositoryRoot "src") -Directory |
         ForEach-Object { Join-Path $_.FullName "README.md" } |
@@ -44,7 +48,7 @@ $projectDocsPages = @(
         Select-Object -ExpandProperty FullName
 )
 
-$allDocFiles = @($topLevelReadme) + $componentReadmes + $documentationPages + $projectDocsPages
+$allDocFiles = $topLevelReadmes + $componentReadmes + $documentationPages + $projectDocsPages
 $bundledRelativePaths = [System.Collections.Generic.HashSet[string]]::new(
     [string[]]($allDocFiles | ForEach-Object { Get-RepoRelativePath $_ }),
     [System.StringComparer]::OrdinalIgnoreCase)

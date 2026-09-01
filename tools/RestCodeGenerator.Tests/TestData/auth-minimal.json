@@ -1,0 +1,29 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "AuthApi", "version": "2.0.0" },
+  "host": "auth.example.com",
+  "securityDefinitions": {
+    "query_key": { "type": "apiKey", "name": "key", "in": "query" },
+    "app_oauth": {
+      "type": "oauth2",
+      "flow": "application",
+      "tokenUrl": "https://auth.example.com/token",
+      "scopes": { "read": "read access" }
+    }
+  },
+  "paths": {
+    "/cats/{catId}": {
+      "parameters": [ { "name": "catId", "in": "path", "type": "integer", "required": true } ],
+      "get": {
+        "operationId": "getCat",
+        "summary": "Gets a cat.\n  Includes  details\r\n   spread across lines.",
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": {
+        "operationId": "deleteCat",
+        "summary": "Deletes a cat.",
+        "responses": { "204": { "description": "gone" } }
+      }
+    }
+  }
+}

@@ -60,3 +60,6 @@ Thumbs.db
 # Internal AI-assisted design docs (kept locally, not shipped publicly)
 docs/superpowers/
 
+# RestCodeGenerator output
+generated/
+
