@@ -204,7 +204,10 @@ namespace EventLogAutomation
         /// not allow reassigning a source once created. Requires administrator rights.
         /// Never throws.
         /// </summary>
+        /// <param name="sourceName">The event source name to register.</param>
+        /// <param name="logName">The log the source should write to.</param>
         /// <param name="alreadyExisted"><c>true</c> if the source was already registered to <paramref name="logName"/> (a no-op success); <c>false</c> if it was newly created.</param>
+        /// <param name="message"><c>null</c> on success; a human-readable failure reason otherwise (including "already registered to a different log").</param>
         [Category("EventLog - Discovery")]
         [Description("Registers a new event source, creating the log if needed. Requires administrator rights. Never throws.")]
         public bool CreateEventSource(string sourceName, string logName, out bool alreadyExisted, out string message)
@@ -405,6 +408,10 @@ namespace EventLogAutomation
         /// longer than the practical write limit is truncated (reported via
         /// <paramref name="errorMessage"/> even though the write still succeeds). Never throws.
         /// </summary>
+        /// <param name="sourceName">The already-registered event source to write as.</param>
+        /// <param name="message">The entry text to write.</param>
+        /// <param name="level">The severity level to write the entry as.</param>
+        /// <param name="eventId">The event ID to tag the entry with.</param>
         /// <param name="errorMessage">Named to avoid colliding with the <paramref name="message"/> input parameter. <c>null</c> on a clean success; a truncation note on a successful-but-truncated write; a failure reason otherwise.</param>
         [Category("EventLog - Write")]
         [Description("Writes an entry to the log the given source is registered to. Requires the source to already exist. Never throws.")]
