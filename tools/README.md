@@ -18,6 +18,16 @@ published DLL directly, wherever a .NET 10 runtime is installed:
 dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]
 ```
 
+This writes `<ApiName>RestUtils.cs` and `<ApiName>RestUtils.csproj` to
+`<outputDirectory>`. The `.cs` file can be pasted directly into a Robot Studio
+Script component as-is; to build a DLL instead (the fallback path — see
+[Consuming the generated component](#consuming-the-generated-component)
+below), build the `.csproj` it was written alongside:
+
+```powershell
+dotnet build <outputDirectory>/<ApiName>RestUtils.csproj
+```
+
 **From this repository's source.** `scripts/Generate-RestComponent.ps1` builds
 and runs the tool via `dotnet run --project`, then prints next steps:
 
