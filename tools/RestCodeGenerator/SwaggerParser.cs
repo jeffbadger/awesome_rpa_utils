@@ -41,31 +41,46 @@ public static class SwaggerParser
         return maybe;
     }
 
+    /// <summary>Reads an optional string property; a missing property or a value whose
+    /// JSON type is not string yields null instead of throwing
+    /// (<c>JsonElement.GetString()</c> throws <c>InvalidOperationException</c> on
+    /// non-string values such as numbers, objects, or arrays).</summary>
+    private static string? GetStringOrNull(JsonElement parent, string name)
+    {
+        if (parent.ValueKind != JsonValueKind.Object || !parent.TryGetProperty(name, out var v) ||
+            v.ValueKind != JsonValueKind.String)
+            return null;
+        return v.GetString();
+    }
+
     public static SwaggerDoc Parse(JsonElement root)
     {
-        var title = root.GetPropertyOrNull("info")?.GetPropertyOrNull("title")?.GetString() ?? "Api";
-        var version = root.GetPropertyOrNull("info")?.GetPropertyOrNull("version")?.GetString() ?? "1.0.0";
+        var title = "Api";
+        var version = "1.0.0";
 
         // `info` metadata — the same shape in Swagger 2.0 and OpenAPI 3.x. Direct values
         // (not $refs), so the ~0/~1 JSON-Pointer caveat does not apply. Every field is
-        // best-effort: a missing or malformed sub-object yields nulls, never a throw.
+        // best-effort: a missing or wrong-typed value, or a malformed sub-object,
+        // yields nulls (title/version keep their fallbacks), never a throw.
         string? description = null, termsOfService = null,
             contactName = null, contactEmail = null, contactUrl = null,
             licenseName = null, licenseUrl = null;
         if (root.GetPropertyOrNull("info") is { ValueKind: JsonValueKind.Object } info)
         {
-            description = info.GetPropertyOrNull("description")?.GetString();
-            termsOfService = info.GetPropertyOrNull("termsOfService")?.GetString();
+            title = GetStringOrNull(info, "title") ?? "Api";
+            version = GetStringOrNull(info, "version") ?? "1.0.0";
+            description = GetStringOrNull(info, "description");
+            termsOfService = GetStringOrNull(info, "termsOfService");
             if (info.GetPropertyOrNull("contact") is { ValueKind: JsonValueKind.Object } contact)
             {
-                contactName = contact.GetPropertyOrNull("name")?.GetString();
-                contactEmail = contact.GetPropertyOrNull("email")?.GetString();
-                contactUrl = contact.GetPropertyOrNull("url")?.GetString();
+                contactName = GetStringOrNull(contact, "name");
+                contactEmail = GetStringOrNull(contact, "email");
+                contactUrl = GetStringOrNull(contact, "url");
             }
             if (info.GetPropertyOrNull("license") is { ValueKind: JsonValueKind.Object } license)
             {
-                licenseName = license.GetPropertyOrNull("name")?.GetString();
-                licenseUrl = license.GetPropertyOrNull("url")?.GetString();
+                licenseName = GetStringOrNull(license, "name");
+                licenseUrl = GetStringOrNull(license, "url");
             }
         }
 

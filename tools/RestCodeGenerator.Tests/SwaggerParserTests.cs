@@ -129,6 +129,37 @@ namespace RestCodeGenerator.Tests
             SwaggerParser.Parse(JsonDocument.Parse(json).RootElement);
 
         [Fact]
+        public void Parse_WrongTypedScalars_YieldNullsAndNeverThrow()
+        {
+            // GetString() throws InvalidOperationException on non-string JSON values;
+            // every info field must instead degrade to null (title/version to their
+            // fallbacks) when its value has the wrong JSON type.
+            var doc = ParseJson("""
+                {
+                  "swagger": "2.0",
+                  "info": {
+                    "title": 5,
+                    "version": { "x": 1 },
+                    "description": [ "nope" ],
+                    "termsOfService": [],
+                    "contact": { "email": 5, "name": { "full": "nope" } },
+                    "license": { "url": true }
+                  },
+                  "paths": {}
+                }
+                """);
+            Assert.Equal("Api", doc.Title);
+            Assert.Equal("1.0.0", doc.Version);
+            Assert.Null(doc.Description);
+            Assert.Null(doc.TermsOfService);
+            Assert.Null(doc.ContactName);
+            Assert.Null(doc.ContactEmail);
+            Assert.Null(doc.ContactUrl);
+            Assert.Null(doc.LicenseName);   // absent
+            Assert.Null(doc.LicenseUrl);    // present but boolean
+        }
+
+        [Fact]
         public void Parse_Oa3JsonRequestBodyIsModeled_NonJsonRequestBodySkipped()
         {
             var doc = ParseJson("""

@@ -107,7 +107,7 @@ public static class ComponentRenderer
     private static void AppendClassDocs(StringBuilder sb, SwaggerDoc doc, string title, string version)
     {
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// " + Xml(title) + " (version " + version + ").");
+        sb.AppendLine("    /// " + Xml(title) + " (version " + Xml(version) + ").");
         foreach (var line in WrapWords(Flatten(doc.Description), 110))
             sb.AppendLine("    /// " + Xml(line));
         sb.AppendLine("    /// One method per operation in the source swagger file. Response bodies are");
