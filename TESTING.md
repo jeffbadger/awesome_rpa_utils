@@ -400,6 +400,27 @@ reference, so no WindowsDesktop runtime requirement flows into the test project)
 
 **Never point any of this component's tests at a real system service** (a database engine, a network service, anything another process depends on) — a disposable, purpose-built test service is the only safe target, unlike every other component in this repo, which only ever touches a throwaway test-harness app.
 
+### EventLogUtils (needs Setup: register a disposable test source/log, e.g. `ZZTestEventLogUtils`, via `CreateEventSourceSimple` from an elevated session — never test against Application/System/Security directly; Cleanup: remove the source via `eventvwr.msc`/PowerShell `Remove-EventLog`)
+
+- `ListLogNames`/`ListLogNamesDelimited`, `DoesLogExist`/`DoesLogExistSimple`, `DoesSourceExist`/`DoesSourceExistSimple`, `TryGetLogNameForSource` (against the real registry/log list — assert the test log/source appear; a made-up name returns false + message, never an exception)
+- `CreateEventSource`/`CreateEventSourceSimple` (happy path against the test log; idempotent case — calling again with the same source+log returns true + `alreadyExisted = true`; hard-failure case — calling again with a *different* log name for the same source returns false + a message explaining Windows doesn't allow reassignment. **Requires an elevated test session** — cannot run unattended in plain CI, same caveat as `ServiceUtils.SetStartType`)
+- `WriteEntry`/`WriteEntrySimple` (write a known message/level/event id via the test source, then verify it via `TryGetMostRecentEntry`/`QueryRecentEntriesJson`; a message longer than the practical write limit is truncated — assert the truncation note appears in `errorMessage` on an otherwise-successful write)
+- `TryGetMostRecentEntry`, `CountMatchingEntries`, `QueryRecentEntriesJson`, `DumpRecentEntriesJson`, `QueryByXPath` (write several known entries via `WriteEntry` first, then assert each filter dimension — source, level, event id, `sinceIso8601` time range, `messageContains` substring — in isolation and combined; a genuine "no match" returns false + null message, distinct from a real failure such as a bad log name, which returns false + a non-null message)
+- `WaitForEntry`/`WaitForEntrySimple` (found-in-time case — write the matching entry from a delayed background action after the wait starts; timeout case — nothing written, assert `timedOut = true`; a pre-existing matching entry from *before* the wait started must NOT satisfy it)
+- `ExportFilteredLog` + `QueryExportedLog` (export the test log's entries to a temporary `.evtx`, then query the exported file and assert the same entries come back; a missing or corrupt `.evtx` path returns false + a non-null message, distinct from the live-log "not found" case)
+- Reading the **Security** log from a non-elevated session (assert the specific "access is denied ... run elevated or add the caller to Event Log Readers" message text, not a generic failure — a good manual-only negative-path case)
+
+The null/empty-argument, negative-timeout/negative-maxCount, undefined-enum,
+and filter-parsing/XPath-building guards already have Linux-runnable xunit
+coverage in `src/eventlogutils/EventLogUtils.Tests`
+(`dotnet test src/eventlogutils/EventLogUtils.Tests/EventLogUtils.Tests.csproj` —
+like `ServiceUtils.Tests`, this project runs on non-Windows machines because
+`System.Diagnostics.EventLog` arrives as a NuGet package rather than a
+`UseWPF`/`UseWindowsForms` framework reference, so no WindowsDesktop runtime
+requirement flows into the test project).
+
+**Never point any of this component's tests at the Application/System/Security logs directly** — always create and use a disposable test log/source, and never delete or clear a real system log.
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned

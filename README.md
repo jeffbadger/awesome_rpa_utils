@@ -8,6 +8,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 |---|---|---|
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
+| [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
 | [eventutils](src/eventutils/README.md) | `EventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
 | [keyboardutils](src/keyboardutils/README.md) | `KeyboardAutomation` | Injects keyboard input via `SendInput`: key presses, combos, typed text, and a clipboard-paste fallback; queries key/modifier state. |
 | [mouseutils](src/mouseutils/README.md) | `MouseAutomation` | Moves, clicks, drags, and scrolls the mouse via `SendInput`/`SetCursorPos`; controls cursor appearance, visibility, and confinement. |
@@ -158,24 +159,28 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [commandlineutils/README.md](src/commandlineutils/README.md) and [commandlineutils/Documentation/](src/commandlineutils/Documentation/README.md)
 - [serviceutils/README.md](src/serviceutils/README.md) and [serviceutils/Documentation/](src/serviceutils/Documentation/README.md)
 - [eventutils/README.md](src/eventutils/README.md)
+- [eventlogutils/README.md](src/eventlogutils/README.md) and [eventlogutils/Documentation/](src/eventlogutils/Documentation/README.md)
 
 ## Testing
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
-`CommandLineUtils`, `KeyboardUtils`, and `EventUtils` additionally have plain
-xunit projects —
+`CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`, and
+`EventLogUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
+`dotnet test src/eventutils/EventUtils.Tests/EventUtils.Tests.csproj`,
+`dotnet test src/serviceutils/ServiceUtils.Tests/ServiceUtils.Tests.csproj`,
 and
-`dotnet test src/eventutils/EventUtils.Tests/EventUtils.Tests.csproj` —
+`dotnet test src/eventlogutils/EventLogUtils.Tests/EventLogUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
-key-down/release batch ordering, and the event filter/JSON parsing, category
-map, debounce, queue-overflow, and waiter logic), argument validation, and the
-never-throw contract (Windows-only interop/process cases self-skip on
-non-Windows machines).
+key-down/release batch ordering, the event filter/JSON parsing, category
+map, debounce, queue-overflow, and waiter logic, service enum-to-Win32
+mapping, and the Event Log filter-parsing/XPath-building logic), argument
+validation, and the never-throw contract (Windows-only interop/process cases
+self-skip on non-Windows machines).
 
 ## License
 
