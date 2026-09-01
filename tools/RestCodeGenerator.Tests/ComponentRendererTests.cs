@@ -118,6 +118,55 @@ namespace RestCodeGenerator.Tests
         }
 
         [Fact]
+        public void Render_EmitsApiMetadataOnClass_InBothModes()
+        {
+            var output = ComponentRenderer.Render(SwaggerParser.ParseFile(Petstore), "pet-store");
+            var normalized = output.Source.Replace("\r\n", "\n");
+            // summary carries title + version and the description flattened to one line:
+            var summary =
+                "    /// <summary>\n" +
+                "    /// Petstore (version 1.0.0).\n" +
+                "    /// This is a sample petstore server spec with doubled spaces and tabs.\n";
+            Assert.Contains(summary, normalized);
+            // remarks carry TOS / contact (all three parts, XML-escaped <email>) / license:
+            var remarks =
+                "    /// <remarks>\n" +
+                "    /// <para>Terms of service: https://petstore.example.com/terms</para>\n" +
+                "    /// <para>Contact: Support &lt;support@petstore.example.com&gt; (https://petstore.example.com/support)</para>\n" +
+                "    /// <para>License: MIT (https://petstore.example.com/license)</para>\n" +
+                "    /// </remarks>\n";
+            Assert.Contains(remarks, normalized);
+            // class-level designer description: title + version + flattened description:
+            var attribute = "[System.ComponentModel.Description(\"Petstore (version 1.0.0) - " +
+                            "This is a sample petstore server spec with doubled spaces and tabs.\")]";
+            Assert.Contains(attribute, output.Source);
+
+            // designer mode emits identical metadata (class docs/attribute are mode-independent):
+            var designer = ComponentRenderer.Render(
+                SwaggerParser.ParseFile(Petstore), "pet-store", designerComponent: true)
+                .Source.Replace("\r\n", "\n");
+            Assert.Contains("    /// Petstore (version 1.0.0).\n", designer);
+            Assert.Contains("    /// <para>License: MIT (https://petstore.example.com/license)</para>\n", designer);
+            Assert.Contains(attribute, designer);
+        }
+
+        [Fact]
+        public void Render_MissingMetadataEntities_OmitsLinesAndRemarksBlock()
+        {
+            // auth-minimal.json declares no TOS/contact/license: those lines must be omitted
+            // entirely (no empty <remarks> block, no placeholders), and the class attribute
+            // falls back to title + version.
+            var output = ComponentRenderer.Render(SwaggerParser.ParseFile(AuthApi), "auth-api");
+            var normalized = output.Source.Replace("\r\n", "\n");
+            Assert.Contains("    /// AuthApi (version 2.0.0).\n", normalized);
+            Assert.DoesNotContain("<remarks>", normalized);
+            Assert.DoesNotContain("Terms of service:", normalized);
+            Assert.DoesNotContain("<para>Contact:", normalized);
+            Assert.DoesNotContain("<para>License:", normalized);
+            Assert.Contains("[System.ComponentModel.Description(\"AuthApi (version 2.0.0)\")]", output.Source);
+        }
+
+        [Fact]
         public void Render_CsprojFallbackIsMultiTargetedStandalone()
         {
             var output = ComponentRenderer.Render(SwaggerParser.ParseFile(Petstore), "pet-store");

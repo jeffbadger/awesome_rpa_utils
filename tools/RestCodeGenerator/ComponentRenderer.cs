@@ -85,19 +85,98 @@ public static class ComponentRenderer
         sb.AppendLine();
         sb.AppendLine("namespace " + @namespace);
         sb.AppendLine("{");
+        // API metadata from the swagger `info` object. Class-level docs/attribute are
+        // mode-independent, so this emission is identical in default and designerComponent
+        // modes; only the base type below differs between them.
+        AppendClassDocs(sb, doc, title, version);
+        AppendClassDescriptionAttribute(sb, doc, title, version);
+        sb.AppendLine("    public class " + className +
+                      (designerComponent ? " : System.ComponentModel.Component" : ""));
+        sb.AppendLine("    {");
+    }
+
+    /// <summary>
+    /// Emits the class-level XML doc comment carrying the swagger <c>info</c> metadata:
+    /// the summary pairs the title with the version, then the description (flattened
+    /// with the same normalize helper as method summaries, word-wrapped into /// lines
+    /// when long). <c>&lt;remarks&gt;</c> carries the terms-of-service, contact, and
+    /// license lines — each omitted entirely when its entity is absent from the spec
+    /// (a null field never leaves an empty line or placeholder), and its content is
+    /// XML-escaped via <see cref="Xml"/> (description/contact text may contain &lt;).
+    /// </summary>
+    private static void AppendClassDocs(StringBuilder sb, SwaggerDoc doc, string title, string version)
+    {
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Generated REST client component for \"" + Xml(title) + "\" (" + Xml(title) + " " + version + ").");
+        sb.AppendLine("    /// " + Xml(title) + " (version " + version + ").");
+        foreach (var line in WrapWords(Flatten(doc.Description), 110))
+            sb.AppendLine("    /// " + Xml(line));
         sb.AppendLine("    /// One method per operation in the source swagger file. Response bodies are");
         sb.AppendLine("    /// returned as raw JSON strings; parse them with Robot Studio's built-in JSON");
         sb.AppendLine("    /// methods. Every public method follows the Never-Throws Standard: success");
         sb.AppendLine("    /// returns true with message null; failure returns false with a reason.");
         sb.AppendLine("    /// Pass \"\" for any optional string parameter to omit it.");
         sb.AppendLine("    /// </summary>");
+        var remarks = ClassRemarksLines(doc);
+        if (remarks.Count > 0)
+        {
+            sb.AppendLine("    /// <remarks>");
+            foreach (var line in remarks)
+                sb.AppendLine("    /// " + line);   // pre-escaped XML
+            sb.AppendLine("    /// </remarks>");
+        }
+    }
+
+    /// <summary>The <c>&lt;remarks&gt;</c> content lines for the class docs: TOS, contact,
+    /// and license, each present only when the spec carries actual values. Contact parts
+    /// are individually optional — the "Contact:" line appears only when any part exists.</summary>
+    private static List<string> ClassRemarksLines(SwaggerDoc doc)
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(doc.TermsOfService))
+            lines.Add("<para>Terms of service: " + Xml(doc.TermsOfService) + "</para>");
+        var contact = new List<string>();
+        if (!string.IsNullOrWhiteSpace(doc.ContactName)) contact.Add(Xml(doc.ContactName));
+        if (!string.IsNullOrWhiteSpace(doc.ContactEmail)) contact.Add("&lt;" + Xml(doc.ContactEmail) + "&gt;");
+        if (!string.IsNullOrWhiteSpace(doc.ContactUrl)) contact.Add("(" + Xml(doc.ContactUrl) + ")");
+        if (contact.Count > 0)
+            lines.Add("<para>Contact: " + string.Join(" ", contact) + "</para>");
+        if (!string.IsNullOrWhiteSpace(doc.LicenseName) || !string.IsNullOrWhiteSpace(doc.LicenseUrl))
+        {
+            var line = "<para>License: ";
+            if (!string.IsNullOrWhiteSpace(doc.LicenseName))
+                line += Xml(doc.LicenseName);
+            if (!string.IsNullOrWhiteSpace(doc.LicenseUrl))
+                line += (line.EndsWith(": ", System.StringComparison.Ordinal) ? "" : " ") +
+                        "(" + Xml(doc.LicenseUrl) + ")";
+            lines.Add(line + "</para>");
+        }
+        return lines;
+    }
+
+    /// <summary>
+    /// The class-level designer-visible summary: "&lt;Title&gt; (version &lt;Version&gt;) - &lt;first
+    /// sentence of the flattened description&gt;". The first-sentence rule: the whole
+    /// description when at most 120 characters, otherwise the text up to and including
+    /// the first ". " sentence break (or the whole text when it has no sentence break).
+    /// Deterministic. Omitted only when the spec carries neither a title nor a description.
+    /// </summary>
+    private static void AppendClassDescriptionAttribute(StringBuilder sb, SwaggerDoc doc, string title, string version)
+    {
+        var description = Flatten(doc.Description);
+        if (doc.Title is null && description.Length == 0)
+            return;
+        var sentence = FirstSentence(description);
         sb.AppendLine("    [System.ComponentModel.Description(" +
-                      Lit("Generated REST client for " + title + " (" + title + " " + version + "). Never throws.") + ")]");
-        sb.AppendLine("    public class " + className +
-                      (designerComponent ? " : System.ComponentModel.Component" : ""));
-        sb.AppendLine("    {");
+                      Lit(title + " (version " + version + ")" +
+                          (sentence.Length > 0 ? " - " + sentence : "")) + ")]");
+    }
+
+    /// <summary>The attribute's description excerpt — see <see cref="AppendClassDescriptionAttribute"/>.</summary>
+    private static string FirstSentence(string flattened)
+    {
+        if (flattened.Length <= 120) return flattened;
+        var end = flattened.IndexOf(". ", System.StringComparison.Ordinal);
+        return end > 0 ? flattened[..end] + "." : flattened;
     }
 
     private static void AppendFields(
@@ -306,10 +385,9 @@ public static class ComponentRenderer
         // A multi-line swagger summary must be flattened to a single line here, before it
         // feeds either the XML doc comment (a raw "\n" would emit a continuation line
         // without "///") or the Description attribute (Lit also escapes, per defense in depth).
-        var words = (op.Summary ?? "").Split(new[] { ' ', '\r', '\n', '\t' }, System.StringSplitOptions.RemoveEmptyEntries);
-        var summary = words.Length > 0
-            ? string.Join(" ", words)
-            : "Performs the " + op.HttpMethod + " request on " + op.Path + ".";
+        var summary = Flatten(op.Summary);
+        if (summary.Length == 0)
+            summary = "Performs the " + op.HttpMethod + " request on " + op.Path + ".";
 
         sb.AppendLine();
         sb.AppendLine("        /// <summary>" + Xml(summary) +
@@ -648,7 +726,36 @@ public static class ComponentRenderer
         }
 """;
 
-    // ---- Escaping helpers ----
+    // ---- Escaping / normalize helpers ----
+
+    /// <summary>
+    /// Flattens a multi-line swagger text (an operation summary or the API description)
+    /// into a single logical line BEFORE emission into XML docs and string literals —
+    /// a raw "\n" would emit an XML doc continuation line without "///", or break a
+    /// Description attribute literal.
+    /// </summary>
+    private static string Flatten(string? text)
+    {
+        var words = (text ?? "").Split(new[] { ' ', '\r', '\n', '\t' }, System.StringSplitOptions.RemoveEmptyEntries);
+        return words.Length > 0 ? string.Join(" ", words) : "";
+    }
+
+    /// <summary>Greedy word-wrap of already-flattened (single-spaced) text into ///-comment
+    /// lines; a single word longer than the width gets its own line.</summary>
+    private static List<string> WrapWords(string text, int width)
+    {
+        var lines = new List<string>();
+        if (text.Length == 0) return lines;
+        var current = "";
+        foreach (var word in text.Split(' '))
+        {
+            if (current.Length == 0) current = word;
+            else if (current.Length + 1 + word.Length <= width) current += " " + word;
+            else { lines.Add(current); current = word; }
+        }
+        if (current.Length > 0) lines.Add(current);
+        return lines;
+    }
 
     /// <summary>Quotes a value as a C# string literal for embedding in generated code (line breaks included, so multi-line summaries stay single-line).</summary>
     private static string Lit(string? s) =>

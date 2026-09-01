@@ -164,6 +164,23 @@ One method per operation, with a fixed shape per HTTP-method group:
   unselectable on the designer. Helper names (`SetBaseUrl`, `HeaderBuilder`,
   `QueryBuilder`, and the rest) are reserved and never collide.
 
+## API metadata
+
+The spec's `info` object (same shape in Swagger 2.0 and OpenAPI 3.x) feeds the
+generated class's metadata: the `description`, `termsOfService`, `contact`
+(`name`, `email`, `url`), and `license` (`name`, `url`) fields are extracted
+alongside the title and version. They land in two places on the generated class:
+
+- **Class XML docs** — the `<summary>` carries the title, version, and the
+  description (multi-line descriptions flattened to one logical line, wrapped
+  into `///` lines when long); a `<remarks>` block carries the
+  terms-of-service, contact, and license lines, each omitted entirely when
+  absent from the spec. Shown in IntelliSense when you paste the file into a
+  Script component with an XML doc file next to the DLL.
+- **Class-level `[System.ComponentModel.Description]`** —
+  `"<Title> (version <Version>) - <first sentence of the description>"`, so the
+  component is self-explanatory on the Robot Studio designer.
+
 ## Why raw JSON responses
 
 Methods return the raw response body rather than parsed objects so the

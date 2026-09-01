@@ -20,6 +20,52 @@ namespace RestCodeGenerator.Tests
             Assert.Equal("Petstore", doc.Title);
             Assert.Equal("1.0.0", doc.Version);
             Assert.Equal("https://petstore.example.com/v2", doc.DefaultBaseUrl);
+            // the fixture's description carries a "\n" and doubled spaces — parsed raw
+            // (flattening is a renderer concern); TOS is stored as-is (a URL per spec):
+            Assert.Equal("This is a  sample petstore\nserver spec with  doubled spaces and\ttabs.", doc.Description);
+            Assert.Equal("https://petstore.example.com/terms", doc.TermsOfService);
+            Assert.Equal("Support", doc.ContactName);
+            Assert.Equal("support@petstore.example.com", doc.ContactEmail);
+            Assert.Equal("https://petstore.example.com/support", doc.ContactUrl);
+            Assert.Equal("MIT", doc.LicenseName);
+            Assert.Equal("https://petstore.example.com/license", doc.LicenseUrl);
+        }
+
+        [Fact]
+        public void Parse_MissingOrMalformedInfoMetadata_YieldsNullsAndNeverThrows()
+        {
+            // No info object at all: title/version fall back, every metadata field is null.
+            var noInfo = ParseJson(""" { "swagger": "2.0", "paths": {} } """);
+            Assert.Equal("Api", noInfo.Title);
+            Assert.Equal("1.0.0", noInfo.Version);
+            Assert.Null(noInfo.Description);
+            Assert.Null(noInfo.TermsOfService);
+            Assert.Null(noInfo.ContactName);
+            Assert.Null(noInfo.ContactEmail);
+            Assert.Null(noInfo.ContactUrl);
+            Assert.Null(noInfo.LicenseName);
+            Assert.Null(noInfo.LicenseUrl);
+
+            // Present-but-scalar contact/license sub-objects (malformed shape) → nulls, no throw;
+            // partial contact (only email) and license-without-url keep their real values.
+            var partial = ParseJson("""
+                {
+                  "openapi": "3.0.0",
+                  "info": {
+                    "title": "T",
+                    "version": "1.0.0",
+                    "contact": "not-an-object",
+                    "license": { "name": "MIT" }
+                  },
+                  "paths": {}
+                }
+                """);
+            Assert.Null(partial.ContactName);
+            Assert.Null(partial.ContactEmail);
+            Assert.Null(partial.ContactUrl);
+            Assert.Equal("MIT", partial.LicenseName);
+            Assert.Null(partial.LicenseUrl);
+            Assert.Null(partial.TermsOfService);
         }
 
         [Fact]

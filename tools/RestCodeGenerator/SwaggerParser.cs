@@ -46,6 +46,29 @@ public static class SwaggerParser
         var title = root.GetPropertyOrNull("info")?.GetPropertyOrNull("title")?.GetString() ?? "Api";
         var version = root.GetPropertyOrNull("info")?.GetPropertyOrNull("version")?.GetString() ?? "1.0.0";
 
+        // `info` metadata — the same shape in Swagger 2.0 and OpenAPI 3.x. Direct values
+        // (not $refs), so the ~0/~1 JSON-Pointer caveat does not apply. Every field is
+        // best-effort: a missing or malformed sub-object yields nulls, never a throw.
+        string? description = null, termsOfService = null,
+            contactName = null, contactEmail = null, contactUrl = null,
+            licenseName = null, licenseUrl = null;
+        if (root.GetPropertyOrNull("info") is { ValueKind: JsonValueKind.Object } info)
+        {
+            description = info.GetPropertyOrNull("description")?.GetString();
+            termsOfService = info.GetPropertyOrNull("termsOfService")?.GetString();
+            if (info.GetPropertyOrNull("contact") is { ValueKind: JsonValueKind.Object } contact)
+            {
+                contactName = contact.GetPropertyOrNull("name")?.GetString();
+                contactEmail = contact.GetPropertyOrNull("email")?.GetString();
+                contactUrl = contact.GetPropertyOrNull("url")?.GetString();
+            }
+            if (info.GetPropertyOrNull("license") is { ValueKind: JsonValueKind.Object } license)
+            {
+                licenseName = license.GetPropertyOrNull("name")?.GetString();
+                licenseUrl = license.GetPropertyOrNull("url")?.GetString();
+            }
+        }
+
         string? baseUrl = null;
         if (root.GetPropertyOrNull("host") is { } host)                          // Swagger 2.0
         {
@@ -135,7 +158,16 @@ public static class SwaggerParser
                 }
             }
         }
-        return new SwaggerDoc(title, version, baseUrl, operations, ParseSecuritySchemes(root), skipped);
+        return new SwaggerDoc(title, version, baseUrl, operations, ParseSecuritySchemes(root), skipped)
+        {
+            Description = description,
+            TermsOfService = termsOfService,
+            ContactName = contactName,
+            ContactEmail = contactEmail,
+            ContactUrl = contactUrl,
+            LicenseName = licenseName,
+            LicenseUrl = licenseUrl,
+        };
     }
 
     private static List<SwaggerSecurityScheme> ParseSecuritySchemes(JsonElement root)

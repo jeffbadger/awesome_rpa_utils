@@ -1,6 +1,17 @@
 {
   "swagger": "2.0",
-  "info": { "title": "Petstore", "version": "1.0.0" },
+  "info": {
+    "title": "Petstore",
+    "version": "1.0.0",
+    "description": "This is a  sample petstore\nserver spec with  doubled spaces and\ttabs.",
+    "termsOfService": "https://petstore.example.com/terms",
+    "contact": {
+      "name": "Support",
+      "email": "support@petstore.example.com",
+      "url": "https://petstore.example.com/support"
+    },
+    "license": { "name": "MIT", "url": "https://petstore.example.com/license" }
+  },
   "host": "petstore.example.com",
   "basePath": "/v2",
   "securityDefinitions": {
