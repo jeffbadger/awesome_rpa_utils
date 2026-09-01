@@ -12,17 +12,18 @@ param(
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
-$generatorOutput = dotnet run --project (Join-Path $repositoryRoot "tools/RestCodeGenerator") -- $SwaggerPath $ApiName $OutputDirectory
+dotnet run --project (Join-Path $repositoryRoot "tools/RestCodeGenerator") -- $SwaggerPath $ApiName $OutputDirectory | Tee-Object -Variable generatorOutput
 if ($LASTEXITCODE -ne 0) { throw "RestCodeGenerator failed with exit code $LASTEXITCODE." }
-$generatorOutput | Write-Host
 
 $fileNameBase = "$($ApiName)RestUtils"
-if ("$generatorOutput" -match '^Generated (\S+)\.cs and (\S+)\.csproj in (.+)$') { $fileNameBase = $Matches[1] }
+# Match the ARRAY element-wise (-match on the joined string would anchor ^ only
+# at the very first line) and take the last matching "Generated ..." line.
+foreach ($line in @($generatorOutput)) {
+    if ($line -match '^Generated (\S+)\.cs and (\S+)\.csproj in (.+)$') { $fileNameBase = $Matches[1] }
+}
 
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. Paste $OutputDirectory/$fileNameBase.cs into a Robot Studio Script component."
-Write-Host "     The per-endpoint methods are compiled and persisted there - the swagger file is"
-Write-Host "     not needed at runtime."
-Write-Host "  (Alternative) dotnet build $OutputDirectory/$fileNameBase.csproj and load the"
-Write-Host "     built DLL into Robot Studio."
+Write-Host "  (Alternative) dotnet build $OutputDirectory/$fileNameBase.csproj and load the built DLL"
+Write-Host "     into Robot Studio."

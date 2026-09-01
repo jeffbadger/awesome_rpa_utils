@@ -95,7 +95,27 @@ also covers specs that declare nothing.
 | `http bearer` | `SetBearerAuthentication(token)` |
 | `apiKey` `in: header` | `SetApiKeyAuthentication(name, value)` — sent as that named header on every call |
 | `apiKey` `in: query` | `SetApiKeyQueryAuthentication(name, value)` — appended to every call's query string |
-| `oauth2` with `client_credentials` flow | `SetOAuth2ClientCredentials(clientId, clientSecret, tokenUrl)` — form-POSTs to the token endpoint, caches the access token, refreshes it automatically before expiry (30-second safety margin; 5-minute token lifetime assumed when the spec specifies none) and retries a call once, silently, after a 401 |
+| `oauth2` with `client_credentials` flow | `SetOAuth2ClientCredentials(clientId, clientSecret, tokenUrl)` |
+
+`SetOAuth2ClientCredentials` form-POSTs to the token endpoint and caches the
+access token, refreshing it automatically before expiry (30-second safety
+margin; a 5-minute token lifetime is assumed when the spec specifies no
+`expires_in`) and retrying a call once, silently, after a 401.
+
+**Worked example.** Declaring this in the spec:
+
+```json
+"securitySchemes": {
+  "api_key": { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+}
+```
+
+generates the `SetApiKeyAuthentication` helper, called with the header name
+from the spec and the key value supplied at runtime:
+
+```csharp
+ok = petStoreRestUtils.SetApiKeyAuthentication("X-API-Key", apiKeyValue, out message);
+```
 
 **Unsupported — no helper generated**, listed as unsupported in the generated
 header comment: `oauth2` implicit / authorization-code / password flows
