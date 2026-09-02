@@ -10,6 +10,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 | [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
 | [eventutils](src/eventutils/README.md) | `EventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
+| [filewatchutils](src/filewatchutils/README.md) | `FileWatchAutomation` | Coordinates with files produced by other applications: wait for existence/deletion/change/stability/unlock, watch for filesystem events, atomically move/replace/claim files, hash files, and read file metadata. |
 | [keyboardutils](src/keyboardutils/README.md) | `KeyboardAutomation` | Injects keyboard input via `SendInput`: key presses, combos, typed text, and a clipboard-paste fallback; queries key/modifier state. |
 | [mouseutils](src/mouseutils/README.md) | `MouseAutomation` | Moves, clicks, drags, and scrolls the mouse via `SendInput`/`SetCursorPos`; controls cursor appearance, visibility, and confinement. |
 | [ocrutils](src/ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
@@ -162,21 +163,24 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [eventutils/README.md](src/eventutils/README.md)
 - [eventlogutils/README.md](src/eventlogutils/README.md) and [eventlogutils/Documentation/](src/eventlogutils/Documentation/README.md)
 - [sessionutils/README.md](src/sessionutils/README.md) and [sessionutils/Documentation/](src/sessionutils/Documentation/README.md)
+- [filewatchutils/README.md](src/filewatchutils/README.md) and [filewatchutils/Documentation/](src/filewatchutils/Documentation/README.md)
 
 ## Testing
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
-`EventLogUtils`, and `SessionUtils` additionally have plain xunit projects —
+`EventLogUtils`, `SessionUtils`, and `FileWatchUtils` additionally have
+plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
 `dotnet test src/eventutils/EventUtils.Tests/EventUtils.Tests.csproj`,
 `dotnet test src/serviceutils/ServiceUtils.Tests/ServiceUtils.Tests.csproj`,
 `dotnet test src/eventlogutils/EventLogUtils.Tests/EventLogUtils.Tests.csproj`,
+`dotnet test src/sessionutils/SessionUtils.Tests/SessionUtils.Tests.csproj`,
 and
-`dotnet test src/sessionutils/SessionUtils.Tests/SessionUtils.Tests.csproj` —
+`dotnet test src/filewatchutils/FileWatchUtils.Tests/FileWatchUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
@@ -184,7 +188,12 @@ map, debounce, queue-overflow, and waiter logic, service enum-to-Win32
 mapping, the Event Log filter-parsing/XPath-building logic, and the session
 connect-state/kind enum-mapping logic), argument validation, and the
 never-throw contract (Windows-only interop/process cases self-skip on
-non-Windows machines).
+non-Windows machines). `FileWatchUtils` is the exception to that last point:
+since every one of its operations is plain cross-platform BCL file I/O with
+zero P/Invoke, its test project exercises real functional behavior on any
+OS — real temp-directory files, real exclusive-lock detection, real
+`FileSystemWatcher` events, real concurrent `ClaimFile` races, and real
+hashing — rather than guard clauses with Windows-only paths self-skipping.
 
 ## License
 
