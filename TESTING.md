@@ -450,6 +450,34 @@ WindowsDesktop runtime requirement flows into the test project).
 
 **Never run `LockWorkstation` or `DisconnectSession`/`DisconnectCurrentSession` against a session you or someone else is actively relying on** — always test these two from a disposable, expendable RDP session set up specifically for this purpose.
 
+### FileWatchUtils (no Setup/Cleanup fixture needed — every test uses a disposable per-test temp directory it creates and removes itself)
+
+Unlike every other component above, this one needs only a light manual note
+here — its `.Tests` project already exercises real functional behavior for
+almost the entire surface (real temp-directory files, real exclusive-lock
+detection, real `FileSystemWatcher` events, real concurrent `ClaimFile`
+races, real hashing), not just guard clauses, because every operation is
+plain cross-platform BCL file I/O with zero P/Invoke. Only two scenarios
+genuinely can't be exercised there:
+
+- `ReplaceFile`'s real happy path — `File.Replace` throws
+  `PlatformNotSupportedException` on non-Windows by .NET design, so its
+  success case self-skips outside Windows in the xunit project; verify it
+  manually on Windows (replace an existing file's contents, with and
+  without a backup path, and confirm the backup file's content matches the
+  original destination).
+- A real *other application* (not the test process itself) holding a file
+  open — `IsFileLocked`/`WaitForFileUnlocked` are exercised against a lock
+  the test process holds on itself, which is the real code path, but
+  confirming behavior against, say, Excel or Notepad holding a file open is
+  worth a manual spot-check.
+
+The full guard-clause, enum-mapping, and real-functional-behavior xunit
+coverage is in `src/filewatchutils/FileWatchUtils.Tests`
+(`dotnet test src/filewatchutils/FileWatchUtils.Tests/FileWatchUtils.Tests.csproj`
+— zero NuGet packages and no `UseWPF`/`UseWindowsForms` framework
+reference, so it runs the same way on Linux as on Windows).
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned
