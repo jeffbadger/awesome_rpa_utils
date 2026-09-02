@@ -478,6 +478,36 @@ coverage is in `src/filewatchutils/FileWatchUtils.Tests`
 — zero NuGet packages and no `UseWPF`/`UseWindowsForms` framework
 reference, so it runs the same way on Linux as on Windows).
 
+### ArchiveUtils (no Setup/Cleanup fixture needed — every test uses a disposable per-test temp directory it creates and removes itself)
+
+Same story as `FileWatchUtils`: this component is plain
+`System.IO.Compression` + `System.IO` with zero P/Invoke, so its `.Tests`
+project exercises real functional behavior for nearly the entire surface —
+real archives built and extracted, a real reproduced zip-slip attempt (an
+entry named `"../../evil.txt"` extracted via `ExtractSingleFile`, asserting
+it never lands outside the destination directory), a real corrupted-CRC
+entry (one byte flipped directly in the archive's raw on-disk bytes), and
+real zip-bomb-style fixtures (an artificially high compression ratio; many
+entries whose summed declared size trips a total-size limit). Only one
+scenario genuinely can't be exercised there:
+
+- A real password-encrypted `.zip` entry — `System.IO.Compression`'s own
+  writer has no encryption support at all, so the xunit fixture instead
+  sets the ZIP general-purpose bit flag's encryption bit directly in raw
+  bytes to exercise `IsEncrypted`/`HasEncryptedEntries`/the
+  `ValidateArchiveCrcJson` skip-encrypted path. If you want to confirm
+  behavior against a genuinely password-protected archive (e.g. one
+  created by 7-Zip or WinRAR with a password), do it manually: confirm
+  `HasEncryptedEntries`/`ListArchiveContentsJson`'s `IsEncrypted` field
+  report `true`, and that no method in this component attempts to extract
+  or decrypt it.
+
+The full guard-clause and real-functional-behavior xunit coverage is in
+`src/archiveutils/ArchiveUtils.Tests`
+(`dotnet test src/archiveutils/ArchiveUtils.Tests/ArchiveUtils.Tests.csproj`
+— zero NuGet packages and no `UseWPF`/`UseWindowsForms` framework
+reference, so it runs the same way on Linux as on Windows).
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned

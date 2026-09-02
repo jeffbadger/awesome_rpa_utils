@@ -30,6 +30,7 @@ $releaseAssemblies = @(
     "EventLogAutomation.dll"
     "SessionAutomation.dll"
     "FileWatchAutomation.dll"
+    "ArchiveAutomation.dll"
 )
 
 # Every component project multi-targets these two TFMs (OcrUtils uses the versioned
