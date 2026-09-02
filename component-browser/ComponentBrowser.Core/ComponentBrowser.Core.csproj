@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RootNamespace>ComponentBrowser</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MetadataLoadContext is not part of the shared framework - it ships as this
+         Microsoft-published package even on modern .NET. Needed for safe (execute-nothing)
+         reflection over the release zip's component DLLs. -->
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>
