@@ -18,6 +18,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [screencaptureutils](src/screencaptureutils/README.md) | `ScreenCaptureAutomation` | Captures the screen, a region, or a window to a file/clipboard; compares captures against a baseline; annotates or redacts saved screenshots. |
 | [serviceutils](src/serviceutils/README.md) | `ServiceAutomation` | Queries, starts, stops, restarts, and configures the startup type of Windows services. |
 | [sessionutils](src/sessionutils/README.md) | `SessionAutomation` | Reports on and acts on Windows session/workstation state: session identity/kind, enumeration, connect state, lock/desktop availability, idle time, and deliberate lock/disconnect actions. |
+| [terminalutils](src/terminalutils/README.md) | `TerminalAutomation` | Reads and interacts with a target process's live console screen buffer: visible-screen capture, cursor position, waiting for a prompt or a screen change, keystroke injection, and starting/attaching to a console process. |
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
 | [windowutils](src/windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
 
@@ -164,6 +165,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [eventutils/README.md](src/eventutils/README.md)
 - [eventlogutils/README.md](src/eventlogutils/README.md) and [eventlogutils/Documentation/](src/eventlogutils/Documentation/README.md)
 - [sessionutils/README.md](src/sessionutils/README.md) and [sessionutils/Documentation/](src/sessionutils/Documentation/README.md)
+- [terminalutils/README.md](src/terminalutils/README.md) and [terminalutils/Documentation/](src/terminalutils/Documentation/README.md)
 - [filewatchutils/README.md](src/filewatchutils/README.md) and [filewatchutils/Documentation/](src/filewatchutils/Documentation/README.md)
 - [archiveutils/README.md](src/archiveutils/README.md) and [archiveutils/Documentation/](src/archiveutils/Documentation/README.md)
 
@@ -172,8 +174,8 @@ public method stays selectable on the Pega Robot Studio designer surface.
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
-`EventLogUtils`, `SessionUtils`, `FileWatchUtils`, and `ArchiveUtils`
-additionally have plain xunit projects —
+`EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`, and
+`TerminalUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -182,14 +184,16 @@ additionally have plain xunit projects —
 `dotnet test src/eventlogutils/EventLogUtils.Tests/EventLogUtils.Tests.csproj`,
 `dotnet test src/sessionutils/SessionUtils.Tests/SessionUtils.Tests.csproj`,
 `dotnet test src/filewatchutils/FileWatchUtils.Tests/FileWatchUtils.Tests.csproj`,
+`dotnet test src/archiveutils/ArchiveUtils.Tests/ArchiveUtils.Tests.csproj`,
 and
-`dotnet test src/archiveutils/ArchiveUtils.Tests/ArchiveUtils.Tests.csproj` —
+`dotnet test src/terminalutils/TerminalUtils.Tests/TerminalUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
 map, debounce, queue-overflow, and waiter logic, service enum-to-Win32
-mapping, the Event Log filter-parsing/XPath-building logic, and the session
-connect-state/kind enum-mapping logic), argument validation, and the
+mapping, the Event Log filter-parsing/XPath-building logic, the session
+connect-state/kind enum-mapping logic, and TerminalUtils' ANSI-reconstruction
+and heuristic field-splitting logic), argument validation, and the
 never-throw contract (Windows-only interop/process cases self-skip on
 non-Windows machines). `FileWatchUtils` and `ArchiveUtils` are the exception
 to that last point: since every one of their operations is plain
@@ -198,7 +202,13 @@ their test projects exercise real functional behavior on any OS — real
 temp-directory files, real exclusive-lock detection, real
 `FileSystemWatcher` events, real concurrent `ClaimFile` races, real hashing,
 a real reproduced zip-slip attempt, and a real corrupted-CRC entry — rather
-than guard clauses with Windows-only paths self-skipping.
+than guard clauses with Windows-only paths self-skipping. `TerminalUtils` is
+the opposite end of that spectrum: it is fundamentally Win32 console-API/
+P/Invoke-heavy (`AttachConsole`, `ReadConsoleOutputW`, `WriteConsoleInputW`),
+so beyond its pure ANSI-reconstruction/field-splitting logic and argument
+guards, its actual screen-buffer/attach/write behavior needs a real Windows
+console and is covered only by the manual test plan in
+[TESTING.md](TESTING.md), not by this xunit project.
 
 ## License
 

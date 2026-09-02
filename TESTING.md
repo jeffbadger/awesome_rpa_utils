@@ -508,6 +508,31 @@ The full guard-clause and real-functional-behavior xunit coverage is in
 — zero NuGet packages and no `UseWPF`/`UseWindowsForms` framework
 reference, so it runs the same way on Linux as on Windows).
 
+### TerminalUtils (needs a genuine Windows console session; most cases below launch their own target console process — Setup: none beyond that; Cleanup: kill any console process left running by a test)
+
+Unlike `FileWatchUtils`/`ArchiveUtils`, this component is fundamentally
+Win32 console-API/P/Invoke-heavy (`AttachConsole`, `GetConsoleScreenBufferInfo`,
+`ReadConsoleOutputW`, `WriteConsoleInputW`) — almost everything below
+genuinely requires a live Windows console, not just a guard-test pass. Be
+realistic about that.
+
+- `StartConsoleProcess` — launch a real console app (e.g. `cmd.exe`); confirm the returned `processId` corresponds to a process with its own real, visible console window (not hidden, not redirected).
+- `IsConsoleAttachable` — `true` against the PID from the case above; `false` against a GUI-only/no-console process's PID; `false` (with a message, never an exception) against a PID from an already-exited process.
+- `GetCursorPosition`/`ReadScreenRowsJson`/`CaptureScreenText` — against a scripted console app that prints known fixed text at known positions (e.g. a small test script that writes a few labeled lines and moves the cursor to a known spot). Assert row/column/text/fields match expectations, including a case with `Console.ForegroundColor`/`BackgroundColor` changes mid-line to exercise ANSI reconstruction (`CaptureScreenText(..., preserveAnsi: true, ...)`), and a case confirming `preserveAnsi: false` never contains an escape character.
+- `WaitForScreenText`/`Simple` — found-before-timeout (the target app prints the awaited text partway through the wait) and genuine-timeout cases, in both substring and regex mode; an invalid regex pattern returns `false` + message immediately, before any polling starts.
+- `WaitForScreenChange`/`Simple` — drive the target app to redraw or print something new partway through the wait and confirm `changed = true`; assert `timedOut = true` against a static, unchanging screen; confirm `timeoutMs = 0` times out immediately without ever comparing again.
+- `WriteText`/`WriteLine` — against a real shell REPL (e.g. `cmd.exe` at its prompt), with the console window **unfocused or minimized**, confirm the shell actually receives and processes the injected keystrokes (this validates the no-focus-required design, the actual reason this component uses `WriteConsoleInputW` instead of focus-dependent keyboard simulation). Also confirm `WriteLine`'s trailing carriage return actually submits the line (the shell executes the command), not just that it's appended to the buffer.
+- A buffer resize between reading buffer info and reading its contents, and a target process exiting mid-attach — both hard to force deterministically; exploratory/manual only, not a required pass/fail gate.
+- Windows Terminal/ConPTY behavior — an explicit, flagged-as-open-risk item: on a real Windows 11 machine with Windows Terminal as the default console host, confirm attach/read/write still work against a target process's console, since this component's design assumes (but has not verified) that `AttachConsole`/`ReadConsoleOutputW` work at the buffer level regardless of which terminal emulator hosts the visible window.
+
+The null/non-positive-`processId`/negative-timeout argument guards and the
+pure `AnsiReconstruction`/`FieldSplitting` logic already have Linux-runnable
+xunit coverage in `src/terminalutils/TerminalUtils.Tests`
+(`dotnet test src/terminalutils/TerminalUtils.Tests/TerminalUtils.Tests.csproj`
+— every test in that project asserts the exact guard message text, not just
+a `false` return, specifically so a test can't accidentally "pass" by
+reaching a deeper native-call failure instead of the intended early guard).
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned
