@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>SessionAutomation</AssemblyName>
+    <RootNamespace>SessionAutomation</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <!-- Allows building this Windows-targeted project from a non-Windows SDK host -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Emit SessionAutomation.xml next to the DLL so the XML doc comments are consumable -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets SessionUtils.Tests cover the internal TryToSessionConnectState/TryToSessionKind/TryParseConnectStates helpers -->
+    <InternalsVisibleTo Include="SessionUtils.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="SessionUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
+</Project>

@@ -421,6 +421,35 @@ requirement flows into the test project).
 
 **Never point any of this component's tests at the Application/System/Security logs directly** — always create and use a disposable test log/source, and never delete or clear a real system log.
 
+### SessionUtils (needs an interactive Windows logon; several cases below additionally need a second concurrent session — fast user switching or a second RDP connection — or an actual Windows service; no Setup/Cleanup fixture is created or destroyed, unlike ServiceUtils/EventLogUtils, since this component only ever reads/acts on sessions that already exist)
+
+This component's Linux-testable guard/logic surface is much smaller than
+EventLogUtils' — most methods either take no input to guard, or reach a
+native call on their very first line with nothing to validate first. Nearly
+everything below genuinely requires a live Windows session; be realistic
+about that rather than assuming a plain guard-test pass covers it.
+
+- `GetCurrentSessionId`, `GetActiveConsoleSessionId`, `IsCurrentSessionOnConsole`, `GetCurrentSessionKind`, `IsRunningAsServiceSession` (against the actual interactive logon; `GetCurrentSessionKind` returning `Rdp` specifically needs an actual RDP session, not just the console)
+- `GetSessionKind`, `GetCurrentSessionConnectState`/`GetSessionConnectState`, `IsCurrentSessionDisconnected`/`IsSessionDisconnected`, `GetCurrentSessionUser`/`GetSessionUser`, `EnumerateSessionsJson` for a session other than the caller's (needs a second concurrent session; a made-up/negative session ID returns false + message, never an exception)
+- `IsWorkstationLockedSimple`/`IsWorkstationLocked` (lock the workstation with Win+L during the test and confirm `true`; separately trigger a UAC consent prompt and confirm it stays `false` — the core hypothesis under test, per the component README's Notes & Caveats)
+- `IsInputDesktopAvailableSimple`/`IsInputDesktopAvailable` (needs both a lock and a UAC/Ctrl+Alt+Del trigger to exercise both "unavailable" paths, plus an actual Session-0 service context for the "no desktop at all" path)
+- `IsSessionInteractiveSimple`/`IsSessionInteractive` (needs a real Windows service, running in Session 0, to exercise the `false` path — console/RDP sessions only exercise `true`)
+- `GetIdleTimeMilliseconds` (manual, timing-sensitive — idle the session for a known number of seconds and assert the result is within a reasonable tolerance)
+- `WaitForSessionConnectState`/`Simple`, `WaitForInputDesktopAvailable`/`Simple`, `WaitForWorkstationUnlocked`/`Simple` (found-in-time case — trigger the state change from a second session/RDP client partway through the wait; timeout case — nothing changes, assert `timedOut = true`; negative `timeoutMs`/non-positive `pollIntervalMs` → `false` + message immediately, never an exception)
+- `LockWorkstation` (disruptive to whoever's session runs it — run this from a disposable/secondary RDP session, last in the manual pass, never from the primary console you're working on)
+- `DisconnectSession`/`DisconnectCurrentSession` (needs a disposable second RDP session — never disconnect the primary session — and admin rights to exercise the "disconnect someone else's session" privilege-checked path; disconnecting your own session needs no special privilege)
+
+The null/negative-argument guards and the pure
+`TryToSessionConnectState`/`TryToSessionKind`/`TryParseConnectStates`
+enum-mapping/filter-parsing logic already have Linux-runnable xunit coverage
+in `src/sessionutils/SessionUtils.Tests`
+(`dotnet test src/sessionutils/SessionUtils.Tests/SessionUtils.Tests.csproj` —
+like `ServiceUtils.Tests`/`EventLogUtils.Tests`, this project has zero NuGet
+packages and no `UseWPF`/`UseWindowsForms` framework reference, so no
+WindowsDesktop runtime requirement flows into the test project).
+
+**Never run `LockWorkstation` or `DisconnectSession`/`DisconnectCurrentSession` against a session you or someone else is actively relying on** — always test these two from a disposable, expendable RDP session set up specifically for this purpose.
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned

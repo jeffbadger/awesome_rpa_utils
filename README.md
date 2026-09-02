@@ -15,6 +15,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [ocrutils](src/ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
 | [screencaptureutils](src/screencaptureutils/README.md) | `ScreenCaptureAutomation` | Captures the screen, a region, or a window to a file/clipboard; compares captures against a baseline; annotates or redacts saved screenshots. |
 | [serviceutils](src/serviceutils/README.md) | `ServiceAutomation` | Queries, starts, stops, restarts, and configures the startup type of Windows services. |
+| [sessionutils](src/sessionutils/README.md) | `SessionAutomation` | Reports on and acts on Windows session/workstation state: session identity/kind, enumeration, connect state, lock/desktop availability, idle time, and deliberate lock/disconnect actions. |
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
 | [windowutils](src/windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
 
@@ -160,27 +161,30 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [serviceutils/README.md](src/serviceutils/README.md) and [serviceutils/Documentation/](src/serviceutils/Documentation/README.md)
 - [eventutils/README.md](src/eventutils/README.md)
 - [eventlogutils/README.md](src/eventlogutils/README.md) and [eventlogutils/Documentation/](src/eventlogutils/Documentation/README.md)
+- [sessionutils/README.md](src/sessionutils/README.md) and [sessionutils/Documentation/](src/sessionutils/Documentation/README.md)
 
 ## Testing
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
-`CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`, and
-`EventLogUtils` additionally have plain xunit projects —
+`CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
+`EventLogUtils`, and `SessionUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
 `dotnet test src/eventutils/EventUtils.Tests/EventUtils.Tests.csproj`,
 `dotnet test src/serviceutils/ServiceUtils.Tests/ServiceUtils.Tests.csproj`,
+`dotnet test src/eventlogutils/EventLogUtils.Tests/EventLogUtils.Tests.csproj`,
 and
-`dotnet test src/eventlogutils/EventLogUtils.Tests/EventLogUtils.Tests.csproj` —
+`dotnet test src/sessionutils/SessionUtils.Tests/SessionUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
 map, debounce, queue-overflow, and waiter logic, service enum-to-Win32
-mapping, and the Event Log filter-parsing/XPath-building logic), argument
-validation, and the never-throw contract (Windows-only interop/process cases
-self-skip on non-Windows machines).
+mapping, the Event Log filter-parsing/XPath-building logic, and the session
+connect-state/kind enum-mapping logic), argument validation, and the
+never-throw contract (Windows-only interop/process cases self-skip on
+non-Windows machines).
 
 ## License
 
