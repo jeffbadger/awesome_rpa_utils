@@ -58,6 +58,7 @@ $targetFrameworkChannels = @(
 $bundledArchives = @(
     "AwesomeRpaUtils-Documentation.zip"
     "AwesomeRpaUtils-RestCodeGenerator.zip"
+    "AwesomeRpaUtils-ComponentBrowser.zip"
 )
 
 # $ArchivePath must contain a literal "{tfm}" placeholder, substituted with each
@@ -90,6 +91,24 @@ $generatorFiles = @(
     "RestCodeGenerator.runtimeconfig.json"
 )
 
+# The ComponentBrowser is a design-time WPF tool for browsing a release archive's
+# components (see component-browser/README.md) - not a component the Robot Studio
+# runtime loads, and not part of src/AwesomeRpaUtils.sln. It's a WinExe, so a plain
+# `dotnet build` already produces a runnable apphost - no `dotnet publish` needed,
+# unlike RestCodeGenerator's console-tool build which explicitly disables the apphost.
+# It also references System.Reflection.MetadataLoadContext, a NuGet package outside
+# the shared framework, so that DLL ships alongside it in this tool's own
+# self-contained archive (this tool is single-TFM, unlike the component DLLs' separate
+# TFM-matched SupportLibraries.zip above).
+$componentBrowserFiles = @(
+    "ComponentBrowser.exe"
+    "ComponentBrowser.dll"
+    "ComponentBrowser.deps.json"
+    "ComponentBrowser.runtimeconfig.json"
+    "ComponentBrowser.Core.dll"
+    "System.Reflection.MetadataLoadContext.dll"
+)
+
 if (-not $NoBuild) {
     & dotnet build $solutionPath --configuration $Configuration
     if ($LASTEXITCODE -ne 0) {
@@ -105,6 +124,7 @@ $bundledStagingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("Awesome
 $supportStagingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("AwesomeRpaUtils-Support-" + [guid]::NewGuid().ToString("N"))
 $generatorStagingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("AwesomeRpaUtils-Generator-" + [guid]::NewGuid().ToString("N"))
 $generatorBuildDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("AwesomeRpaUtils-Generator-Build-" + [guid]::NewGuid().ToString("N"))
+$componentBrowserStagingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("AwesomeRpaUtils-ComponentBrowser-" + [guid]::NewGuid().ToString("N"))
 
 try {
     New-Item -ItemType Directory -Path $bundledStagingDirectory | Out-Null
@@ -152,6 +172,41 @@ try {
     Copy-Item -LiteralPath (Join-Path $repositoryRoot "tools/README.md") -Destination (Join-Path $generatorStagingDirectory "README.md")
 
     Compress-Archive -Path (Join-Path $generatorStagingDirectory "*") -DestinationPath (Join-Path $bundledStagingDirectory "AwesomeRpaUtils-RestCodeGenerator.zip")
+
+    # Like the generator, ComponentBrowser lives outside src/AwesomeRpaUtils.sln, so the
+    # solution build above never produces it, and -NoBuild reuses its own bin output.
+    $componentBrowserProjectPath = Join-Path $repositoryRoot "component-browser/ComponentBrowser.csproj"
+    $componentBrowserOutputDirectory = Join-Path $repositoryRoot "component-browser/bin/$Configuration/net10.0-windows"
+    if (-not $NoBuild) {
+        & dotnet build $componentBrowserProjectPath --configuration $Configuration
+        if ($LASTEXITCODE -ne 0) {
+            throw "ComponentBrowser build failed with exit code $LASTEXITCODE."
+        }
+    }
+
+    New-Item -ItemType Directory -Path $componentBrowserStagingDirectory | Out-Null
+
+    foreach ($file in $componentBrowserFiles) {
+        $sourcePath = Join-Path $componentBrowserOutputDirectory $file
+        if ($file -eq "ComponentBrowser.exe" -and -not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            # A WinExe's apphost takes the *building* host's own RID/naming, not
+            # necessarily "ComponentBrowser.exe" - real releases always build via CI on
+            # windows-latest, where the .exe is produced directly, but a local dry run
+            # of this script on a non-Windows dev machine gets a same-named,
+            # wrong-platform apphost binary instead. Fall back to it so the packaging
+            # logic itself is still exercisable off Windows; it just won't actually run.
+            $sourcePath = Join-Path $componentBrowserOutputDirectory "ComponentBrowser"
+        }
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            throw "Expected ComponentBrowser file '$file' was not found at '$componentBrowserOutputDirectory'. Build ComponentBrowser first or omit -NoBuild."
+        }
+
+        Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $componentBrowserStagingDirectory $file)
+    }
+
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot "component-browser/README.md") -Destination (Join-Path $componentBrowserStagingDirectory "README.md")
+
+    Compress-Archive -Path (Join-Path $componentBrowserStagingDirectory "*") -DestinationPath (Join-Path $bundledStagingDirectory "AwesomeRpaUtils-ComponentBrowser.zip")
 
     foreach ($bundledArchive in $bundledArchives) {
         $bundledArchivePath = Join-Path $bundledStagingDirectory $bundledArchive
@@ -225,6 +280,7 @@ finally {
         $supportStagingDirectory
         $generatorStagingDirectory
         $generatorBuildDirectory
+        $componentBrowserStagingDirectory
     )) {
         if (Test-Path -LiteralPath $temporaryDirectory) {
             Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force

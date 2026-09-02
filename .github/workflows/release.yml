@@ -25,6 +25,10 @@ jobs:
         # Lives outside src/AwesomeRpaUtils.sln, so the solution build above never
         # produces it; Package-Release.ps1 -NoBuild expects this output to already exist.
         run: dotnet build tools/RestCodeGenerator/RestCodeGenerator.csproj --configuration Release
+      - name: Build ComponentBrowser
+        # Also lives outside src/AwesomeRpaUtils.sln. A plain build already produces a
+        # runnable ComponentBrowser.exe apphost here since this runs on windows-latest.
+        run: dotnet build component-browser/ComponentBrowser.csproj --configuration Release
       - name: Package project DLLs
         shell: pwsh
         env:
