@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <UseWPF>true</UseWPF>
+    <!-- Allows building this Windows-targeted project from a non-Windows SDK host -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>ComponentBrowser</AssemblyName>
+    <RootNamespace>ComponentBrowser</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- All the UI-independent logic (reflection, doc parsing, zip extraction) lives in
+         this plain, non-Windows-targeted library so it can be unit tested without pulling in
+         the WindowsDesktop runtime this WPF exe requires - see ComponentBrowser.Core's own
+         csproj comment. -->
+    <ProjectReference Include="ComponentBrowser.Core\ComponentBrowser.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project and the Core library live in subfolders; keep their sources out of
+         this DLL (Core is consumed via ProjectReference above, not compiled in directly). -->
+    <Compile Remove="ComponentBrowser.Tests/**/*.cs" />
+    <Compile Remove="ComponentBrowser.Core/**/*.cs" />
+  </ItemGroup>
+
+</Project>

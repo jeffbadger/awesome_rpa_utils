@@ -1,0 +1,51 @@
+<Window x:Class="ComponentBrowser.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Component Browser" Height="650" Width="1000">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8">
+            <TextBox x:Name="ZipPathTextBox" Width="500" Margin="0,0,8,0" VerticalContentAlignment="Center" />
+            <Button x:Name="BrowseButton" Content="Browse..." Click="BrowseButton_Click" Margin="0,0,8,0" Padding="8,2" />
+            <Button x:Name="LoadButton" Content="Load" Click="LoadButton_Click" Padding="8,2" />
+        </StackPanel>
+        <TextBlock x:Name="StatusText" DockPanel.Dock="Bottom" Margin="8" Foreground="Gray" TextWrapping="Wrap" />
+        <Grid Margin="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" />
+                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <DockPanel Grid.Column="0" Margin="0,0,4,0">
+                <TextBlock DockPanel.Dock="Top" Text="Components" FontWeight="Bold" Margin="0,0,0,4" />
+                <ListBox x:Name="ComponentsListBox" DisplayMemberPath="DisplayName"
+                         SelectionChanged="ComponentsListBox_SelectionChanged" />
+            </DockPanel>
+
+            <DockPanel Grid.Column="1" Margin="4,0">
+                <TextBlock DockPanel.Dock="Top" Text="Properties / Methods / Events" FontWeight="Bold" Margin="0,0,0,4" />
+                <ListBox x:Name="PmesListBox" DisplayMemberPath="DisplayName"
+                         SelectionChanged="PmesListBox_SelectionChanged" />
+            </DockPanel>
+
+            <ScrollViewer Grid.Column="2" Margin="4,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="Signature" FontWeight="Bold" />
+                    <TextBlock x:Name="SignatureText" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                    <TextBlock Text="Category" FontWeight="Bold" />
+                    <TextBlock x:Name="CategoryText" Margin="0,0,0,12" />
+
+                    <TextBlock Text="Description" FontWeight="Bold" />
+                    <TextBlock x:Name="DescriptionText" TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                    <TextBlock Text="Worked Example" FontWeight="Bold" />
+                    <TextBlock x:Name="WorkedExampleText" Margin="0,0,0,12" />
+
+                    <TextBlock Text="Notes &amp; Caveats" FontWeight="Bold" />
+                    <TextBlock x:Name="NotesText" TextWrapping="Wrap" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</Window>
