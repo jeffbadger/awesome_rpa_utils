@@ -6,6 +6,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 
 | Component | Assembly | Description |
 |---|---|---|
+| [archiveutils](src/archiveutils/README.md) | `ArchiveAutomation` | Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection and independent CRC-32 verification built in. |
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 | [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
@@ -164,14 +165,15 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [eventlogutils/README.md](src/eventlogutils/README.md) and [eventlogutils/Documentation/](src/eventlogutils/Documentation/README.md)
 - [sessionutils/README.md](src/sessionutils/README.md) and [sessionutils/Documentation/](src/sessionutils/Documentation/README.md)
 - [filewatchutils/README.md](src/filewatchutils/README.md) and [filewatchutils/Documentation/](src/filewatchutils/Documentation/README.md)
+- [archiveutils/README.md](src/archiveutils/README.md) and [archiveutils/Documentation/](src/archiveutils/Documentation/README.md)
 
 ## Testing
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
-`EventLogUtils`, `SessionUtils`, and `FileWatchUtils` additionally have
-plain xunit projects —
+`EventLogUtils`, `SessionUtils`, `FileWatchUtils`, and `ArchiveUtils`
+additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -179,8 +181,9 @@ plain xunit projects —
 `dotnet test src/serviceutils/ServiceUtils.Tests/ServiceUtils.Tests.csproj`,
 `dotnet test src/eventlogutils/EventLogUtils.Tests/EventLogUtils.Tests.csproj`,
 `dotnet test src/sessionutils/SessionUtils.Tests/SessionUtils.Tests.csproj`,
+`dotnet test src/filewatchutils/FileWatchUtils.Tests/FileWatchUtils.Tests.csproj`,
 and
-`dotnet test src/filewatchutils/FileWatchUtils.Tests/FileWatchUtils.Tests.csproj` —
+`dotnet test src/archiveutils/ArchiveUtils.Tests/ArchiveUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
@@ -188,12 +191,14 @@ map, debounce, queue-overflow, and waiter logic, service enum-to-Win32
 mapping, the Event Log filter-parsing/XPath-building logic, and the session
 connect-state/kind enum-mapping logic), argument validation, and the
 never-throw contract (Windows-only interop/process cases self-skip on
-non-Windows machines). `FileWatchUtils` is the exception to that last point:
-since every one of its operations is plain cross-platform BCL file I/O with
-zero P/Invoke, its test project exercises real functional behavior on any
-OS — real temp-directory files, real exclusive-lock detection, real
-`FileSystemWatcher` events, real concurrent `ClaimFile` races, and real
-hashing — rather than guard clauses with Windows-only paths self-skipping.
+non-Windows machines). `FileWatchUtils` and `ArchiveUtils` are the exception
+to that last point: since every one of their operations is plain
+cross-platform BCL (file I/O, `System.IO.Compression`) with zero P/Invoke,
+their test projects exercise real functional behavior on any OS — real
+temp-directory files, real exclusive-lock detection, real
+`FileSystemWatcher` events, real concurrent `ClaimFile` races, real hashing,
+a real reproduced zip-slip attempt, and a real corrupted-CRC entry — rather
+than guard clauses with Windows-only paths self-skipping.
 
 ## License
 
