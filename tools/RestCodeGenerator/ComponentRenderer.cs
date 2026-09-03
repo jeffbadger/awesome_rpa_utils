@@ -39,8 +39,8 @@ public static class ComponentRenderer
         sb.AppendLine(DesignTimeProperties(hasApiKeyHeader, hasApiKeyQuery, hasOAuth2));
         sb.AppendLine();
         sb.AppendLine(AlwaysPresentHelpers(hasApiKeyHeader, hasApiKeyQuery, hasOAuth2));
-        AppendEndpointMethods(sb, doc);
-        AppendPrivateCore(sb, hasApiKeyHeader, hasApiKeyQuery, hasOAuth2, designerComponent);
+        var usesTypedBody = AppendEndpointMethods(sb, doc);
+        AppendPrivateCore(sb, hasApiKeyHeader, hasApiKeyQuery, hasOAuth2, usesTypedBody, designerComponent);
         if (designerComponent) sb.AppendLine("\n" + DisposePattern);
         sb.AppendLine("    }");
         sb.AppendLine("}");
@@ -113,7 +113,10 @@ public static class ComponentRenderer
         sb.AppendLine("    /// returned as raw JSON strings; parse them with Robot Studio's built-in JSON");
         sb.AppendLine("    /// methods. Every public method follows the Never-Throws Standard: success");
         sb.AppendLine("    /// returns true with message null; failure returns false with a reason.");
-        sb.AppendLine("    /// Pass \"\" for any optional string parameter to omit it.");
+        sb.AppendLine("    /// Pass \"\" for any optional string parameter to omit it. A request body whose");
+        sb.AppendLine("    /// schema names fields is broken into one typed parameter per field and assembled");
+        sb.AppendLine("    /// into JSON automatically; a body with no named fields instead takes a single");
+        sb.AppendLine("    /// bodyJson string parameter to pass through as-is.");
         sb.AppendLine("    /// BaseUrl, TimeoutSeconds, and any scheme-specific credentials are public");
         sb.AppendLine("    /// properties — set them (design time or at the start of a run) before calling");
         sb.AppendLine("    /// an endpoint method.");
@@ -419,24 +422,36 @@ public static class ComponentRenderer
 
     // ---- Endpoint methods (one per modeled swagger operation) ----
 
-    private static void AppendEndpointMethods(StringBuilder sb, SwaggerDoc doc)
+    /// <summary>Returns true when at least one emitted method flattened its body into typed
+    /// parameters — the caller uses this to decide whether the JsonString/JsonNumber/JsonBool/
+    /// JsonArray runtime helpers are needed at all.</summary>
+    private static bool AppendEndpointMethods(StringBuilder sb, SwaggerDoc doc)
     {
         var names = MethodNameMapper.Map(doc.Operations);
         sb.AppendLine();
         sb.AppendLine("        // ---- Endpoint methods (one per usable swagger operation) ----");
+        var usesTypedBody = false;
         foreach (var op in doc.Operations)
-            AppendEndpointMethod(sb, op, names[op]);
+            usesTypedBody |= AppendEndpointMethod(sb, op, names[op]);
+        return usesTypedBody;
     }
 
     /// <summary>
     /// Emits one endpoint method: path params become chained <c>.Replace("{name}", …)</c>
     /// substitutions, query params a <c>BuildQuery().Add(…)</c> chain, header params a
-    /// <c>WithHeader(…)</c> chain, and <c>bodyJson</c> appears only for body-carrying
-    /// operations. All inputs are designers' strings; the never-throw HTTP core does the rest.
+    /// <c>WithHeader(…)</c> chain, and the body either flattens into typed parameters
+    /// reassembled into a local <c>bodyJson</c> (see <see cref="TryFlattenBody"/>) or, when
+    /// that isn't possible, falls back to a raw <c>bodyJson</c> string parameter. All inputs
+    /// are designers' strings; the never-throw HTTP core does the rest. Returns true when the
+    /// body was flattened into typed parameters (the caller uses this to gate the JSON runtime helpers).
     /// </summary>
-    private static void AppendEndpointMethod(StringBuilder sb, SwaggerOperation op, string name)
+    private static bool AppendEndpointMethod(StringBuilder sb, SwaggerOperation op, string name)
     {
         var used = new HashSet<string>();
+        // Reserved up front: a flattened body assembles into a local also named "bodyJson" (and
+        // a non-flattened body's own parameter is literally called that) — reserving it here
+        // means a same-named path/query/header/body-field param gets suffixed instead of colliding.
+        if (op.HasBody) used.Add("bodyJson");
         var paths = op.PathParams.Select(p => (Original: p.Name, Param: ParamName(p, used))).ToList();
         var queries = op.QueryParams.Select(p => (Original: p.Name, Param: ParamName(p, used))).ToList();
         var headers = op.HeaderParams.Select(p => (Original: p.Name, Param: ParamName(p, used))).ToList();
@@ -448,8 +463,13 @@ public static class ComponentRenderer
         if (summary.Length == 0)
             summary = "Performs the " + op.HttpMethod + " request on " + op.Path + ".";
 
+        var flattenedBody = op.HasBody ? TryFlattenBody(op, used) : null;
+        var bodyNote = flattenedBody != null && SchemaContainsArray(op.BodySchema!)
+            ? " Repeated (array) body fields are capped at a fixed number of slots; leave every parameter in an unused slot empty (\"\") to omit that entry."
+            : "";
+
         sb.AppendLine();
-        sb.AppendLine("        /// <summary>" + Xml(summary) +
+        sb.AppendLine("        /// <summary>" + Xml(summary) + bodyNote +
                       " Returns true if the HTTP call completed; check statusCode for 4xx/5xx. Never throws.</summary>");
         sb.AppendLine("        [System.ComponentModel.Description(" +
                       Lit(summary + " (" + op.HttpMethod + " " + op.Path + ")") + ")]");
@@ -458,7 +478,9 @@ public static class ComponentRenderer
         signature.AddRange(paths.Select(p => "string " + p.Param));
         signature.AddRange(queries.Select(p => "string " + p.Param));
         signature.AddRange(headers.Select(p => "string " + p.Param));
-        if (op.HasBody)
+        if (flattenedBody is { } fb)
+            signature.AddRange(fb.Params.Select(p => "string " + p));
+        else if (op.HasBody)
             signature.Add("string bodyJson");
         signature.Add("out string responseJson");
         signature.Add("out int statusCode");
@@ -466,6 +488,8 @@ public static class ComponentRenderer
 
         sb.AppendLine("        public bool " + name + "(" + string.Join(", ", signature) + ")");
         sb.AppendLine("        {");
+        if (flattenedBody is { } body)
+            sb.AppendLine("            var bodyJson = " + body.Expr + ";");
 
         sb.Append("            var path = " + Lit(op.Path));
         foreach (var p in paths)
@@ -507,12 +531,18 @@ public static class ComponentRenderer
             }
         }
         sb.AppendLine("        }");
+        return flattenedBody != null;
     }
 
     /// <summary>Camelizes a swagger parameter name into a C# identifier, unique within one method.</summary>
-    private static string ParamName(SwaggerParameter p, HashSet<string> used)
+    private static string ParamName(SwaggerParameter p, HashSet<string> used) => UniqueName(p.Name, used);
+
+    /// <summary>Camelizes a suggested name into a C# identifier, unique within one method
+    /// (numeric suffix on collision — including collisions with path/query/header param names,
+    /// since body-flattened parameters share the same signature and the same <c>used</c> set).</summary>
+    private static string UniqueName(string suggested, HashSet<string> used)
     {
-        var pascal = MethodNameMapper.Pascalize(p.Name) ?? "Param";
+        var pascal = MethodNameMapper.Pascalize(suggested) ?? "Param";
         var name = char.ToLowerInvariant(pascal[0]) + pascal[1..];
         var candidate = name;
         var suffix = 2;
@@ -521,10 +551,104 @@ public static class ComponentRenderer
         return candidate;
     }
 
+    // ---- Request body flattening (typed parameters, assembled into JSON at runtime) ----
+
+    /// <summary>
+    /// Flattens a body's <see cref="SwaggerSchema"/> tree into typed method parameters plus a
+    /// runtime expression that reassembles them into a JSON literal. Only usable when the body
+    /// is a top-level JSON object with at least one flattenable property — a free-form object,
+    /// a non-object body, or a schema the parser couldn't resolve all fall back to the original
+    /// raw <c>bodyJson</c> string parameter (returns null).
+    /// </summary>
+    private static (IReadOnlyList<string> Params, string Expr)? TryFlattenBody(SwaggerOperation op, HashSet<string> used)
+    {
+        if (op.BodySchema is not { JsonType: "object" } schema || schema.Properties.Count == 0)
+            return null;
+        var (expr, leafParams) = BuildBodyNode(schema, "", "", used);
+        return leafParams.Count == 0 ? null : (leafParams, expr);
+    }
+
+    /// <summary>
+    /// Recursively emits a runtime C# expression that evaluates to the JSON text for one schema
+    /// node, and returns the leaf parameter names it introduced (in emission order — this both
+    /// becomes the flattened method signature and lets an enclosing array slot detect whether it
+    /// was actually filled in). <paramref name="nameHint"/> is the property key to use when this
+    /// node turns out to be a scalar leaf; it threads unchanged through arrays (their item schema
+    /// has no key of its own) and is reset to each property's own name inside an object.
+    /// <paramref name="arraySlotSuffix"/> is appended to a leaf's name so each repeated array slot
+    /// gets its own parameter (e.g. "cardNumber1".."cardNumber5").
+    /// </summary>
+    private static (string Expr, List<string> LeafParams) BuildBodyNode(
+        SwaggerSchema schema, string nameHint, string arraySlotSuffix, HashSet<string> used)
+    {
+        switch (schema.JsonType)
+        {
+            case "object":
+            {
+                if (schema.Properties.Count == 0)
+                    return ("\"{}\"", new List<string>());
+                var parts = new List<string>();
+                var leafParams = new List<string>();
+                foreach (var prop in schema.Properties)
+                {
+                    var (valueExpr, propLeafParams) = BuildBodyNode(prop.Schema, prop.Name, arraySlotSuffix, used);
+                    parts.Add(JsonKeyPrefixLit(prop.Name) + " + " + valueExpr);
+                    leafParams.AddRange(propLeafParams);
+                }
+                return ("(\"{\" + " + string.Join(" + \",\" + ", parts) + " + \"}\")", leafParams);
+            }
+            case "array":
+            {
+                var slots = new List<string>();
+                var leafParams = new List<string>();
+                for (var i = 1; i <= schema.MaxItems; i++)
+                {
+                    var (itemExpr, itemLeafParams) = BuildBodyNode(schema.Items!, nameHint, arraySlotSuffix + i, used);
+                    var presence = itemLeafParams.Count == 0
+                        ? "false"
+                        : string.Join(" || ", itemLeafParams.Select(p => p + " != \"\""));
+                    slots.Add("(" + presence + ", " + itemExpr + ")");
+                    leafParams.AddRange(itemLeafParams);
+                }
+                return ("JsonArray(" + string.Join(", ", slots) + ")", leafParams);
+            }
+            default:   // string/integer/number/boolean scalar leaf
+            {
+                var paramName = UniqueName(nameHint + arraySlotSuffix, used);
+                var expr = schema.JsonType switch
+                {
+                    "integer" or "number" => "JsonNumber(" + paramName + ")",
+                    "boolean" => "JsonBool(" + paramName + ")",
+                    _ => "JsonString(" + paramName + ")",
+                };
+                return (expr, new List<string> { paramName });
+            }
+        }
+    }
+
+    /// <summary>True when a body schema (or any of its nested properties/items) contains an
+    /// array — used only to decide whether the "leave a slot empty to omit it" doc note applies.</summary>
+    private static bool SchemaContainsArray(SwaggerSchema schema) => schema.JsonType switch
+    {
+        "array" => true,
+        "object" => schema.Properties.Any(p => SchemaContainsArray(p.Schema)),
+        _ => false,
+    };
+
+    /// <summary>A JSON object key (with trailing colon) as a C# string literal, e.g. for
+    /// property name "custId" this returns the C# source text <c>"\"custId\":"</c>.</summary>
+    private static string JsonKeyPrefixLit(string propertyName) => Lit("\"" + JsonEscapeText(propertyName) + "\":");
+
+    /// <summary>Escapes the characters Lit() also escapes, without the surrounding quotes —
+    /// used to build a JSON-safe fragment before Lit() re-escapes it for the C# literal.</summary>
+    private static string JsonEscapeText(string s) => (s ?? "")
+        .Replace("\\", "\\\\").Replace("\"", "\\\"")
+        .Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t");
+
     // ---- Private HTTP core (emitted once per generated file) ----
 
     private static void AppendPrivateCore(
-        StringBuilder sb, bool hasApiKeyHeader, bool hasApiKeyQuery, bool hasOAuth2, bool designerComponent)
+        StringBuilder sb, bool hasApiKeyHeader, bool hasApiKeyQuery, bool hasOAuth2, bool usesTypedBody, bool designerComponent)
     {
         // Designer mode swaps the static HttpClient for the instance-level _httpClient
         // (so Dispose can release it); the raw-string core is authored with _client and
@@ -532,6 +656,7 @@ public static class ComponentRenderer
         string Client(string text) => designerComponent ? text.Replace("_client.", "_httpClient.") : text;
         sb.AppendLine();
         sb.AppendLine(Client(CoreBuilders));
+        if (usesTypedBody) sb.AppendLine(Client(JsonBodyHelpers));
         sb.AppendLine();
         sb.AppendLine(Client(SendOpen));
         if (hasApiKeyQuery) sb.AppendLine(Client(ApiKeyQuerySend));
@@ -601,6 +726,60 @@ public static class ComponentRenderer
         }
 
         private static QueryBuilder BuildQuery() { return new QueryBuilder(); }
+""";
+
+    /// <summary>Emitted only when at least one endpoint method flattened its body schema into
+    /// typed parameters (see <see cref="TryFlattenBody"/>) — those methods' generated
+    /// expressions call these to reassemble a JSON literal at runtime.</summary>
+    private const string JsonBodyHelpers =
+"""
+
+        // ---- JSON body assembly (emitted once per file; used by methods with a flattened body) ----
+
+        /// <summary>Encodes a value as a JSON string literal. Null becomes "". Never throws.</summary>
+        private static string JsonString(string value)
+        {
+            var s = value ?? "";
+            var sb = new StringBuilder(s.Length + 2);
+            sb.Append('"');
+            foreach (var c in s)
+            {
+                switch (c)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < ' ') sb.Append("\\u").Append(((int)c).ToString("x4"));
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            sb.Append('"');
+            return sb.ToString();
+        }
+
+        /// <summary>Encodes a value as a JSON number literal; blank or unparsable input becomes 0. Never throws.</summary>
+        private static string JsonNumber(string value) =>
+            double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var n)
+                ? n.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : "0";
+
+        /// <summary>Encodes a value as a JSON boolean literal; anything other than a case-insensitive "true" becomes false. Never throws.</summary>
+        private static string JsonBool(string value) =>
+            string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ? "true" : "false";
+
+        /// <summary>Joins the present slots (in schema order) into a JSON array literal; a slot whose
+        /// fields were all left empty is omitted. Never throws.</summary>
+        private static string JsonArray(params (bool Present, string Json)[] slots)
+        {
+            var parts = new List<string>();
+            foreach (var slot in slots)
+                if (slot.Present) parts.Add(slot.Json);
+            return "[" + string.Join(",", parts) + "]";
+        }
 """;
 
     private const string SendOpen =

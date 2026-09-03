@@ -100,6 +100,23 @@ public static class SwaggerParser
         return v.GetString();
     }
 
+    /// <summary>Reads an optional positive-integer property. Every spec — JSON or YAML — is
+    /// loaded through the YAML deserializer (see <see cref="LoadDocument"/>), which reads every
+    /// plain scalar as a string; a bare JSON number therefore never actually reaches here; a
+    /// number is still accepted for robustness. Missing, zero/negative, or unparsable yields null.</summary>
+    private static int? GetPositiveIntOrNull(JsonElement parent, string name)
+    {
+        if (parent.ValueKind != JsonValueKind.Object || !parent.TryGetProperty(name, out var v))
+            return null;
+        var n = v.ValueKind switch
+        {
+            JsonValueKind.Number when v.TryGetInt32(out var i) => (int?)i,
+            JsonValueKind.String when int.TryParse(v.GetString(), out var i) => (int?)i,
+            _ => null,
+        };
+        return n is > 0 ? n : null;
+    }
+
     public static SwaggerDoc Parse(JsonElement root)
     {
         var title = "Api";
@@ -179,6 +196,7 @@ public static class SwaggerParser
                     var headerParams = new List<SwaggerParameter>();
                     bool hasBody = false;
                     bool hasNonJsonBody = false;
+                    SwaggerSchema? bodySchema = null;
 
                     foreach (var scope in new[] { pathLevelParams, opEntry.Value.GetPropertyOrNull("parameters") })
                     {
@@ -192,7 +210,10 @@ public static class SwaggerParser
                                 case "path": pathParams.Add(ToParameter(param)); break;
                                 case "query": queryParams.Add(ToParameter(param)); break;
                                 case "header": headerParams.Add(ToParameter(param)); break;
-                                case "body": hasBody = true; break;
+                                case "body":
+                                    hasBody = true;
+                                    bodySchema = ParseSchema(root, param.GetPropertyOrNull("schema"));
+                                    break;
                                 case "formData":
                                     // 2.0 formData without type "file" is JSON-encodable; file uploads are not
                                     if (param.GetPropertyOrNull("type")?.GetString() == "file")
@@ -206,9 +227,21 @@ public static class SwaggerParser
 
                     if (opEntry.Value.GetPropertyOrNull("requestBody") is { } rb)      // OpenAPI 3.x
                     {
-                        var content = rb.GetPropertyOrNull("content");
-                        if (content is { } c && c.EnumerateObject().Any(ct => ct.Name.StartsWith("application/json", StringComparison.Ordinal)))
+                        JsonElement? jsonContent = null;
+                        if (rb.GetPropertyOrNull("content") is { ValueKind: JsonValueKind.Object } content)
+                        {
+                            foreach (var ct in content.EnumerateObject())
+                            {
+                                if (!ct.Name.StartsWith("application/json", StringComparison.Ordinal)) continue;
+                                jsonContent = ct.Value;
+                                break;
+                            }
+                        }
+                        if (jsonContent is { } jc)
+                        {
                             hasBody = true;    // JSON requestBody → modeled
+                            bodySchema = ParseSchema(root, jc.GetPropertyOrNull("schema"));
+                        }
                         else
                             hasNonJsonBody = true;   // multipart/form/binary requestBody → skipped
                     }
@@ -224,7 +257,7 @@ public static class SwaggerParser
                             http, pathEntry.Name,
                             opEntry.Value.GetPropertyOrNull("operationId")?.GetString(),
                             opEntry.Value.GetPropertyOrNull("summary")?.GetString(),
-                            pathParams, queryParams, headerParams, hasBody));
+                            pathParams, queryParams, headerParams, hasBody, bodySchema));
                 }
             }
         }
@@ -275,4 +308,57 @@ public static class SwaggerParser
         new(p.GetPropertyOrNull("name")?.GetString() ?? "",
             p.GetPropertyOrNull("in")?.GetString() == "path",
             p.GetPropertyOrNull("description")?.GetString());
+
+    /// <summary>
+    /// Resolves a request-body schema (Swagger 2.0 body-parameter <c>schema</c>, or OpenAPI 3.x
+    /// <c>requestBody.content["application/json"].schema</c>) into a <see cref="SwaggerSchema"/>
+    /// tree, so the renderer can flatten it into typed method parameters. Returns null for a
+    /// missing/malformed schema — callers then fall back to a raw bodyJson string parameter.
+    /// A depth guard collapses pathological/circular schemas (self-referencing $refs) into a
+    /// plain string leaf rather than recursing forever.
+    /// </summary>
+    private static SwaggerSchema? ParseSchema(JsonElement root, JsonElement? maybe, int depth = 0)
+    {
+        if (ResolveRef(root, maybe) is not { ValueKind: JsonValueKind.Object } schema)
+            return null;
+        if (depth > 8)
+            return new SwaggerSchema("string", System.Array.Empty<SwaggerSchemaProperty>(), null, 1);
+
+        var type = GetStringOrNull(schema, "type");
+        if (type is null && schema.GetPropertyOrNull("properties") is { ValueKind: JsonValueKind.Object })
+            type = "object";
+        if (type is null && schema.GetPropertyOrNull("items") is not null)
+            type = "array";
+        type ??= "string";
+
+        switch (type)
+        {
+            case "object":
+            {
+                var props = new List<SwaggerSchemaProperty>();
+                if (schema.GetPropertyOrNull("properties") is { ValueKind: JsonValueKind.Object } properties)
+                {
+                    foreach (var p in properties.EnumerateObject())
+                    {
+                        var propSchema = ParseSchema(root, p.Value, depth + 1);
+                        if (propSchema != null)
+                            props.Add(new SwaggerSchemaProperty(p.Name, propSchema));
+                    }
+                }
+                return new SwaggerSchema("object", props, null, 1);
+            }
+            case "array":
+            {
+                var items = ParseSchema(root, schema.GetPropertyOrNull("items"), depth + 1)
+                             ?? new SwaggerSchema("string", System.Array.Empty<SwaggerSchemaProperty>(), null, 1);
+                var maxItems = GetPositiveIntOrNull(schema, "maxItems") ?? 1;
+                return new SwaggerSchema("array", System.Array.Empty<SwaggerSchemaProperty>(), items, maxItems);
+            }
+            default:
+            {
+                var jsonType = type is "integer" or "number" or "boolean" ? type : "string";
+                return new SwaggerSchema(jsonType, System.Array.Empty<SwaggerSchemaProperty>(), null, 1);
+            }
+        }
+    }
 }

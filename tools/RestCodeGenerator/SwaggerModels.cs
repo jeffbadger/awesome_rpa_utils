@@ -38,7 +38,23 @@ public sealed record SwaggerOperation(
     IReadOnlyList<SwaggerParameter> PathParams,
     IReadOnlyList<SwaggerParameter> QueryParams,     // `in: query`; arrays documented as CSV-delimited
     IReadOnlyList<SwaggerParameter> HeaderParams,    // `in: header`
-    bool HasBody);              // true when the operation carries a JSON request body
+    bool HasBody,                // true when the operation carries a JSON request body
+    SwaggerSchema? BodySchema = null);   // the body's resolved JSON schema, when one could be parsed; null falls back to a raw bodyJson parameter
 
 /// <summary>A single non-body parameter. <see cref="SwaggerOperation"/> buckets these by location.</summary>
 public sealed record SwaggerParameter(string Name, bool IsPath, string? Description);
+
+/// <summary>
+/// A JSON Schema node for a request body, reduced to what the generator needs to flatten
+/// scalar fields into typed method parameters and reassemble them into JSON at runtime.
+/// $refs are resolved before this is built. A missing/unrecognized "type" defaults to
+/// "object" when "properties" is present, "array" when "items" is present, else "string".
+/// </summary>
+public sealed record SwaggerSchema(
+    string JsonType,                              // "object" | "array" | "string" | "integer" | "number" | "boolean"
+    IReadOnlyList<SwaggerSchemaProperty> Properties,  // for JsonType == "object"; empty otherwise
+    SwaggerSchema? Items,                          // for JsonType == "array"; null otherwise
+    int MaxItems);                                 // for JsonType == "array": fixed slot count (>=1, defaults to 1 when the schema omits maxItems); unused otherwise
+
+/// <summary>One named property of an object <see cref="SwaggerSchema"/>.</summary>
+public sealed record SwaggerSchemaProperty(string Name, SwaggerSchema Schema);
