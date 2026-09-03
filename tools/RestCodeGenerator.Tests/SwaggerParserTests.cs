@@ -324,5 +324,26 @@ namespace RestCodeGenerator.Tests
             Assert.Equal("UpdatePet", map[Assert.Single(doc.Operations, o => o.OperationId == "updatePet")]);
             Assert.Equal("GetPetById", map[Assert.Single(doc.Operations, o => o.OperationId == "getPetById")]);
         }
+
+        // ---- YAML input (OpenLegacy-generated OpenAPI 3.0 spec) ----
+
+        [Fact]
+        public void ParseFile_YamlSpec_ParsesLikeEquivalentJson()
+        {
+            var doc = SwaggerParser.ParseFile(Path.Combine("TestData", "openlegacy_api_rpc.yaml"));
+            Assert.Equal("pega_rpc_project_demo", doc.Title);
+            Assert.Equal("1.0.0", doc.Version);
+            Assert.Equal("https://8ic2rimbpc.execute-api.eu-central-1.amazonaws.com/apps/pega-rpc-project-demo/", doc.DefaultBaseUrl);
+            Assert.Equal(6, doc.Operations.Count);
+
+            var getWithoutBody = Assert.Single(doc.Operations, o => o.OperationId == "ractcs6x");
+            Assert.Equal("POST", getWithoutBody.HttpMethod);
+            Assert.False(getWithoutBody.HasBody);
+
+            var withBody = Assert.Single(doc.Operations, o => o.OperationId == "gactcs6x");
+            Assert.True(withBody.HasBody);
+
+            Assert.Equal("apiKeyHeader", Assert.Single(doc.SecuritySchemes, s => s.Name == "ApiKeyAuth").Kind);
+        }
     }
 }

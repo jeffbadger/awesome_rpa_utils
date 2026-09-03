@@ -83,13 +83,17 @@ $supportAssemblies = @(
 
 # The RestCodeGenerator is a design-time command-line tool, not a component the
 # Robot Studio runtime loads. It targets net10.0 only and runs with
-# `dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]`.
-# Its archive holds exactly the three files needed to run it that way plus the
-# tool's README; PDBs, ref assemblies, and build intermediates are left out.
+# `dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component] [--build]`.
+# It references YamlDotNet (to parse OpenAPI/Swagger YAML specs, not just JSON), a
+# NuGet package outside the shared framework, so that DLL ships alongside it here -
+# same reasoning as ComponentBrowser's MetadataLoadContext DLL below. Otherwise its
+# archive holds exactly the files needed to run it that way plus the tool's README;
+# PDBs, ref assemblies, and build intermediates are left out.
 $generatorFiles = @(
     "RestCodeGenerator.dll"
     "RestCodeGenerator.deps.json"
     "RestCodeGenerator.runtimeconfig.json"
+    "YamlDotNet.dll"
 )
 
 # The ComponentBrowser is a design-time WPF tool for browsing a release archive's

@@ -15,14 +15,15 @@ README — no `.csproj`, so `dotnet run --project` will not work here. Run the
 published DLL directly, wherever a .NET 10 runtime is installed:
 
 ```powershell
-dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]
+dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component] [--build]
 ```
 
 This writes `<ApiName>RestUtils.cs` and `<ApiName>RestUtils.csproj` to
 `<outputDirectory>`. The `.cs` file can be pasted directly into a Robot Studio
 Script component as-is; to build a DLL instead (the fallback path — see
 [Consuming the generated component](#consuming-the-generated-component)
-below), build the `.csproj` it was written alongside:
+below), either pass `--build` to have the generator run the build for you in
+the same command, or build the `.csproj` yourself afterwards:
 
 ```powershell
 dotnet build <outputDirectory>/<ApiName>RestUtils.csproj
@@ -35,14 +36,15 @@ and runs the tool via `dotnet run --project`, then prints next steps:
 ./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store
 
 # same, with the -Component switch (adds --component to the invocation:
-# Component-tray-shaped class for the DLL fallback)
-./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store -Component
+# Component-tray-shaped class for the DLL fallback) and -Build (adds --build:
+# also runs `dotnet build` on the generated .csproj, one command to a loadable DLL)
+./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store -Component -Build
 ```
 
 Equivalently, run the generator directly:
 
 ```powershell
-dotnet run --project tools/RestCodeGenerator -- <swaggerPath> <apiName> <outputDirectory> [--component]
+dotnet run --project tools/RestCodeGenerator -- <swaggerPath> <apiName> <outputDirectory> [--component] [--build]
 ```
 
 Pass the optional `--component` flag (or the wrapper's `-Component` switch) to
@@ -53,6 +55,15 @@ the standard Dispose pattern — Robot Studio disposes tray components on
 teardown, releasing that instance's HTTP connections. This is only relevant
 when you build the DLL fallback; Script-component paste-in does not need it.
 The flag is off by default, which leaves the class line plain.
+
+Pass the optional `--build` flag (or the wrapper's `-Build` switch) to also
+run `dotnet build` on the freshly written `.csproj`, so a single command takes
+you from a swagger/OpenAPI spec straight to a loadable DLL under
+`<outputDirectory>/bin/<Configuration>/<framework>/` — no separate manual
+build step. It shells out to the `dotnet` CLI already required to run this
+tool; a build failure (or a missing `dotnet` on `PATH`) exits `1` with the
+underlying `dotnet build` output printed as-is. Off by default, since the
+primary Script-component workflow never needs a build at all.
 
 The `<apiName>` becomes the class name: it is PascalCased and suffixed with
 `RestUtils`, so `pet-store` produces class `PetStoreRestUtils` in namespace
@@ -77,7 +88,8 @@ per-endpoint methods are persisted right there, and the swagger file is not
 needed at runtime — only to regenerate.
 
 **Fallback — build the `.csproj`.** Run `dotnet build <outputDirectory>/<ApiName>RestUtils.csproj`
-and load the built DLL into Robot Studio.
+(or pass `--build` to the generator to do this in the same command) and load
+the built DLL into Robot Studio.
 
 Both paths need only the .NET SDK; the emitted project targets
 `net8.0-windows` and `net10.0-windows` and references zero NuGet packages.

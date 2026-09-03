@@ -1,8 +1,11 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using YamlDotNet.Serialization;
 
 namespace RestCodeGenerator;
 
@@ -12,8 +15,52 @@ public static class SwaggerParser
     {
         if (!File.Exists(path))
             throw new FileNotFoundException($"Swagger file not found: {path}", path);
-        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        using var doc = LoadDocument(File.ReadAllText(path));
         return Parse(doc.RootElement);
+    }
+
+    /// <summary>Parses a Swagger/OpenAPI document from either JSON or YAML text. Every valid
+    /// JSON document is also valid YAML, so the spec is always read as YAML into a plain object
+    /// graph, then rebuilt as a <see cref="JsonNode"/> tree and handed to
+    /// <see cref="System.Text.Json"/> for string escaping — one code path for both formats.
+    /// (YamlDotNet's own JsonCompatible serializer leaves control characters like '\t'
+    /// unescaped in its output, which System.Text.Json then rejects as invalid JSON.)</summary>
+    private static JsonDocument LoadDocument(string text)
+    {
+        var deserializer = new DeserializerBuilder().Build();
+        var yamlObject = deserializer.Deserialize<object?>(text);
+        var node = ToJsonNode(yamlObject);
+        return JsonDocument.Parse(node?.ToJsonString() ?? "null");
+    }
+
+    private static JsonNode? ToJsonNode(object? value) => value switch
+    {
+        null => null,
+        IDictionary map => ToJsonObject(map),
+        IList list => ToJsonArray(list),
+        string s => JsonValue.Create(s),
+        bool b => JsonValue.Create(b),
+        int i => JsonValue.Create(i),
+        long l => JsonValue.Create(l),
+        double d => JsonValue.Create(d),
+        decimal dec => JsonValue.Create(dec),
+        _ => JsonValue.Create(value.ToString()),
+    };
+
+    private static JsonObject ToJsonObject(IDictionary map)
+    {
+        var obj = new JsonObject();
+        foreach (DictionaryEntry entry in map)
+            obj[entry.Key.ToString() ?? ""] = ToJsonNode(entry.Value);
+        return obj;
+    }
+
+    private static JsonArray ToJsonArray(IList list)
+    {
+        var arr = new JsonArray();
+        foreach (var item in list)
+            arr.Add(ToJsonNode(item));
+        return arr;
     }
 
     private static JsonElement? GetPropertyOrNull(this JsonElement e, string name) =>
