@@ -9,6 +9,10 @@ param(
     # Emit the class as `... : System.ComponentModel.Component` (Robot Studio component-tray shape).
     [switch]$Component,
 
+    # Also run `dotnet build` on the generated .csproj, so this one command produces a
+    # ready-to-load DLL instead of leaving the build as a separate manual step.
+    [switch]$Build,
+
     [string]$OutputDirectory = "generated/$ApiName"
 )
 
@@ -17,6 +21,7 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
 $generatorArgs = @($SwaggerPath, $ApiName, $OutputDirectory)
 if ($Component) { $generatorArgs += "--component" }
+if ($Build) { $generatorArgs += "--build" }
 dotnet run --project (Join-Path $repositoryRoot "tools/RestCodeGenerator") -- @generatorArgs | Tee-Object -Variable generatorOutput
 if ($LASTEXITCODE -ne 0) { throw "RestCodeGenerator failed with exit code $LASTEXITCODE." }
 
@@ -30,5 +35,10 @@ foreach ($line in @($generatorOutput)) {
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. Paste $OutputDirectory/$fileNameBase.cs into a Robot Studio Script component."
-Write-Host "  (Alternative) dotnet build $OutputDirectory/$fileNameBase.csproj and load the built DLL"
-Write-Host "     into Robot Studio."
+if ($Build) {
+    Write-Host "  (Alternative) The DLL was already built by --build - load it into Robot Studio"
+    Write-Host "     from $OutputDirectory/bin/<Configuration>/<framework>/."
+} else {
+    Write-Host "  (Alternative) dotnet build $OutputDirectory/$fileNameBase.csproj and load the built DLL"
+    Write-Host "     into Robot Studio."
+}

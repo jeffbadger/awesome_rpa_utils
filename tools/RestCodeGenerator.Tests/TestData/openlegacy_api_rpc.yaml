@@ -1,0 +1,547 @@
+---
+openapi: "3.0.1"
+info:
+  description: ""
+  title: "pega_rpc_project_demo"
+  version: "1.0.0"
+servers:
+- url: "https://8ic2rimbpc.execute-api.eu-central-1.amazonaws.com/apps/pega-rpc-project-demo/"
+paths:
+  /ractcs6x:
+    post:
+      operationId: "ractcs6x"
+      responses:
+        "200":
+          description: "OK"
+          content: {}
+      x-ol-flow-id: "ractcs6x"
+      x-ol-method-id: "d5e7581b-61e0-4c6a-8de1-02bbc15a0e5f"
+  /gactcs6x:
+    post:
+      operationId: "gactcs6x"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                input:
+                  maxLength: 11
+                  type: "string"
+                account:
+                  maxLength: 11
+                  type: "string"
+                custid:
+                  maxLength: 16
+                  type: "string"
+                custname:
+                  maxLength: 16
+                  type: "string"
+                iban:
+                  maxLength: 32
+                  type: "string"
+                bankid:
+                  maxLength: 4
+                  type: "string"
+                brnchid:
+                  format: "int32"
+                  maximum: 9.99999999E8
+                  minimum: 0.0
+                  type: "integer"
+                cntrycd:
+                  maxLength: 2
+                  type: "string"
+                typcd:
+                  maxLength: 1
+                  type: "string"
+                subtypcd:
+                  maxLength: 3
+                  type: "string"
+                typename:
+                  maxLength: 12
+                  type: "string"
+                typedesc:
+                  maxLength: 40
+                  type: "string"
+                balance:
+                  format: "double"
+                  maximum: 9.9999999999999E10
+                  minimum: 0.0
+                  type: "number"
+                currency:
+                  maxLength: 3
+                  type: "string"
+                crtdt:
+                  format: "int32"
+                  maximum: 9.9999999E7
+                  minimum: 0.0
+                  type: "integer"
+                updtdt:
+                  format: "int32"
+                  maximum: 9.9999999E7
+                  minimum: 0.0
+                  type: "integer"
+                locked:
+                  maxLength: 1
+                  type: "string"
+              type: "object"
+              title: "gactcs6xIn"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                properties:
+                  input:
+                    maxLength: 11
+                    type: "string"
+                  account:
+                    maxLength: 11
+                    type: "string"
+                  custid:
+                    maxLength: 16
+                    type: "string"
+                  custname:
+                    maxLength: 16
+                    type: "string"
+                  iban:
+                    maxLength: 32
+                    type: "string"
+                  bankid:
+                    maxLength: 4
+                    type: "string"
+                  brnchid:
+                    format: "int32"
+                    maximum: 9.99999999E8
+                    minimum: 0.0
+                    type: "integer"
+                  cntrycd:
+                    maxLength: 2
+                    type: "string"
+                  typcd:
+                    maxLength: 1
+                    type: "string"
+                  subtypcd:
+                    maxLength: 3
+                    type: "string"
+                  typename:
+                    maxLength: 12
+                    type: "string"
+                  typedesc:
+                    maxLength: 40
+                    type: "string"
+                  balance:
+                    format: "double"
+                    maximum: 9.9999999999999E10
+                    minimum: 0.0
+                    type: "number"
+                  currency:
+                    maxLength: 3
+                    type: "string"
+                  crtdt:
+                    format: "int32"
+                    maximum: 9.9999999E7
+                    minimum: 0.0
+                    type: "integer"
+                  updtdt:
+                    format: "int32"
+                    maximum: 9.9999999E7
+                    minimum: 0.0
+                    type: "integer"
+                  locked:
+                    maxLength: 1
+                    type: "string"
+                type: "object"
+                title: "gactcs6xOut200"
+      x-ol-flow-id: "gactcs6x"
+      x-ol-method-id: "3c5edd76-5bb6-43df-99f5-6a9179cf6e37"
+  /dactcs6x:
+    post:
+      operationId: "dactcs6x"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                input:
+                  maxLength: 11
+                  type: "string"
+              type: "object"
+              title: "dactcs6xIn"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                properties:
+                  input:
+                    maxLength: 11
+                    type: "string"
+                type: "object"
+                title: "dactcs6xOut200"
+      x-ol-flow-id: "dactcs6x"
+      x-ol-method-id: "30bb0f05-d6ec-4f76-98ea-b7c10e051765"
+  /fininq2:
+    post:
+      operationId: "fininq2"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                dfhcommarea:
+                  description: "CICS communication area"
+                  properties:
+                    custId:
+                      description: "Customer identifier"
+                      maxLength: 10
+                      type: "string"
+                    creditCards:
+                      description: "Credit cards"
+                      maxItems: 5
+                      type: "array"
+                      items:
+                        description: "Credit cards"
+                        properties:
+                          cardNumber:
+                            description: "Card number"
+                            maxLength: 16
+                            type: "string"
+                          cardType:
+                            description: "Card type"
+                            maxLength: 16
+                            type: "string"
+                          cardLimit:
+                            description: "Card limit"
+                            format: "int32"
+                            maximum: 9999.0
+                            minimum: -9999.0
+                            type: "integer"
+                          cardUsage:
+                            description: "Card usage"
+                            format: "int32"
+                            maximum: 9999.0
+                            minimum: -9999.0
+                            type: "integer"
+                        type: "object"
+                        title: "creditCards"
+                  type: "object"
+                  title: "dfhcommarea"
+              type: "object"
+              title: "fininq2In"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                properties:
+                  dfhcommarea:
+                    description: "CICS communication area"
+                    properties:
+                      custId:
+                        description: "Customer identifier"
+                        maxLength: 10
+                        type: "string"
+                      creditCards:
+                        description: "Credit cards"
+                        maxItems: 5
+                        type: "array"
+                        items:
+                          description: "Credit cards"
+                          properties:
+                            cardNumber:
+                              description: "Card number"
+                              maxLength: 16
+                              type: "string"
+                            cardType:
+                              description: "Card type"
+                              maxLength: 16
+                              type: "string"
+                            cardLimit:
+                              description: "Card limit"
+                              format: "int32"
+                              maximum: 9999.0
+                              minimum: -9999.0
+                              type: "integer"
+                            cardUsage:
+                              description: "Card usage"
+                              format: "int32"
+                              maximum: 9999.0
+                              minimum: -9999.0
+                              type: "integer"
+                          type: "object"
+                          title: "creditCards"
+                    type: "object"
+                    title: "dfhcommarea"
+                type: "object"
+                title: "fininq2Out200"
+      x-ol-flow-id: "fininq2"
+      x-ol-method-id: "1e4bf88b-2872-4e44-9bc5-ca45198fe906"
+  /uactcs6x:
+    post:
+      operationId: "uactcs6x"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                dsAccount:
+                  maxLength: 11
+                  type: "string"
+                dsCustid:
+                  maxLength: 16
+                  type: "string"
+                dsCustname:
+                  maxLength: 16
+                  type: "string"
+                dsIban:
+                  maxLength: 32
+                  type: "string"
+                dsBankid:
+                  maxLength: 4
+                  type: "string"
+                dsBranchid:
+                  maxLength: 9
+                  type: "string"
+                dsCntrycd:
+                  maxLength: 2
+                  type: "string"
+                dsTypcd:
+                  maxLength: 1
+                  type: "string"
+                dsSubtypcd:
+                  maxLength: 3
+                  type: "string"
+                dsTypename:
+                  maxLength: 12
+                  type: "string"
+                dsTypedesc:
+                  maxLength: 40
+                  type: "string"
+                dsBalance:
+                  maxLength: 8
+                  type: "string"
+                dsCurrency:
+                  maxLength: 3
+                  type: "string"
+                dsCrtdt:
+                  maxLength: 8
+                  type: "string"
+                dsUpdtdt:
+                  maxLength: 8
+                  type: "string"
+                dsLocked:
+                  maxLength: 1
+                  type: "string"
+                output:
+                  maxLength: 30
+                  type: "string"
+              type: "object"
+              title: "uactcs6xIn"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                properties:
+                  dsAccount:
+                    maxLength: 11
+                    type: "string"
+                  dsCustid:
+                    maxLength: 16
+                    type: "string"
+                  dsCustname:
+                    maxLength: 16
+                    type: "string"
+                  dsIban:
+                    maxLength: 32
+                    type: "string"
+                  dsBankid:
+                    maxLength: 4
+                    type: "string"
+                  dsBranchid:
+                    maxLength: 9
+                    type: "string"
+                  dsCntrycd:
+                    maxLength: 2
+                    type: "string"
+                  dsTypcd:
+                    maxLength: 1
+                    type: "string"
+                  dsSubtypcd:
+                    maxLength: 3
+                    type: "string"
+                  dsTypename:
+                    maxLength: 12
+                    type: "string"
+                  dsTypedesc:
+                    maxLength: 40
+                    type: "string"
+                  dsBalance:
+                    maxLength: 8
+                    type: "string"
+                  dsCurrency:
+                    maxLength: 3
+                    type: "string"
+                  dsCrtdt:
+                    maxLength: 8
+                    type: "string"
+                  dsUpdtdt:
+                    maxLength: 8
+                    type: "string"
+                  dsLocked:
+                    maxLength: 1
+                    type: "string"
+                  output:
+                    maxLength: 30
+                    type: "string"
+                type: "object"
+                title: "uactcs6xOut200"
+      x-ol-flow-id: "uactcs6x"
+      x-ol-method-id: "31517b9e-8508-4ee3-be43-4993cc3260fe"
+  /oactcs6x:
+    post:
+      operationId: "oactcs6x"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                dsAccount:
+                  maxLength: 11
+                  type: "string"
+                dsCustid:
+                  maxLength: 16
+                  type: "string"
+                dsCustname:
+                  maxLength: 16
+                  type: "string"
+                dsIban:
+                  maxLength: 32
+                  type: "string"
+                dsBankid:
+                  maxLength: 4
+                  type: "string"
+                dsBranchid:
+                  maxLength: 9
+                  type: "string"
+                dsCntrycd:
+                  maxLength: 2
+                  type: "string"
+                dsTypcd:
+                  maxLength: 1
+                  type: "string"
+                dsSubtypcd:
+                  maxLength: 3
+                  type: "string"
+                dsTypename:
+                  maxLength: 12
+                  type: "string"
+                dsTypedesc:
+                  maxLength: 40
+                  type: "string"
+                dsBalance:
+                  maxLength: 8
+                  type: "string"
+                dsCurrency:
+                  maxLength: 3
+                  type: "string"
+                dsCrtdt:
+                  maxLength: 8
+                  type: "string"
+                dsUpdtdt:
+                  maxLength: 8
+                  type: "string"
+                dsLocked:
+                  maxLength: 1
+                  type: "string"
+                output:
+                  maxLength: 30
+                  type: "string"
+              type: "object"
+              title: "oactcs6xIn"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                properties:
+                  dsAccount:
+                    maxLength: 11
+                    type: "string"
+                  dsCustid:
+                    maxLength: 16
+                    type: "string"
+                  dsCustname:
+                    maxLength: 16
+                    type: "string"
+                  dsIban:
+                    maxLength: 32
+                    type: "string"
+                  dsBankid:
+                    maxLength: 4
+                    type: "string"
+                  dsBranchid:
+                    maxLength: 9
+                    type: "string"
+                  dsCntrycd:
+                    maxLength: 2
+                    type: "string"
+                  dsTypcd:
+                    maxLength: 1
+                    type: "string"
+                  dsSubtypcd:
+                    maxLength: 3
+                    type: "string"
+                  dsTypename:
+                    maxLength: 12
+                    type: "string"
+                  dsTypedesc:
+                    maxLength: 40
+                    type: "string"
+                  dsBalance:
+                    maxLength: 8
+                    type: "string"
+                  dsCurrency:
+                    maxLength: 3
+                    type: "string"
+                  dsCrtdt:
+                    maxLength: 8
+                    type: "string"
+                  dsUpdtdt:
+                    maxLength: 8
+                    type: "string"
+                  dsLocked:
+                    maxLength: 1
+                    type: "string"
+                  output:
+                    maxLength: 30
+                    type: "string"
+                type: "object"
+                title: "oactcs6xOut200"
+      x-ol-flow-id: "oactcs6x"
+      x-ol-method-id: "8b1f8465-a1a0-4c37-9ffe-8b83d2e4a3d8"
+components:
+  schemas: {}
+  securitySchemes:
+    ApiKeyAuth:
+      type: "apiKey"
+      description: "API Key used for authentication."
+      name: "x-api-key"
+      in: "header"
+security:
+- bearerAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
+- ApiKeyAuth: []
