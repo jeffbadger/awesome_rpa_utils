@@ -34,6 +34,7 @@ $releaseAssemblies = @(
     "TerminalAutomation.dll"
     "LocalQueueAutomation.dll"
     "StackAutomation.dll"
+    "DataBagAutomation.dll"
 )
 
 # Every component project multi-targets these two TFMs (OcrUtils uses the versioned

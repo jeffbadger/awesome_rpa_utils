@@ -8,6 +8,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 |---|---|---|
 | [archiveutils](src/archiveutils/README.md) | `ArchiveAutomation` | Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection and independent CRC-32 verification built in. |
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
+| [databagutils](src/databagutils/README.md) | `DataBagAutomation` | Defines a typed named-value contract during initialization, then provides strict scalar getters/setters and atomic JSON/DataTable updates at runtime. |
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 | [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
 | [eventutils](src/eventutils/README.md) | `EventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
@@ -71,7 +72,7 @@ To build and create everything this repository produces, run from PowerShell:
 The command creates two self-contained archives — one per target framework,
 each holding the complete release:
 
-- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the seventeen project DLLs built
+- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the eighteen project DLLs built
   for `net8.0-windows` plus three bundled archives:
   `AwesomeRpaUtils-SupportLibraries.zip` (the three NuGet runtime DLLs needed
   by ServiceUtils, packaged in the flavor matching the enclosing archive's
@@ -79,7 +80,7 @@ each holding the complete release:
   [REST code generator](tools/README.md)), and
   `AwesomeRpaUtils-Documentation.zip` (the documentation bundle described
   below).
-- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same seventeen DLLs built
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same eighteen DLLs built
   for `net10.0-windows` with the same three bundled archives (the support
   DLLs in the newest flavor the packages ship, which the .NET 10 runtime
   loads; the .NET 8 runtime only loads the `net8.0` flavor).
@@ -172,6 +173,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [archiveutils/README.md](src/archiveutils/README.md) and [archiveutils/Documentation/](src/archiveutils/Documentation/README.md)
 - [localqueueutils/README.md](src/localqueueutils/README.md) and [localqueueutils/Documentation/](src/localqueueutils/Documentation/README.md)
 - [stackutils/README.md](src/stackutils/README.md) and [stackutils/Documentation/](src/stackutils/Documentation/README.md)
+- [databagutils/README.md](src/databagutils/README.md) and [databagutils/Documentation/](src/databagutils/Documentation/README.md)
 
 ## Developer tools
 
@@ -233,7 +235,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, and `StackUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, and `DataBagUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -248,7 +250,9 @@ and
 and
 `dotnet test src/localqueueutils/LocalQueueUtils.Tests/LocalQueueUtils.Tests.csproj`,
 and
-`dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj` —
+`dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj`,
+and
+`dotnet test src/databagutils/DataBagUtils.Tests/DataBagUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category

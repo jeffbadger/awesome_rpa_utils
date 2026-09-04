@@ -576,6 +576,30 @@ The platform-independent xunit coverage is in
 `src/stackutils/StackUtils.Tests`
 (`dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj`).
 
+### DataBagUtils (no external setup; configure properties before initialization)
+
+- Preload typed definitions from design-time JSON and a relative/absolute JSON
+  file; verify initialization is atomic and optionally sealed.
+- Build a schema with `BeginInitialization`, direct typed definitions, inferred
+  JSON, typed JSON, and conventional/mapped DataTables. Verify complete and
+  cancel preserve the correct active bag.
+- Confirm `SetValue` uses the existing declaration, native typed setters reject
+  mismatches, and runtime methods cannot introduce unknown names or new types.
+- Apply JSON objects and DataTable rows atomically under both unknown-name
+  policies, including malformed values late in a bulk update.
+- Exercise every value type, invariant numeric parsing, ISO DateTime parsing,
+  raw JSON validation/round-tripping, null values, and case-sensitive versus
+  case-insensitive names.
+- Verify read-only and write-once enforcement, must-have-value reporting,
+  sensitive snapshot redaction, default restoration, and write-once reset.
+- Run concurrent updates to distinct names and verify no state corruption.
+- Dispose populated and staged bags and confirm later methods fail with
+  initialized outputs and actionable messages.
+
+The platform-independent xunit coverage is in
+`src/databagutils/DataBagUtils.Tests`
+(`dotnet test src/databagutils/DataBagUtils.Tests/DataBagUtils.Tests.csproj`).
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned
