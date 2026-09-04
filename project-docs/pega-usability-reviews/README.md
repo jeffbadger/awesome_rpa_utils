@@ -53,6 +53,7 @@ enum is not rendered as a selectable constant.
 | CommandLineUtils | `IDictionary<string,string>`, `Encoding`, and `string[]` inputs have no simple Pega producer; `CommandResult` requires a proxy. |
 | ServiceUtils | Control methods are scalar; service-name list results require proxies/loops. |
 | EventUtils | `EventData` and `EventData[]` outputs require proxies; JSON dump methods provide a partial scalar escape hatch. |
+| LocalQueueUtils | All ports are scalar; JSON and bulk-ingestion methods deliberately eliminate collection-proxy construction. |
 
 ## Review order
 
