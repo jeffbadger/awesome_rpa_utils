@@ -555,6 +555,27 @@ The platform-independent xunit coverage is in
 `src/localqueueutils/LocalQueueUtils.Tests`
 (`dotnet test src/localqueueutils/LocalQueueUtils.Tests/LocalQueueUtils.Tests.csproj`).
 
+### StackUtils (no setup required; Cleanup: dispose the component)
+
+- Push mixed text, JSON, and file-reference items and verify strict LIFO order,
+  peek without removal, count, empty success outputs, and clear counts.
+- Exercise default capacity, valid changes, out-of-range values, refusal to
+  shrink below current count, and atomic bulk failure at capacity.
+- Push every JSON value kind and malformed JSON; verify raw values returned by
+  pop and next-to-pop ordering in snapshot JSON.
+- Push CRLF/LF/CR text with empty lines, and verify line content and stack order.
+- Discover files recursively and non-recursively. Verify normalized absolute
+  paths, deterministic sorting, missing paths, and invalid search patterns.
+- Use parallel branches to push and pop distinct values, then confirm no lost,
+  duplicate, or corrupt items. Ordering is guaranteed within each serialized
+  operation, not between racing callers.
+- Dispose a populated component and verify every later method returns `false`
+  with initialized outputs and an actionable message.
+
+The platform-independent xunit coverage is in
+`src/stackutils/StackUtils.Tests`
+(`dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj`).
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned

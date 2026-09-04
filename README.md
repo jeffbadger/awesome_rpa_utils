@@ -19,6 +19,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [screencaptureutils](src/screencaptureutils/README.md) | `ScreenCaptureAutomation` | Captures the screen, a region, or a window to a file/clipboard; compares captures against a baseline; annotates or redacts saved screenshots. |
 | [serviceutils](src/serviceutils/README.md) | `ServiceAutomation` | Queries, starts, stops, restarts, and configures the startup type of Windows services. |
 | [sessionutils](src/sessionutils/README.md) | `SessionAutomation` | Reports on and acts on Windows session/workstation state: session identity/kind, enumeration, connect state, lock/desktop availability, idle time, and deliberate lock/disconnect actions. |
+| [stackutils](src/stackutils/README.md) | `StackAutomation` | Holds variable-count text, JSON, or file-reference work in an instance-local, in-memory LIFO stack without a collection proxy. |
 | [terminalutils](src/terminalutils/README.md) | `TerminalAutomation` | Reads and interacts with a target process's live console screen buffer: visible-screen capture, cursor position, waiting for a prompt or a screen change, keystroke injection, and starting/attaching to a console process. |
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
 | [windowutils](src/windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
@@ -70,7 +71,7 @@ To build and create everything this repository produces, run from PowerShell:
 The command creates two self-contained archives — one per target framework,
 each holding the complete release:
 
-- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the sixteen project DLLs built
+- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the seventeen project DLLs built
   for `net8.0-windows` plus three bundled archives:
   `AwesomeRpaUtils-SupportLibraries.zip` (the three NuGet runtime DLLs needed
   by ServiceUtils, packaged in the flavor matching the enclosing archive's
@@ -78,7 +79,7 @@ each holding the complete release:
   [REST code generator](tools/README.md)), and
   `AwesomeRpaUtils-Documentation.zip` (the documentation bundle described
   below).
-- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same sixteen DLLs built
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same seventeen DLLs built
   for `net10.0-windows` with the same three bundled archives (the support
   DLLs in the newest flavor the packages ship, which the .NET 10 runtime
   loads; the .NET 8 runtime only loads the `net8.0` flavor).
@@ -170,6 +171,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [filewatchutils/README.md](src/filewatchutils/README.md) and [filewatchutils/Documentation/](src/filewatchutils/Documentation/README.md)
 - [archiveutils/README.md](src/archiveutils/README.md) and [archiveutils/Documentation/](src/archiveutils/Documentation/README.md)
 - [localqueueutils/README.md](src/localqueueutils/README.md) and [localqueueutils/Documentation/](src/localqueueutils/Documentation/README.md)
+- [stackutils/README.md](src/stackutils/README.md) and [stackutils/Documentation/](src/stackutils/Documentation/README.md)
 
 ## Developer tools
 
@@ -231,7 +233,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, and `LocalQueueUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, and `StackUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -244,7 +246,9 @@ using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 and
 `dotnet test src/terminalutils/TerminalUtils.Tests/TerminalUtils.Tests.csproj`,
 and
-`dotnet test src/localqueueutils/LocalQueueUtils.Tests/LocalQueueUtils.Tests.csproj` —
+`dotnet test src/localqueueutils/LocalQueueUtils.Tests/LocalQueueUtils.Tests.csproj`,
+and
+`dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
