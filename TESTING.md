@@ -533,6 +533,28 @@ xunit coverage in `src/terminalutils/TerminalUtils.Tests`
 a `false` return, specifically so a test can't accidentally "pass" by
 reaching a deeper native-call failure instead of the intended early guard).
 
+### LocalQueueUtils (local filesystem; Setup: create a unique Run queue; Cleanup: dispose the component and remove its test queue)
+
+- Create both Run and Persistent queues and confirm their paths remain beneath
+  `%LOCALAPPDATA%\AwesomeRpaUtils\Queues`.
+- Add individual JSON, a JSON array, text lines, file references, and imported
+  files; confirm the added counts and payloads.
+- Drive `TryTakeNext` through completion, retry/delay, rejection, renewal, and
+  expired-lease recovery. Verify stale lease tokens cannot mutate work.
+- Open the same queue from a second component and confirm it returns `false`
+  with an ownership message rather than throwing.
+- Restart the component, reopen the queue, and confirm ready/completed/rejected
+  state persists. Verify priority and availability ordering.
+- Confirm `DeleteQueue` refuses a non-empty queue without explicit confirmation,
+  removes imported queue-owned files when confirmed, and never deletes external
+  files added through `AddFileReferences`.
+- Exercise invalid JSON, traversal/out-of-root paths, invalid priorities,
+  malformed queue markers, and interrupted/corrupt item files.
+
+The platform-independent xunit coverage is in
+`src/localqueueutils/LocalQueueUtils.Tests`
+(`dotnet test src/localqueueutils/LocalQueueUtils.Tests/LocalQueueUtils.Tests.csproj`).
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned
