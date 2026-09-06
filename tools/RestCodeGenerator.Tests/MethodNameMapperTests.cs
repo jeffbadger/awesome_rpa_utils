@@ -5,10 +5,10 @@ namespace RestCodeGenerator.Tests
 {
     public class MethodNameMapperTests
     {
-        private static SwaggerOperation Op(string method, string path, string? id = null) =>
+        private static ApiOperation Op(string method, string path, string? id = null) =>
             new(method, path, id, null,
-                new List<SwaggerParameter>(), new List<SwaggerParameter>(),
-                new List<SwaggerParameter>(), false);
+                new List<ApiParameter>(), new List<ApiParameter>(),
+                new List<ApiParameter>(), false);
 
         [Theory]
         [InlineData("getPetById", "/pet/{petId}", "GET", "GetPetById")]

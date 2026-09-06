@@ -7,7 +7,7 @@ namespace RestCodeGenerator.Tests
 {
     public class SwaggerParserTests
     {
-        private static SwaggerDoc ParsePetstore()
+        private static ApiSpec ParsePetstore()
         {
             var path = Path.Combine("TestData", "petstore-minimal.json");
             return SwaggerParser.ParseFile(path);
@@ -125,7 +125,7 @@ namespace RestCodeGenerator.Tests
             Assert.Throws<FileNotFoundException>(() => SwaggerParser.ParseFile("nope.json"));
         }
 
-        private static SwaggerDoc ParseJson(string json) =>
+        private static ApiSpec ParseJson(string json) =>
             SwaggerParser.Parse(JsonDocument.Parse(json).RootElement);
 
         [Fact]
@@ -216,7 +216,7 @@ namespace RestCodeGenerator.Tests
 
         // ---- the official swagger-api OpenAPI 3.0 petstore spec, end-to-end ----
 
-        private static SwaggerDoc ParseOfficialPetstore() =>
+        private static ApiSpec ParseOfficialPetstore() =>
             SwaggerParser.ParseFile(Path.Combine("TestData", "petstore-openapi.json"));
 
         [Fact]

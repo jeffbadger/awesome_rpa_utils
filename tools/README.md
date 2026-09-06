@@ -1,10 +1,12 @@
 # RestCodeGenerator
 
-`RestCodeGenerator` reads a Swagger 2.0 / OpenAPI 3.x specification and emits a
-ready-to-use Robot Studio REST component: one never-throw method per operation,
-plus a set of runtime helpers, in a single self-contained `.cs` file. It is a
-design-time command-line tool, not a Robot Studio component itself — it never
-runs alongside a robot, only to generate or regenerate one's source.
+`RestCodeGenerator` reads an OpenAPI/Swagger specification, a Postman
+collection, a Bruno collection, or a raw curl command, and emits a
+ready-to-use Robot Studio REST component: one never-throw method per
+operation, plus a set of runtime helpers, in a single self-contained `.cs`
+file. It is a design-time command-line tool, not a Robot Studio component
+itself — it never runs alongside a robot, only to generate or regenerate
+one's source.
 
 ## Usage
 
@@ -15,7 +17,26 @@ README — no `.csproj`, so `dotnet run --project` will not work here. Run the
 published DLL directly, wherever a .NET 10 runtime is installed:
 
 ```powershell
-dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component] [--build]
+dotnet RestCodeGenerator.dll <input> <apiName> <outputDirectory> [--format openapi|postman|bruno|curl] [--component] [--build]
+```
+
+`<input>` is a file path (an OpenAPI/Swagger JSON or YAML file, a Postman
+collection JSON export, or a single `.bru` file), a directory (a Bruno
+collection folder), or a curl command (as a literal string argument, or a
+file containing one). `--format` is optional — the input's extension/content
+is auto-detected by default (see [Supported input
+formats](#supported-input-formats)); pass it explicitly for an ambiguous
+case, most commonly an inline curl string that also happens to look like an
+existing relative path.
+
+Examples, one per format:
+
+```powershell
+dotnet RestCodeGenerator.dll petstore.json PetStore ./out
+dotnet RestCodeGenerator.dll MyCollection.postman_collection.json MyApi ./out
+dotnet RestCodeGenerator.dll ./my-bruno-collection MyApi ./out
+dotnet RestCodeGenerator.dll "curl https://api.example.com/pets" PetsApi ./out
+dotnet RestCodeGenerator.dll request.txt PetsApi ./out --format curl
 ```
 
 This writes `<ApiName>RestUtils.cs` and `<ApiName>RestUtils.csproj` to
@@ -33,18 +54,23 @@ dotnet build <outputDirectory>/<ApiName>RestUtils.csproj
 and runs the tool via `dotnet run --project`, then prints next steps:
 
 ```powershell
-./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store
+./scripts/Generate-RestComponent.ps1 -InputPath petstore.json -ApiName pet-store
 
 # same, with the -Component switch (adds --component to the invocation:
 # Component-tray-shaped class for the DLL fallback) and -Build (adds --build:
 # also runs `dotnet build` on the generated .csproj, one command to a loadable DLL)
-./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store -Component -Build
+./scripts/Generate-RestComponent.ps1 -InputPath petstore.json -ApiName pet-store -Component -Build
+
+# -Format is optional, same auto-detect-by-default rule as the raw CLI
+./scripts/Generate-RestComponent.ps1 -InputPath ./my-bruno-collection -ApiName pet-store -Format bruno
 ```
+
+(`-SwaggerPath` still works as an alias for `-InputPath`, for existing scripts.)
 
 Equivalently, run the generator directly:
 
 ```powershell
-dotnet run --project tools/RestCodeGenerator -- <swaggerPath> <apiName> <outputDirectory> [--component] [--build]
+dotnet run --project tools/RestCodeGenerator -- <input> <apiName> <outputDirectory> [--format openapi|postman|bruno|curl] [--component] [--build]
 ```
 
 Pass the optional `--component` flag (or the wrapper's `-Component` switch) to
@@ -72,10 +98,10 @@ The `<apiName>` becomes the class name: it is PascalCased and suffixed with
 - `<ApiName>RestUtils.cs` — the entire component.
 - `<ApiName>RestUtils.csproj` — fallback/CI boilerplate that builds the same source.
 
-Exit code is `1` on wrong argument count or an unrecognized flag, on a spec
-that fails to parse, or when the spec contains no usable operations (for
-example when every operation had a non-JSON body and was skipped); otherwise
-`0`.
+Exit code is `1` on wrong argument count or an unrecognized flag, when the
+input format cannot be auto-detected (pass `--format` explicitly), on input
+that fails to parse, or when it contains no usable operations (for example
+when every operation had a non-JSON body and was skipped); otherwise `0`.
 
 `-OutputDirectory` defaults to `generated/<apiName>`; everything below
 `generated/` is git-ignored.
@@ -84,8 +110,8 @@ example when every operation had a non-JSON body and was skipped); otherwise
 
 **Primary — paste into a Script component.** Paste the generated `.cs` into a
 Robot Studio Script component. Robot Studio compiles the file in place, the
-per-endpoint methods are persisted right there, and the swagger file is not
-needed at runtime — only to regenerate.
+per-endpoint methods are persisted right there, and the source spec/collection
+is not needed at runtime — only to regenerate.
 
 **Fallback — build the `.csproj`.** Run `dotnet build <outputDirectory>/<ApiName>RestUtils.csproj`
 (or pass `--build` to the generator to do this in the same command) and load
@@ -94,7 +120,11 @@ the built DLL into Robot Studio.
 Both paths need only the .NET SDK; the emitted project targets
 `net8.0-windows` and `net10.0-windows` and references zero NuGet packages.
 
-## Endpoint coverage
+## Supported input formats
+
+### OpenAPI / Swagger
+
+Swagger 2.0 and OpenAPI 3.x, JSON or YAML.
 
 | Swagger/OpenAPI feature | Generated behavior |
 |---|---|
@@ -115,6 +145,72 @@ Both paths need only the .NET SDK; the emitted project targets
 The `$ref` caveat: JSON-Pointer escapes (`~0` for `~`, `~1` for `/`) are **not**
 decoded, so `$ref` pointers that rely on them cannot be resolved. Refs using
 simple names (e.g. `#/parameters/StatusFilter`) resolve normally.
+
+### Postman
+
+A Postman Collection (v2.1 schema) JSON export.
+
+- Folder nesting becomes a folder-prefixed operation/method name, e.g. a
+  request named "Get Pet" inside folder "Pets" becomes method `PetsGetPet`.
+- Postman's `:name` path-variable segments are rewritten to `{name}`, same as
+  every other format.
+- A host containing a `{{variable}}` (e.g. `{{baseUrl}}`) leaves `BaseUrl`
+  unset/mandatory, exactly like OpenAPI's templated-server rule; when every
+  request resolves to the same literal absolute host, that host is prefilled.
+- Only a `raw` body whose text parses as JSON is modeled (flattened into
+  typed parameters, same as an OpenAPI JSON request body). Every other body
+  mode (`urlencoded`, `formdata`, `file`, `graphql`) — or raw text that isn't
+  valid JSON — is **skipped**, listed in the header comment like any other
+  non-JSON body.
+- Disabled query parameters and headers (`"disabled": true`) are excluded.
+- Collection-level and per-request `auth` blocks both contribute to the
+  declared security schemes (`basic`, `bearer`, API key by its `in`, OAuth2
+  by its `grant_type` — same mapping as OpenAPI's `securityDefinitions`).
+
+### Bruno
+
+A single `.bru` file, or a directory of them (a Bruno collection folder).
+
+- Directory input recursively finds every `*.bru` file, excluding
+  `folder.bru`/`collection.bru`/`bruno.json`, and processes them in a
+  **sorted, deterministic order** (Bruno's file system gives no other
+  ordering signal — without this, method-naming collision suffixes would
+  vary across machines).
+- `:name` path-variable segments are rewritten to `{name}`, same as Postman;
+  a leading `~` on a header/query line marks it disabled (Bruno's own
+  convention) and excludes it, same effect as Postman's `disabled: true`.
+- A `body:json` block is modeled the same way as an OpenAPI/Postman JSON
+  body; every other body mode is skipped.
+- **Known limitation:** `auth { mode: inherit }` (use the nearest ancestor
+  folder/collection's auth) is not resolved — an operation with inherited
+  auth contributes no security scheme of its own (it still gets the
+  always-present baseline helpers). Folder-tree auth inheritance is out of
+  scope for now.
+
+### curl
+
+A single curl command, as a literal string argument or a file containing
+one. Unlike every other format, a curl command names exactly one concrete
+example call, which shapes what can be modeled:
+
+- `BaseUrl` is always prefilled — a concrete curl URL always names one origin.
+- There's no way to tell a path variable from a literal URL segment in one
+  example call, so path parameters are never modeled; the path is fixed.
+- The URL's query string becomes designer-settable query parameters (the
+  *names* only — captured values are discarded, never baked in as defaults).
+- `-d`/`--data`/`--data-raw`/`--data-binary`/`--data-urlencode` are
+  concatenated and parsed as JSON when possible (flattened into typed
+  parameters, same as everywhere else); non-JSON payloads fall back to a raw
+  `bodyJson` parameter.
+- **No security scheme is ever inferred.** One concrete call can't reliably
+  distinguish OAuth2 from a static bearer token from an API key — guessing
+  would be wrong often enough to be worse than not guessing. Use whichever
+  `Set*Authentication` helper actually fits once you know the real auth.
+- An `Authorization` header, or a `-u`/`--user` credential, captured in the
+  command is **never copied into the generated source** — baking a captured
+  token/password into a checked-in file would be exactly the hardcoded-secret
+  problem this tool otherwise avoids. Use `SetBearerAuthentication`/
+  `SetBasicAuthentication`/`SetCustomAuthentication` at runtime instead.
 
 ## Authentication
 
@@ -157,14 +253,29 @@ contract.
 | `http bearer` | `SetBearerAuthentication(token)` |
 | `apiKey` `in: header` | `ApiKeyHeaderName` / `ApiKeyHeaderValue` properties — sent as that named header on every call |
 | `apiKey` `in: query` | `ApiKeyQueryName` / `ApiKeyQueryValue` properties — appended to every call's query string |
-| `oauth2` with `client_credentials` flow | `OAuthClientId` / `OAuthClientSecret` / `OAuthTokenUrl` properties |
+| `oauth2` with `client_credentials` flow | `OAuthClientId` / `OAuthClientSecret` / `OAuthTokenUrl` / `OAuthScope` properties |
 
 The OAuth2 client-credentials properties form-POST to the token endpoint and
 cache the access token, refreshing it automatically before expiry (30-second
 safety margin; a 5-minute token lifetime is assumed when the spec specifies no
 `expires_in`) and retrying a call once, silently, after a 401. Setting any of
-the three properties invalidates the cached token so the next call
-re-authenticates.
+the four properties invalidates the cached token so the next call
+re-authenticates. `OAuthScope` is optional and blank by default — when set, a
+`scope` field is added to the token request; when left blank, none is sent
+(so existing client-credentials consumers see identical wire behavior).
+
+**Microsoft Entra ID (Azure AD).** Entra ID's app-only auth *is* OAuth2
+client-credentials — there's no separate Entra ID auth mode. Point the
+existing client-credentials properties at Entra ID's tenant-specific v2.0
+token endpoint, and set `OAuthScope` (required by Entra ID's endpoint, unlike
+some other providers):
+
+```csharp
+restUtils.OAuthTokenUrl = "https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token";
+restUtils.OAuthClientId = clientId;
+restUtils.OAuthClientSecret = clientSecret;
+restUtils.OAuthScope = "https://graph.microsoft.com/.default";   // or the target resource's scope
+```
 
 **Worked example.** Declaring this in the spec:
 
@@ -189,8 +300,15 @@ mTLS. Use `SetBearerAuthentication` with a caller-managed token, or
 `SetCustomAuthentication` with a hand-built `Authorization` value.
 
 **Security note:** API keys, client IDs/secrets, and bearer tokens live only at
-runtime — enter them in robot variables or Pega's CredentialStore. Nothing is
-ever hard-coded into the generated file.
+runtime — enter them in robot variables, or resolve them through whichever
+Pega credential provider your fleet already uses (Robot Manager Credential
+Store, ASOManager, BeyondTrust, CyberArk) before passing them into these
+properties. This applies regardless of source format: even when a Postman
+collection, Bruno collection, or curl command carries a captured credential
+example, nothing is ever hard-coded into the generated file — curl's
+`Authorization`/`-u` values are stripped outright (see
+[curl](#curl)), and Postman/Bruno auth blocks only ever contribute a *scheme
+kind* (which properties exist), never a captured secret value.
 
 ## Generated method shape
 
@@ -243,7 +361,9 @@ any JSON library dependency — which in turn keeps the primary consumption path
 
 ## Regenerating
 
-Rerun the same command with the same swagger file and `<apiName>` and the
-output is regenerated byte-identically — the generator is deterministic. Point
-`-OutputDirectory` at the same folder to overwrite, and keep the swagger file
-checked in (or otherwise archived) as the source of truth for the component.
+Rerun the same command with the same input and `<apiName>` and the output is
+regenerated byte-identically — the generator is deterministic (a Bruno
+directory relies on its files being sorted by relative path for this, since
+Bruno itself gives no other ordering signal). Point `-OutputDirectory` at the
+same folder to overwrite, and keep the source spec/collection checked in (or
+otherwise archived) as the source of truth for the component.

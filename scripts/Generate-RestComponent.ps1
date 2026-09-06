@@ -1,10 +1,14 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$SwaggerPath,
+    [Alias("SwaggerPath")]
+    [string]$InputPath,
 
     [Parameter(Mandatory = $true)]
     [string]$ApiName,
+
+    # openapi|postman|bruno|curl - omit to auto-detect from InputPath's extension/content.
+    [string]$Format,
 
     # Emit the class as `... : System.ComponentModel.Component` (Robot Studio component-tray shape).
     [switch]$Component,
@@ -19,7 +23,8 @@ param(
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
-$generatorArgs = @($SwaggerPath, $ApiName, $OutputDirectory)
+$generatorArgs = @($InputPath, $ApiName, $OutputDirectory)
+if ($Format) { $generatorArgs += @("--format", $Format) }
 if ($Component) { $generatorArgs += "--component" }
 if ($Build) { $generatorArgs += "--build" }
 dotnet run --project (Join-Path $repositoryRoot "tools/RestCodeGenerator") -- @generatorArgs | Tee-Object -Variable generatorOutput
