@@ -1,0 +1,4 @@
+curl --location 'https://api.example.com/pets?status=open&limit=5' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer secret123' \
+--data '{"name":"Rex","age":3}'

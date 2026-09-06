@@ -87,7 +87,7 @@ each holding the complete release:
 
 Everything excludes test infrastructure, PDBs, and XML documentation. The
 `RestCodeGenerator` targets .NET 10, so it is runnable via
-`dotnet RestCodeGenerator.dll <swaggerPath> <apiName> <outputDirectory> [--component]`
+`dotnet RestCodeGenerator.dll <input> <apiName> <outputDirectory> [--format ...] [--component]`
 wherever a .NET 10 runtime is installed, regardless of which archive it came
 from. To package an existing Release build or choose another output path,
 use:
@@ -124,16 +124,17 @@ other pages inside itself. Choose a different output path with
 substitutes it with `net8.0` and `net10.0` to produce one archive per target
 framework.
 
-## Swagger REST code generation
+## REST component code generation
 
 Rather than hand-writing a REST component per API, the repository includes a
-generator that reads any Swagger 2.0 / OpenAPI 3.x file and emits a
-ready-to-use Robot Studio component with one never-throw method per
-operation — a single self-contained `.cs` file you paste into a Script
-component (or compile with the emitted `.csproj`):
+generator that reads an OpenAPI/Swagger file, a Postman collection, a Bruno
+collection, or a raw curl command, and emits a ready-to-use Robot Studio
+component with one never-throw method per operation — a single self-contained
+`.cs` file you paste into a Script component (or compile with the emitted
+`.csproj`):
 
 ```powershell
-./scripts/Generate-RestComponent.ps1 -SwaggerPath petstore.json -ApiName pet-store
+./scripts/Generate-RestComponent.ps1 -InputPath petstore.json -ApiName pet-store
 ```
 
 Generated methods take designer-friendly primitive parameters, return raw
@@ -206,11 +207,12 @@ dotnet test component-browser/ComponentBrowser.Tests/ComponentBrowser.Tests.cspr
 
 ### REST Code Generator
 
-[RestCodeGenerator](tools/RestCodeGenerator/README.md) is the design-time CLI
-described in [Swagger REST code generation](#swagger-rest-code-generation). It
-reads Swagger 2.0 or OpenAPI 3.x files and emits Robot Studio-ready source for
-each API operation. The detailed section above covers the repository wrapper,
-direct CLI invocation, release-archive usage, and generated component behavior.
+[RestCodeGenerator](tools/README.md) is the design-time CLI described in
+[REST component code generation](#rest-component-code-generation). It reads
+OpenAPI/Swagger files, Postman collections, Bruno collections, or a curl
+command, and emits Robot Studio-ready source for each API operation. The
+detailed section above covers the repository wrapper, direct CLI invocation,
+release-archive usage, and generated component behavior.
 
 ### Test Harness
 

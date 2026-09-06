@@ -1,0 +1,22 @@
+meta {
+  name: Create Pet
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/pets
+  body: json
+  auth: apikey
+}
+
+auth:apikey {
+  placement: queryparams
+}
+
+body:json {
+  {
+    "name": "Rex",
+    "age": 3
+  }
+}

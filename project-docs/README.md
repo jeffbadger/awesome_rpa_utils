@@ -13,3 +13,6 @@ touching the component source trees.
   reviews of how usable each public method is from the Pega Robot Studio
   designer surface, plus the suite-wide
   [index and methodology](pega-usability-reviews/README.md).
+- [`plans/`](plans/) — implementation plans for substantial, multi-task
+  features (e.g. the [REST code generator](plans/2026-08-31-swagger-rest-codegen.md)
+  and its [multi-format input support](plans/2026-09-06-multi-format-rest-codegen.md)).

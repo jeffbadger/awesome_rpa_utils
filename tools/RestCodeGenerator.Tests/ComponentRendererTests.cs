@@ -9,10 +9,10 @@ namespace RestCodeGenerator.Tests
         private static readonly string Petstore = Path.Combine("TestData", "petstore-minimal.json");
         private static readonly string AuthApi = Path.Combine("TestData", "auth-minimal.json");
 
-        private static SwaggerDoc Doc(string title, string version, string? description = null) =>
+        private static ApiSpec Doc(string title, string version, string? description = null) =>
             new(title, version, null,
-                System.Array.Empty<SwaggerOperation>(),
-                System.Array.Empty<SwaggerSecurityScheme>(),
+                System.Array.Empty<ApiOperation>(),
+                System.Array.Empty<ApiSecurityScheme>(),
                 System.Array.Empty<string>())
             { Description = description };
 
@@ -115,6 +115,24 @@ namespace RestCodeGenerator.Tests
                 "_apiKeyQueryName = \"\"; _apiKeyQueryValue = \"\";\n            _oauthAccessToken = \"\";",
                 normalized);
             Assert.DoesNotContain("//[[", output.Source);
+        }
+
+        [Fact]
+        public void Render_EmitsOAuthScopeProperty_WhenOAuth2SchemeDeclared()
+        {
+            var output = ComponentRenderer.Render(SwaggerParser.ParseFile(AuthApi), "auth-api");
+            Assert.Contains("public string OAuthScope", output.Source);
+            Assert.Contains("set { _oauthScope = value ?? \"\"; InvalidateOAuthToken(); }", output.Source);
+        }
+
+        [Fact]
+        public void Render_OAuthScope_OmittedFromTokenRequest_WhenBlank()
+        {
+            // The scope form field is only sent when OAuthScope is non-blank, so existing
+            // (non-Entra) client-credentials consumers see byte-identical wire behavior
+            // if they never set it.
+            var output = ComponentRenderer.Render(SwaggerParser.ParseFile(AuthApi), "auth-api");
+            Assert.Contains("if (_oauthScope != \"\") formFields.Add(new KeyValuePair<string, string>(\"scope\", _oauthScope));", output.Source);
         }
 
         [Fact]

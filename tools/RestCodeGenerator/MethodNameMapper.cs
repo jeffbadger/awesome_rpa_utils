@@ -11,16 +11,16 @@ public static class MethodNameMapper
         "BaseUrl", "TimeoutSeconds", "SetBearerAuthentication", "SetBasicAuthentication",
         "SetCustomAuthentication", "ApiKeyHeaderName", "ApiKeyHeaderValue",
         "ApiKeyQueryName", "ApiKeyQueryValue", "OAuthClientId", "OAuthClientSecret",
-        "OAuthTokenUrl", "ClearAuthentication", "LastStatusCode",
+        "OAuthTokenUrl", "OAuthScope", "ClearAuthentication", "LastStatusCode",
         "HeaderBuilder", "QueryBuilder",
     };
 
-    public static IReadOnlyDictionary<SwaggerOperation, string> Map(
-        IReadOnlyList<SwaggerOperation> operations)
+    public static IReadOnlyDictionary<ApiOperation, string> Map(
+        IReadOnlyList<ApiOperation> operations)
     {
         // Identity comparer so callers can index with an equal-valued record: List-typed
         // parameter members compare by reference, so record equality alone never matches.
-        var map = new Dictionary<SwaggerOperation, string>(new OperationIdentityComparer());
+        var map = new Dictionary<ApiOperation, string>(new OperationIdentityComparer());
         var seen = new HashSet<string>(Reserved);
         foreach (var op in operations)
         {
@@ -34,7 +34,7 @@ public static class MethodNameMapper
         return map;
     }
 
-    private static string FromVerbAndPath(SwaggerOperation op)
+    private static string FromVerbAndPath(ApiOperation op)
     {
         var sb = new StringBuilder();
         sb.Append(char.ToUpperInvariant(op.HttpMethod[0])).Append(op.HttpMethod[1..].ToLowerInvariant());
@@ -87,14 +87,14 @@ public static class MethodNameMapper
     }
 
     /// <summary>Operations are identified by their (method, path, operationId) triple.</summary>
-    private sealed class OperationIdentityComparer : IEqualityComparer<SwaggerOperation>
+    private sealed class OperationIdentityComparer : IEqualityComparer<ApiOperation>
     {
-        public bool Equals(SwaggerOperation? x, SwaggerOperation? y) =>
+        public bool Equals(ApiOperation? x, ApiOperation? y) =>
             ReferenceEquals(x, y) || (x is not null && y is not null &&
                 x.HttpMethod == y.HttpMethod && x.Path == y.Path &&
                 x.OperationId == y.OperationId);
 
-        public int GetHashCode(SwaggerOperation obj) =>
+        public int GetHashCode(ApiOperation obj) =>
             HashCode.Combine(obj.HttpMethod, obj.Path, obj.OperationId);
     }
 }

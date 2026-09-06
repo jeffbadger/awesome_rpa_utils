@@ -1,0 +1,78 @@
+{
+  "info": {
+    "name": "PetStore Postman",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [ { "key": "token", "value": "{{token}}", "type": "string" } ]
+  },
+  "item": [
+    {
+      "name": "Pets",
+      "item": [
+        {
+          "name": "Get Pet",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Request-Source", "value": "postman", "type": "text" },
+              { "key": "X-Disabled", "value": "nope", "type": "text", "disabled": true }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pets/:petId?active=true&limit=5",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "pets", ":petId" ],
+              "query": [
+                { "key": "active", "value": "true" },
+                { "key": "limit", "value": "5" },
+                { "key": "old", "value": "x", "disabled": true }
+              ],
+              "variable": [ { "key": "petId", "value": "1" } ]
+            }
+          }
+        },
+        {
+          "name": "Create Pet",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json", "type": "text" } ],
+            "url": {
+              "raw": "{{baseUrl}}/pets",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "pets" ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Rex\", \"age\": 3}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                { "key": "key", "value": "X-Api-Key", "type": "string" },
+                { "key": "value", "value": "secret", "type": "string" },
+                { "key": "in", "value": "header", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload Photo",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/pets/:petId/photo",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "pets", ":petId", "photo" ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [ { "key": "file", "type": "file" } ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

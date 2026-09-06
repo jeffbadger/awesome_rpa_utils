@@ -1,0 +1,15 @@
+meta {
+  name: Get Pet
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/pets/:petId
+  body: none
+  auth: inherit
+}
+
+headers {
+  X-Request-Source: bruno
+}

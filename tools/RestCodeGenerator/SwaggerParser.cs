@@ -6,12 +6,13 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using YamlDotNet.Serialization;
+using static RestCodeGenerator.JsonHelpers;
 
 namespace RestCodeGenerator;
 
 public static class SwaggerParser
 {
-    public static SwaggerDoc ParseFile(string path)
+    public static ApiSpec ParseFile(string path)
     {
         if (!File.Exists(path))
             throw new FileNotFoundException($"Swagger file not found: {path}", path);
@@ -25,7 +26,9 @@ public static class SwaggerParser
     /// <see cref="System.Text.Json"/> for string escaping — one code path for both formats.
     /// (YamlDotNet's own JsonCompatible serializer leaves control characters like '\t'
     /// unescaped in its output, which System.Text.Json then rejects as invalid JSON.)</summary>
-    private static JsonDocument LoadDocument(string text)
+    /// <summary>Internal so <see cref="ApiSpecParser.Detect"/> can reuse the same YAML/JSON
+    /// loading path to sniff a file's shape before committing to a parser.</summary>
+    internal static JsonDocument LoadDocument(string text)
     {
         var deserializer = new DeserializerBuilder().Build();
         var yamlObject = deserializer.Deserialize<object?>(text);
@@ -63,9 +66,6 @@ public static class SwaggerParser
         return arr;
     }
 
-    private static JsonElement? GetPropertyOrNull(this JsonElement e, string name) =>
-        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) ? v : null;
-
     private static JsonElement? ResolveRef(JsonElement root, JsonElement? maybe)
     {
         if (maybe is not { } e || e.ValueKind != JsonValueKind.Object) return maybe;
@@ -88,36 +88,7 @@ public static class SwaggerParser
         return maybe;
     }
 
-    /// <summary>Reads an optional string property; a missing property or a value whose
-    /// JSON type is not string yields null instead of throwing
-    /// (<c>JsonElement.GetString()</c> throws <c>InvalidOperationException</c> on
-    /// non-string values such as numbers, objects, or arrays).</summary>
-    private static string? GetStringOrNull(JsonElement parent, string name)
-    {
-        if (parent.ValueKind != JsonValueKind.Object || !parent.TryGetProperty(name, out var v) ||
-            v.ValueKind != JsonValueKind.String)
-            return null;
-        return v.GetString();
-    }
-
-    /// <summary>Reads an optional positive-integer property. Every spec — JSON or YAML — is
-    /// loaded through the YAML deserializer (see <see cref="LoadDocument"/>), which reads every
-    /// plain scalar as a string; a bare JSON number therefore never actually reaches here; a
-    /// number is still accepted for robustness. Missing, zero/negative, or unparsable yields null.</summary>
-    private static int? GetPositiveIntOrNull(JsonElement parent, string name)
-    {
-        if (parent.ValueKind != JsonValueKind.Object || !parent.TryGetProperty(name, out var v))
-            return null;
-        var n = v.ValueKind switch
-        {
-            JsonValueKind.Number when v.TryGetInt32(out var i) => (int?)i,
-            JsonValueKind.String when int.TryParse(v.GetString(), out var i) => (int?)i,
-            _ => null,
-        };
-        return n is > 0 ? n : null;
-    }
-
-    public static SwaggerDoc Parse(JsonElement root)
+    public static ApiSpec Parse(JsonElement root)
     {
         var title = "Api";
         var version = "1.0.0";
@@ -177,7 +148,7 @@ public static class SwaggerParser
                 : null;
         }
 
-        var operations = new List<SwaggerOperation>();
+        var operations = new List<ApiOperation>();
         var skipped = new List<string>();
         var paths = root.GetPropertyOrNull("paths");
         if (paths is { } pathsElement)
@@ -191,12 +162,12 @@ public static class SwaggerParser
                     if (http is not ("GET" or "PUT" or "POST" or "DELETE" or "PATCH" or "HEAD" or "OPTIONS"))
                         continue;   // skip "parameters", "$ref", x- extensions
 
-                    var pathParams = new List<SwaggerParameter>();
-                    var queryParams = new List<SwaggerParameter>();
-                    var headerParams = new List<SwaggerParameter>();
+                    var pathParams = new List<ApiParameter>();
+                    var queryParams = new List<ApiParameter>();
+                    var headerParams = new List<ApiParameter>();
                     bool hasBody = false;
                     bool hasNonJsonBody = false;
-                    SwaggerSchema? bodySchema = null;
+                    ApiSchema? bodySchema = null;
 
                     foreach (var scope in new[] { pathLevelParams, opEntry.Value.GetPropertyOrNull("parameters") })
                     {
@@ -253,7 +224,7 @@ public static class SwaggerParser
                     if (hasNonJsonBody)
                         skipped.Add($"{http} {pathEntry.Name}");
                     else
-                        operations.Add(new SwaggerOperation(
+                        operations.Add(new ApiOperation(
                             http, pathEntry.Name,
                             opEntry.Value.GetPropertyOrNull("operationId")?.GetString(),
                             opEntry.Value.GetPropertyOrNull("summary")?.GetString(),
@@ -261,7 +232,7 @@ public static class SwaggerParser
                 }
             }
         }
-        return new SwaggerDoc(title, version, baseUrl, operations, ParseSecuritySchemes(root), skipped)
+        return new ApiSpec(title, version, baseUrl, operations, ParseSecuritySchemes(root), skipped)
         {
             Description = description,
             TermsOfService = termsOfService,
@@ -273,9 +244,9 @@ public static class SwaggerParser
         };
     }
 
-    private static List<SwaggerSecurityScheme> ParseSecuritySchemes(JsonElement root)
+    private static List<ApiSecurityScheme> ParseSecuritySchemes(JsonElement root)
     {
-        var schemes = new List<SwaggerSecurityScheme>();
+        var schemes = new List<ApiSecurityScheme>();
         var defs = root.GetPropertyOrNull("securityDefinitions");                            // Swagger 2.0
         if (defs is null && root.GetPropertyOrNull("components") is { } components)
             defs = components.GetPropertyOrNull("securitySchemes");                          // OpenAPI 3.x
@@ -299,30 +270,30 @@ public static class SwaggerParser
                 ("oauth2", _, _, "clientCredentials" or "application") => "oauth2ClientCredentials",
                 _ => "unsupported",   // implicit/auth-code/password oauth2, digest, openIdConnect…
             };
-            schemes.Add(new SwaggerSecurityScheme(d.Name, kind));
+            schemes.Add(new ApiSecurityScheme(d.Name, kind));
         }
         return schemes;
     }
 
-    private static SwaggerParameter ToParameter(JsonElement p) =>
+    private static ApiParameter ToParameter(JsonElement p) =>
         new(p.GetPropertyOrNull("name")?.GetString() ?? "",
             p.GetPropertyOrNull("in")?.GetString() == "path",
             p.GetPropertyOrNull("description")?.GetString());
 
     /// <summary>
     /// Resolves a request-body schema (Swagger 2.0 body-parameter <c>schema</c>, or OpenAPI 3.x
-    /// <c>requestBody.content["application/json"].schema</c>) into a <see cref="SwaggerSchema"/>
+    /// <c>requestBody.content["application/json"].schema</c>) into a <see cref="ApiSchema"/>
     /// tree, so the renderer can flatten it into typed method parameters. Returns null for a
     /// missing/malformed schema — callers then fall back to a raw bodyJson string parameter.
     /// A depth guard collapses pathological/circular schemas (self-referencing $refs) into a
     /// plain string leaf rather than recursing forever.
     /// </summary>
-    private static SwaggerSchema? ParseSchema(JsonElement root, JsonElement? maybe, int depth = 0)
+    private static ApiSchema? ParseSchema(JsonElement root, JsonElement? maybe, int depth = 0)
     {
         if (ResolveRef(root, maybe) is not { ValueKind: JsonValueKind.Object } schema)
             return null;
         if (depth > 8)
-            return new SwaggerSchema("string", System.Array.Empty<SwaggerSchemaProperty>(), null, 1);
+            return new ApiSchema("string", System.Array.Empty<ApiSchemaProperty>(), null, 1);
 
         var type = GetStringOrNull(schema, "type");
         if (type is null && schema.GetPropertyOrNull("properties") is { ValueKind: JsonValueKind.Object })
@@ -335,29 +306,29 @@ public static class SwaggerParser
         {
             case "object":
             {
-                var props = new List<SwaggerSchemaProperty>();
+                var props = new List<ApiSchemaProperty>();
                 if (schema.GetPropertyOrNull("properties") is { ValueKind: JsonValueKind.Object } properties)
                 {
                     foreach (var p in properties.EnumerateObject())
                     {
                         var propSchema = ParseSchema(root, p.Value, depth + 1);
                         if (propSchema != null)
-                            props.Add(new SwaggerSchemaProperty(p.Name, propSchema));
+                            props.Add(new ApiSchemaProperty(p.Name, propSchema));
                     }
                 }
-                return new SwaggerSchema("object", props, null, 1);
+                return new ApiSchema("object", props, null, 1);
             }
             case "array":
             {
                 var items = ParseSchema(root, schema.GetPropertyOrNull("items"), depth + 1)
-                             ?? new SwaggerSchema("string", System.Array.Empty<SwaggerSchemaProperty>(), null, 1);
+                             ?? new ApiSchema("string", System.Array.Empty<ApiSchemaProperty>(), null, 1);
                 var maxItems = GetPositiveIntOrNull(schema, "maxItems") ?? 1;
-                return new SwaggerSchema("array", System.Array.Empty<SwaggerSchemaProperty>(), items, maxItems);
+                return new ApiSchema("array", System.Array.Empty<ApiSchemaProperty>(), items, maxItems);
             }
             default:
             {
                 var jsonType = type is "integer" or "number" or "boolean" ? type : "string";
-                return new SwaggerSchema(jsonType, System.Array.Empty<SwaggerSchemaProperty>(), null, 1);
+                return new ApiSchema(jsonType, System.Array.Empty<ApiSchemaProperty>(), null, 1);
             }
         }
     }
