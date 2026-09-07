@@ -4,6 +4,8 @@ Status: Draft for product architect review
 Date: September 6, 2026
 Project: awesome_rpa_utils
 
+See [`REST_CONNECTOR_ROADMAP.md`](REST_CONNECTOR_ROADMAP.md) for the phased delivery plan that scopes this PRD into releasable increments, and [`PUSHBACK_BRIEF.md`](PUSHBACK_BRIEF.md) for that roadmap's review prep notes.
+
 ## Table of contents
 
 - [1. Product summary](#1-product-summary)
