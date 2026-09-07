@@ -88,9 +88,10 @@ Ships all three layers end to end for one import format, with auth narrowed to B
 | Basic | username + password header | Both | `200 · R1` |
 | Bearer | static token | Both | `200 · R1` |
 | API key | named header or query param | Both | `200 · R1` |
-| OAuth2 client-credentials | token endpoint, cached + refreshed | Unattended-safe | `202 · R3` |
-| Microsoft Entra ID | OAuth2 client-credentials + scope | Unattended-safe | `202 · R3` |
-| Auth-code+PKCE, device code, delegated Entra, mTLS | — gated on attended/unattended decision | Attended (expected) | `501 · R6` |
+| OAuth2 client-credentials | token endpoint, cached + refreshed | Both — non-interactive | `202 · R3` |
+| Microsoft Entra ID (app-only) | OAuth2 client-credentials + scope | Both — non-interactive | `202 · R3` |
+| Auth-code+PKCE, device code, delegated Entra ID | requires interactive consent | Attended only | `501 · R6` |
+| Client certificates (mTLS, Entra cert credential) | provisioned cert, no interaction at call time | Both — non-interactive | `501 · R6` |
 
 ### Response handling across releases
 
@@ -204,7 +205,7 @@ A helper API on the raw response — throwing `GetString`/`GetInt32`/… and nev
 
 Extends the Harness's auth strategies with OAuth2 client-credentials — token caching, automatic refresh, and an optional scope parameter, which Microsoft Entra ID's v2.0 token endpoint requires to accept the request at all. No new import formats, no wizard, no interactive flows.
 
-*Depends on:* Release 1's auth-strategy extension point. *Why here:* unattended-safe by default, same as Basic/Bearer/API key — doesn't need the attended/unattended platform decision that gates Release 6, so it ships as soon as capacity allows. Parallel-track candidate with Release 2.
+*Depends on:* Release 1's auth-strategy extension point. *Why here:* non-interactive by default, same as Basic/Bearer/API key — works in both attended and unattended execution, so it doesn't need the attended/unattended platform decision that gates Release 6's interactive flows. Parallel-track candidate with Release 2.
 
 ### R4 — Import formats: Postman, Bruno, curl
 
@@ -220,9 +221,9 @@ A step-by-step designer flow that produces the same `ApiSpec` shape as any impor
 
 ### R6 — Extended auth: interactive flows and certificates
 
-Authorization-code + PKCE, device-code, Entra ID delegated auth and certificate credentials, mTLS client certificates.
+Two different things, bundled here for scope: authorization-code + PKCE, device-code, and Entra ID delegated auth all require interactive consent, so they're attended-only. Client certificates (mTLS, Entra certificate credential) don't require interaction at call time — they just need to be provisioned — so they work in both attended and unattended execution, same as Release 3's schemes.
 
-*Depends on:* the Harness's auth-strategy extension point, established in Release 1 and extended in Release 3. *Why here:* needs a platform decision — which flows apply to attended vs. unattended robots — that neither Release 1 nor Release 3 had to make, since client-credentials is unattended-safe by default.
+*Depends on:* the Harness's auth-strategy extension point, established in Release 1 and extended in Release 3. *Why here:* the interactive flows need a platform decision — which of them apply to attended vs. unattended robots — that neither Release 1 nor Release 3 had to make, since everything shipped by then is non-interactive. Certificates don't depend on that decision; they're grouped here on scope, not on the gating rule.
 
 ### R7 — Visual mapping: response fields → named automation outputs
 
@@ -265,7 +266,7 @@ Needed before or alongside Release 1 — none block starting Intake or Generatio
 
 1. **Harness contract & versioning policy.** Exact shape of the request-descriptor and auth-config types, and the compatibility rule generated components can rely on.
 2. **Credential taxonomy.** Whether "REST API credential" is a new named category in Robot Manager's provider lookup, or reuses the existing generic application-credential bucket.
-3. **Attended/unattended gating rule.** A single rule the platform applies from Release 6 onward to decide which auth flows are offered in which execution context — needed once, reused for every future flow.
+3. **Attended/unattended gating rule.** A single rule the platform applies from Release 6 onward to decide which *interactive* auth flows (authorization-code+PKCE, device-code, delegated Entra ID) are offered in which execution context — needed once, reused for every future interactive flow. Non-interactive schemes (Basic/Bearer/API key/OAuth2 client-credentials/Entra app-only) and certificate-based auth work in both contexts already and don't need this rule.
 4. **Error-handling model.** Whether Release 1 commits to never-throw only (matching the RestCodeGenerator prototype) or needs a configurable `ErrorBehavior` — return a failed result vs. throw an exception — as the original product spec called for. This touches the frozen `RestResult` contract directly, so it needs to be settled now rather than reopened after Release 1 ships.
 5. **Harness rollout discipline.** The same "patch once, every component benefits" property that makes the shared Harness valuable also means a defective Harness release now affects every deployed REST component at once. Needs a canary/staged-rollout policy riding the existing Synchronization Server distribution mechanism, not a flat ship-to-everyone release.
 
