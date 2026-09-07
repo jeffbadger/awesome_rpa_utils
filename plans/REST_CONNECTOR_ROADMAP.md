@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Basis:** RestCodeGenerator prototype (this repository's `tools/RestCodeGenerator`)
-**Scope:** Release 1 detailed; Releases 2–7 outlined
+**Scope:** Release 1 detailed; Releases 2–8 outlined
 
 A phased plan for importing external REST APIs into Robot Studio as typed, callable components — OpenAPI/Swagger first, with the first confirmed use case being API key auth against an OpenAPI-described API. This document is for a different product (direct inclusion in Pega RPA / Robot Studio itself), tracked here because it's informed by, and builds on, the RestCodeGenerator prototype in this repository. See [`PRD_REST_API_COMPONENT.md`](PRD_REST_API_COMPONENT.md) for the original full-scope product spec this roadmap phases out, and [`PUSHBACK_BRIEF.md`](PUSHBACK_BRIEF.md) for the review prep notes.
 
@@ -30,7 +30,7 @@ flowchart LR
 
 ## 2. Release 1 — OpenAPI / Swagger
 
-Ships all three layers end to end for one import format, with auth narrowed to Basic, Bearer, and API key — the three schemes with no token lifecycle to manage, which keeps the Harness's first version small. Explicitly excludes: OAuth2 client-credentials and Microsoft Entra ID (a fast-follow in Release 2, not blocked on anything new), Postman/Bruno/curl import, the manual endpoint wizard, interactive OAuth2 flows and certificate-based auth, typed/mapped responses, and regeneration diffing — each is a separate release below, sequenced on purpose rather than omitted by accident.
+Ships all three layers end to end for one import format, with auth narrowed to Basic, Bearer, and API key — the three schemes with no token lifecycle to manage, which keeps the Harness's first version small. Responses stay raw JSON, consumed via Robot Studio's existing JSON Parser Component. Explicitly excludes: typed response helpers (Release 2 — the first fast-follow, since it directly completes this release's own use case), OAuth2 client-credentials and Microsoft Entra ID (Release 3, not blocked on anything new), Postman/Bruno/curl import (Release 4), the manual endpoint wizard (Release 5), interactive OAuth2 flows and certificate-based auth (Release 6), visual response mapping (Release 7), and regeneration diffing (Release 8) — each sequenced on purpose rather than omitted by accident.
 
 ### 2.1 Intake — `200 · Release 1`
 
@@ -71,10 +71,10 @@ Ships all three layers end to end for one import format, with auth narrowed to B
 
 **Scope:**
 - HTTP execution: timeout/cancellation, response capture, transport-failure vs. HTTP-status distinction
-- Auth strategies: Basic, Bearer, API key (header/query) — no token lifecycle to manage for any of the three. *OAuth2 client-credentials and Entra ID follow immediately in Release 2, designed against the same extension point.*
+- Auth strategies: Basic, Bearer, API key (header/query) — no token lifecycle to manage for any of the three. *OAuth2 client-credentials and Entra ID follow in Release 3, designed against the same extension point.*
 - Credential resolution: a literal value, or a named credential-reference resolved through Robot Manager's existing provider chain — ASOManager, Credential Store, BeyondTrust, CyberArk, custom provider. **No new provider types in Release 1.**
 - Request/response plumbing: query building, header assembly, path-parameter escaping, JSON body assembly from flattened parameters
-- A frozen, versioned public contract that generated components compile against long-term, with an auth-strategy extension point that Release 2's OAuth2 work plugs into without a contract break
+- A frozen, versioned public contract that generated components compile against long-term, with an auth-strategy extension point that Release 3's OAuth2 work plugs into without a contract break
 
 **Acceptance criteria:**
 - A harness fix or new capability ships without regenerating any already-deployed component
@@ -88,9 +88,17 @@ Ships all three layers end to end for one import format, with auth narrowed to B
 | Basic | username + password header | Both | `200 · R1` |
 | Bearer | static token | Both | `200 · R1` |
 | API key | named header or query param | Both | `200 · R1` |
-| OAuth2 client-credentials | token endpoint, cached + refreshed | Unattended-safe | `202 · R2` |
-| Microsoft Entra ID | OAuth2 client-credentials + scope | Unattended-safe | `202 · R2` |
-| Auth-code+PKCE, device code, delegated Entra, mTLS | — gated on attended/unattended decision | Attended (expected) | `501 · R5` |
+| OAuth2 client-credentials | token endpoint, cached + refreshed | Unattended-safe | `202 · R3` |
+| Microsoft Entra ID | OAuth2 client-credentials + scope | Unattended-safe | `202 · R3` |
+| Auth-code+PKCE, device code, delegated Entra, mTLS | — gated on attended/unattended decision | Attended (expected) | `501 · R6` |
+
+### Response handling across releases
+
+| Capability | Mechanism | Release |
+|---|---|---|
+| Raw response | JSON/text string, consumed via Robot Studio's native JSON Parser Component | `200 · R1` |
+| Typed helpers | strict + safe GetX/ReadX API, JSONPath-style traversal | `202 · R2` |
+| Visual mapping | designer editor binding response fields to named outputs | `501 · R7` |
 
 ### Harness contract sketch (Release 1)
 
@@ -182,41 +190,47 @@ public bool GetPetById(string petId, out string responseJson, out int statusCode
 
 **Credential-reference model.** Robot Manager's existing application-credential lookup already resolves an arbitrary named key through DPAPI/BeyondTrust/CyberArk/custom providers today — that's an existing capability, not new infrastructure. Release 1 only needs to (a) let a generated property accept a credential-reference key alongside its literal-value form, and (b) decide whether "REST API credential" becomes its own named category in that lookup, or reuses the generic application-credential bucket.
 
-## 3. Releases 2–7
+## 3. Releases 2–8
 
-Each later release targets the same `ApiSpec` model or the same harness extension points established in Release 1 — none of them require re-opening Intake, Generation, or the harness's core contract.
+Each later release targets the same `ApiSpec` model or the same harness extension points established in Release 1 — none of them require re-opening Intake, Generation, or the harness's core contract. Releases 2/3 and 4/5 are each parallel-track pairs — neither member of a pair depends on the other, both depend only on Release 1.
 
-### R2 — OAuth2 & Entra ID: client-credentials auth, fast-follow
+### R2 — Typed response helpers: strict + safe JSON helper API
+
+A helper API on the raw response — throwing `GetString`/`GetInt32`/… and never-throw `ReadString`/`ReadInt32`/… twins — with JSONPath-style traversal, culture-independent type conversion, and a defined error taxonomy. Library only: no UI, no new import format, no auth work.
+
+*Depends on:* Release 1's raw-JSON `RestResult`, unchanged. *Why here:* unlike OAuth2/Entra (Release 3), this directly completes Release 1's *own* confirmed use case — API key + OpenAPI still needs its responses consumed by something better than a raw string, where OAuth2 instead serves APIs outside that first use case entirely. Parallel-track candidate with Release 3.
+
+### R3 — OAuth2 & Entra ID: client-credentials auth, fast-follow
 
 Extends the Harness's auth strategies with OAuth2 client-credentials — token caching, automatic refresh, and an optional scope parameter, which Microsoft Entra ID's v2.0 token endpoint requires to accept the request at all. No new import formats, no wizard, no interactive flows.
 
-*Depends on:* Release 1's auth-strategy extension point. *Why here:* unattended-safe by default, same as Basic/Bearer/API key — doesn't need the attended/unattended platform decision that gates Release 5, so it ships as soon as capacity allows rather than waiting on that.
+*Depends on:* Release 1's auth-strategy extension point. *Why here:* unattended-safe by default, same as Basic/Bearer/API key — doesn't need the attended/unattended platform decision that gates Release 6, so it ships as soon as capacity allows. Parallel-track candidate with Release 2.
 
-### R3 — Import formats: Postman, Bruno, curl
+### R4 — Import formats: Postman, Bruno, curl
 
 Three new parsers, each producing the same `ApiSpec` — zero changes to Generation or the Harness.
 
 *Depends on:* Release 1's ApiSpec model, unchanged. *Why here:* lowest marginal cost once the normalized model exists — a proven, low-risk pattern that expands reach quickly.
 
-### R4 — Manual wizard: guided endpoint definition, no import file
+### R5 — Manual wizard: guided endpoint definition, no import file
 
 A step-by-step designer flow that produces the same `ApiSpec` shape as any import path.
 
-*Depends on:* Release 1's ApiSpec + Generation. *Why here:* independent of import-format breadth — can run in parallel with Release 3 on a separate track; the largest UI investment after the core pipeline is proven.
+*Depends on:* Release 1's ApiSpec + Generation. *Why here:* independent of import-format breadth — can run in parallel with Release 4 on a separate track; the largest UI investment after the core pipeline is proven.
 
-### R5 — Extended auth: interactive flows and certificates
+### R6 — Extended auth: interactive flows and certificates
 
 Authorization-code + PKCE, device-code, Entra ID delegated auth and certificate credentials, mTLS client certificates.
 
-*Depends on:* the Harness's auth-strategy extension point, established in Release 1 and extended in Release 2. *Why here:* needs a platform decision — which flows apply to attended vs. unattended robots — that neither Release 1 nor Release 2 had to make, since client-credentials is unattended-safe by default.
+*Depends on:* the Harness's auth-strategy extension point, established in Release 1 and extended in Release 3. *Why here:* needs a platform decision — which flows apply to attended vs. unattended robots — that neither Release 1 nor Release 3 had to make, since client-credentials is unattended-safe by default.
 
-### R6 — Typed responses: strict/safe JSON helpers + visual mapping
+### R7 — Visual mapping: response fields → named automation outputs
 
-A typed response-helper API with defined error codes, and a visual editor mapping response fields to named automation outputs.
+A designer editor that maps response fields to named outputs by clicking through a sample response — generating bindings on top of Release 2's helper API rather than requiring hand-written paths.
 
-*Depends on:* Release 1's raw-JSON response baseline. *Why here:* the largest standalone engineering effort in the plan — best scoped once real usage shows what automations actually need from responses.
+*Depends on:* Release 2's typed helper API and path syntax. *Why here:* the UI-level counterpart to Release 2's library — a full designer feature with no library-level dependency forcing it earlier, best scoped once Release 2's helper API has real usage to inform what the editor should expose.
 
-### R7 — Regeneration: diffing, breaking-change review, manifests
+### R8 — Regeneration: diffing, breaking-change review, manifests
 
 Change detection between spec versions, a review step before replacing a component's signature set, and artifact fingerprinting.
 
@@ -251,7 +265,7 @@ Needed before or alongside Release 1 — none block starting Intake or Generatio
 
 1. **Harness contract & versioning policy.** Exact shape of the request-descriptor and auth-config types, and the compatibility rule generated components can rely on.
 2. **Credential taxonomy.** Whether "REST API credential" is a new named category in Robot Manager's provider lookup, or reuses the existing generic application-credential bucket.
-3. **Attended/unattended gating rule.** A single rule the platform applies from Release 5 onward to decide which auth flows are offered in which execution context — needed once, reused for every future flow.
+3. **Attended/unattended gating rule.** A single rule the platform applies from Release 6 onward to decide which auth flows are offered in which execution context — needed once, reused for every future flow.
 4. **Error-handling model.** Whether Release 1 commits to never-throw only (matching the RestCodeGenerator prototype) or needs a configurable `ErrorBehavior` — return a failed result vs. throw an exception — as the original product spec called for. This touches the frozen `RestResult` contract directly, so it needs to be settled now rather than reopened after Release 1 ships.
 5. **Harness rollout discipline.** The same "patch once, every component benefits" property that makes the shared Harness valuable also means a defective Harness release now affects every deployed REST component at once. Needs a canary/staged-rollout policy riding the existing Synchronization Server distribution mechanism, not a flat ship-to-everyone release.
 
