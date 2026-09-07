@@ -1,6 +1,6 @@
 # Pushback Brief
 
-**Companion to:** [`REST_CONNECTOR_ROADMAP.md`](REST_CONNECTOR_ROADMAP.md)
+**Companion to:** [`REST_CONNECTOR_ROADMAP.md`](REST_CONNECTOR_ROADMAP.md) · [`EXECUTIVE_BRIEF.md`](EXECUTIVE_BRIEF.md)
 **Purpose:** Prep notes for the roadmap review — the sharpest objections, answered before the room asks.
 
 ## Two facts that do most of the work below

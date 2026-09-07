@@ -4,7 +4,7 @@
 **Basis:** RestCodeGenerator prototype (this repository's `tools/RestCodeGenerator`)
 **Scope:** Release 1 detailed; Releases 2–8 outlined
 
-A phased plan for importing external REST APIs into Robot Studio as typed, callable components — OpenAPI/Swagger first, with the first confirmed use case being API key auth against an OpenAPI-described API. This document is for a different product (direct inclusion in Pega RPA / Robot Studio itself), tracked here because it's informed by, and builds on, the RestCodeGenerator prototype in this repository. See [`PRD_REST_API_COMPONENT.md`](PRD_REST_API_COMPONENT.md) for the original full-scope product spec this roadmap phases out, and [`PUSHBACK_BRIEF.md`](PUSHBACK_BRIEF.md) for the review prep notes.
+A phased plan for importing external REST APIs into Robot Studio as typed, callable components — OpenAPI/Swagger first, with the first confirmed use case being API key auth against an OpenAPI-described API. This document is for a different product (direct inclusion in Pega RPA / Robot Studio itself), tracked here because it's informed by, and builds on, the RestCodeGenerator prototype in this repository. See [`EXECUTIVE_BRIEF.md`](EXECUTIVE_BRIEF.md) for the one-page leadership version, [`PRD_REST_API_COMPONENT.md`](PRD_REST_API_COMPONENT.md) for the original full-scope product spec this roadmap phases out, and [`PUSHBACK_BRIEF.md`](PUSHBACK_BRIEF.md) for the review prep notes.
 
 ## 1. Architecture
 
