@@ -36,7 +36,10 @@ namespace JsonAutomation
 
         #region Native parity
 
-        /// <summary>Deserializes a JSON string into an instance of the given .NET type.</summary>
+        /// <summary>Deserializes a JSON string into an instance of the given .NET type.
+        /// <paramref name="typeName"/> should be a design-time-authored literal the automation's
+        /// author wires in - the same trust model as any other Robot Studio canvas string
+        /// parameter - not a value populated from untrusted runtime/external data.</summary>
         /// <param name="json">The JSON text to deserialize.</param>
         /// <param name="typeName">An assembly-qualified or in-scope simple type name, resolved via <see cref="Type.GetType(string)"/>.</param>
         /// <param name="result">The deserialized object on success; <c>null</c> on failure.</param>
@@ -56,7 +59,7 @@ namespace JsonAutomation
                     message = $"Type '{typeName}' could not be resolved.";
                     return false;
                 }
-                result = JsonConvert.DeserializeObject(json, type);
+                result = JsonConvert.DeserializeObject(json, type, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.None });
                 return true;
             }
             catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
