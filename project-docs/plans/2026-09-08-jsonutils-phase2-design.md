@@ -618,7 +618,7 @@ git commit -m "Add JsonUtils TryDiffJson"
 ## Task 4: JSON↔XML conversion
 
 **Files:**
-- Modify: `src/jsonutils/JsonUtils.cs` (new `#region Convert` block, plus `using System.Xml;`)
+- Modify: `src/jsonutils/JsonUtils.cs` (new `#region Convert` block; `System.Xml.XmlDocument` referenced fully-qualified inline, no new `using`)
 - Modify: `src/jsonutils/JsonUtils.Tests/JsonUtilsTests.cs`
 
 **A note on the test data below**: Newtonsoft's `JsonConvert.DeserializeXmlNode`
@@ -697,8 +697,15 @@ Expected: build error — `TryConvertJsonToXml`/`TryConvertXmlToJson` don't exis
 
 - [ ] **Step 3: Implement both methods**
 
-Add `using System.Xml;` to `JsonUtils.cs`'s usings. Add a new `#region
-Convert` block, after the new `#region Compare` block:
+Add a new `#region Convert` block, after the new `#region Compare` block.
+**Do NOT add `using System.Xml;`** - `System.Xml` and `Newtonsoft.Json` both
+declare a type/enum named `Formatting`, so a blanket `using` makes every
+existing bare `Formatting.None`/`Formatting.Indented` reference elsewhere
+in this file (across the `Merge`, `Compare`, `Array and removal`, and
+`Formatting` regions - all off-limits for this task) ambiguous, failing the
+build with `CS0104`. Fully-qualify `System.Xml.XmlDocument` inline in these
+two methods instead - this was caught during implementation of this exact
+task, not a hypothetical:
 
 ```csharp
 #region Convert
@@ -717,7 +724,7 @@ public bool TryConvertJsonToXml(string json, string rootElementName, out string 
     message = null;
     try
     {
-        XmlDocument document = JsonConvert.DeserializeXmlNode(json, rootElementName);
+        System.Xml.XmlDocument document = JsonConvert.DeserializeXmlNode(json, rootElementName);
         xml = document.OuterXml;
         return true;
     }
@@ -741,7 +748,7 @@ public bool TryConvertXmlToJson(string xml, out string json, out string message)
     message = null;
     try
     {
-        XmlDocument document = new XmlDocument();
+        System.Xml.XmlDocument document = new System.Xml.XmlDocument();
         document.LoadXml(xml);
         json = JsonConvert.SerializeXmlNode(document);
         return true;
