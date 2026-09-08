@@ -21,6 +21,20 @@ commercially-licensed package, unlike Json.NET itself — adding it would mean
 either paying for a license or pulling in a different (unvetted) free schema
 library, neither of which is worth doing just for this method.
 
+**Known limitation (not fixed, tracked for a future pass):** the Task 4
+addendum's date-string-corruption fix covers every `JToken`-based parse
+path (`ParseJson`, used by 6 methods) but not `TryDeserializeObject`, which
+uses `JsonConvert.DeserializeObject(json, type, settings)` - a structurally
+different code path that binds to the target member's declared CLR type.
+This is safe today because it's only ever exercised with `string`-typed
+target properties, but if a future caller deserializes into a property
+typed `object`/`JToken`/`dynamic`, `JsonConvert.DeserializeObject`'s own
+independent `DateParseHandling` default (unset here) could reintroduce the
+same reformatting bug on that specific path. Verified empirically
+(2026-09-08 code-quality review) that current tests and realistic usage
+don't hit this; flagged here so a future date-corruption report against
+`TryDeserializeObject` isn't a surprise.
+
 ## Architecture
 
 - New `src/jsonutils/JsonUtils.csproj`:
