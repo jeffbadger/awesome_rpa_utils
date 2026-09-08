@@ -31,6 +31,12 @@ with a descriptive message instead of throwing.
 | `TryAppendToJsonArray` | `(string json, string path, string valueJson, out string updatedJson, out string message) : bool` | Appends an element to an array. |
 | `TryPrettyPrintJson` | `(string json, out string formattedJson, out string message) : bool` | Reformats JSON with indentation. |
 | `TryMinifyJson` | `(string json, out string minifiedJson, out string message) : bool` | Reformats JSON with whitespace removed. |
+| `TryMergeJson` | `(string baseJson, string overrideJson, out string mergedJson, out string message) : bool` | Merges two JSON objects; the second wins on conflicts. |
+| `TryDiffJson` | `(string json1, string json2, string delimiter, out bool areEqual, out string differingPaths, out string message) : bool` | Compares two JSON documents and reports differing paths. |
+| `TryConvertJsonToXml` | `(string json, string rootElementName, out string xml, out string message) : bool` | Converts JSON text to XML text. |
+| `TryConvertXmlToJson` | `(string xml, out string json, out string message) : bool` | Converts XML text to JSON text. |
+| `TryFilterJsonArrayByField` | `(string json, string path, string fieldName, JsonComparisonOperator comparisonOperator, string value, out string filteredJson, out string message) : bool` | Filters an array to elements matching a field comparison. |
+| `TrySortJsonArrayByField` | `(string json, string path, string fieldName, bool ascending, out string sortedJson, out string message) : bool` | Sorts an array by a field's value. |
 
 ## JSONPath syntax
 
@@ -60,6 +66,19 @@ json.TrySetValueInJson("{\"order\":{\"status\":\"open\"}}", "order.status", "clo
 
 // Deserialize into a custom type - typeName is a string, not a generic parameter
 json.TryDeserializeObject(updatedJson, typeof(MyOrderType).AssemblyQualifiedName, out object order, out message);
+```
+
+Merge two documents, diff the result against a baseline, and convert to XML:
+
+```csharp
+json.TryMergeJson("{\"status\":\"open\"}", "{\"status\":\"closed\",\"priority\":1}", out string merged, out message);
+// merged == "{\"status\":\"closed\",\"priority\":1}"
+
+json.TryDiffJson("{\"status\":\"open\"}", merged, ",", out bool areEqual, out string differingPaths, out message);
+// areEqual == false, differingPaths == "status,priority"
+
+json.TryConvertJsonToXml(merged, "order", out string xml, out message);
+// xml == "<order><status>closed</status><priority>1</priority></order>"
 ```
 
 `TryDeserializeObject`'s date-preservation guarantee does not extend to its
@@ -122,7 +141,32 @@ own code path - see the caveat below.
   for consistency with every other method in this suite. Robot Studio's
   designer can still be configured to show only the `json` output if a
   single-port surface is wanted.
-- **Phase 2 (not yet implemented):** `MergeJson`, `DiffJson`, JSON↔XML
-  conversion, and array filter/sort helpers (`FilterJsonArrayByField`,
-  `SortJsonArrayByField`). JSON **Schema** validation is not planned at all -
-  Newtonsoft's schema validator is a separate commercially-licensed package.
+- **`TryMergeJson` requires both inputs to be JSON objects at the root.**
+  A bare array or scalar at either root fails with a descriptive message —
+  merging only makes sense between two objects' properties. An explicit
+  JSON `null` in the second document does NOT clear the first document's
+  existing value for that key (Newtonsoft's default null-merge behavior);
+  nested objects present in both documents are merged recursively, not
+  replaced wholesale.
+- **`TryDiffJson`'s path ordering is a deterministic pre-order walk of
+  `json1`'s structure**, not alphabetical: keys/indices are visited in
+  `json1`'s own order, with any keys/indices that exist only in `json2`
+  appended after. A whole-document-level difference (e.g. mismatched root
+  types) is reported as `$`.
+- **`TryConvertJsonToXml` always requires an explicit `rootElementName`.**
+  Newtonsoft's underlying converter can sometimes infer a root from JSON
+  shaped as a single top-level property, but this component always
+  requires the name explicitly for predictability.
+- **`TryConvertXmlToJson` rejects any XML containing a DOCTYPE declaration
+  (DTD), returning `False` with a message.** This component has no
+  legitimate need to support DTDs for JSON-conversion input, and parsing
+  untrusted XML with DTDs enabled is a known XXE/entity-expansion security
+  risk.
+- **`TryFilterJsonArrayByField`/`TrySortJsonArrayByField` compare
+  numerically when both sides look like numbers, and fall back to
+  case-insensitive ordinal string comparison otherwise** (so a boolean
+  field's `"True"`/`"False"` rendering matches a caller's lowercase
+  `"true"`/`"false"`). `Contains` always compares as case-sensitive strings
+  (substring match). An array element missing the compared/sorted field
+  entirely is excluded from filter results under every operator, including
+  `NotEquals`.
