@@ -1885,6 +1885,29 @@ Path expressions use Newtonsoft.Json's JSONPath dialect:
 - `items[?(@.price > 10)].sku` — a filter expression (use with `TryGetValuesFromJson`).
 - `$..sku` — recursive descent: every `sku` anywhere in the document.
 
+## Typical workflow
+
+Parse a JSON document, read a value via JSONPath, update it, and reformat
+the result:
+
+```csharp
+var json = new JsonUtils();
+
+// Read a value from a nested path
+json.TryGetValueFromJson("{\"order\":{\"items\":[{\"sku\":\"ABC\"}]}}", "order.items[0].sku", out string sku, out string message);
+// sku == "ABC"
+
+// Update an existing value
+json.TrySetValueInJson("{\"order\":{\"status\":\"open\"}}", "order.status", "closed", out string updatedJson, out message);
+// updatedJson == "{\"order\":{\"status\":\"closed\"}}"
+
+// Deserialize into a custom type - typeName is a string, not a generic parameter
+json.TryDeserializeObject(updatedJson, typeof(MyOrderType).AssemblyQualifiedName, out object order, out message);
+```
+
+`TryDeserializeObject`'s date-preservation guarantee does not extend to its
+own code path - see the caveat below.
+
 ## Notes & Caveats
 
 - **Never throws.** Malformed JSON, a path that doesn't resolve, and a type
@@ -1906,6 +1929,12 @@ Path expressions use Newtonsoft.Json's JSONPath dialect:
   review and fixed before this component shipped). Typed getters like
   `TryGetDateTimeValue` are unaffected - they parse the string into a
   `DateTime` on demand regardless of this setting.
+- **This date-preservation guarantee does not extend to `TryDeserializeObject`.**
+  It uses a separate `JsonConvert.DeserializeObject` code path without
+  `DateParseHandling.None` set; deserializing into a target type with an
+  `object`/`JToken`/`dynamic`-typed member could still reformat a date-like
+  string. Safe for `string`-typed members, which is the common case and the
+  only one this component's tests exercise.
 - **`TrySetValueInJson` requires the path to already exist.** It replaces a
   value in place; it does not create new object properties or array elements
   along the way. Use `TryAppendToJsonArray` to add array elements.
