@@ -687,5 +687,15 @@ namespace JsonAutomation.Tests
             Assert.True(getSucceeded);
             Assert.Equal("Ada", value);
         }
+
+        [Fact]
+        public void TryConvertXmlToJson_XmlWithDtd_ReturnsFalseWithMessage()
+        {
+            string xmlWithDtd = "<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY foo \"bar\">]><root><a>&foo;</a></root>";
+            bool succeeded = _json.TryConvertXmlToJson(xmlWithDtd, out string json, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
     }
 }

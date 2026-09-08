@@ -716,7 +716,11 @@ namespace JsonAutomation
             }
         }
 
-        /// <summary>Converts XML text to JSON text.</summary>
+        /// <summary>Converts XML text to JSON text. Rejects any XML containing a DOCTYPE
+        /// declaration (DTD) - this component has no legitimate need to support DTDs for
+        /// JSON-conversion use cases, and <c>XmlDocument.LoadXml</c>'s permissive parsing
+        /// defaults are a known XXE/entity-expansion risk for caller-supplied XML that
+        /// <c>XmlReader.Create</c>'s safe-by-default settings close.</summary>
         /// <param name="xml">The XML text to convert.</param>
         /// <param name="json">The JSON text on success; <c>null</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
@@ -730,7 +734,11 @@ namespace JsonAutomation
             try
             {
                 System.Xml.XmlDocument document = new System.Xml.XmlDocument();
-                document.LoadXml(xml);
+                using (StringReader stringReader = new StringReader(xml))
+                using (System.Xml.XmlReader reader = System.Xml.XmlReader.Create(stringReader))
+                {
+                    document.Load(reader);
+                }
                 json = JsonConvert.SerializeXmlNode(document);
                 return true;
             }
