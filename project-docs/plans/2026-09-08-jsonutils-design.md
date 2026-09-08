@@ -844,10 +844,45 @@ public void TryGetStringValue_PathNotFound_ReturnsFalseWithMessage()
     Assert.False(succeeded);
     Assert.False(string.IsNullOrEmpty(message));
 }
+
+[Fact]
+public void TryGetBoolValue_NonBooleanPath_ReturnsFalseWithMessage()
+{
+    bool succeeded = _json.TryGetBoolValue("{\"active\":\"nope\"}", "active", out bool value, out string message);
+
+    Assert.False(succeeded);
+    Assert.False(string.IsNullOrEmpty(message));
+}
+
+[Fact]
+public void TryGetDoubleValue_NonNumericPath_ReturnsFalseWithMessage()
+{
+    bool succeeded = _json.TryGetDoubleValue("{\"price\":\"abc\"}", "price", out double value, out string message);
+
+    Assert.False(succeeded);
+    Assert.False(string.IsNullOrEmpty(message));
+}
+
+[Fact]
+public void TryGetDateTimeValue_NonDatePath_ReturnsFalseWithMessage()
+{
+    bool succeeded = _json.TryGetDateTimeValue("{\"created\":\"not a date\"}", "created", out DateTime value, out string message);
+
+    Assert.False(succeeded);
+    Assert.False(string.IsNullOrEmpty(message));
+}
 ```
 
 Add `using System;` to the test file's usings if not already present (for
 `DateTime`).
+
+**Note (added after code-quality review):** the three failure-path tests
+above (`TryGetBoolValue`/`TryGetDoubleValue`/`TryGetDateTimeValue` against a
+bad conversion) were missing from this plan's original test list — a code
+quality review after implementation caught that only `TryGetIntValue` had
+failure-path coverage, verified the other 3 getters already behaved
+correctly (never throw), and recommended closing the test gap rather than
+carrying it forward. Landed as a same-task follow-up commit.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -975,7 +1010,7 @@ public bool TryGetDateTimeValue(string json, string path, out DateTime value, ou
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 22 tests (11 prior + 11 new — `IsValidJson_ValidJson_ReturnsTrue`'s `[Theory]` contributes 3 cases).
+Expected: PASS, 25 tests (11 prior + 14 new — `IsValidJson_ValidJson_ReturnsTrue`'s `[Theory]` contributes 3 cases; includes the 3 failure-path tests added after code-quality review).
 
 - [ ] **Step 5: Commit**
 
@@ -1142,7 +1177,7 @@ public bool TryGetValueType(string json, string path, out JsonValueKind kind, ou
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 31 tests (22 prior + 9 new — `TryGetValueType_VariousTypes_ReturnsExpectedKind`'s `[Theory]` contributes 6 cases).
+Expected: PASS, 34 tests (25 prior + 9 new — `TryGetValueType_VariousTypes_ReturnsExpectedKind`'s `[Theory]` contributes 6 cases).
 
 - [ ] **Step 5: Commit**
 
@@ -1361,7 +1396,7 @@ public bool TryAppendToJsonArray(string json, string path, string valueJson, out
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 38 tests (31 prior + 7 new).
+Expected: PASS, 41 tests (34 prior + 7 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1489,7 +1524,7 @@ public bool TryMinifyJson(string json, out string minifiedJson, out string messa
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 42 tests (38 prior + 4 new).
+Expected: PASS, 45 tests (41 prior + 4 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1672,7 +1707,7 @@ Expected: clean build, all projects including the new `JsonUtils`/
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 42/42.
+Expected: PASS, 45/45.
 
 - [ ] **Step 3: Package-Release dry run**
 
@@ -1718,7 +1753,7 @@ git worktree remove .worktrees/jsonutils
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to the
       other 18 shipped components.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      42/42 passing, fully on this Linux host (no Windows-only skips, unlike
+      45/45 passing, fully on this Linux host (no Windows-only skips, unlike
       `UIAutomation.Tests`/`OcrUtils.Tests`/`ScreenCaptureUtils.Tests`).
 - [ ] `scripts/Package-Release.ps1`'s `$releaseAssemblies` includes
       `JsonAutomation.dll`.
