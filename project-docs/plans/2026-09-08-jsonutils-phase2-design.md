@@ -1253,7 +1253,11 @@ implemented):
 ```markdown
 - **`TryMergeJson` requires both inputs to be JSON objects at the root.**
   A bare array or scalar at either root fails with a descriptive message —
-  merging only makes sense between two objects' properties.
+  merging only makes sense between two objects' properties. An explicit
+  JSON `null` in the second document does NOT clear the first document's
+  existing value for that key (Newtonsoft's default null-merge behavior);
+  nested objects present in both documents are merged recursively, not
+  replaced wholesale.
 - **`TryDiffJson`'s path ordering is a deterministic pre-order walk of
   `json1`'s structure**, not alphabetical: keys/indices are visited in
   `json1`'s own order, with any keys/indices that exist only in `json2`
@@ -1263,10 +1267,19 @@ implemented):
   Newtonsoft's underlying converter can sometimes infer a root from JSON
   shaped as a single top-level property, but this component always
   requires the name explicitly for predictability.
+- **`TryConvertXmlToJson` rejects any XML containing a DOCTYPE declaration
+  (DTD), returning `False` with a message.** This component has no
+  legitimate need to support DTDs for JSON-conversion input, and parsing
+  untrusted XML with DTDs enabled is a known XXE/entity-expansion security
+  risk.
 - **`TryFilterJsonArrayByField`/`TrySortJsonArrayByField` compare
-  numerically when both sides look like numbers, and fall back to ordinal
-  string comparison otherwise.** `Contains` always compares as strings
-  (substring match).
+  numerically when both sides look like numbers, and fall back to
+  case-insensitive ordinal string comparison otherwise** (so a boolean
+  field's `"True"`/`"False"` rendering matches a caller's lowercase
+  `"true"`/`"false"`). `Contains` always compares as case-sensitive strings
+  (substring match). An array element missing the compared/sorted field
+  entirely is excluded from filter results under every operator, including
+  `NotEquals`.
 ```
 
 - [ ] **Step 4: Commit**
