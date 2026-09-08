@@ -1771,6 +1771,66 @@ Expected: PASS, 50 tests (44 prior + 6 new).
 
 - [ ] **Step 5: Commit**
 
+## Task 6 addendum: cross-region workflow tests
+
+**Found by code-quality review after Task 6 landed.** All 50 tests so far
+call exactly one method against a hand-written JSON literal. Nothing proves
+methods from different regions compose correctly - i.e. that one method's
+`out` JSON text is valid input to another. Given this component's actual bug
+history (the Task 4 date-corruption fix and the Task 6 test-data correction
+were both round-tripping/serialization issues), this is worth closing before
+the component is called done, not deferred indefinitely.
+
+**Files:**
+- Modify: `src/jsonutils/JsonUtils.Tests/JsonUtilsTests.cs` (test-only, no production code changes)
+
+- [ ] **Step 1: Add two workflow tests**
+
+```csharp
+[Fact]
+public void Workflow_SetPrettyPrintThenGet_RoundTripsCorrectly()
+{
+    bool setSucceeded = _json.TrySetValueInJson("{\"order\":{\"status\":\"open\"}}", "order.status", "closed", out string updatedJson, out string setMessage);
+    Assert.True(setSucceeded);
+
+    bool prettySucceeded = _json.TryPrettyPrintJson(updatedJson, out string prettyJson, out string prettyMessage);
+    Assert.True(prettySucceeded);
+
+    bool getSucceeded = _json.TryGetValueFromJson(prettyJson, "order.status", out string value, out string getMessage);
+    Assert.True(getSucceeded);
+    Assert.Equal("closed", value);
+}
+
+[Fact]
+public void Workflow_AppendMinifyThenGetArrayLength_RoundTripsCorrectly()
+{
+    bool appendSucceeded = _json.TryAppendToJsonArray("{\"items\":[1,2]}", "items", "3", out string updatedJson, out string appendMessage);
+    Assert.True(appendSucceeded);
+
+    bool minifySucceeded = _json.TryMinifyJson(updatedJson, out string minifiedJson, out string minifyMessage);
+    Assert.True(minifySucceeded);
+
+    bool lengthSucceeded = _json.TryGetArrayLength(minifiedJson, "items", out int length, out string lengthMessage);
+    Assert.True(lengthSucceeded);
+    Assert.Equal(3, length);
+}
+```
+
+- [ ] **Step 2: Run the tests**
+
+```bash
+dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
+```
+
+Expected: PASS, 52 tests (50 prior + 2 new).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/jsonutils
+git commit -m "Add cross-region workflow tests for JsonUtils"
+```
+
 ```bash
 git add src/jsonutils
 git commit -m "Add JsonUtils formatting methods"
@@ -1960,7 +2020,7 @@ Expected: clean build, all projects including the new `JsonUtils`/
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 50/50.
+Expected: PASS, 52/52.
 
 - [ ] **Step 3: Package-Release dry run**
 
@@ -1989,7 +2049,7 @@ gh pr create --title "Add JsonUtils component" --body "$(cat <<'EOF'
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (50/50)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (52/52)
 EOF
 )"
 ```
@@ -2006,7 +2066,7 @@ git worktree remove .worktrees/jsonutils
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to the
       other 18 shipped components.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      50/50 passing, fully on this Linux host (no Windows-only skips, unlike
+      52/52 passing, fully on this Linux host (no Windows-only skips, unlike
       `UIAutomation.Tests`/`OcrUtils.Tests`/`ScreenCaptureUtils.Tests`).
 - [ ] `scripts/Package-Release.ps1`'s `$releaseAssemblies` includes
       `JsonAutomation.dll`.
