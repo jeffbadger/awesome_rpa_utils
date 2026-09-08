@@ -1186,6 +1186,152 @@ git add src/jsonutils
 git commit -m "Add JsonUtils multi-match getter and value-type inspector"
 ```
 
+## Task 4 addendum: fix silent date-string corruption + extract shared parse helper
+
+**Found by code-quality review after Task 4 landed — a real, verified bug,
+not a style nit.** Newtonsoft's `JToken.Parse(json)` uses
+`DateParseHandling.DateTime` by default: any string value that *looks* like
+a date/timestamp (e.g. `"2026-02-20T08:30:00Z"`) is silently parsed into a
+`JTokenType.Date` token instead of staying `JTokenType.String`. Every method
+that later calls `token.ToString()` on such a token (`TryGetValueFromJson`,
+`TryGetValuesFromJson`) gets back a **culture-dependent, reformatted**
+`DateTime.ToString()` result with the original text - and any UTC `Z`
+marker - silently discarded. Verified empirically: `"2026-02-20T08:30:00Z"`
+in → `"2/20/2026 8:30:00 AM"` out. For a component whose entire job is
+faithfully extracting JSON values, this is silent data corruption on one of
+the most common real-world JSON payload shapes (timestamps), and it was
+already present in Task 2's `TryGetValueFromJson` before Task 4 copied the
+same pattern into `TryGetValuesFromJson`.
+
+This is also the forcing function for a DRY cleanup flagged (but deferred as
+"not urgent yet") in both the Task 2 and Task 4 code-quality reviews: six
+methods across three already-landed regions (`TryGetValueFromJson`,
+`TrySetValueInJson`, `IsValidJson`, `TryGetTypedValue<T>`,
+`TryGetValuesFromJson`, `TryGetValueType`) each call `JToken.Parse(json)`
+directly. Fixing the bug in one shared helper instead of six call sites is
+strictly better than a six-site patch.
+
+**Files:**
+- Modify: `src/jsonutils/JsonUtils.cs` (add one private helper; change 6 existing call sites from `JToken.Parse(json)` to the new helper; add a comment to `TryGetValueType`'s switch)
+- Modify: `src/jsonutils/JsonUtils.Tests/JsonUtilsTests.cs` (add 2 regression tests)
+
+- [ ] **Step 1: Write the failing regression tests**
+
+```csharp
+[Fact]
+public void TryGetValueFromJson_DateLikeStringPath_ReturnsExactOriginalText()
+{
+    bool succeeded = _json.TryGetValueFromJson("{\"created\":\"2026-02-20T08:30:00Z\"}", "created", out string value, out string message);
+
+    Assert.True(succeeded);
+    Assert.Equal("2026-02-20T08:30:00Z", value);
+}
+
+[Fact]
+public void TryGetValuesFromJson_MatchIncludesNull_ReturnsEmptyStringForThatMatch()
+{
+    bool succeeded = _json.TryGetValuesFromJson("{\"items\":[{\"sku\":\"A\"},{\"sku\":null},{\"sku\":\"B\"}]}", "items[*].sku", ",", out string delimitedValues, out string message);
+
+    Assert.True(succeeded);
+    Assert.Equal("A,,B", delimitedValues);
+}
+```
+
+- [ ] **Step 2: Run the tests to verify the first one fails**
+
+```bash
+dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
+```
+
+Expected: `TryGetValueFromJson_DateLikeStringPath_ReturnsExactOriginalText`
+FAILS (asserts `"2026-02-20T08:30:00Z"`, actually gets a reformatted,
+culture-dependent string). `TryGetValuesFromJson_MatchIncludesNull_...`
+should already PASS (it's confirming existing, correct behavior, not fixing
+a bug) — that's expected and fine.
+
+- [ ] **Step 3: Add the shared parse helper**
+
+Add `using System.IO;` to `JsonUtils.cs`'s usings. Add this private helper
+inside the `JsonUtils` class, after the two constructors and before
+`#region Native parity` (i.e. not inside any of the 5 named regions):
+
+```csharp
+/// <summary>Parses JSON text without Newtonsoft's automatic date-string detection, so a
+/// date-like string value (e.g. an ISO-8601 timestamp) is read back exactly as written
+/// instead of being silently reformatted by a culture-dependent <c>DateTime.ToString()</c>
+/// when a token is later serialized back to text via <c>token.ToString()</c>. Typed getters
+/// like <see cref="TryGetDateTimeValue"/> still convert correctly - Newtonsoft's
+/// <c>Value&lt;T&gt;</c> conversion parses the string on demand regardless of whether the
+/// token's original type was <c>Date</c> or <c>String</c>.</summary>
+private static JToken ParseJson(string json)
+{
+    using (JsonTextReader reader = new JsonTextReader(new StringReader(json)) { DateParseHandling = DateParseHandling.None })
+    {
+        return JToken.Load(reader);
+    }
+}
+```
+
+- [ ] **Step 4: Replace every direct `JToken.Parse(json)` call with `ParseJson(json)`**
+
+There are exactly 6 occurrences in the file (one per method: `TryGetValueFromJson`,
+`TrySetValueInJson`, `IsValidJson`, `TryGetTypedValue<T>`, `TryGetValuesFromJson`,
+`TryGetValueType`) — all of the form `JToken.Parse(json)` (either
+`JToken root = JToken.Parse(json);` or, in `IsValidJson`, a bare
+`JToken.Parse(json);`). Replace all 6 with the equivalent call to `ParseJson`
+(`JToken root = ParseJson(json);` / `ParseJson(json);`). No other logic in
+any of these methods changes.
+
+- [ ] **Step 5: Document the switch's default arm in `TryGetValueType`**
+
+Since `ParseJson` disables date auto-detection, a `JTokenType.Date` token
+should no longer occur via this component's own parsing path. Add a comment
+directly above the `_ => JsonValueKind.String` line in `TryGetValueType`'s
+switch expression explaining this, so the fallthrough reads as a documented
+decision rather than an oversight:
+
+```csharp
+            JTokenType.Object => JsonValueKind.Object,
+            // Date is unreachable here since ParseJson disables date auto-detection;
+            // any other JTokenType (Guid, Uri, TimeSpan, etc.) is not producible by
+            // parsing raw JSON text and defaults to String defensively.
+            _ => JsonValueKind.String
+```
+
+- [ ] **Step 6: Update `TryGetValuesFromJson`'s XML doc**
+
+Add this sentence to its `<summary>`, documenting the null-handling decision
+that step 1's second test locks in: "A matched JSON null literal contributes
+an empty string to the joined result, indistinguishable from a genuinely
+empty string value at that path."
+
+- [ ] **Step 7: Run the FULL test suite to verify no regressions**
+
+```bash
+dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
+```
+
+Expected: PASS, 36/36 (34 prior + 2 new). **Pay special attention to
+`TryGetDateTimeValue_DateStringPath_ReturnsValue`** (from Task 3) — it must
+still pass. `ParseJson` makes the `"created"` token `JTokenType.String`
+instead of `JTokenType.Date`, and `TryGetTypedValue<DateTime>`'s
+`token.Value<DateTime>()` call needs to still successfully convert that
+string to a `DateTime`. Newtonsoft's conversion utilities support
+string→DateTime conversion regardless of the token's original type, so this
+is expected to just work - but if this specific test fails, STOP and report
+back with status `BLOCKED` rather than trying to work around it (do not
+special-case the DateTime getter to call `JToken.Parse` differently) -
+diagnosing why here is exactly the kind of thing that needs the controller's
+judgment on whether to special-case `TryGetTypedValue<DateTime>` or take a
+different helper design.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/jsonutils
+git commit -m "Fix date-string corruption via shared JSON-parse helper (DateParseHandling.None)"
+```
+
 ## Task 5: Array operations and removal
 
 **Files:**
@@ -1396,7 +1542,7 @@ public bool TryAppendToJsonArray(string json, string path, string valueJson, out
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 41 tests (34 prior + 7 new).
+Expected: PASS, 43 tests (36 prior + 7 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1524,7 +1670,7 @@ public bool TryMinifyJson(string json, out string minifiedJson, out string messa
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 45 tests (41 prior + 4 new).
+Expected: PASS, 47 tests (43 prior + 4 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1598,6 +1744,16 @@ Path expressions use Newtonsoft.Json's JSONPath dialect:
   without hand-rolling a path parser; the suite's other JSON handling
   elsewhere uses the BCL's `System.Text.Json`, which doesn't support JSONPath
   querying.
+- **Date-like string values are read back exactly as written, never
+  reformatted.** JSON is parsed with Newtonsoft's date auto-detection
+  disabled (`DateParseHandling.None`), so a value like
+  `"2026-02-20T08:30:00Z"` comes back from `TryGetValueFromJson`/
+  `TryGetValuesFromJson` byte-for-byte identical to the source text instead
+  of being silently reformatted into a culture-dependent .NET date string
+  with the `Z`/timezone marker dropped (a real bug caught by code-quality
+  review and fixed before this component shipped). Typed getters like
+  `TryGetDateTimeValue` are unaffected - they parse the string into a
+  `DateTime` on demand regardless of this setting.
 - **`TrySetValueInJson` requires the path to already exist.** It replaces a
   value in place; it does not create new object properties or array elements
   along the way. Use `TryAppendToJsonArray` to add array elements.
@@ -1707,7 +1863,7 @@ Expected: clean build, all projects including the new `JsonUtils`/
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 45/45.
+Expected: PASS, 47/47.
 
 - [ ] **Step 3: Package-Release dry run**
 
@@ -1736,7 +1892,7 @@ gh pr create --title "Add JsonUtils component" --body "$(cat <<'EOF'
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (42/42)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (47/47)
 EOF
 )"
 ```
@@ -1753,7 +1909,7 @@ git worktree remove .worktrees/jsonutils
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to the
       other 18 shipped components.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      45/45 passing, fully on this Linux host (no Windows-only skips, unlike
+      47/47 passing, fully on this Linux host (no Windows-only skips, unlike
       `UIAutomation.Tests`/`OcrUtils.Tests`/`ScreenCaptureUtils.Tests`).
 - [ ] `scripts/Package-Release.ps1`'s `$releaseAssemblies` includes
       `JsonAutomation.dll`.
