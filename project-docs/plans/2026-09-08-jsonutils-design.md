@@ -1419,10 +1419,25 @@ public void TryAppendToJsonArray_MalformedElementJson_ReturnsFalseWithMessage()
     Assert.False(succeeded);
     Assert.False(string.IsNullOrEmpty(message));
 }
+
+[Fact]
+public void TryRemoveValueFromJson_ArrayElementPath_ReturnsUpdatedJson()
+{
+    bool succeeded = _json.TryRemoveValueFromJson("{\"items\":[1,2,3]}", "items[1]", out string updatedJson, out string message);
+
+    Assert.True(succeeded);
+    Assert.Equal(new[] { 1, 3 }, Newtonsoft.Json.Linq.JObject.Parse(updatedJson)["items"].ToObject<int[]>());
+}
 ```
 
 Add `using System.Linq;` to the test file's usings (for `.Count()` on a
 `JToken`).
+
+**Note (added after spec-compliance review):** `TryRemoveValueFromJson_ArrayElementPath_ReturnsUpdatedJson`
+above was missing from this plan's original test list. The plan's other
+removal test only exercised the object-property branch of the
+`JProperty`-aware fix below; nothing proved the array-element branch. Added
+to close that gap.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -1466,7 +1481,17 @@ public bool TryRemoveValueFromJson(string json, string path, out string updatedJ
             message = $"Path '{path}' did not resolve to an existing value.";
             return false;
         }
-        target.Remove();
+        // A token whose parent is a JProperty (an object's value, not an array element)
+        // can't be removed directly - Newtonsoft only supports removing the JProperty
+        // itself in that case, which is also the correct semantic here (delete the key).
+        if (target.Parent is JProperty property)
+        {
+            property.Remove();
+        }
+        else
+        {
+            target.Remove();
+        }
         updatedJson = root.ToString(Formatting.None);
         return true;
     }
@@ -1561,7 +1586,7 @@ public bool TryAppendToJsonArray(string json, string path, string valueJson, out
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 43 tests (36 prior + 7 new).
+Expected: PASS, 44 tests (36 prior + 8 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1693,7 +1718,7 @@ public bool TryMinifyJson(string json, out string minifiedJson, out string messa
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 47 tests (43 prior + 4 new).
+Expected: PASS, 48 tests (44 prior + 4 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1886,7 +1911,7 @@ Expected: clean build, all projects including the new `JsonUtils`/
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 47/47.
+Expected: PASS, 48/48.
 
 - [ ] **Step 3: Package-Release dry run**
 
@@ -1915,7 +1940,7 @@ gh pr create --title "Add JsonUtils component" --body "$(cat <<'EOF'
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (47/47)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (48/48)
 EOF
 )"
 ```
@@ -1932,7 +1957,7 @@ git worktree remove .worktrees/jsonutils
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to the
       other 18 shipped components.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      47/47 passing, fully on this Linux host (no Windows-only skips, unlike
+      48/48 passing, fully on this Linux host (no Windows-only skips, unlike
       `UIAutomation.Tests`/`OcrUtils.Tests`/`ScreenCaptureUtils.Tests`).
 - [ ] `scripts/Package-Release.ps1`'s `$releaseAssemblies` includes
       `JsonAutomation.dll`.
