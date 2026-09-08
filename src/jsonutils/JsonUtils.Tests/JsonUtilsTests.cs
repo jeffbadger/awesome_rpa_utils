@@ -456,5 +456,387 @@ namespace JsonAutomation.Tests
             Assert.True(lengthSucceeded);
             Assert.Equal(3, length);
         }
+
+        [Fact]
+        public void TryMergeJson_ScalarConflict_SecondDocumentWins()
+        {
+            bool succeeded = _json.TryMergeJson("{\"a\":1,\"b\":2}", "{\"b\":3}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Null(message);
+            Assert.Equal(3, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["b"]);
+            Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
+        }
+
+        [Fact]
+        public void TryMergeJson_ArrayValues_Concatenates()
+        {
+            bool succeeded = _json.TryMergeJson("{\"items\":[1,2]}", "{\"items\":[3]}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(new[] { 1, 2, 3 }, Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["items"].ToObject<int[]>());
+        }
+
+        [Fact]
+        public void TryMergeJson_BaseNotObject_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryMergeJson("[1,2]", "{\"a\":1}", out string mergedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(mergedJson);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryMergeJson_OverrideNotObject_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryMergeJson("{\"a\":1}", "[1,2]", out string mergedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(mergedJson);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryMergeJson_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryMergeJson("{not json", "{\"a\":1}", out string mergedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryMergeJson_KeyOnlyInOverride_IsAdded()
+        {
+            bool succeeded = _json.TryMergeJson("{\"a\":1}", "{\"c\":2}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
+            Assert.Equal(2, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["c"]);
+        }
+
+        [Fact]
+        public void TryMergeJson_NestedObjects_RecursesRatherThanReplacing()
+        {
+            bool succeeded = _json.TryMergeJson("{\"nested\":{\"x\":1,\"y\":2}}", "{\"nested\":{\"y\":9,\"z\":3}}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JObject nested = (Newtonsoft.Json.Linq.JObject)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["nested"];
+            Assert.Equal(1, (int)nested["x"]);
+            Assert.Equal(9, (int)nested["y"]);
+            Assert.Equal(3, (int)nested["z"]);
+        }
+
+        [Fact]
+        public void TryMergeJson_ExplicitNullInOverride_DoesNotClearBaseValue()
+        {
+            bool succeeded = _json.TryMergeJson("{\"a\":1}", "{\"a\":null}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
+        }
+
+        [Fact]
+        public void TryDiffJson_EqualDocuments_ReturnsTrueWithEmptyPaths()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1,\"b\":2}", "{\"a\":1,\"b\":2}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.True(areEqual);
+            Assert.Equal(string.Empty, differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_ChangedScalar_ReturnsPathToScalar()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1}", "{\"a\":2}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("a", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_AddedKey_ReturnsPathToKey()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1}", "{\"a\":1,\"b\":2}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("b", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_ChangedArrayElement_ReturnsIndexedPath()
+        {
+            bool succeeded = _json.TryDiffJson("{\"items\":[1,2,3]}", "{\"items\":[1,9,3]}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("items[1]", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_ArrayLengthDifference_ReturnsPathForExtraElement()
+        {
+            bool succeeded = _json.TryDiffJson("{\"items\":[1,2]}", "{\"items\":[1,2,3]}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("items[2]", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_NestedPathDifference_ReturnsFullDottedPath()
+        {
+            bool succeeded = _json.TryDiffJson("{\"order\":{\"items\":[{\"sku\":\"A\"}]}}", "{\"order\":{\"items\":[{\"sku\":\"B\"}]}}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("order.items[0].sku", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_MultipleDifferences_ReturnsAllPathsDelimited()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1,\"b\":2}", "{\"a\":9,\"b\":9}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("a,b", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_EntirelyDifferentRootTypes_ReturnsDollarSign()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1}", "[1,2,3]", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("$", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryDiffJson("{not json", "{\"a\":1}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryDiffJson_NestedNullVsValue_ReturnsPathNotConflatedWithAbsentKey()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":{\"b\":null}}", "{\"a\":{\"b\":1}}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("a.b", differingPaths);
+        }
+
+        [Fact]
+        public void TryConvertJsonToXml_MultiKeyObject_WrapsInRootElement()
+        {
+            bool succeeded = _json.TryConvertJsonToXml("{\"a\":1,\"b\":2}", "root", out string xml, out string message);
+
+            Assert.True(succeeded);
+            Assert.Contains("<root>", xml);
+            Assert.Contains("<a>1</a>", xml);
+            Assert.Contains("<b>2</b>", xml);
+        }
+
+        [Fact]
+        public void TryConvertJsonToXml_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryConvertJsonToXml("{not json", "root", out string xml, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryConvertXmlToJson_SimpleXml_ReturnsJson()
+        {
+            bool succeeded = _json.TryConvertXmlToJson("<root><a>1</a></root>", out string json, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("1", (string)Newtonsoft.Json.Linq.JObject.Parse(json)["root"]["a"]);
+        }
+
+        [Fact]
+        public void TryConvertXmlToJson_MalformedXml_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryConvertXmlToJson("<root><a>1</a>", out string json, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ConvertRoundTrip_JsonToXmlToJson_PreservesData()
+        {
+            bool toXmlSucceeded = _json.TryConvertJsonToXml("{\"name\":\"Ada\",\"age\":30}", "person", out string xml, out string toXmlMessage);
+            Assert.True(toXmlSucceeded);
+
+            bool toJsonSucceeded = _json.TryConvertXmlToJson(xml, out string json, out string toJsonMessage);
+            Assert.True(toJsonSucceeded);
+
+            bool getSucceeded = _json.TryGetValueFromJson(json, "person.name", out string value, out string getMessage);
+            Assert.True(getSucceeded);
+            Assert.Equal("Ada", value);
+        }
+
+        [Fact]
+        public void TryConvertXmlToJson_XmlWithDtd_ReturnsFalseWithMessage()
+        {
+            string xmlWithDtd = "<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY foo \"bar\">]><root><a>&foo;</a></root>";
+            bool succeeded = _json.TryConvertXmlToJson(xmlWithDtd, out string json, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryConvertXmlToJson_NamespacedXmlWithProcessingInstruction_ReturnsJson()
+        {
+            bool succeeded = _json.TryConvertXmlToJson(
+                "<?xml-stylesheet type=\"text/xsl\" href=\"s.xsl\"?><root xmlns:ns=\"urn:example\"><ns:a>1</ns:a></root>",
+                out string json, out string message);
+
+            Assert.True(succeeded);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_Equals_ReturnsMatchingElements()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"sku\":\"A\",\"qty\":1},{\"sku\":\"B\",\"qty\":2}]}", "items", "sku", JsonComparisonOperator.Equals, "A", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+            Assert.Equal("A", (string)filtered[0]["sku"]);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_NotEquals_ExcludesMatchingElements()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"sku\":\"A\"},{\"sku\":\"B\"}]}", "items", "sku", JsonComparisonOperator.NotEquals, "A", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+            Assert.Equal("B", (string)filtered[0]["sku"]);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_GreaterThan_ComparesNumerically()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"qty\":1},{\"qty\":5},{\"qty\":10}]}", "items", "qty", JsonComparisonOperator.GreaterThan, "4", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Equal(2, filtered.Count);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_GreaterThanOrEqual_IncludesEqualElements()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"qty\":4},{\"qty\":5},{\"qty\":6}]}", "items", "qty", JsonComparisonOperator.GreaterThanOrEqual, "5", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Equal(2, filtered.Count);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_LessThan_ComparesNumerically()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"qty\":1},{\"qty\":5},{\"qty\":10}]}", "items", "qty", JsonComparisonOperator.LessThan, "5", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_LessThanOrEqual_IncludesEqualElements()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"qty\":4},{\"qty\":5},{\"qty\":6}]}", "items", "qty", JsonComparisonOperator.LessThanOrEqual, "5", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Equal(2, filtered.Count);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_Contains_MatchesSubstring()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"name\":\"Widget A\"},{\"name\":\"Gadget B\"}]}", "items", "name", JsonComparisonOperator.Contains, "Widget", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_NonArrayPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":1}", "items", "sku", JsonComparisonOperator.Equals, "A", out string filteredJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TrySortJsonArrayByField_Ascending_SortsNumerically()
+        {
+            bool succeeded = _json.TrySortJsonArrayByField("{\"items\":[{\"qty\":3},{\"qty\":1},{\"qty\":2}]}", "items", "qty", true, out string sortedJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray sorted = Newtonsoft.Json.Linq.JArray.Parse(sortedJson);
+            Assert.Equal(new[] { 1, 2, 3 }, sorted.Select(element => (int)element["qty"]).ToArray());
+        }
+
+        [Fact]
+        public void TrySortJsonArrayByField_Descending_ReversesOrder()
+        {
+            bool succeeded = _json.TrySortJsonArrayByField("{\"items\":[{\"qty\":1},{\"qty\":3},{\"qty\":2}]}", "items", "qty", false, out string sortedJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray sorted = Newtonsoft.Json.Linq.JArray.Parse(sortedJson);
+            Assert.Equal(new[] { 3, 2, 1 }, sorted.Select(element => (int)element["qty"]).ToArray());
+        }
+
+        [Fact]
+        public void TrySortJsonArrayByField_NonArrayPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TrySortJsonArrayByField("{\"items\":1}", "items", "qty", true, out string sortedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_Equals_BooleanFieldIsCaseInsensitive()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"active\":true},{\"active\":false}]}", "items", "active", JsonComparisonOperator.Equals, "true", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+            Assert.True((bool)filtered[0]["active"]);
+        }
+
+        [Fact]
+        public void TrySortJsonArrayByField_MixedShapeArray_MissingFieldSortsWithoutThrowing()
+        {
+            bool succeeded = _json.TrySortJsonArrayByField("{\"items\":[{\"qty\":5},{\"other\":1},{\"qty\":2}]}", "items", "qty", true, out string sortedJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray sorted = Newtonsoft.Json.Linq.JArray.Parse(sortedJson);
+            Assert.Equal(3, sorted.Count);
+        }
     }
 }

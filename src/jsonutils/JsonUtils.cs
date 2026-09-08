@@ -487,6 +487,148 @@ namespace JsonAutomation
             }
         }
 
+        private static int CompareValues(JToken left, JToken right)
+        {
+            double leftNumber = 0;
+            double rightNumber = 0;
+            bool bothNumeric = double.TryParse(left?.ToString(), out leftNumber) && double.TryParse(right?.ToString(), out rightNumber);
+            if (bothNumeric)
+            {
+                return leftNumber.CompareTo(rightNumber);
+            }
+            return string.Compare(left?.ToString(), right?.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool CompareField(JToken fieldToken, JsonComparisonOperator comparisonOperator, string value)
+        {
+            if (comparisonOperator == JsonComparisonOperator.Contains)
+            {
+                return fieldToken.ToString().Contains(value);
+            }
+            int comparison = CompareValues(fieldToken, new JValue(value));
+            switch (comparisonOperator)
+            {
+                case JsonComparisonOperator.Equals:
+                    return comparison == 0;
+                case JsonComparisonOperator.NotEquals:
+                    return comparison != 0;
+                case JsonComparisonOperator.GreaterThan:
+                    return comparison > 0;
+                case JsonComparisonOperator.GreaterThanOrEqual:
+                    return comparison >= 0;
+                case JsonComparisonOperator.LessThan:
+                    return comparison < 0;
+                case JsonComparisonOperator.LessThanOrEqual:
+                    return comparison <= 0;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>Filters an array at a JSONPath to elements whose field matches a comparison.
+        /// Numeric-looking field and comparison values are compared numerically; otherwise
+        /// comparison falls back to case-insensitive ordinal string comparison (so a boolean
+        /// field's <c>"True"</c>/<c>"False"</c> rendering matches a caller's lowercase
+        /// <c>"true"</c>/<c>"false"</c>). An element missing <paramref name="fieldName"/> entirely
+        /// is excluded under every operator, including <see cref="JsonComparisonOperator.NotEquals"/>.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression identifying an array of objects.</param>
+        /// <param name="fieldName">The property name to compare on each array element.</param>
+        /// <param name="comparisonOperator">The comparison to apply.</param>
+        /// <param name="value">The value to compare each element's field against, as plain text.</param>
+        /// <param name="filteredJson">The filtered JSON array text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to an array of objects and was filtered.</returns>
+        [Category("Json - Array")]
+        [Description("Filters an array at a JSONPath to elements whose field matches a comparison. Never throws.")]
+        public bool TryFilterJsonArrayByField(string json, string path, string fieldName, JsonComparisonOperator comparisonOperator, string value, out string filteredJson, out string message)
+        {
+            filteredJson = null;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                JToken token = root.SelectToken(path);
+                if (token == null)
+                {
+                    message = $"Path '{path}' did not resolve to a value.";
+                    return false;
+                }
+                if (token is not JArray array)
+                {
+                    message = $"Path '{path}' resolved to a {token.Type}, not an array.";
+                    return false;
+                }
+                JArray filtered = new JArray();
+                foreach (JToken element in array)
+                {
+                    JToken fieldToken = element[fieldName];
+                    if (fieldToken != null && CompareField(fieldToken, comparisonOperator, value))
+                    {
+                        filtered.Add(element);
+                    }
+                }
+                filteredJson = filtered.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryFilterJsonArrayByField), exception);
+                return false;
+            }
+        }
+
+        /// <summary>Sorts an array at a JSONPath by a field's value. Numeric-looking values sort
+        /// numerically; otherwise sorting falls back to case-insensitive ordinal string
+        /// comparison. An element missing the sort field sorts using an empty-string
+        /// comparison value (via <see cref="CompareValues"/>'s null-safe <c>?.ToString()</c>
+        /// calls), rather than throwing.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression identifying an array of objects.</param>
+        /// <param name="fieldName">The property name to sort each array element by.</param>
+        /// <param name="ascending"><c>True</c> to sort ascending; <c>false</c> for descending.</param>
+        /// <param name="sortedJson">The sorted JSON array text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to an array of objects and was sorted.</returns>
+        [Category("Json - Array")]
+        [Description("Sorts an array at a JSONPath by a field's value. Never throws.")]
+        public bool TrySortJsonArrayByField(string json, string path, string fieldName, bool ascending, out string sortedJson, out string message)
+        {
+            sortedJson = null;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                JToken token = root.SelectToken(path);
+                if (token == null)
+                {
+                    message = $"Path '{path}' did not resolve to a value.";
+                    return false;
+                }
+                if (token is not JArray array)
+                {
+                    message = $"Path '{path}' resolved to a {token.Type}, not an array.";
+                    return false;
+                }
+                List<JToken> elements = new List<JToken>(array);
+                elements.Sort((left, right) =>
+                {
+                    JToken leftField = left[fieldName];
+                    JToken rightField = right[fieldName];
+                    int comparison = CompareValues(leftField, rightField);
+                    return ascending ? comparison : -comparison;
+                });
+                JArray sorted = new JArray(elements);
+                sortedJson = sorted.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TrySortJsonArrayByField), exception);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Formatting
@@ -535,6 +677,216 @@ namespace JsonAutomation
             catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
             {
                 message = NeverThrowsGuard.Failure(nameof(TryMinifyJson), exception);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Merge
+
+        /// <summary>Merges two JSON objects. Values in <paramref name="overrideJson"/> win on
+        /// scalar conflicts; array values present in both documents are concatenated; nested
+        /// objects present in both documents are merged recursively, not replaced wholesale.
+        /// An explicit JSON <c>null</c> in <paramref name="overrideJson"/> does NOT clear the
+        /// base's existing value for that key (Newtonsoft's default null-merge behavior).</summary>
+        /// <param name="baseJson">The base JSON object.</param>
+        /// <param name="overrideJson">The JSON object whose values take precedence on conflict.</param>
+        /// <param name="mergedJson">The merged JSON text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if both inputs parsed as JSON objects and were merged.</returns>
+        [Category("Json - Merge")]
+        [Description("Merges two JSON objects, with the second document's values winning on conflict. Never throws.")]
+        public bool TryMergeJson(string baseJson, string overrideJson, out string mergedJson, out string message)
+        {
+            mergedJson = null;
+            message = null;
+            try
+            {
+                JToken baseToken = ParseJson(baseJson);
+                JToken overrideToken = ParseJson(overrideJson);
+                if (baseToken is not JObject baseObject)
+                {
+                    message = $"baseJson must be a JSON object, but was a {baseToken.Type}.";
+                    return false;
+                }
+                if (overrideToken is not JObject overrideObject)
+                {
+                    message = $"overrideJson must be a JSON object, but was a {overrideToken.Type}.";
+                    return false;
+                }
+                baseObject.Merge(overrideObject, new JsonMergeSettings
+                {
+                    MergeArrayHandling = MergeArrayHandling.Concat
+                });
+                mergedJson = baseObject.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryMergeJson), exception);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Compare
+
+        private static void CollectDifferingPaths(JToken left, JToken right, string currentPath, List<string> differingPaths)
+        {
+            if (JToken.DeepEquals(left, right))
+            {
+                return;
+            }
+
+            if (left is JObject leftObject && right is JObject rightObject)
+            {
+                List<string> keys = new List<string>();
+                foreach (JProperty property in leftObject.Properties())
+                {
+                    keys.Add(property.Name);
+                }
+                foreach (JProperty property in rightObject.Properties())
+                {
+                    if (!keys.Contains(property.Name))
+                    {
+                        keys.Add(property.Name);
+                    }
+                }
+                foreach (string key in keys)
+                {
+                    string childPath = currentPath.Length == 0 ? key : $"{currentPath}.{key}";
+                    JToken leftChild = leftObject[key];
+                    JToken rightChild = rightObject[key];
+                    if (leftChild == null || rightChild == null)
+                    {
+                        differingPaths.Add(childPath);
+                    }
+                    else
+                    {
+                        CollectDifferingPaths(leftChild, rightChild, childPath, differingPaths);
+                    }
+                }
+                return;
+            }
+
+            if (left is JArray leftArray && right is JArray rightArray)
+            {
+                int maxLength = Math.Max(leftArray.Count, rightArray.Count);
+                for (int i = 0; i < maxLength; i++)
+                {
+                    string childPath = $"{currentPath}[{i}]";
+                    if (i >= leftArray.Count || i >= rightArray.Count)
+                    {
+                        differingPaths.Add(childPath);
+                    }
+                    else
+                    {
+                        CollectDifferingPaths(leftArray[i], rightArray[i], childPath, differingPaths);
+                    }
+                }
+                return;
+            }
+
+            differingPaths.Add(currentPath.Length == 0 ? "$" : currentPath);
+        }
+
+        /// <summary>Compares two JSON documents and reports the paths where they differ. Paths
+        /// are collected via a pre-order walk of <paramref name="json1"/>'s structure - not
+        /// alphabetically sorted - with any keys/indices that exist only in <paramref name="json2"/>
+        /// appended after all of <paramref name="json1"/>'s keys at that level. A difference at
+        /// the document root itself (e.g. mismatched root types) is reported as <c>"$"</c>.</summary>
+        /// <param name="json1">The first JSON document.</param>
+        /// <param name="json2">The second JSON document.</param>
+        /// <param name="delimiter">The delimiter to join differing paths with.</param>
+        /// <param name="areEqual"><c>True</c> if the two documents are equivalent.</param>
+        /// <param name="differingPaths">A delimited list of paths where the documents differ; empty when <paramref name="areEqual"/> is <c>true</c>.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if the comparison completed, regardless of whether the documents are
+        /// equal - <c>False</c> only if either input is malformed JSON.</returns>
+        [Category("Json - Compare")]
+        [Description("Compares two JSON documents and reports the paths where they differ. Never throws.")]
+        public bool TryDiffJson(string json1, string json2, string delimiter, out bool areEqual, out string differingPaths, out string message)
+        {
+            areEqual = false;
+            differingPaths = null;
+            message = null;
+            try
+            {
+                JToken left = ParseJson(json1);
+                JToken right = ParseJson(json2);
+                List<string> paths = new List<string>();
+                CollectDifferingPaths(left, right, string.Empty, paths);
+                areEqual = paths.Count == 0;
+                differingPaths = string.Join(delimiter, paths);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryDiffJson), exception);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Convert
+
+        /// <summary>Converts JSON text to XML text.</summary>
+        /// <param name="json">The JSON text to convert.</param>
+        /// <param name="rootElementName">The XML root element name to wrap the converted content in.</param>
+        /// <param name="xml">The XML text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if conversion succeeded.</returns>
+        [Category("Json - Convert")]
+        [Description("Converts JSON text to XML text. Never throws.")]
+        public bool TryConvertJsonToXml(string json, string rootElementName, out string xml, out string message)
+        {
+            xml = null;
+            message = null;
+            try
+            {
+                System.Xml.XmlDocument document = JsonConvert.DeserializeXmlNode(json, rootElementName);
+                xml = document.OuterXml;
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryConvertJsonToXml), exception);
+                return false;
+            }
+        }
+
+        /// <summary>Converts XML text to JSON text. Rejects any XML containing a DOCTYPE
+        /// declaration (DTD) - this component has no legitimate need to support DTDs for
+        /// JSON-conversion use cases, and <c>XmlDocument.LoadXml</c>'s permissive parsing
+        /// defaults are a known XXE/entity-expansion risk for caller-supplied XML that
+        /// <c>XmlReader.Create</c>'s safe-by-default settings close.</summary>
+        /// <param name="xml">The XML text to convert.</param>
+        /// <param name="json">The JSON text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if conversion succeeded.</returns>
+        [Category("Json - Convert")]
+        [Description("Converts XML text to JSON text. Never throws.")]
+        public bool TryConvertXmlToJson(string xml, out string json, out string message)
+        {
+            json = null;
+            message = null;
+            try
+            {
+                System.Xml.XmlDocument document = new System.Xml.XmlDocument();
+                using (StringReader stringReader = new StringReader(xml))
+                using (System.Xml.XmlReader reader = System.Xml.XmlReader.Create(stringReader))
+                {
+                    document.Load(reader);
+                }
+                json = JsonConvert.SerializeXmlNode(document);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryConvertXmlToJson), exception);
                 return false;
             }
         }
