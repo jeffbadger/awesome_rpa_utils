@@ -635,5 +635,57 @@ namespace JsonAutomation.Tests
             Assert.False(areEqual);
             Assert.Equal("a.b", differingPaths);
         }
+
+        [Fact]
+        public void TryConvertJsonToXml_MultiKeyObject_WrapsInRootElement()
+        {
+            bool succeeded = _json.TryConvertJsonToXml("{\"a\":1,\"b\":2}", "root", out string xml, out string message);
+
+            Assert.True(succeeded);
+            Assert.Contains("<root>", xml);
+            Assert.Contains("<a>1</a>", xml);
+            Assert.Contains("<b>2</b>", xml);
+        }
+
+        [Fact]
+        public void TryConvertJsonToXml_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryConvertJsonToXml("{not json", "root", out string xml, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryConvertXmlToJson_SimpleXml_ReturnsJson()
+        {
+            bool succeeded = _json.TryConvertXmlToJson("<root><a>1</a></root>", out string json, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("1", (string)Newtonsoft.Json.Linq.JObject.Parse(json)["root"]["a"]);
+        }
+
+        [Fact]
+        public void TryConvertXmlToJson_MalformedXml_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryConvertXmlToJson("<root><a>1</a>", out string json, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ConvertRoundTrip_JsonToXmlToJson_PreservesData()
+        {
+            bool toXmlSucceeded = _json.TryConvertJsonToXml("{\"name\":\"Ada\",\"age\":30}", "person", out string xml, out string toXmlMessage);
+            Assert.True(toXmlSucceeded);
+
+            bool toJsonSucceeded = _json.TryConvertXmlToJson(xml, out string json, out string toJsonMessage);
+            Assert.True(toJsonSucceeded);
+
+            bool getSucceeded = _json.TryGetValueFromJson(json, "person.name", out string value, out string getMessage);
+            Assert.True(getSucceeded);
+            Assert.Equal("Ada", value);
+        }
     }
 }

@@ -688,5 +688,59 @@ namespace JsonAutomation
         }
 
         #endregion
+
+        #region Convert
+
+        /// <summary>Converts JSON text to XML text.</summary>
+        /// <param name="json">The JSON text to convert.</param>
+        /// <param name="rootElementName">The XML root element name to wrap the converted content in.</param>
+        /// <param name="xml">The XML text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if conversion succeeded.</returns>
+        [Category("Json - Convert")]
+        [Description("Converts JSON text to XML text. Never throws.")]
+        public bool TryConvertJsonToXml(string json, string rootElementName, out string xml, out string message)
+        {
+            xml = null;
+            message = null;
+            try
+            {
+                System.Xml.XmlDocument document = JsonConvert.DeserializeXmlNode(json, rootElementName);
+                xml = document.OuterXml;
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryConvertJsonToXml), exception);
+                return false;
+            }
+        }
+
+        /// <summary>Converts XML text to JSON text.</summary>
+        /// <param name="xml">The XML text to convert.</param>
+        /// <param name="json">The JSON text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if conversion succeeded.</returns>
+        [Category("Json - Convert")]
+        [Description("Converts XML text to JSON text. Never throws.")]
+        public bool TryConvertXmlToJson(string xml, out string json, out string message)
+        {
+            json = null;
+            message = null;
+            try
+            {
+                System.Xml.XmlDocument document = new System.Xml.XmlDocument();
+                document.LoadXml(xml);
+                json = JsonConvert.SerializeXmlNode(document);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryConvertXmlToJson), exception);
+                return false;
+            }
+        }
+
+        #endregion
     }
 }
