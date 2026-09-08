@@ -13,6 +13,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
 | [eventutils](src/eventutils/README.md) | `EventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
 | [filewatchutils](src/filewatchutils/README.md) | `FileWatchAutomation` | Coordinates with files produced by other applications: wait for existence/deletion/change/stability/unlock, watch for filesystem events, atomically move/replace/claim files, hash files, and read file metadata. |
+| [jsonutils](src/jsonutils/README.md) | `JsonAutomation` | Reads, updates, validates, and transforms JSON via real JSONPath, replacing the native Json component's dot-notation-only path support. |
 | [keyboardutils](src/keyboardutils/README.md) | `KeyboardAutomation` | Injects keyboard input via `SendInput`: key presses, combos, typed text, and a clipboard-paste fallback; queries key/modifier state. |
 | [localqueueutils](src/localqueueutils/README.md) | `LocalQueueAutomation` | Persists variable-count local JSON, text, or file work and exposes a designer-friendly lease/process/complete loop without a Pega collection proxy. |
 | [mouseutils](src/mouseutils/README.md) | `MouseAutomation` | Moves, clicks, drags, and scrolls the mouse via `SendInput`/`SetCursorPos`; controls cursor appearance, visibility, and confinement. |
@@ -237,7 +238,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, and `DataBagUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataBagUtils`, and `JsonUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -254,7 +255,9 @@ and
 and
 `dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj`,
 and
-`dotnet test src/databagutils/DataBagUtils.Tests/DataBagUtils.Tests.csproj` —
+`dotnet test src/databagutils/DataBagUtils.Tests/DataBagUtils.Tests.csproj`,
+and
+`dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
