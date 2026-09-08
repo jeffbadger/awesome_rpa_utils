@@ -685,7 +685,36 @@ public void ConvertRoundTrip_JsonToXmlToJson_PreservesData()
     Assert.True(getSucceeded);
     Assert.Equal("Ada", value);
 }
+
+[Fact]
+public void TryConvertXmlToJson_XmlWithDtd_ReturnsFalseWithMessage()
+{
+    string xmlWithDtd = "<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY foo \"bar\">]><root><a>&foo;</a></root>";
+    bool succeeded = _json.TryConvertXmlToJson(xmlWithDtd, out string json, out string message);
+
+    Assert.False(succeeded);
+    Assert.False(string.IsNullOrEmpty(message));
+}
 ```
+
+**Security note (added after automated security review):** the original
+`TryConvertXmlToJson` used `XmlDocument.LoadXml(xml)` directly on
+caller-supplied text - a known XXE/entity-expansion risk pattern.
+`.NET Core`'s `XmlDocument.XmlResolver` defaults to `null` on this
+component's target frameworks, which already blocks the classic
+external-entity data-exfiltration attack - but that alone does NOT stop
+internal DTD entity-expansion attacks (e.g. "billion laughs"), which don't
+need the resolver at all. The fix routes parsing through
+`XmlReader.Create(stringReader)` (whose `XmlReaderSettings.DtdProcessing`
+defaults to `Prohibit`, rejecting any DOCTYPE outright) and
+`document.Load(reader)` instead of `LoadXml`, which is the standard .NET
+guidance for safely parsing untrusted XML text - simpler and more complete
+than the minimal "just set `XmlResolver = null`" fix, since this component
+has no legitimate need to support DTDs for JSON-conversion input at all.
+`TryConvertJsonToXml` needed no equivalent fix - it only ever *generates*
+XML from JSON via `JsonConvert.DeserializeXmlNode`, never parses
+caller-supplied XML text, so there's no untrusted-XML-parsing surface on
+that path.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -735,7 +764,11 @@ public bool TryConvertJsonToXml(string json, string rootElementName, out string 
     }
 }
 
-/// <summary>Converts XML text to JSON text.</summary>
+/// <summary>Converts XML text to JSON text. Rejects any XML containing a DOCTYPE
+/// declaration (DTD) - this component has no legitimate need to support DTDs for
+/// JSON-conversion use cases, and <c>XmlDocument.LoadXml</c>'s permissive parsing
+/// defaults are a known XXE/entity-expansion risk for caller-supplied XML that
+/// <c>XmlReader.Create</c>'s safe-by-default settings close.</summary>
 /// <param name="xml">The XML text to convert.</param>
 /// <param name="json">The JSON text on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
@@ -749,7 +782,11 @@ public bool TryConvertXmlToJson(string xml, out string json, out string message)
     try
     {
         System.Xml.XmlDocument document = new System.Xml.XmlDocument();
-        document.LoadXml(xml);
+        using (StringReader stringReader = new StringReader(xml))
+        using (System.Xml.XmlReader reader = System.Xml.XmlReader.Create(stringReader))
+        {
+            document.Load(reader);
+        }
         json = JsonConvert.SerializeXmlNode(document);
         return true;
     }
@@ -769,7 +806,7 @@ public bool TryConvertXmlToJson(string xml, out string json, out string message)
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 75 tests (70 prior + 5 new).
+Expected: PASS, 76 tests (70 prior + 6 new — includes the DTD-rejection security regression test).
 
 - [ ] **Step 5: Commit**
 
@@ -1087,7 +1124,7 @@ public bool TrySortJsonArrayByField(string json, string path, string fieldName, 
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 86 tests (75 prior + 11 new).
+Expected: PASS, 87 tests (76 prior + 11 new).
 
 - [ ] **Step 6: Commit**
 
@@ -1185,7 +1222,7 @@ Expected: clean build, 0 errors.
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 86/86.
+Expected: PASS, 87/87.
 
 - [ ] **Step 3: Push and open the PR**
 
@@ -1204,7 +1241,7 @@ gh pr create --title "Add JsonUtils Phase 2 (merge/diff/XML/filter-sort)" --body
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (86/86)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (87/87)
 EOF
 )"
 ```
@@ -1221,7 +1258,7 @@ git worktree remove .worktrees/jsonutils-phase2
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to any
       shipped component including Phase 1's `JsonUtils`.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      86/86 passing, fully on this Linux host.
+      87/87 passing, fully on this Linux host.
 - [ ] `src/jsonutils/README.md` updated with all 6 new methods, a worked
       example, and Notes & Caveats entries; the "Phase 2 (not yet
       implemented)" bullet removed.
