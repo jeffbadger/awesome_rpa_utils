@@ -83,7 +83,26 @@ parameters/outputs via reflection over closed, concrete types and can't
 offer a canvas user a way to pick an open generic `T`. `TryDeserializeObject`
 therefore mirrors the native shape: `(string json, string typeName, out object result, out string message)`,
 resolving `typeName` via `Type.GetType(typeName)` (an assembly-qualified or
-in-scope simple type name) before calling `JsonConvert.DeserializeObject(json, type)`.
+in-scope simple type name) before calling `JsonConvert.DeserializeObject(json, type, settings)`
+with `settings.TypeNameHandling` explicitly set to `TypeNameHandling.None`
+(Newtonsoft's own default — made explicit here as defense-in-depth against
+embedded `$type` directives, not a behavior change).
+
+**Security note on `typeName` being caller-supplied:** an automated security
+review flagged this as unsafe-deserialization/arbitrary-type-instantiation
+risk. Two structural mitigations were considered and rejected: keeping
+`TryDeserializeObject<T>` generic (rejected above — Robot Studio's designer
+can't bind it) and a hardcoded allow-list of permitted types (rejected
+because this is a general-purpose utility meant to deserialize into
+whatever custom DTO class a Robot Studio developer defines in their own
+project — an allow-list would defeat the feature). The accepted mitigation
+is explicit `TypeNameHandling.None` (above) plus documentation: `typeName`
+is expected to be a design-time-authored literal the automation's author
+wires in, the same trust model as every other string parameter on a Robot
+Studio canvas (e.g. `CommandLineUtils`'s `allowedProgramsCsv` guardrail,
+`RestCodeGenerator`'s plain-string credential parameters) — it is not meant
+to be populated from untrusted runtime/external data, and the README must
+say so explicitly.
 
 **Gap-fillers** (this pass):
 
@@ -588,7 +607,10 @@ earlier draft of this plan; use group name `"Json - Core"` for this region:
 ```csharp
 #region Native parity
 
-/// <summary>Deserializes a JSON string into an instance of the given .NET type.</summary>
+/// <summary>Deserializes a JSON string into an instance of the given .NET type.
+/// <paramref name="typeName"/> should be a design-time-authored literal the automation's
+/// author wires in - the same trust model as any other Robot Studio canvas string
+/// parameter - not a value populated from untrusted runtime/external data.</summary>
 /// <param name="json">The JSON text to deserialize.</param>
 /// <param name="typeName">An assembly-qualified or in-scope simple type name, resolved via <see cref="Type.GetType(string)"/>.</param>
 /// <param name="result">The deserialized object on success; <c>null</c> on failure.</param>
@@ -608,7 +630,7 @@ public bool TryDeserializeObject(string json, string typeName, out object result
             message = $"Type '{typeName}' could not be resolved.";
             return false;
         }
-        result = JsonConvert.DeserializeObject(json, type);
+        result = JsonConvert.DeserializeObject(json, type, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.None });
         return true;
     }
     catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
@@ -1557,6 +1579,15 @@ Path expressions use Newtonsoft.Json's JSONPath dialect:
   only resolves types in `mscorlib`/already-loaded assemblies, so a type
   defined elsewhere in the same Robot Studio project may need its
   assembly-qualified name (`Type.AssemblyQualifiedName`).
+- **Security: `typeName` must come from a trusted, design-time-authored
+  value, never from untrusted runtime or external data.** `TryDeserializeObject`
+  instantiates the type you name and populates its properties from `json` -
+  the same trust model as any other literal string parameter wired into a
+  Robot Studio canvas (e.g. `CommandLineUtils`'s `allowedProgramsCsv`,
+  `RestCodeGenerator`'s plain-string credential parameters), not a general
+  sandbox for arbitrary caller-chosen types. `TypeNameHandling` is explicitly
+  set to `None`, so JSON content itself cannot smuggle in a different type
+  than the one you named.
 - **On the native `Json` component's `SerializeObject` `⚠@default=SingleOutput`
   annotation:** `TrySerializeObject` keeps the standard bool+out signature
   for consistency with every other method in this suite. Robot Studio's
