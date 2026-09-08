@@ -1831,11 +1831,6 @@ git add src/jsonutils
 git commit -m "Add cross-region workflow tests for JsonUtils"
 ```
 
-```bash
-git add src/jsonutils
-git commit -m "Add JsonUtils formatting methods"
-```
-
 ## Task 7: Documentation
 
 **Files:**
