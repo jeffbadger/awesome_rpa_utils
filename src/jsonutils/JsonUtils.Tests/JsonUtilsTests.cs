@@ -428,5 +428,33 @@ namespace JsonAutomation.Tests
             Assert.True(succeeded);
             Assert.Equal("{\"created\":\"2026-02-20T08:30:00+05:30\"}", minifiedJson);
         }
+
+        [Fact]
+        public void Workflow_SetPrettyPrintThenGet_RoundTripsCorrectly()
+        {
+            bool setSucceeded = _json.TrySetValueInJson("{\"order\":{\"status\":\"open\"}}", "order.status", "closed", out string updatedJson, out string setMessage);
+            Assert.True(setSucceeded);
+
+            bool prettySucceeded = _json.TryPrettyPrintJson(updatedJson, out string prettyJson, out string prettyMessage);
+            Assert.True(prettySucceeded);
+
+            bool getSucceeded = _json.TryGetValueFromJson(prettyJson, "order.status", out string value, out string getMessage);
+            Assert.True(getSucceeded);
+            Assert.Equal("closed", value);
+        }
+
+        [Fact]
+        public void Workflow_AppendMinifyThenGetArrayLength_RoundTripsCorrectly()
+        {
+            bool appendSucceeded = _json.TryAppendToJsonArray("{\"items\":[1,2]}", "items", "3", out string updatedJson, out string appendMessage);
+            Assert.True(appendSucceeded);
+
+            bool minifySucceeded = _json.TryMinifyJson(updatedJson, out string minifiedJson, out string minifyMessage);
+            Assert.True(minifySucceeded);
+
+            bool lengthSucceeded = _json.TryGetArrayLength(minifiedJson, "items", out int length, out string lengthMessage);
+            Assert.True(lengthSucceeded);
+            Assert.Equal(3, length);
+        }
     }
 }
