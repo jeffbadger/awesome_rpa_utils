@@ -185,6 +185,15 @@ namespace JsonAutomation.Tests
         }
 
         [Fact]
+        public void TryGetBoolValue_NonBooleanPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryGetBoolValue("{\"active\":\"nope\"}", "active", out bool value, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
         public void TryGetDoubleValue_NumberPath_ReturnsValue()
         {
             bool succeeded = _json.TryGetDoubleValue("{\"price\":19.99}", "price", out double value, out string message);
@@ -194,12 +203,30 @@ namespace JsonAutomation.Tests
         }
 
         [Fact]
+        public void TryGetDoubleValue_NonNumericPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryGetDoubleValue("{\"price\":\"abc\"}", "price", out double value, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
         public void TryGetDateTimeValue_DateStringPath_ReturnsValue()
         {
             bool succeeded = _json.TryGetDateTimeValue("{\"created\":\"2026-01-15T00:00:00\"}", "created", out DateTime value, out string message);
 
             Assert.True(succeeded);
             Assert.Equal(new DateTime(2026, 1, 15), value);
+        }
+
+        [Fact]
+        public void TryGetDateTimeValue_NonDatePath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryGetDateTimeValue("{\"created\":\"not a date\"}", "created", out DateTime value, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
         }
 
         [Fact]
