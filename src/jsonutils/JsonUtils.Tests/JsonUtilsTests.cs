@@ -625,5 +625,15 @@ namespace JsonAutomation.Tests
             Assert.False(succeeded);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        [Fact]
+        public void TryDiffJson_NestedNullVsValue_ReturnsPathNotConflatedWithAbsentKey()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":{\"b\":null}}", "{\"a\":{\"b\":1}}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("a.b", differingPaths);
+        }
     }
 }
