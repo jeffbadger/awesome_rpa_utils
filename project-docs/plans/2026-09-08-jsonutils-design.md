@@ -1649,28 +1649,46 @@ public void TryMinifyJson_MalformedJson_ReturnsFalseWithMessage()
 }
 
 [Fact]
-public void TryPrettyPrintJson_DateLikeStringValue_PreservesExactText()
+public void TryPrettyPrintJson_OffsetDateLikeStringValue_PreservesExactText()
 {
-    bool succeeded = _json.TryPrettyPrintJson("{\"created\":\"2026-02-20T08:30:00Z\"}", out string formattedJson, out string message);
+    bool succeeded = _json.TryPrettyPrintJson("{\"created\":\"2026-02-20T08:30:00+05:30\"}", out string formattedJson, out string message);
 
     Assert.True(succeeded);
-    Assert.Contains("\"2026-02-20T08:30:00Z\"", formattedJson);
+    Assert.Contains("\"2026-02-20T08:30:00+05:30\"", formattedJson);
 }
 
 [Fact]
-public void TryMinifyJson_DateLikeStringValue_PreservesExactText()
+public void TryMinifyJson_OffsetDateLikeStringValue_PreservesExactText()
 {
-    bool succeeded = _json.TryMinifyJson("{\"created\":\"2026-02-20T08:30:00Z\"}", out string minifiedJson, out string message);
+    bool succeeded = _json.TryMinifyJson("{\"created\":\"2026-02-20T08:30:00+05:30\"}", out string minifiedJson, out string message);
 
     Assert.True(succeeded);
-    Assert.Equal("{\"created\":\"2026-02-20T08:30:00Z\"}", minifiedJson);
+    Assert.Equal("{\"created\":\"2026-02-20T08:30:00+05:30\"}", minifiedJson);
 }
 ```
 
-These last two tests are added preemptively (before implementation, not
-after a review caught it this time) because this region is precisely the
-parse-then-`ToString()` shape that caused the Task 4 addendum's bug - it
-would be an easy trap to fall back into `JToken.Parse` here specifically.
+**On the choice of an offset-bearing timestamp, not a `Z`-suffixed one**
+(corrected after spec-compliance review found the original test data was
+non-discriminating): Newtonsoft's `JsonTextWriter` happens to re-serialize a
+`Z`-suffixed (UTC-`Kind`) `DateTime` back to `Z` form during whole-tree
+`ToString()` regardless of whether the tree was parsed with
+`DateParseHandling.DateTime` (raw `JToken.Parse`) or `.None` (`ParseJson`) -
+so a `Z`-suffixed test input passes either way and proves nothing about
+which parse mode was used. An explicit-offset timestamp (e.g. `+05:30`) is
+the case that actually differs: raw `JToken.Parse` converts it to a
+`Local`-`Kind` `DateTime` (silently reinterpreted in the *robot machine's own
+timezone*, not the original offset), which `ToString()` then re-serializes
+differently on every run depending on where the automation happens to
+execute - exactly the kind of environment-dependent corruption this whole
+fix exists to prevent. The spec-compliance review that found the original
+test data non-discriminating verified this empirically with a standalone
+probe (Newtonsoft.Json 13.0.1, matching this repo's version): `ParseJson`
+preserves the offset-bearing string exactly; raw `JToken.Parse` does not.
+These two tests are added preemptively (before
+implementation, not after a review caught the *code* being wrong this time)
+because this region is precisely the parse-then-`ToString()` shape that
+caused the Task 4 addendum's bug - it would be an easy trap to fall back
+into `JToken.Parse` here specifically.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
