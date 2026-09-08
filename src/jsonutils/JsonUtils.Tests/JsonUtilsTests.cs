@@ -505,5 +505,36 @@ namespace JsonAutomation.Tests
             Assert.False(succeeded);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        [Fact]
+        public void TryMergeJson_KeyOnlyInOverride_IsAdded()
+        {
+            bool succeeded = _json.TryMergeJson("{\"a\":1}", "{\"c\":2}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
+            Assert.Equal(2, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["c"]);
+        }
+
+        [Fact]
+        public void TryMergeJson_NestedObjects_RecursesRatherThanReplacing()
+        {
+            bool succeeded = _json.TryMergeJson("{\"nested\":{\"x\":1,\"y\":2}}", "{\"nested\":{\"y\":9,\"z\":3}}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JObject nested = (Newtonsoft.Json.Linq.JObject)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["nested"];
+            Assert.Equal(1, (int)nested["x"]);
+            Assert.Equal(9, (int)nested["y"]);
+            Assert.Equal(3, (int)nested["z"]);
+        }
+
+        [Fact]
+        public void TryMergeJson_ExplicitNullInOverride_DoesNotClearBaseValue()
+        {
+            bool succeeded = _json.TryMergeJson("{\"a\":1}", "{\"a\":null}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
+        }
     }
 }

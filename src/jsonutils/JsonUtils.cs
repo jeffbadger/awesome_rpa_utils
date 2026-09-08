@@ -544,7 +544,10 @@ namespace JsonAutomation
         #region Merge
 
         /// <summary>Merges two JSON objects. Values in <paramref name="overrideJson"/> win on
-        /// scalar conflicts; array values present in both documents are concatenated.</summary>
+        /// scalar conflicts; array values present in both documents are concatenated; nested
+        /// objects present in both documents are merged recursively, not replaced wholesale.
+        /// An explicit JSON <c>null</c> in <paramref name="overrideJson"/> does NOT clear the
+        /// base's existing value for that key (Newtonsoft's default null-merge behavior).</summary>
         /// <param name="baseJson">The base JSON object.</param>
         /// <param name="overrideJson">The JSON object whose values take precedence on conflict.</param>
         /// <param name="mergedJson">The merged JSON text on success; <c>null</c> on failure.</param>
