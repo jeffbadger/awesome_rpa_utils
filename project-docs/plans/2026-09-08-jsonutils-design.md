@@ -1647,7 +1647,30 @@ public void TryMinifyJson_MalformedJson_ReturnsFalseWithMessage()
     Assert.False(succeeded);
     Assert.False(string.IsNullOrEmpty(message));
 }
+
+[Fact]
+public void TryPrettyPrintJson_DateLikeStringValue_PreservesExactText()
+{
+    bool succeeded = _json.TryPrettyPrintJson("{\"created\":\"2026-02-20T08:30:00Z\"}", out string formattedJson, out string message);
+
+    Assert.True(succeeded);
+    Assert.Contains("\"2026-02-20T08:30:00Z\"", formattedJson);
+}
+
+[Fact]
+public void TryMinifyJson_DateLikeStringValue_PreservesExactText()
+{
+    bool succeeded = _json.TryMinifyJson("{\"created\":\"2026-02-20T08:30:00Z\"}", out string minifiedJson, out string message);
+
+    Assert.True(succeeded);
+    Assert.Equal("{\"created\":\"2026-02-20T08:30:00Z\"}", minifiedJson);
+}
 ```
+
+These last two tests are added preemptively (before implementation, not
+after a review caught it this time) because this region is precisely the
+parse-then-`ToString()` shape that caused the Task 4 addendum's bug - it
+would be an easy trap to fall back into `JToken.Parse` here specifically.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -1726,7 +1749,7 @@ public bool TryMinifyJson(string json, out string minifiedJson, out string messa
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 48 tests (44 prior + 4 new).
+Expected: PASS, 50 tests (44 prior + 6 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1919,7 +1942,7 @@ Expected: clean build, all projects including the new `JsonUtils`/
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 48/48.
+Expected: PASS, 50/50.
 
 - [ ] **Step 3: Package-Release dry run**
 
@@ -1948,7 +1971,7 @@ gh pr create --title "Add JsonUtils component" --body "$(cat <<'EOF'
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (48/48)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (50/50)
 EOF
 )"
 ```
@@ -1965,7 +1988,7 @@ git worktree remove .worktrees/jsonutils
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to the
       other 18 shipped components.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      48/48 passing, fully on this Linux host (no Windows-only skips, unlike
+      50/50 passing, fully on this Linux host (no Windows-only skips, unlike
       `UIAutomation.Tests`/`OcrUtils.Tests`/`ScreenCaptureUtils.Tests`).
 - [ ] `scripts/Package-Release.ps1`'s `$releaseAssemblies` includes
       `JsonAutomation.dll`.
