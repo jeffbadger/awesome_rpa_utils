@@ -588,5 +588,105 @@ namespace JsonAutomation
         }
 
         #endregion
+
+        #region Compare
+
+        private static void CollectDifferingPaths(JToken left, JToken right, string currentPath, List<string> differingPaths)
+        {
+            if (JToken.DeepEquals(left, right))
+            {
+                return;
+            }
+
+            if (left is JObject leftObject && right is JObject rightObject)
+            {
+                List<string> keys = new List<string>();
+                foreach (JProperty property in leftObject.Properties())
+                {
+                    keys.Add(property.Name);
+                }
+                foreach (JProperty property in rightObject.Properties())
+                {
+                    if (!keys.Contains(property.Name))
+                    {
+                        keys.Add(property.Name);
+                    }
+                }
+                foreach (string key in keys)
+                {
+                    string childPath = currentPath.Length == 0 ? key : $"{currentPath}.{key}";
+                    JToken leftChild = leftObject[key];
+                    JToken rightChild = rightObject[key];
+                    if (leftChild == null || rightChild == null)
+                    {
+                        differingPaths.Add(childPath);
+                    }
+                    else
+                    {
+                        CollectDifferingPaths(leftChild, rightChild, childPath, differingPaths);
+                    }
+                }
+                return;
+            }
+
+            if (left is JArray leftArray && right is JArray rightArray)
+            {
+                int maxLength = Math.Max(leftArray.Count, rightArray.Count);
+                for (int i = 0; i < maxLength; i++)
+                {
+                    string childPath = $"{currentPath}[{i}]";
+                    if (i >= leftArray.Count || i >= rightArray.Count)
+                    {
+                        differingPaths.Add(childPath);
+                    }
+                    else
+                    {
+                        CollectDifferingPaths(leftArray[i], rightArray[i], childPath, differingPaths);
+                    }
+                }
+                return;
+            }
+
+            differingPaths.Add(currentPath.Length == 0 ? "$" : currentPath);
+        }
+
+        /// <summary>Compares two JSON documents and reports the paths where they differ. Paths
+        /// are collected via a pre-order walk of <paramref name="json1"/>'s structure - not
+        /// alphabetically sorted - with any keys/indices that exist only in <paramref name="json2"/>
+        /// appended after all of <paramref name="json1"/>'s keys at that level. A difference at
+        /// the document root itself (e.g. mismatched root types) is reported as <c>"$"</c>.</summary>
+        /// <param name="json1">The first JSON document.</param>
+        /// <param name="json2">The second JSON document.</param>
+        /// <param name="delimiter">The delimiter to join differing paths with.</param>
+        /// <param name="areEqual"><c>True</c> if the two documents are equivalent.</param>
+        /// <param name="differingPaths">A delimited list of paths where the documents differ; empty when <paramref name="areEqual"/> is <c>true</c>.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if the comparison completed, regardless of whether the documents are
+        /// equal - <c>False</c> only if either input is malformed JSON.</returns>
+        [Category("Json - Compare")]
+        [Description("Compares two JSON documents and reports the paths where they differ. Never throws.")]
+        public bool TryDiffJson(string json1, string json2, string delimiter, out bool areEqual, out string differingPaths, out string message)
+        {
+            areEqual = false;
+            differingPaths = null;
+            message = null;
+            try
+            {
+                JToken left = ParseJson(json1);
+                JToken right = ParseJson(json2);
+                List<string> paths = new List<string>();
+                CollectDifferingPaths(left, right, string.Empty, paths);
+                areEqual = paths.Count == 0;
+                differingPaths = string.Join(delimiter, paths);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryDiffJson), exception);
+                return false;
+            }
+        }
+
+        #endregion
     }
 }

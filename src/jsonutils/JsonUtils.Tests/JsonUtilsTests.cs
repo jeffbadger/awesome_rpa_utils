@@ -536,5 +536,94 @@ namespace JsonAutomation.Tests
             Assert.True(succeeded);
             Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
         }
+
+        [Fact]
+        public void TryDiffJson_EqualDocuments_ReturnsTrueWithEmptyPaths()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1,\"b\":2}", "{\"a\":1,\"b\":2}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.True(areEqual);
+            Assert.Equal(string.Empty, differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_ChangedScalar_ReturnsPathToScalar()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1}", "{\"a\":2}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("a", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_AddedKey_ReturnsPathToKey()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1}", "{\"a\":1,\"b\":2}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("b", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_ChangedArrayElement_ReturnsIndexedPath()
+        {
+            bool succeeded = _json.TryDiffJson("{\"items\":[1,2,3]}", "{\"items\":[1,9,3]}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("items[1]", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_ArrayLengthDifference_ReturnsPathForExtraElement()
+        {
+            bool succeeded = _json.TryDiffJson("{\"items\":[1,2]}", "{\"items\":[1,2,3]}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("items[2]", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_NestedPathDifference_ReturnsFullDottedPath()
+        {
+            bool succeeded = _json.TryDiffJson("{\"order\":{\"items\":[{\"sku\":\"A\"}]}}", "{\"order\":{\"items\":[{\"sku\":\"B\"}]}}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("order.items[0].sku", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_MultipleDifferences_ReturnsAllPathsDelimited()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1,\"b\":2}", "{\"a\":9,\"b\":9}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("a,b", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_EntirelyDifferentRootTypes_ReturnsDollarSign()
+        {
+            bool succeeded = _json.TryDiffJson("{\"a\":1}", "[1,2,3]", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(areEqual);
+            Assert.Equal("$", differingPaths);
+        }
+
+        [Fact]
+        public void TryDiffJson_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryDiffJson("{not json", "{\"a\":1}", ",", out bool areEqual, out string differingPaths, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
     }
 }
