@@ -281,5 +281,23 @@ namespace JsonAutomation.Tests
             Assert.Equal(JsonValueKind.NotFound, kind);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        [Fact]
+        public void TryGetValueFromJson_DateLikeStringPath_ReturnsExactOriginalText()
+        {
+            bool succeeded = _json.TryGetValueFromJson("{\"created\":\"2026-02-20T08:30:00Z\"}", "created", out string value, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("2026-02-20T08:30:00Z", value);
+        }
+
+        [Fact]
+        public void TryGetValuesFromJson_MatchIncludesNull_ReturnsEmptyStringForThatMatch()
+        {
+            bool succeeded = _json.TryGetValuesFromJson("{\"items\":[{\"sku\":\"A\"},{\"sku\":null},{\"sku\":\"B\"}]}", "items[*].sku", ",", out string delimitedValues, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("A,,B", delimitedValues);
+        }
     }
 }

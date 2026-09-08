@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -33,6 +34,21 @@ namespace JsonAutomation
         public JsonUtils(IContainer container)
         {
             container?.Add(this);
+        }
+
+        /// <summary>Parses JSON text without Newtonsoft's automatic date-string detection, so a
+        /// date-like string value (e.g. an ISO-8601 timestamp) is read back exactly as written
+        /// instead of being silently reformatted by a culture-dependent <c>DateTime.ToString()</c>
+        /// when a token is later serialized back to text via <c>token.ToString()</c>. Typed getters
+        /// like <see cref="TryGetDateTimeValue"/> still convert correctly - Newtonsoft's
+        /// <c>Value&lt;T&gt;</c> conversion parses the string on demand regardless of whether the
+        /// token's original type was <c>Date</c> or <c>String</c>.</summary>
+        private static JToken ParseJson(string json)
+        {
+            using (JsonTextReader reader = new JsonTextReader(new StringReader(json)) { DateParseHandling = DateParseHandling.None })
+            {
+                return JToken.Load(reader);
+            }
         }
 
         #region Native parity
@@ -108,7 +124,7 @@ namespace JsonAutomation
             message = null;
             try
             {
-                JToken root = JToken.Parse(json);
+                JToken root = ParseJson(json);
                 JToken token = root.SelectToken(path);
                 if (token == null)
                 {
@@ -142,7 +158,7 @@ namespace JsonAutomation
             message = null;
             try
             {
-                JToken root = JToken.Parse(json);
+                JToken root = ParseJson(json);
                 JToken target = root.SelectToken(path);
                 if (target == null)
                 {
@@ -175,7 +191,7 @@ namespace JsonAutomation
             message = null;
             try
             {
-                JToken.Parse(json);
+                ParseJson(json);
                 return true;
             }
             catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
@@ -191,7 +207,7 @@ namespace JsonAutomation
             message = null;
             try
             {
-                JToken root = JToken.Parse(json);
+                JToken root = ParseJson(json);
                 JToken token = root.SelectToken(path);
                 if (token == null)
                 {
@@ -268,7 +284,9 @@ namespace JsonAutomation
         #region Multi-match and inspection
 
         /// <summary>Extracts every value matching a JSONPath (e.g. a wildcard or filter
-        /// expression) and joins them into one delimited string.</summary>
+        /// expression) and joins them into one delimited string. A matched JSON null literal
+        /// contributes an empty string to the joined result, indistinguishable from a genuinely
+        /// empty string value at that path.</summary>
         /// <param name="json">The JSON text to read.</param>
         /// <param name="path">A JSONPath expression that may match zero or more values.</param>
         /// <param name="delimiter">The delimiter to join matched values with.</param>
@@ -283,7 +301,7 @@ namespace JsonAutomation
             message = null;
             try
             {
-                JToken root = JToken.Parse(json);
+                JToken root = ParseJson(json);
                 List<string> values = new List<string>();
                 foreach (JToken token in root.SelectTokens(path))
                 {
@@ -318,7 +336,7 @@ namespace JsonAutomation
             message = null;
             try
             {
-                JToken root = JToken.Parse(json);
+                JToken root = ParseJson(json);
                 JToken token = root.SelectToken(path);
                 if (token == null)
                 {
@@ -334,6 +352,9 @@ namespace JsonAutomation
                     JTokenType.Boolean => JsonValueKind.Boolean,
                     JTokenType.Array => JsonValueKind.Array,
                     JTokenType.Object => JsonValueKind.Object,
+                    // Date is unreachable here since ParseJson disables date auto-detection;
+                    // any other JTokenType (Guid, Uri, TimeSpan, etc.) is not producible by
+                    // parsing raw JSON text and defaults to String defensively.
                     _ => JsonValueKind.String
                 };
                 return true;
