@@ -817,5 +817,26 @@ namespace JsonAutomation.Tests
             Assert.False(succeeded);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_Equals_BooleanFieldIsCaseInsensitive()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"active\":true},{\"active\":false}]}", "items", "active", JsonComparisonOperator.Equals, "true", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+            Assert.True((bool)filtered[0]["active"]);
+        }
+
+        [Fact]
+        public void TrySortJsonArrayByField_MixedShapeArray_MissingFieldSortsWithoutThrowing()
+        {
+            bool succeeded = _json.TrySortJsonArrayByField("{\"items\":[{\"qty\":5},{\"other\":1},{\"qty\":2}]}", "items", "qty", true, out string sortedJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray sorted = Newtonsoft.Json.Linq.JArray.Parse(sortedJson);
+            Assert.Equal(3, sorted.Count);
+        }
     }
 }

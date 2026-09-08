@@ -496,7 +496,7 @@ namespace JsonAutomation
             {
                 return leftNumber.CompareTo(rightNumber);
             }
-            return string.CompareOrdinal(left?.ToString(), right?.ToString());
+            return string.Compare(left?.ToString(), right?.ToString(), StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool CompareField(JToken fieldToken, JsonComparisonOperator comparisonOperator, string value)
@@ -527,7 +527,10 @@ namespace JsonAutomation
 
         /// <summary>Filters an array at a JSONPath to elements whose field matches a comparison.
         /// Numeric-looking field and comparison values are compared numerically; otherwise
-        /// comparison falls back to ordinal string comparison.</summary>
+        /// comparison falls back to case-insensitive ordinal string comparison (so a boolean
+        /// field's <c>"True"</c>/<c>"False"</c> rendering matches a caller's lowercase
+        /// <c>"true"</c>/<c>"false"</c>). An element missing <paramref name="fieldName"/> entirely
+        /// is excluded under every operator, including <see cref="JsonComparisonOperator.NotEquals"/>.</summary>
         /// <param name="json">The JSON text to read.</param>
         /// <param name="path">A JSONPath expression identifying an array of objects.</param>
         /// <param name="fieldName">The property name to compare on each array element.</param>
@@ -576,7 +579,10 @@ namespace JsonAutomation
         }
 
         /// <summary>Sorts an array at a JSONPath by a field's value. Numeric-looking values sort
-        /// numerically; otherwise sorting falls back to ordinal string comparison.</summary>
+        /// numerically; otherwise sorting falls back to case-insensitive ordinal string
+        /// comparison. An element missing the sort field sorts using an empty-string
+        /// comparison value (via <see cref="CompareValues"/>'s null-safe <c>?.ToString()</c>
+        /// calls), rather than throwing.</summary>
         /// <param name="json">The JSON text to read.</param>
         /// <param name="path">A JSONPath expression identifying an array of objects.</param>
         /// <param name="fieldName">The property name to sort each array element by.</param>
