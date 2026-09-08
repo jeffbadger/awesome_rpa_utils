@@ -952,6 +952,27 @@ public void TrySortJsonArrayByField_NonArrayPath_ReturnsFalseWithMessage()
     Assert.False(succeeded);
     Assert.False(string.IsNullOrEmpty(message));
 }
+
+[Fact]
+public void TryFilterJsonArrayByField_Equals_BooleanFieldIsCaseInsensitive()
+{
+    bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"active\":true},{\"active\":false}]}", "items", "active", JsonComparisonOperator.Equals, "true", out string filteredJson, out string message);
+
+    Assert.True(succeeded);
+    Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+    Assert.Single(filtered);
+    Assert.True((bool)filtered[0]["active"]);
+}
+
+[Fact]
+public void TrySortJsonArrayByField_MixedShapeArray_MissingFieldSortsWithoutThrowing()
+{
+    bool succeeded = _json.TrySortJsonArrayByField("{\"items\":[{\"qty\":5},{\"other\":1},{\"qty\":2}]}", "items", "qty", true, out string sortedJson, out string message);
+
+    Assert.True(succeeded);
+    Newtonsoft.Json.Linq.JArray sorted = Newtonsoft.Json.Linq.JArray.Parse(sortedJson);
+    Assert.Equal(3, sorted.Count);
+}
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1019,7 +1040,7 @@ private static int CompareValues(JToken left, JToken right)
     {
         return leftNumber.CompareTo(rightNumber);
     }
-    return string.CompareOrdinal(left?.ToString(), right?.ToString());
+    return string.Compare(left?.ToString(), right?.ToString(), StringComparison.OrdinalIgnoreCase);
 }
 
 private static bool CompareField(JToken fieldToken, JsonComparisonOperator comparisonOperator, string value)
@@ -1050,7 +1071,10 @@ private static bool CompareField(JToken fieldToken, JsonComparisonOperator compa
 
 /// <summary>Filters an array at a JSONPath to elements whose field matches a comparison.
 /// Numeric-looking field and comparison values are compared numerically; otherwise
-/// comparison falls back to ordinal string comparison.</summary>
+/// comparison falls back to case-insensitive ordinal string comparison (so a boolean
+/// field's <c>"True"</c>/<c>"False"</c> rendering matches a caller's lowercase
+/// <c>"true"</c>/<c>"false"</c>). An element missing <paramref name="fieldName"/> entirely
+/// is excluded under every operator, including <see cref="JsonComparisonOperator.NotEquals"/>.</summary>
 /// <param name="json">The JSON text to read.</param>
 /// <param name="path">A JSONPath expression identifying an array of objects.</param>
 /// <param name="fieldName">The property name to compare on each array element.</param>
@@ -1099,7 +1123,10 @@ public bool TryFilterJsonArrayByField(string json, string path, string fieldName
 }
 
 /// <summary>Sorts an array at a JSONPath by a field's value. Numeric-looking values sort
-/// numerically; otherwise sorting falls back to ordinal string comparison.</summary>
+/// numerically; otherwise sorting falls back to case-insensitive ordinal string
+/// comparison. An element missing the sort field sorts using an empty-string
+/// comparison value (via <see cref="CompareValues"/>'s null-safe <c>?.ToString()</c>
+/// calls), rather than throwing.</summary>
 /// <param name="json">The JSON text to read.</param>
 /// <param name="path">A JSONPath expression identifying an array of objects.</param>
 /// <param name="fieldName">The property name to sort each array element by.</param>
@@ -1147,13 +1174,27 @@ public bool TrySortJsonArrayByField(string json, string path, string fieldName, 
 }
 ```
 
+**Note (added after code-quality review, before this task was implemented):**
+`CompareValues`'s non-numeric fallback originally used `string.CompareOrdinal`
+(case-sensitive). Empirical testing found a real, silent correctness bug:
+`fieldToken.ToString()` on a JSON boolean renders as .NET's capitalized
+`"True"`/`"False"`, so filtering by the natural JSON-literal-matching input
+`"true"` (lowercase) matched nothing and returned an empty array - with no
+error, since this is a never-throws component. Switched to
+`string.Compare(..., StringComparison.OrdinalIgnoreCase)`, which is the
+worse failure mode to leave silent (wrong-but-plausible-looking empty
+result, not a crash) precisely because there's no error signal to notice
+it by. Also note: an element missing the compared field entirely is
+excluded from `TryFilterJsonArrayByField`'s results under every operator,
+including `NotEquals` - a deliberate, now-documented semantic, not a bug.
+
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 88 tests (77 prior + 11 new).
+Expected: PASS, 90 tests (77 prior + 13 new — includes 2 tests added after code-quality review found a silent case-sensitivity bug in boolean-field comparison).
 
 - [ ] **Step 6: Commit**
 
@@ -1251,7 +1292,7 @@ Expected: clean build, 0 errors.
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 88/88.
+Expected: PASS, 90/90.
 
 - [ ] **Step 3: Push and open the PR**
 
@@ -1270,7 +1311,7 @@ gh pr create --title "Add JsonUtils Phase 2 (merge/diff/XML/filter-sort)" --body
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (88/88)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (90/90)
 EOF
 )"
 ```
@@ -1287,7 +1328,7 @@ git worktree remove .worktrees/jsonutils-phase2
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to any
       shipped component including Phase 1's `JsonUtils`.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      88/88 passing, fully on this Linux host.
+      90/90 passing, fully on this Linux host.
 - [ ] `src/jsonutils/README.md` updated with all 6 new methods, a worked
       example, and Notes & Caveats entries; the "Phase 2 (not yet
       implemented)" bullet removed.
