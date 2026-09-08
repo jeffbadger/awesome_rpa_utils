@@ -311,6 +311,15 @@ namespace JsonAutomation.Tests
         }
 
         [Fact]
+        public void TryRemoveValueFromJson_ArrayElementPath_ReturnsUpdatedJson()
+        {
+            bool succeeded = _json.TryRemoveValueFromJson("{\"items\":[1,2,3]}", "items[1]", out string updatedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(new[] { 1, 3 }, Newtonsoft.Json.Linq.JObject.Parse(updatedJson)["items"].ToObject<int[]>());
+        }
+
+        [Fact]
         public void TryRemoveValueFromJson_PathNotFound_ReturnsFalseWithMessage()
         {
             bool succeeded = _json.TryRemoveValueFromJson("{\"a\":1}", "missing", out string updatedJson, out string message);
