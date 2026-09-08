@@ -412,21 +412,21 @@ namespace JsonAutomation.Tests
         }
 
         [Fact]
-        public void TryPrettyPrintJson_DateLikeStringValue_PreservesExactText()
+        public void TryPrettyPrintJson_OffsetDateLikeStringValue_PreservesExactText()
         {
-            bool succeeded = _json.TryPrettyPrintJson("{\"created\":\"2026-02-20T08:30:00Z\"}", out string formattedJson, out string message);
+            bool succeeded = _json.TryPrettyPrintJson("{\"created\":\"2026-02-20T08:30:00+05:30\"}", out string formattedJson, out string message);
 
             Assert.True(succeeded);
-            Assert.Contains("\"2026-02-20T08:30:00Z\"", formattedJson);
+            Assert.Contains("\"2026-02-20T08:30:00+05:30\"", formattedJson);
         }
 
         [Fact]
-        public void TryMinifyJson_DateLikeStringValue_PreservesExactText()
+        public void TryMinifyJson_OffsetDateLikeStringValue_PreservesExactText()
         {
-            bool succeeded = _json.TryMinifyJson("{\"created\":\"2026-02-20T08:30:00Z\"}", out string minifiedJson, out string message);
+            bool succeeded = _json.TryMinifyJson("{\"created\":\"2026-02-20T08:30:00+05:30\"}", out string minifiedJson, out string message);
 
             Assert.True(succeeded);
-            Assert.Equal("{\"created\":\"2026-02-20T08:30:00Z\"}", minifiedJson);
+            Assert.Equal("{\"created\":\"2026-02-20T08:30:00+05:30\"}", minifiedJson);
         }
     }
 }
