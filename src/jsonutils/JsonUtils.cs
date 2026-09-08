@@ -36,19 +36,27 @@ namespace JsonAutomation
 
         #region Native parity
 
-        /// <summary>Deserializes a JSON string into a typed object.</summary>
-        /// <typeparam name="T">The target type.</typeparam>
+        /// <summary>Deserializes a JSON string into an instance of the given .NET type.</summary>
         /// <param name="json">The JSON text to deserialize.</param>
-        /// <param name="result">The deserialized object on success; <c>default</c> on failure.</param>
+        /// <param name="typeName">An assembly-qualified or in-scope simple type name, resolved via <see cref="Type.GetType(string)"/>.</param>
+        /// <param name="result">The deserialized object on success; <c>null</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if deserialization succeeded.</returns>
-        public bool TryDeserializeObject<T>(string json, out T result, out string message)
+        [Category("Json - Core")]
+        [Description("Deserializes a JSON string into an instance of the named .NET type. Never throws.")]
+        public bool TryDeserializeObject(string json, string typeName, out object result, out string message)
         {
-            result = default;
+            result = null;
             message = null;
             try
             {
-                result = JsonConvert.DeserializeObject<T>(json);
+                Type type = Type.GetType(typeName);
+                if (type == null)
+                {
+                    message = $"Type '{typeName}' could not be resolved.";
+                    return false;
+                }
+                result = JsonConvert.DeserializeObject(json, type);
                 return true;
             }
             catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
@@ -63,6 +71,8 @@ namespace JsonAutomation
         /// <param name="json">The JSON text on success; <c>null</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if serialization succeeded.</returns>
+        [Category("Json - Core")]
+        [Description("Serializes an object to a JSON string. Never throws.")]
         public bool TrySerializeObject(object value, out string json, out string message)
         {
             json = null;
@@ -86,6 +96,8 @@ namespace JsonAutomation
         /// <c>null</c> if the value is a JSON null literal); <c>null</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value.</returns>
+        [Category("Json - Core")]
+        [Description("Extracts a single value from a JSON string using a JSONPath expression. Never throws.")]
         public bool TryGetValueFromJson(string json, string path, out string value, out string message)
         {
             value = null;
@@ -118,6 +130,8 @@ namespace JsonAutomation
         /// <param name="updatedJson">The updated JSON text on success; <c>null</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to an existing value that was updated.</returns>
+        [Category("Json - Core")]
+        [Description("Updates a value in a JSON string using a JSONPath expression. The path must already exist. Never throws.")]
         public bool TrySetValueInJson(string json, string path, string value, out string updatedJson, out string message)
         {
             updatedJson = null;

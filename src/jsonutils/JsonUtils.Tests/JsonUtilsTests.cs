@@ -27,12 +27,13 @@ namespace JsonAutomation.Tests
         }
 
         [Fact]
-        public void TryDeserializeObject_ValidJson_ReturnsPopulatedObject()
+        public void TryDeserializeObject_ValidJsonAndTypeName_ReturnsPopulatedObject()
         {
-            bool succeeded = _json.TryDeserializeObject("{\"Name\":\"Ada\",\"Age\":30}", out SamplePerson person, out string message);
+            bool succeeded = _json.TryDeserializeObject("{\"Name\":\"Ada\",\"Age\":30}", typeof(SamplePerson).AssemblyQualifiedName, out object result, out string message);
 
             Assert.True(succeeded);
             Assert.Null(message);
+            SamplePerson person = Assert.IsType<SamplePerson>(result);
             Assert.Equal("Ada", person.Name);
             Assert.Equal(30, person.Age);
         }
@@ -40,9 +41,19 @@ namespace JsonAutomation.Tests
         [Fact]
         public void TryDeserializeObject_MalformedJson_ReturnsFalseWithMessage()
         {
-            bool succeeded = _json.TryDeserializeObject("{not json", out SamplePerson person, out string message);
+            bool succeeded = _json.TryDeserializeObject("{not json", typeof(SamplePerson).AssemblyQualifiedName, out object result, out string message);
 
             Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryDeserializeObject_UnresolvableTypeName_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryDeserializeObject("{\"Name\":\"Ada\"}", "NoSuch.Type, NoSuchAssembly", out object result, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(result);
             Assert.False(string.IsNullOrEmpty(message));
         }
 
@@ -83,6 +94,16 @@ namespace JsonAutomation.Tests
 
             Assert.False(succeeded);
             Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryGetValueFromJson_NullLiteralPath_ReturnsTrueWithNullValue()
+        {
+            bool succeeded = _json.TryGetValueFromJson("{\"a\":null}", "a", out string value, out string message);
+
+            Assert.True(succeeded);
+            Assert.Null(value);
+            Assert.Null(message);
         }
 
         [Fact]
