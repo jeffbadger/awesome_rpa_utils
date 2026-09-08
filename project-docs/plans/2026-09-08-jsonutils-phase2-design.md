@@ -996,13 +996,24 @@ namespace JsonAutomation
 
 Add both new methods and their two private helpers to the END of the
 existing `#region Array and removal` block (before its `#endregion`), right
-after `TryAppendToJsonArray`:
+after `TryAppendToJsonArray`. **`leftNumber`/`rightNumber` must be
+initialized to `0`, not left unassigned** - this was caught during
+implementation of this exact task, confirmed as a real `CS0165` compile
+error (not a misdiagnosis): C#'s definite-assignment analysis for `out`
+parameters through `&&` only tracks assignment through the literal
+syntactic boolean condition it's used in directly (the
+`TryGetValue(out var v) && v.IsValid` pattern) - once the compound
+expression's result is captured into an intermediate `bool bothNumeric = ...;`
+and tested in a separate `if` statement, the compiler no longer connects
+`bothNumeric == true` back to "both out parameters were assigned." The `= 0`
+initializers are purely a compile-time fix with no behavior change -
+`TryParse` always overwrites its `out` parameter, success or failure:
 
 ```csharp
 private static int CompareValues(JToken left, JToken right)
 {
-    double leftNumber;
-    double rightNumber;
+    double leftNumber = 0;
+    double rightNumber = 0;
     bool bothNumeric = double.TryParse(left?.ToString(), out leftNumber) && double.TryParse(right?.ToString(), out rightNumber);
     if (bothNumeric)
     {
