@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using JsonAutomation;
 using Newtonsoft.Json;
 using Xunit;
@@ -298,6 +299,71 @@ namespace JsonAutomation.Tests
 
             Assert.True(succeeded);
             Assert.Equal("A,,B", delimitedValues);
+        }
+
+        [Fact]
+        public void TryRemoveValueFromJson_ExistingPath_ReturnsUpdatedJson()
+        {
+            bool succeeded = _json.TryRemoveValueFromJson("{\"a\":1,\"b\":2}", "b", out string updatedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(Newtonsoft.Json.Linq.JObject.Parse(updatedJson).ContainsKey("b"));
+        }
+
+        [Fact]
+        public void TryRemoveValueFromJson_PathNotFound_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryRemoveValueFromJson("{\"a\":1}", "missing", out string updatedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(updatedJson);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryGetArrayLength_ArrayPath_ReturnsCount()
+        {
+            bool succeeded = _json.TryGetArrayLength("{\"items\":[1,2,3]}", "items", out int length, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(3, length);
+        }
+
+        [Fact]
+        public void TryGetArrayLength_NonArrayPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryGetArrayLength("{\"items\":1}", "items", out int length, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryAppendToJsonArray_ArrayPath_ReturnsUpdatedJsonWithNewElement()
+        {
+            bool succeeded = _json.TryAppendToJsonArray("{\"items\":[1,2]}", "items", "3", out string updatedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(3, Newtonsoft.Json.Linq.JObject.Parse(updatedJson)["items"].Count());
+        }
+
+        [Fact]
+        public void TryAppendToJsonArray_NonArrayPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryAppendToJsonArray("{\"items\":1}", "items", "3", out string updatedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(updatedJson);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryAppendToJsonArray_MalformedElementJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryAppendToJsonArray("{\"items\":[1]}", "items", "{not json", out string updatedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
         }
     }
 }

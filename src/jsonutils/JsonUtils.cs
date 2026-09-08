@@ -370,6 +370,123 @@ namespace JsonAutomation
 
         #region Array and removal
 
+        /// <summary>Removes a value at a JSONPath.</summary>
+        /// <param name="json">The JSON text to update.</param>
+        /// <param name="path">A JSONPath expression identifying an existing value.</param>
+        /// <param name="updatedJson">The updated JSON text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to an existing value that was removed.</returns>
+        [Category("Json - Array")]
+        [Description("Removes a value at a JSONPath. Never throws.")]
+        public bool TryRemoveValueFromJson(string json, string path, out string updatedJson, out string message)
+        {
+            updatedJson = null;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                JToken target = root.SelectToken(path);
+                if (target == null)
+                {
+                    message = $"Path '{path}' did not resolve to an existing value.";
+                    return false;
+                }
+                // A property's value can't be removed directly - Newtonsoft requires removing
+                // the containing JProperty itself. An array element's parent is the JArray, so
+                // target.Remove() applies there.
+                if (target.Parent is JProperty property)
+                {
+                    property.Remove();
+                }
+                else
+                {
+                    target.Remove();
+                }
+                updatedJson = root.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryRemoveValueFromJson), exception);
+                return false;
+            }
+        }
+
+        /// <summary>Reports the element count of an array at a JSONPath.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression identifying an array.</param>
+        /// <param name="length">The element count on success; <c>0</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to an array.</returns>
+        [Category("Json - Array")]
+        [Description("Reports the element count of an array at a JSONPath. Never throws.")]
+        public bool TryGetArrayLength(string json, string path, out int length, out string message)
+        {
+            length = 0;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                JToken token = root.SelectToken(path);
+                if (token == null)
+                {
+                    message = $"Path '{path}' did not resolve to a value.";
+                    return false;
+                }
+                if (token is not JArray array)
+                {
+                    message = $"Path '{path}' resolved to a {token.Type}, not an array.";
+                    return false;
+                }
+                length = array.Count;
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryGetArrayLength), exception);
+                return false;
+            }
+        }
+
+        /// <summary>Appends a JSON-fragment element to an array at a JSONPath.</summary>
+        /// <param name="json">The JSON text to update.</param>
+        /// <param name="path">A JSONPath expression identifying an array.</param>
+        /// <param name="valueJson">The new element, as a JSON fragment (e.g. <c>"3"</c>, <c>"\"text\""</c>, <c>"{\"sku\":\"C\"}"</c>).</param>
+        /// <param name="updatedJson">The updated JSON text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to an array that the element was appended to.</returns>
+        [Category("Json - Array")]
+        [Description("Appends a JSON-fragment element to an array at a JSONPath. Never throws.")]
+        public bool TryAppendToJsonArray(string json, string path, string valueJson, out string updatedJson, out string message)
+        {
+            updatedJson = null;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                JToken token = root.SelectToken(path);
+                if (token == null)
+                {
+                    message = $"Path '{path}' did not resolve to a value.";
+                    return false;
+                }
+                if (token is not JArray array)
+                {
+                    message = $"Path '{path}' resolved to a {token.Type}, not an array.";
+                    return false;
+                }
+                JToken element = ParseJson(valueJson);
+                array.Add(element);
+                updatedJson = root.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryAppendToJsonArray), exception);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Formatting
