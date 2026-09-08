@@ -163,6 +163,105 @@ namespace JsonAutomation
 
         #region Validation and typed getters
 
+        /// <summary>Checks whether a string is well-formed JSON.</summary>
+        /// <param name="json">The text to check.</param>
+        /// <param name="message"><c>null</c> if valid; a description of the parse failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="json"/> parses as JSON.</returns>
+        [Category("Json - Validation")]
+        [Description("Checks whether a string is well-formed JSON. Never throws.")]
+        public bool IsValidJson(string json, out string message)
+        {
+            message = null;
+            try
+            {
+                JToken.Parse(json);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(IsValidJson), exception);
+                return false;
+            }
+        }
+
+        private bool TryGetTypedValue<T>(string json, string path, string methodName, out T value, out string message)
+        {
+            value = default;
+            message = null;
+            try
+            {
+                JToken root = JToken.Parse(json);
+                JToken token = root.SelectToken(path);
+                if (token == null)
+                {
+                    message = $"Path '{path}' did not resolve to a value.";
+                    return false;
+                }
+                value = token.Value<T>();
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(methodName, exception);
+                return false;
+            }
+        }
+
+        /// <summary>Extracts a value at a JSONPath as a <see cref="string"/>.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression.</param>
+        /// <param name="value">The value on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="string"/>.</returns>
+        [Category("Json - Validation")]
+        [Description("Extracts a value at a JSONPath as a string. Never throws.")]
+        public bool TryGetStringValue(string json, string path, out string value, out string message) =>
+            TryGetTypedValue(json, path, nameof(TryGetStringValue), out value, out message);
+
+        /// <summary>Extracts a value at a JSONPath as an <see cref="int"/>.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression.</param>
+        /// <param name="value">The value on success; <c>0</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="int"/>.</returns>
+        [Category("Json - Validation")]
+        [Description("Extracts a value at a JSONPath as an int. Never throws.")]
+        public bool TryGetIntValue(string json, string path, out int value, out string message) =>
+            TryGetTypedValue(json, path, nameof(TryGetIntValue), out value, out message);
+
+        /// <summary>Extracts a value at a JSONPath as a <see cref="bool"/>.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression.</param>
+        /// <param name="value">The value on success; <c>false</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="bool"/>.</returns>
+        [Category("Json - Validation")]
+        [Description("Extracts a value at a JSONPath as a bool. Never throws.")]
+        public bool TryGetBoolValue(string json, string path, out bool value, out string message) =>
+            TryGetTypedValue(json, path, nameof(TryGetBoolValue), out value, out message);
+
+        /// <summary>Extracts a value at a JSONPath as a <see cref="double"/>.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression.</param>
+        /// <param name="value">The value on success; <c>0</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="double"/>.</returns>
+        [Category("Json - Validation")]
+        [Description("Extracts a value at a JSONPath as a double. Never throws.")]
+        public bool TryGetDoubleValue(string json, string path, out double value, out string message) =>
+            TryGetTypedValue(json, path, nameof(TryGetDoubleValue), out value, out message);
+
+        /// <summary>Extracts a value at a JSONPath as a <see cref="DateTime"/>.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression.</param>
+        /// <param name="value">The value on success; <see cref="DateTime.MinValue"/> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="DateTime"/>.</returns>
+        [Category("Json - Validation")]
+        [Description("Extracts a value at a JSONPath as a DateTime. Never throws.")]
+        public bool TryGetDateTimeValue(string json, string path, out DateTime value, out string message) =>
+            TryGetTypedValue(json, path, nameof(TryGetDateTimeValue), out value, out message);
+
         #endregion
 
         #region Multi-match and inspection

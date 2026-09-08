@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using JsonAutomation;
 using Newtonsoft.Json;
@@ -123,6 +124,90 @@ namespace JsonAutomation.Tests
 
             Assert.False(succeeded);
             Assert.Null(updatedJson);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData("{\"a\":1}")]
+        [InlineData("[1,2,3]")]
+        [InlineData("\"just a string\"")]
+        public void IsValidJson_ValidJson_ReturnsTrue(string json)
+        {
+            bool valid = _json.IsValidJson(json, out string message);
+
+            Assert.True(valid);
+            Assert.Null(message);
+        }
+
+        [Fact]
+        public void IsValidJson_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool valid = _json.IsValidJson("{not json", out string message);
+
+            Assert.False(valid);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryGetStringValue_StringPath_ReturnsValue()
+        {
+            bool succeeded = _json.TryGetStringValue("{\"name\":\"Ada\"}", "name", out string value, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("Ada", value);
+        }
+
+        [Fact]
+        public void TryGetIntValue_IntegerPath_ReturnsValue()
+        {
+            bool succeeded = _json.TryGetIntValue("{\"age\":30}", "age", out int value, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(30, value);
+        }
+
+        [Fact]
+        public void TryGetIntValue_NonNumericPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryGetIntValue("{\"age\":\"thirty\"}", "age", out int value, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryGetBoolValue_BooleanPath_ReturnsValue()
+        {
+            bool succeeded = _json.TryGetBoolValue("{\"active\":true}", "active", out bool value, out string message);
+
+            Assert.True(succeeded);
+            Assert.True(value);
+        }
+
+        [Fact]
+        public void TryGetDoubleValue_NumberPath_ReturnsValue()
+        {
+            bool succeeded = _json.TryGetDoubleValue("{\"price\":19.99}", "price", out double value, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(19.99, value);
+        }
+
+        [Fact]
+        public void TryGetDateTimeValue_DateStringPath_ReturnsValue()
+        {
+            bool succeeded = _json.TryGetDateTimeValue("{\"created\":\"2026-01-15T00:00:00\"}", "created", out DateTime value, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(new DateTime(2026, 1, 15), value);
+        }
+
+        [Fact]
+        public void TryGetStringValue_PathNotFound_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryGetStringValue("{}", "missing", out string value, out string message);
+
+            Assert.False(succeeded);
             Assert.False(string.IsNullOrEmpty(message));
         }
     }
