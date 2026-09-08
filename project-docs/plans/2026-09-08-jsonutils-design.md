@@ -65,10 +65,25 @@ on Newtonsoft's JSONPath):
 
 | Method | Purpose |
 |---|---|
-| `TryDeserializeObject<T>(string json, out T result, out string message)` | JSON string → typed object |
+| `TryDeserializeObject(string json, string typeName, out object result, out string message)` | JSON string → an instance of the named .NET type |
 | `TrySerializeObject(object value, out string json, out string message)` | object → JSON string |
 | `TryGetValueFromJson(string json, string path, out string value, out string message)` | single value at a JSONPath, as string |
 | `TrySetValueInJson(string json, string path, string value, out string updatedJson, out string message)` | update a value at a JSONPath |
+
+**On `TryDeserializeObject` not being generic:** an earlier draft of this
+plan used `TryDeserializeObject<T>(string json, out T result, out string message)`.
+A code-quality review during implementation caught that this is wrong: no
+other public method anywhere in this 17-component suite uses a generic type
+parameter (confirmed by grep), and the native `Json` component's own
+`DeserializeObject` takes the target type as a **string** and returns
+**`object`** (`DeserializeObject(string jsonString, string typeString, out object deserializedObject)`
+— see `pega-robotic-automation` skill, ch11) rather than using a generic —
+almost certainly because Robot Studio's drag-and-drop designer binds
+parameters/outputs via reflection over closed, concrete types and can't
+offer a canvas user a way to pick an open generic `T`. `TryDeserializeObject`
+therefore mirrors the native shape: `(string json, string typeName, out object result, out string message)`,
+resolving `typeName` via `Type.GetType(typeName)` (an assembly-qualified or
+in-scope simple type name) before calling `JsonConvert.DeserializeObject(json, type)`.
 
 **Gap-fillers** (this pass):
 
@@ -124,6 +139,18 @@ not-found. Standard xunit project layout matching `ServiceUtils.Tests`.
   components.
 - Test project in a subfolder with `<Compile Remove>`, registered in the
   `.sln`.
+- **Every public method gets `[Category("Json - <Group>")]` and
+  `[Description("...")]` attributes.** This was missed in an earlier draft
+  of this plan and caught by code-quality review after Task 2 landed —
+  every other component in the suite (`ServiceUtils`, `EventLogUtils`,
+  `DialogUtils`, `StackUtils`, `CommandLineUtils`, etc.) decorates every
+  public automation method this way; Robot Studio's designer uses
+  `[Category]` to group methods in its component browser and `[Description]`
+  as the developer-facing blurb shown when the method is placed on a canvas.
+  Group names used in this component: `Json - Core` (native-parity methods),
+  `Json - Validation` (`IsValidJson` and the typed scalar getters),
+  `Json - Query` (multi-match getter and value-type inspector),
+  `Json - Array` (array/removal methods), `Json - Format` (pretty-print/minify).
 - New work happens in `.worktrees/jsonutils` on branch `add-jsonutils`,
   PR'd and the worktree removed afterward — the established new-component
   workflow (see `EventLogUtils`, PR #63).
@@ -430,9 +457,8 @@ git commit -m "Scaffold JsonUtils component"
 - [ ] **Step 1: Write the failing tests**
 
 Add to `JsonUtilsTests.cs` (inside the `JsonUtilsTests` class, alongside the
-existing constructor test — add `using Newtonsoft.Json;` and
-`using System.Collections.Generic;` at the top of the file for the DTO used
-below):
+existing constructor test — add `using Newtonsoft.Json;` at the top of the
+file, needed for `Newtonsoft.Json.Linq.JObject` used below):
 
 ```csharp
 private sealed class SamplePerson
@@ -442,12 +468,13 @@ private sealed class SamplePerson
 }
 
 [Fact]
-public void TryDeserializeObject_ValidJson_ReturnsPopulatedObject()
+public void TryDeserializeObject_ValidJsonAndTypeName_ReturnsPopulatedObject()
 {
-    bool succeeded = _json.TryDeserializeObject("{\"Name\":\"Ada\",\"Age\":30}", out SamplePerson person, out string message);
+    bool succeeded = _json.TryDeserializeObject("{\"Name\":\"Ada\",\"Age\":30}", typeof(SamplePerson).AssemblyQualifiedName, out object result, out string message);
 
     Assert.True(succeeded);
     Assert.Null(message);
+    SamplePerson person = Assert.IsType<SamplePerson>(result);
     Assert.Equal("Ada", person.Name);
     Assert.Equal(30, person.Age);
 }
@@ -455,9 +482,19 @@ public void TryDeserializeObject_ValidJson_ReturnsPopulatedObject()
 [Fact]
 public void TryDeserializeObject_MalformedJson_ReturnsFalseWithMessage()
 {
-    bool succeeded = _json.TryDeserializeObject("{not json", out SamplePerson person, out string message);
+    bool succeeded = _json.TryDeserializeObject("{not json", typeof(SamplePerson).AssemblyQualifiedName, out object result, out string message);
 
     Assert.False(succeeded);
+    Assert.False(string.IsNullOrEmpty(message));
+}
+
+[Fact]
+public void TryDeserializeObject_UnresolvableTypeName_ReturnsFalseWithMessage()
+{
+    bool succeeded = _json.TryDeserializeObject("{\"Name\":\"Ada\"}", "NoSuch.Type, NoSuchAssembly", out object result, out string message);
+
+    Assert.False(succeeded);
+    Assert.Null(result);
     Assert.False(string.IsNullOrEmpty(message));
 }
 
@@ -501,6 +538,16 @@ public void TryGetValueFromJson_MalformedJson_ReturnsFalseWithMessage()
 }
 
 [Fact]
+public void TryGetValueFromJson_NullLiteralPath_ReturnsTrueWithNullValue()
+{
+    bool succeeded = _json.TryGetValueFromJson("{\"a\":null}", "a", out string value, out string message);
+
+    Assert.True(succeeded);
+    Assert.Null(value);
+    Assert.Null(message);
+}
+
+[Fact]
 public void TrySetValueInJson_ExistingPath_ReturnsUpdatedJson()
 {
     bool succeeded = _json.TrySetValueInJson("{\"order\":{\"status\":\"open\"}}", "order.status", "closed", out string updatedJson, out string message);
@@ -533,24 +580,35 @@ Expected: build error — `JsonUtils` has no `TryDeserializeObject`/
 - [ ] **Step 3: Implement the four methods**
 
 Add `using Newtonsoft.Json;` and `using Newtonsoft.Json.Linq;` to the top of
-`JsonUtils.cs`, then fill in the `#region Native parity` block:
+`JsonUtils.cs`, then fill in the `#region Native parity` block. Every public
+method in this suite carries `[Category]`/`[Description]` attributes so
+Robot Studio's designer can group and describe it — this was missed in an
+earlier draft of this plan; use group name `"Json - Core"` for this region:
 
 ```csharp
 #region Native parity
 
-/// <summary>Deserializes a JSON string into a typed object.</summary>
-/// <typeparam name="T">The target type.</typeparam>
+/// <summary>Deserializes a JSON string into an instance of the given .NET type.</summary>
 /// <param name="json">The JSON text to deserialize.</param>
-/// <param name="result">The deserialized object on success; <c>default</c> on failure.</param>
+/// <param name="typeName">An assembly-qualified or in-scope simple type name, resolved via <see cref="Type.GetType(string)"/>.</param>
+/// <param name="result">The deserialized object on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if deserialization succeeded.</returns>
-public bool TryDeserializeObject<T>(string json, out T result, out string message)
+[Category("Json - Core")]
+[Description("Deserializes a JSON string into an instance of the named .NET type. Never throws.")]
+public bool TryDeserializeObject(string json, string typeName, out object result, out string message)
 {
-    result = default;
+    result = null;
     message = null;
     try
     {
-        result = JsonConvert.DeserializeObject<T>(json);
+        Type type = Type.GetType(typeName);
+        if (type == null)
+        {
+            message = $"Type '{typeName}' could not be resolved.";
+            return false;
+        }
+        result = JsonConvert.DeserializeObject(json, type);
         return true;
     }
     catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
@@ -565,6 +623,8 @@ public bool TryDeserializeObject<T>(string json, out T result, out string messag
 /// <param name="json">The JSON text on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if serialization succeeded.</returns>
+[Category("Json - Core")]
+[Description("Serializes an object to a JSON string. Never throws.")]
 public bool TrySerializeObject(object value, out string json, out string message)
 {
     json = null;
@@ -588,6 +648,8 @@ public bool TrySerializeObject(object value, out string json, out string message
 /// <c>null</c> if the value is a JSON null literal); <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to a value.</returns>
+[Category("Json - Core")]
+[Description("Extracts a single value from a JSON string using a JSONPath expression. Never throws.")]
 public bool TryGetValueFromJson(string json, string path, out string value, out string message)
 {
     value = null;
@@ -616,10 +678,13 @@ public bool TryGetValueFromJson(string json, string path, out string value, out 
 /// create new object properties or array elements along the way.</summary>
 /// <param name="json">The JSON text to update.</param>
 /// <param name="path">A JSONPath expression identifying an existing value.</param>
-/// <param name="value">The new value, set as a JSON string scalar.</param>
+/// <param name="value">The new value. Always written as a JSON string scalar, even if the
+/// path currently holds a number or boolean.</param>
 /// <param name="updatedJson">The updated JSON text on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to an existing value that was updated.</returns>
+[Category("Json - Core")]
+[Description("Updates a value in a JSON string using a JSONPath expression. The path must already exist. Never throws.")]
 public bool TrySetValueInJson(string json, string path, string value, out string updatedJson, out string message)
 {
     updatedJson = null;
@@ -648,7 +713,7 @@ public bool TrySetValueInJson(string json, string path, string value, out string
 ```
 
 Also add `using System;` to the top of `JsonUtils.cs` if not already present
-(needed for the `Exception` catch clauses).
+(needed for the `Exception` catch clauses and `Type.GetType`).
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -656,7 +721,7 @@ Also add `using System;` to the top of `JsonUtils.cs` if not already present
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 9 tests (1 smoke + 8 new).
+Expected: PASS, 11 tests (1 smoke + 10 new).
 
 - [ ] **Step 5: Commit**
 
@@ -772,7 +837,10 @@ Expected: build error — the five new methods don't exist yet.
 
 - [ ] **Step 3: Implement `IsValidJson` and the five typed getters**
 
-Fill in the `#region Validation and typed getters` block in `JsonUtils.cs`:
+Fill in the `#region Validation and typed getters` block in `JsonUtils.cs`.
+Every public method here gets `[Category("Json - Validation")]` and a
+`[Description]` (the private `TryGetTypedValue<T>` helper is not
+Robot-Studio-visible, so it gets neither):
 
 ```csharp
 #region Validation and typed getters
@@ -781,6 +849,8 @@ Fill in the `#region Validation and typed getters` block in `JsonUtils.cs`:
 /// <param name="json">The text to check.</param>
 /// <param name="message"><c>null</c> if valid; a description of the parse failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="json"/> parses as JSON.</returns>
+[Category("Json - Validation")]
+[Description("Checks whether a string is well-formed JSON. Never throws.")]
 public bool IsValidJson(string json, out string message)
 {
     message = null;
@@ -825,6 +895,8 @@ private bool TryGetTypedValue<T>(string json, string path, string methodName, ou
 /// <param name="value">The value on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="string"/>.</returns>
+[Category("Json - Validation")]
+[Description("Extracts a value at a JSONPath as a string. Never throws.")]
 public bool TryGetStringValue(string json, string path, out string value, out string message) =>
     TryGetTypedValue(json, path, nameof(TryGetStringValue), out value, out message);
 
@@ -834,6 +906,8 @@ public bool TryGetStringValue(string json, string path, out string value, out st
 /// <param name="value">The value on success; <c>0</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="int"/>.</returns>
+[Category("Json - Validation")]
+[Description("Extracts a value at a JSONPath as an int. Never throws.")]
 public bool TryGetIntValue(string json, string path, out int value, out string message) =>
     TryGetTypedValue(json, path, nameof(TryGetIntValue), out value, out message);
 
@@ -843,6 +917,8 @@ public bool TryGetIntValue(string json, string path, out int value, out string m
 /// <param name="value">The value on success; <c>false</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="bool"/>.</returns>
+[Category("Json - Validation")]
+[Description("Extracts a value at a JSONPath as a bool. Never throws.")]
 public bool TryGetBoolValue(string json, string path, out bool value, out string message) =>
     TryGetTypedValue(json, path, nameof(TryGetBoolValue), out value, out message);
 
@@ -852,6 +928,8 @@ public bool TryGetBoolValue(string json, string path, out bool value, out string
 /// <param name="value">The value on success; <c>0</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="double"/>.</returns>
+[Category("Json - Validation")]
+[Description("Extracts a value at a JSONPath as a double. Never throws.")]
 public bool TryGetDoubleValue(string json, string path, out double value, out string message) =>
     TryGetTypedValue(json, path, nameof(TryGetDoubleValue), out value, out message);
 
@@ -861,6 +939,8 @@ public bool TryGetDoubleValue(string json, string path, out double value, out st
 /// <param name="value">The value on success; <see cref="DateTime.MinValue"/> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="DateTime"/>.</returns>
+[Category("Json - Validation")]
+[Description("Extracts a value at a JSONPath as a DateTime. Never throws.")]
 public bool TryGetDateTimeValue(string json, string path, out DateTime value, out string message) =>
     TryGetTypedValue(json, path, nameof(TryGetDateTimeValue), out value, out message);
 
@@ -873,7 +953,7 @@ public bool TryGetDateTimeValue(string json, string path, out DateTime value, ou
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 20 tests (9 prior + 11 new — `IsValidJson_ValidJson_ReturnsTrue`'s `[Theory]` contributes 3 cases).
+Expected: PASS, 22 tests (11 prior + 11 new — `IsValidJson_ValidJson_ReturnsTrue`'s `[Theory]` contributes 3 cases).
 
 - [ ] **Step 5: Commit**
 
@@ -947,7 +1027,8 @@ Expected: build error — `TryGetValuesFromJson`/`TryGetValueType` don't exist y
 - [ ] **Step 3: Implement both methods**
 
 Add `using System.Collections.Generic;` to `JsonUtils.cs`'s usings, then fill
-in the `#region Multi-match and inspection` block:
+in the `#region Multi-match and inspection` block. Both new public methods
+get `[Category("Json - Query")]` and a `[Description]`:
 
 ```csharp
 #region Multi-match and inspection
@@ -960,6 +1041,8 @@ in the `#region Multi-match and inspection` block:
 /// <param name="delimitedValues">The joined values on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> matched at least one value.</returns>
+[Category("Json - Query")]
+[Description("Extracts every value matching a JSONPath and joins them into one delimited string. Never throws.")]
 public bool TryGetValuesFromJson(string json, string path, string delimiter, out string delimitedValues, out string message)
 {
     delimitedValues = null;
@@ -993,6 +1076,8 @@ public bool TryGetValuesFromJson(string json, string path, string delimiter, out
 /// <param name="kind">The value's kind on success; <see cref="JsonValueKind.NotFound"/> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to a value.</returns>
+[Category("Json - Query")]
+[Description("Reports the kind of value found at a JSONPath. Never throws.")]
 public bool TryGetValueType(string json, string path, out JsonValueKind kind, out string message)
 {
     kind = JsonValueKind.NotFound;
@@ -1035,7 +1120,7 @@ public bool TryGetValueType(string json, string path, out JsonValueKind kind, ou
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 29 tests (20 prior + 9 new — `TryGetValueType_VariousTypes_ReturnsExpectedKind`'s `[Theory]` contributes 6 cases).
+Expected: PASS, 31 tests (22 prior + 9 new — `TryGetValueType_VariousTypes_ReturnsExpectedKind`'s `[Theory]` contributes 6 cases).
 
 - [ ] **Step 5: Commit**
 
@@ -1132,7 +1217,8 @@ Expected: build error — the three new methods don't exist yet.
 
 - [ ] **Step 3: Implement the three methods**
 
-Fill in the `#region Array and removal` block in `JsonUtils.cs`:
+Fill in the `#region Array and removal` block in `JsonUtils.cs`. All three
+new public methods get `[Category("Json - Array")]` and a `[Description]`:
 
 ```csharp
 #region Array and removal
@@ -1143,6 +1229,8 @@ Fill in the `#region Array and removal` block in `JsonUtils.cs`:
 /// <param name="updatedJson">The updated JSON text on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to an existing value that was removed.</returns>
+[Category("Json - Array")]
+[Description("Removes a value at a JSONPath. Never throws.")]
 public bool TryRemoveValueFromJson(string json, string path, out string updatedJson, out string message)
 {
     updatedJson = null;
@@ -1173,6 +1261,8 @@ public bool TryRemoveValueFromJson(string json, string path, out string updatedJ
 /// <param name="length">The element count on success; <c>0</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to an array.</returns>
+[Category("Json - Array")]
+[Description("Reports the element count of an array at a JSONPath. Never throws.")]
 public bool TryGetArrayLength(string json, string path, out int length, out string message)
 {
     length = 0;
@@ -1208,6 +1298,8 @@ public bool TryGetArrayLength(string json, string path, out int length, out stri
 /// <param name="updatedJson">The updated JSON text on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="path"/> resolved to an array that the element was appended to.</returns>
+[Category("Json - Array")]
+[Description("Appends a JSON-fragment element to an array at a JSONPath. Never throws.")]
 public bool TryAppendToJsonArray(string json, string path, string valueJson, out string updatedJson, out string message)
 {
     updatedJson = null;
@@ -1247,7 +1339,7 @@ public bool TryAppendToJsonArray(string json, string path, string valueJson, out
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 36 tests (29 prior + 7 new).
+Expected: PASS, 38 tests (31 prior + 7 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1312,7 +1404,8 @@ Expected: build error — `TryPrettyPrintJson`/`TryMinifyJson` don't exist yet.
 
 - [ ] **Step 3: Implement both methods**
 
-Fill in the `#region Formatting` block in `JsonUtils.cs`:
+Fill in the `#region Formatting` block in `JsonUtils.cs`. Both new public
+methods get `[Category("Json - Format")]` and a `[Description]`:
 
 ```csharp
 #region Formatting
@@ -1322,6 +1415,8 @@ Fill in the `#region Formatting` block in `JsonUtils.cs`:
 /// <param name="formattedJson">The indented JSON text on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="json"/> parsed and was reformatted.</returns>
+[Category("Json - Format")]
+[Description("Reformats JSON text with indentation. Never throws.")]
 public bool TryPrettyPrintJson(string json, out string formattedJson, out string message)
 {
     formattedJson = null;
@@ -1344,6 +1439,8 @@ public bool TryPrettyPrintJson(string json, out string formattedJson, out string
 /// <param name="minifiedJson">The compact JSON text on success; <c>null</c> on failure.</param>
 /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
 /// <returns><c>True</c> if <paramref name="json"/> parsed and was reformatted.</returns>
+[Category("Json - Format")]
+[Description("Reformats JSON text with all insignificant whitespace removed. Never throws.")]
 public bool TryMinifyJson(string json, out string minifiedJson, out string message)
 {
     minifiedJson = null;
@@ -1370,7 +1467,7 @@ public bool TryMinifyJson(string json, out string minifiedJson, out string messa
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 40 tests (36 prior + 4 new).
+Expected: PASS, 42 tests (38 prior + 4 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1405,7 +1502,7 @@ with a descriptive message instead of throwing.
 
 | Method | Signature | Description |
 |---|---|---|
-| `TryDeserializeObject<T>` | `(string json, out T result, out string message) : bool` | Deserializes JSON to a typed object. |
+| `TryDeserializeObject` | `(string json, string typeName, out object result, out string message) : bool` | Deserializes JSON into an instance of the named .NET type. |
 | `TrySerializeObject` | `(object value, out string json, out string message) : bool` | Serializes an object to JSON. |
 | `TryGetValueFromJson` | `(string json, string path, out string value, out string message) : bool` | Extracts a single value at a JSONPath. |
 | `TrySetValueInJson` | `(string json, string path, string value, out string updatedJson, out string message) : bool` | Updates a value at an existing JSONPath. |
@@ -1450,6 +1547,16 @@ Path expressions use Newtonsoft.Json's JSONPath dialect:
 - **`TrySetValueInJson`'s new value is always set as a JSON string scalar** -
   it does not accept a JSON fragment for nested objects/arrays. This matches
   the native `Json` component's string-typed `value` parameter.
+- **`TryDeserializeObject` takes the target type as a string, not a generic
+  parameter.** This matches the native `Json` component's own
+  `DeserializeObject(string jsonString, string typeString, out object deserializedObject)`
+  shape (see the `pega-robotic-automation` skill, ch11) and avoids being the
+  only generic public method in this 17-component suite — Robot Studio's
+  designer binds parameters/outputs via reflection over closed, concrete
+  types. `typeName` is resolved via `Type.GetType(typeName)`: a simple name
+  only resolves types in `mscorlib`/already-loaded assemblies, so a type
+  defined elsewhere in the same Robot Studio project may need its
+  assembly-qualified name (`Type.AssemblyQualifiedName`).
 - **On the native `Json` component's `SerializeObject` `⚠@default=SingleOutput`
   annotation:** `TrySerializeObject` keeps the standard bool+out signature
   for consistency with every other method in this suite. Robot Studio's
@@ -1534,7 +1641,7 @@ Expected: clean build, all projects including the new `JsonUtils`/
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 40/40.
+Expected: PASS, 42/42.
 
 - [ ] **Step 3: Package-Release dry run**
 
@@ -1563,7 +1670,7 @@ gh pr create --title "Add JsonUtils component" --body "$(cat <<'EOF'
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (40/40)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (42/42)
 EOF
 )"
 ```
@@ -1580,7 +1687,7 @@ git worktree remove .worktrees/jsonutils
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to the
       other 18 shipped components.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      40/40 passing, fully on this Linux host (no Windows-only skips, unlike
+      42/42 passing, fully on this Linux host (no Windows-only skips, unlike
       `UIAutomation.Tests`/`OcrUtils.Tests`/`ScreenCaptureUtils.Tests`).
 - [ ] `scripts/Package-Release.ps1`'s `$releaseAssemblies` includes
       `JsonAutomation.dll`.
