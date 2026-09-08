@@ -697,5 +697,15 @@ namespace JsonAutomation.Tests
             Assert.False(succeeded);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        [Fact]
+        public void TryConvertXmlToJson_NamespacedXmlWithProcessingInstruction_ReturnsJson()
+        {
+            bool succeeded = _json.TryConvertXmlToJson(
+                "<?xml-stylesheet type=\"text/xsl\" href=\"s.xsl\"?><root xmlns:ns=\"urn:example\"><ns:a>1</ns:a></root>",
+                out string json, out string message);
+
+            Assert.True(succeeded);
+        }
     }
 }
