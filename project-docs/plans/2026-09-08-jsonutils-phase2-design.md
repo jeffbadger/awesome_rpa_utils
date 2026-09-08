@@ -695,7 +695,25 @@ public void TryConvertXmlToJson_XmlWithDtd_ReturnsFalseWithMessage()
     Assert.False(succeeded);
     Assert.False(string.IsNullOrEmpty(message));
 }
+
+[Fact]
+public void TryConvertXmlToJson_NamespacedXmlWithProcessingInstruction_ReturnsJson()
+{
+    bool succeeded = _json.TryConvertXmlToJson(
+        "<?xml-stylesheet type=\"text/xsl\" href=\"s.xsl\"?><root xmlns:ns=\"urn:example\"><ns:a>1</ns:a></root>",
+        out string json, out string message);
+
+    Assert.True(succeeded);
+}
 ```
+
+**Note (added after code-quality review):** the test above was missing
+from this plan's original test list. The `XmlReader.Create`-based fix
+above rejects DTDs specifically (via `DtdProcessing.Prohibit`), but nothing
+proved that legitimate DTD-free XML - namespaces, processing instructions -
+still converts successfully. Added as insurance against a future,
+unrelated tightening of the reader settings silently narrowing what counts
+as valid XML beyond just DTDs.
 
 **Security note (added after automated security review):** the original
 `TryConvertXmlToJson` used `XmlDocument.LoadXml(xml)` directly on
@@ -806,7 +824,7 @@ public bool TryConvertXmlToJson(string xml, out string json, out string message)
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 76 tests (70 prior + 6 new — includes the DTD-rejection security regression test).
+Expected: PASS, 77 tests (70 prior + 7 new — includes the DTD-rejection security regression test and the namespaced/PI regression test).
 
 - [ ] **Step 5: Commit**
 
@@ -1124,7 +1142,7 @@ public bool TrySortJsonArrayByField(string json, string path, string fieldName, 
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 87 tests (76 prior + 11 new).
+Expected: PASS, 88 tests (77 prior + 11 new).
 
 - [ ] **Step 6: Commit**
 
@@ -1222,7 +1240,7 @@ Expected: clean build, 0 errors.
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 87/87.
+Expected: PASS, 88/88.
 
 - [ ] **Step 3: Push and open the PR**
 
@@ -1241,7 +1259,7 @@ gh pr create --title "Add JsonUtils Phase 2 (merge/diff/XML/filter-sort)" --body
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (87/87)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (88/88)
 EOF
 )"
 ```
@@ -1258,7 +1276,7 @@ git worktree remove .worktrees/jsonutils-phase2
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to any
       shipped component including Phase 1's `JsonUtils`.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      87/87 passing, fully on this Linux host.
+      88/88 passing, fully on this Linux host.
 - [ ] `src/jsonutils/README.md` updated with all 6 new methods, a worked
       example, and Notes & Caveats entries; the "Phase 2 (not yet
       implemented)" bullet removed.
