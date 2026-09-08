@@ -1435,7 +1435,12 @@ Expected: build error — the three new methods don't exist yet.
 - [ ] **Step 3: Implement the three methods**
 
 Fill in the `#region Array and removal` block in `JsonUtils.cs`. All three
-new public methods get `[Category("Json - Array")]` and a `[Description]`:
+new public methods get `[Category("Json - Array")]` and a `[Description]`.
+**Use the shared `ParseJson(json)` helper (added in the Task 4 addendum),
+not `JToken.Parse(json)` directly** - every parse of caller-supplied JSON
+text in this class goes through `ParseJson` so date-like strings are never
+silently reformatted. This includes parsing `valueJson` in
+`TryAppendToJsonArray`, since it's caller-supplied text too:
 
 ```csharp
 #region Array and removal
@@ -1454,7 +1459,7 @@ public bool TryRemoveValueFromJson(string json, string path, out string updatedJ
     message = null;
     try
     {
-        JToken root = JToken.Parse(json);
+        JToken root = ParseJson(json);
         JToken target = root.SelectToken(path);
         if (target == null)
         {
@@ -1486,7 +1491,7 @@ public bool TryGetArrayLength(string json, string path, out int length, out stri
     message = null;
     try
     {
-        JToken root = JToken.Parse(json);
+        JToken root = ParseJson(json);
         JToken token = root.SelectToken(path);
         if (token == null)
         {
@@ -1523,7 +1528,7 @@ public bool TryAppendToJsonArray(string json, string path, string valueJson, out
     message = null;
     try
     {
-        JToken root = JToken.Parse(json);
+        JToken root = ParseJson(json);
         JToken token = root.SelectToken(path);
         if (token == null)
         {
@@ -1535,7 +1540,7 @@ public bool TryAppendToJsonArray(string json, string path, string valueJson, out
             message = $"Path '{path}' resolved to a {token.Type}, not an array.";
             return false;
         }
-        JToken element = JToken.Parse(valueJson);
+        JToken element = ParseJson(valueJson);
         array.Add(element);
         updatedJson = root.ToString(Formatting.None);
         return true;
@@ -1622,7 +1627,11 @@ Expected: build error — `TryPrettyPrintJson`/`TryMinifyJson` don't exist yet.
 - [ ] **Step 3: Implement both methods**
 
 Fill in the `#region Formatting` block in `JsonUtils.cs`. Both new public
-methods get `[Category("Json - Format")]` and a `[Description]`:
+methods get `[Category("Json - Format")]` and a `[Description]`. **Use the
+shared `ParseJson(json)` helper, not `JToken.Parse(json)` directly** - this
+is exactly the code shape (parse, then `root.ToString(...)`) that caused
+the Task 4 addendum's date-string corruption bug, so it matters here more
+than almost anywhere else in the file:
 
 ```csharp
 #region Formatting
@@ -1640,7 +1649,7 @@ public bool TryPrettyPrintJson(string json, out string formattedJson, out string
     message = null;
     try
     {
-        JToken root = JToken.Parse(json);
+        JToken root = ParseJson(json);
         formattedJson = root.ToString(Formatting.Indented);
         return true;
     }
@@ -1664,7 +1673,7 @@ public bool TryMinifyJson(string json, out string minifiedJson, out string messa
     message = null;
     try
     {
-        JToken root = JToken.Parse(json);
+        JToken root = ParseJson(json);
         minifiedJson = root.ToString(Formatting.None);
         return true;
     }
