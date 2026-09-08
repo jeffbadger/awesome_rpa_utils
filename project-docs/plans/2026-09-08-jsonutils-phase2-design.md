@@ -465,7 +465,25 @@ public void TryDiffJson_MalformedJson_ReturnsFalseWithMessage()
     Assert.False(succeeded);
     Assert.False(string.IsNullOrEmpty(message));
 }
+
+[Fact]
+public void TryDiffJson_NestedNullVsValue_ReturnsPathNotConflatedWithAbsentKey()
+{
+    bool succeeded = _json.TryDiffJson("{\"a\":{\"b\":null}}", "{\"a\":{\"b\":1}}", ",", out bool areEqual, out string differingPaths, out string message);
+
+    Assert.True(succeeded);
+    Assert.False(areEqual);
+    Assert.Equal("a.b", differingPaths);
+}
 ```
+
+**Note (added after code-quality review):** the test above was missing
+from this plan's original list. The code already correctly distinguishes a
+key holding a JSON `null` (a `JValue` of type `Null`, which recurses and
+diffs normally) from a key that's genuinely absent (`leftObject[key] ==
+null` in C#, which short-circuits to reporting the whole key as differing)
+- but nothing proved it. Added to lock in a distinction a future refactor
+using `?.` shorthand could easily and silently break.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -588,7 +606,7 @@ public bool TryDiffJson(string json1, string json2, string delimiter, out bool a
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 69 tests (60 prior + 9 new).
+Expected: PASS, 70 tests (60 prior + 10 new — includes the nested-null-vs-value test added after code-quality review).
 
 - [ ] **Step 5: Commit**
 
@@ -744,7 +762,7 @@ public bool TryConvertXmlToJson(string xml, out string json, out string message)
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 74 tests (69 prior + 5 new).
+Expected: PASS, 75 tests (70 prior + 5 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1062,7 +1080,7 @@ public bool TrySortJsonArrayByField(string json, string path, string fieldName, 
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 85 tests (74 prior + 11 new).
+Expected: PASS, 86 tests (75 prior + 11 new).
 
 - [ ] **Step 6: Commit**
 
@@ -1160,7 +1178,7 @@ Expected: clean build, 0 errors.
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 85/85.
+Expected: PASS, 86/86.
 
 - [ ] **Step 3: Push and open the PR**
 
@@ -1179,7 +1197,7 @@ gh pr create --title "Add JsonUtils Phase 2 (merge/diff/XML/filter-sort)" --body
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (85/85)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (86/86)
 EOF
 )"
 ```
@@ -1196,7 +1214,7 @@ git worktree remove .worktrees/jsonutils-phase2
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to any
       shipped component including Phase 1's `JsonUtils`.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      85/85 passing, fully on this Linux host.
+      86/86 passing, fully on this Linux host.
 - [ ] `src/jsonutils/README.md` updated with all 6 new methods, a worked
       example, and Notes & Caveats entries; the "Phase 2 (not yet
       implemented)" bullet removed.
