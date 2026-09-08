@@ -1580,6 +1580,14 @@ public bool TryAppendToJsonArray(string json, string path, string valueJson, out
 #endregion
 ```
 
+**Backlog (non-blocking, per code-quality review):** no test covers
+`TryRemoveValueFromJson` against the document root (`"$"`) or a nested path
+(e.g. `order.items[0].sku`). Verified empirically that the never-throws
+contract holds for the root case (Newtonsoft's `InvalidOperationException:
+The parent is missing` is caught, returns `False` + message) - this is a
+coverage gap, not a bug. Worth closing in a future pass; not required for
+this task.
+
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
