@@ -487,6 +487,142 @@ namespace JsonAutomation
             }
         }
 
+        private static int CompareValues(JToken left, JToken right)
+        {
+            double leftNumber = 0;
+            double rightNumber = 0;
+            bool bothNumeric = double.TryParse(left?.ToString(), out leftNumber) && double.TryParse(right?.ToString(), out rightNumber);
+            if (bothNumeric)
+            {
+                return leftNumber.CompareTo(rightNumber);
+            }
+            return string.CompareOrdinal(left?.ToString(), right?.ToString());
+        }
+
+        private static bool CompareField(JToken fieldToken, JsonComparisonOperator comparisonOperator, string value)
+        {
+            if (comparisonOperator == JsonComparisonOperator.Contains)
+            {
+                return fieldToken.ToString().Contains(value);
+            }
+            int comparison = CompareValues(fieldToken, new JValue(value));
+            switch (comparisonOperator)
+            {
+                case JsonComparisonOperator.Equals:
+                    return comparison == 0;
+                case JsonComparisonOperator.NotEquals:
+                    return comparison != 0;
+                case JsonComparisonOperator.GreaterThan:
+                    return comparison > 0;
+                case JsonComparisonOperator.GreaterThanOrEqual:
+                    return comparison >= 0;
+                case JsonComparisonOperator.LessThan:
+                    return comparison < 0;
+                case JsonComparisonOperator.LessThanOrEqual:
+                    return comparison <= 0;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>Filters an array at a JSONPath to elements whose field matches a comparison.
+        /// Numeric-looking field and comparison values are compared numerically; otherwise
+        /// comparison falls back to ordinal string comparison.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression identifying an array of objects.</param>
+        /// <param name="fieldName">The property name to compare on each array element.</param>
+        /// <param name="comparisonOperator">The comparison to apply.</param>
+        /// <param name="value">The value to compare each element's field against, as plain text.</param>
+        /// <param name="filteredJson">The filtered JSON array text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to an array of objects and was filtered.</returns>
+        [Category("Json - Array")]
+        [Description("Filters an array at a JSONPath to elements whose field matches a comparison. Never throws.")]
+        public bool TryFilterJsonArrayByField(string json, string path, string fieldName, JsonComparisonOperator comparisonOperator, string value, out string filteredJson, out string message)
+        {
+            filteredJson = null;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                JToken token = root.SelectToken(path);
+                if (token == null)
+                {
+                    message = $"Path '{path}' did not resolve to a value.";
+                    return false;
+                }
+                if (token is not JArray array)
+                {
+                    message = $"Path '{path}' resolved to a {token.Type}, not an array.";
+                    return false;
+                }
+                JArray filtered = new JArray();
+                foreach (JToken element in array)
+                {
+                    JToken fieldToken = element[fieldName];
+                    if (fieldToken != null && CompareField(fieldToken, comparisonOperator, value))
+                    {
+                        filtered.Add(element);
+                    }
+                }
+                filteredJson = filtered.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryFilterJsonArrayByField), exception);
+                return false;
+            }
+        }
+
+        /// <summary>Sorts an array at a JSONPath by a field's value. Numeric-looking values sort
+        /// numerically; otherwise sorting falls back to ordinal string comparison.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression identifying an array of objects.</param>
+        /// <param name="fieldName">The property name to sort each array element by.</param>
+        /// <param name="ascending"><c>True</c> to sort ascending; <c>false</c> for descending.</param>
+        /// <param name="sortedJson">The sorted JSON array text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to an array of objects and was sorted.</returns>
+        [Category("Json - Array")]
+        [Description("Sorts an array at a JSONPath by a field's value. Never throws.")]
+        public bool TrySortJsonArrayByField(string json, string path, string fieldName, bool ascending, out string sortedJson, out string message)
+        {
+            sortedJson = null;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                JToken token = root.SelectToken(path);
+                if (token == null)
+                {
+                    message = $"Path '{path}' did not resolve to a value.";
+                    return false;
+                }
+                if (token is not JArray array)
+                {
+                    message = $"Path '{path}' resolved to a {token.Type}, not an array.";
+                    return false;
+                }
+                List<JToken> elements = new List<JToken>(array);
+                elements.Sort((left, right) =>
+                {
+                    JToken leftField = left[fieldName];
+                    JToken rightField = right[fieldName];
+                    int comparison = CompareValues(leftField, rightField);
+                    return ascending ? comparison : -comparison;
+                });
+                JArray sorted = new JArray(elements);
+                sortedJson = sorted.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TrySortJsonArrayByField), exception);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Formatting

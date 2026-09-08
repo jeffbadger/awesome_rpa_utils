@@ -707,5 +707,115 @@ namespace JsonAutomation.Tests
 
             Assert.True(succeeded);
         }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_Equals_ReturnsMatchingElements()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"sku\":\"A\",\"qty\":1},{\"sku\":\"B\",\"qty\":2}]}", "items", "sku", JsonComparisonOperator.Equals, "A", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+            Assert.Equal("A", (string)filtered[0]["sku"]);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_NotEquals_ExcludesMatchingElements()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"sku\":\"A\"},{\"sku\":\"B\"}]}", "items", "sku", JsonComparisonOperator.NotEquals, "A", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+            Assert.Equal("B", (string)filtered[0]["sku"]);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_GreaterThan_ComparesNumerically()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"qty\":1},{\"qty\":5},{\"qty\":10}]}", "items", "qty", JsonComparisonOperator.GreaterThan, "4", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Equal(2, filtered.Count);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_GreaterThanOrEqual_IncludesEqualElements()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"qty\":4},{\"qty\":5},{\"qty\":6}]}", "items", "qty", JsonComparisonOperator.GreaterThanOrEqual, "5", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Equal(2, filtered.Count);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_LessThan_ComparesNumerically()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"qty\":1},{\"qty\":5},{\"qty\":10}]}", "items", "qty", JsonComparisonOperator.LessThan, "5", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_LessThanOrEqual_IncludesEqualElements()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"qty\":4},{\"qty\":5},{\"qty\":6}]}", "items", "qty", JsonComparisonOperator.LessThanOrEqual, "5", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Equal(2, filtered.Count);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_Contains_MatchesSubstring()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":[{\"name\":\"Widget A\"},{\"name\":\"Gadget B\"}]}", "items", "name", JsonComparisonOperator.Contains, "Widget", out string filteredJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray filtered = Newtonsoft.Json.Linq.JArray.Parse(filteredJson);
+            Assert.Single(filtered);
+        }
+
+        [Fact]
+        public void TryFilterJsonArrayByField_NonArrayPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryFilterJsonArrayByField("{\"items\":1}", "items", "sku", JsonComparisonOperator.Equals, "A", out string filteredJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TrySortJsonArrayByField_Ascending_SortsNumerically()
+        {
+            bool succeeded = _json.TrySortJsonArrayByField("{\"items\":[{\"qty\":3},{\"qty\":1},{\"qty\":2}]}", "items", "qty", true, out string sortedJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray sorted = Newtonsoft.Json.Linq.JArray.Parse(sortedJson);
+            Assert.Equal(new[] { 1, 2, 3 }, sorted.Select(element => (int)element["qty"]).ToArray());
+        }
+
+        [Fact]
+        public void TrySortJsonArrayByField_Descending_ReversesOrder()
+        {
+            bool succeeded = _json.TrySortJsonArrayByField("{\"items\":[{\"qty\":1},{\"qty\":3},{\"qty\":2}]}", "items", "qty", false, out string sortedJson, out string message);
+
+            Assert.True(succeeded);
+            Newtonsoft.Json.Linq.JArray sorted = Newtonsoft.Json.Linq.JArray.Parse(sortedJson);
+            Assert.Equal(new[] { 3, 2, 1 }, sorted.Select(element => (int)element["qty"]).ToArray());
+        }
+
+        [Fact]
+        public void TrySortJsonArrayByField_NonArrayPath_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TrySortJsonArrayByField("{\"items\":1}", "items", "qty", true, out string sortedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
     }
 }
