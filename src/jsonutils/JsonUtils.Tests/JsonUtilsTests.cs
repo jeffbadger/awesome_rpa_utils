@@ -374,5 +374,59 @@ namespace JsonAutomation.Tests
             Assert.False(succeeded);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        [Fact]
+        public void TryPrettyPrintJson_ValidJson_ReturnsIndentedText()
+        {
+            bool succeeded = _json.TryPrettyPrintJson("{\"a\":1}", out string formattedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Contains("\n", formattedJson);
+        }
+
+        [Fact]
+        public void TryPrettyPrintJson_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryPrettyPrintJson("{not json", out string formattedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryMinifyJson_IndentedJson_ReturnsCompactText()
+        {
+            bool succeeded = _json.TryMinifyJson("{\n  \"a\": 1\n}", out string minifiedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("{\"a\":1}", minifiedJson);
+        }
+
+        [Fact]
+        public void TryMinifyJson_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryMinifyJson("{not json", out string minifiedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryPrettyPrintJson_DateLikeStringValue_PreservesExactText()
+        {
+            bool succeeded = _json.TryPrettyPrintJson("{\"created\":\"2026-02-20T08:30:00Z\"}", out string formattedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Contains("\"2026-02-20T08:30:00Z\"", formattedJson);
+        }
+
+        [Fact]
+        public void TryMinifyJson_DateLikeStringValue_PreservesExactText()
+        {
+            bool succeeded = _json.TryMinifyJson("{\"created\":\"2026-02-20T08:30:00Z\"}", out string minifiedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("{\"created\":\"2026-02-20T08:30:00Z\"}", minifiedJson);
+        }
     }
 }

@@ -491,6 +491,54 @@ namespace JsonAutomation
 
         #region Formatting
 
+        /// <summary>Reformats JSON text with indentation.</summary>
+        /// <param name="json">The JSON text to reformat.</param>
+        /// <param name="formattedJson">The indented JSON text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="json"/> parsed and was reformatted.</returns>
+        [Category("Json - Format")]
+        [Description("Reformats JSON text with indentation. Never throws.")]
+        public bool TryPrettyPrintJson(string json, out string formattedJson, out string message)
+        {
+            formattedJson = null;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                formattedJson = root.ToString(Formatting.Indented);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryPrettyPrintJson), exception);
+                return false;
+            }
+        }
+
+        /// <summary>Reformats JSON text with all insignificant whitespace removed.</summary>
+        /// <param name="json">The JSON text to reformat.</param>
+        /// <param name="minifiedJson">The compact JSON text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="json"/> parsed and was reformatted.</returns>
+        [Category("Json - Format")]
+        [Description("Reformats JSON text with all insignificant whitespace removed. Never throws.")]
+        public bool TryMinifyJson(string json, out string minifiedJson, out string message)
+        {
+            minifiedJson = null;
+            message = null;
+            try
+            {
+                JToken root = ParseJson(json);
+                minifiedJson = root.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryMinifyJson), exception);
+                return false;
+            }
+        }
+
         #endregion
     }
 }
