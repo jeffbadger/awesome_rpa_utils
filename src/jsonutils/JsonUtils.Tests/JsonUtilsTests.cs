@@ -237,5 +237,49 @@ namespace JsonAutomation.Tests
             Assert.False(succeeded);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        [Fact]
+        public void TryGetValuesFromJson_WildcardPath_ReturnsDelimitedValues()
+        {
+            bool succeeded = _json.TryGetValuesFromJson("{\"items\":[{\"sku\":\"A\"},{\"sku\":\"B\"}]}", "items[*].sku", ",", out string delimitedValues, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("A,B", delimitedValues);
+        }
+
+        [Fact]
+        public void TryGetValuesFromJson_NoMatches_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryGetValuesFromJson("{\"items\":[]}", "items[*].sku", ",", out string delimitedValues, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(delimitedValues);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData("{\"a\":\"x\"}", "a", JsonValueKind.String)]
+        [InlineData("{\"a\":1}", "a", JsonValueKind.Number)]
+        [InlineData("{\"a\":true}", "a", JsonValueKind.Boolean)]
+        [InlineData("{\"a\":null}", "a", JsonValueKind.Null)]
+        [InlineData("{\"a\":[1,2]}", "a", JsonValueKind.Array)]
+        [InlineData("{\"a\":{\"b\":1}}", "a", JsonValueKind.Object)]
+        public void TryGetValueType_VariousTypes_ReturnsExpectedKind(string json, string path, JsonValueKind expectedKind)
+        {
+            bool succeeded = _json.TryGetValueType(json, path, out JsonValueKind kind, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(expectedKind, kind);
+        }
+
+        [Fact]
+        public void TryGetValueType_PathNotFound_ReturnsFalseWithNotFoundKind()
+        {
+            bool succeeded = _json.TryGetValueType("{}", "missing", out JsonValueKind kind, out string message);
+
+            Assert.False(succeeded);
+            Assert.Equal(JsonValueKind.NotFound, kind);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
     }
 }

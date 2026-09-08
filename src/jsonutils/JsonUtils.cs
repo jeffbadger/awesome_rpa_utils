@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -265,6 +266,84 @@ namespace JsonAutomation
         #endregion
 
         #region Multi-match and inspection
+
+        /// <summary>Extracts every value matching a JSONPath (e.g. a wildcard or filter
+        /// expression) and joins them into one delimited string.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression that may match zero or more values.</param>
+        /// <param name="delimiter">The delimiter to join matched values with.</param>
+        /// <param name="delimitedValues">The joined values on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> matched at least one value.</returns>
+        [Category("Json - Query")]
+        [Description("Extracts every value matching a JSONPath and joins them into one delimited string. Never throws.")]
+        public bool TryGetValuesFromJson(string json, string path, string delimiter, out string delimitedValues, out string message)
+        {
+            delimitedValues = null;
+            message = null;
+            try
+            {
+                JToken root = JToken.Parse(json);
+                List<string> values = new List<string>();
+                foreach (JToken token in root.SelectTokens(path))
+                {
+                    values.Add(token.Type == JTokenType.Null ? string.Empty : token.ToString());
+                }
+                if (values.Count == 0)
+                {
+                    message = $"Path '{path}' did not match any values.";
+                    return false;
+                }
+                delimitedValues = string.Join(delimiter, values);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryGetValuesFromJson), exception);
+                return false;
+            }
+        }
+
+        /// <summary>Reports the kind of value found at a JSONPath.</summary>
+        /// <param name="json">The JSON text to read.</param>
+        /// <param name="path">A JSONPath expression.</param>
+        /// <param name="kind">The value's kind on success; <see cref="JsonValueKind.NotFound"/> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if <paramref name="path"/> resolved to a value.</returns>
+        [Category("Json - Query")]
+        [Description("Reports the kind of value found at a JSONPath. Never throws.")]
+        public bool TryGetValueType(string json, string path, out JsonValueKind kind, out string message)
+        {
+            kind = JsonValueKind.NotFound;
+            message = null;
+            try
+            {
+                JToken root = JToken.Parse(json);
+                JToken token = root.SelectToken(path);
+                if (token == null)
+                {
+                    message = $"Path '{path}' did not resolve to a value.";
+                    return false;
+                }
+                kind = token.Type switch
+                {
+                    JTokenType.Null => JsonValueKind.Null,
+                    JTokenType.String => JsonValueKind.String,
+                    JTokenType.Integer => JsonValueKind.Number,
+                    JTokenType.Float => JsonValueKind.Number,
+                    JTokenType.Boolean => JsonValueKind.Boolean,
+                    JTokenType.Array => JsonValueKind.Array,
+                    JTokenType.Object => JsonValueKind.Object,
+                    _ => JsonValueKind.String
+                };
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryGetValueType), exception);
+                return false;
+            }
+        }
 
         #endregion
 
