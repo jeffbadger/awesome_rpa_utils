@@ -241,7 +241,47 @@ public void TryMergeJson_MalformedJson_ReturnsFalseWithMessage()
     Assert.False(succeeded);
     Assert.False(string.IsNullOrEmpty(message));
 }
+
+[Fact]
+public void TryMergeJson_KeyOnlyInOverride_IsAdded()
+{
+    bool succeeded = _json.TryMergeJson("{\"a\":1}", "{\"c\":2}", out string mergedJson, out string message);
+
+    Assert.True(succeeded);
+    Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
+    Assert.Equal(2, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["c"]);
+}
+
+[Fact]
+public void TryMergeJson_NestedObjects_RecursesRatherThanReplacing()
+{
+    bool succeeded = _json.TryMergeJson("{\"nested\":{\"x\":1,\"y\":2}}", "{\"nested\":{\"y\":9,\"z\":3}}", out string mergedJson, out string message);
+
+    Assert.True(succeeded);
+    Newtonsoft.Json.Linq.JObject nested = (Newtonsoft.Json.Linq.JObject)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["nested"];
+    Assert.Equal(1, (int)nested["x"]);
+    Assert.Equal(9, (int)nested["y"]);
+    Assert.Equal(3, (int)nested["z"]);
+}
+
+[Fact]
+public void TryMergeJson_ExplicitNullInOverride_DoesNotClearBaseValue()
+{
+    bool succeeded = _json.TryMergeJson("{\"a\":1}", "{\"a\":null}", out string mergedJson, out string message);
+
+    Assert.True(succeeded);
+    Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
+}
 ```
+
+**Note (added after code-quality review):** the three tests above (key-only-
+in-override, nested-object recursion, explicit-null-in-override) were
+missing from this plan's original test list. `JObject.Merge`'s default
+`MergeNullValueHandling.Ignore` means an explicit JSON `null` in
+`overrideJson` does NOT clear the base's existing value for that key - a
+real, easy-to-get-wrong assumption for a method framed as "apply overrides
+on a base," now locked in by a test and documented in the method's XML
+comment (added below).
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -261,7 +301,10 @@ after the file's current last region):
 #region Merge
 
 /// <summary>Merges two JSON objects. Values in <paramref name="overrideJson"/> win on
-/// scalar conflicts; array values present in both documents are concatenated.</summary>
+/// scalar conflicts; array values present in both documents are concatenated; nested
+/// objects present in both documents are merged recursively, not replaced wholesale.
+/// An explicit JSON <c>null</c> in <paramref name="overrideJson"/> does NOT clear the
+/// base's existing value for that key (Newtonsoft's default null-merge behavior).</summary>
 /// <param name="baseJson">The base JSON object.</param>
 /// <param name="overrideJson">The JSON object whose values take precedence on conflict.</param>
 /// <param name="mergedJson">The merged JSON text on success; <c>null</c> on failure.</param>
@@ -310,7 +353,7 @@ public bool TryMergeJson(string baseJson, string overrideJson, out string merged
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 57 tests (52 prior + 5 new).
+Expected: PASS, 60 tests (52 prior + 8 new — the null-merge, key-addition, and nested-object tests added after code-quality review).
 
 - [ ] **Step 5: Commit**
 
@@ -545,7 +588,7 @@ public bool TryDiffJson(string json1, string json2, string delimiter, out bool a
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 66 tests (57 prior + 9 new).
+Expected: PASS, 69 tests (60 prior + 9 new).
 
 - [ ] **Step 5: Commit**
 
@@ -701,7 +744,7 @@ public bool TryConvertXmlToJson(string xml, out string json, out string message)
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 71 tests (66 prior + 5 new).
+Expected: PASS, 74 tests (69 prior + 5 new).
 
 - [ ] **Step 5: Commit**
 
@@ -1019,7 +1062,7 @@ public bool TrySortJsonArrayByField(string json, string path, string fieldName, 
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 82 tests (71 prior + 11 new).
+Expected: PASS, 85 tests (74 prior + 11 new).
 
 - [ ] **Step 6: Commit**
 
@@ -1117,7 +1160,7 @@ Expected: clean build, 0 errors.
 dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj
 ```
 
-Expected: PASS, 82/82.
+Expected: PASS, 85/85.
 
 - [ ] **Step 3: Push and open the PR**
 
@@ -1136,7 +1179,7 @@ gh pr create --title "Add JsonUtils Phase 2 (merge/diff/XML/filter-sort)" --body
 
 ## Test plan
 - [x] dotnet build src/AwesomeRpaUtils.sln
-- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (82/82)
+- [x] dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj (85/85)
 EOF
 )"
 ```
@@ -1153,7 +1196,7 @@ git worktree remove .worktrees/jsonutils-phase2
 - [ ] `dotnet build src/AwesomeRpaUtils.sln` - clean, no regressions to any
       shipped component including Phase 1's `JsonUtils`.
 - [ ] `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` -
-      82/82 passing, fully on this Linux host.
+      85/85 passing, fully on this Linux host.
 - [ ] `src/jsonutils/README.md` updated with all 6 new methods, a worked
       example, and Notes & Caveats entries; the "Phase 2 (not yet
       implemented)" bullet removed.
