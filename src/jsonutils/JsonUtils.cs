@@ -540,5 +540,50 @@ namespace JsonAutomation
         }
 
         #endregion
+
+        #region Merge
+
+        /// <summary>Merges two JSON objects. Values in <paramref name="overrideJson"/> win on
+        /// scalar conflicts; array values present in both documents are concatenated.</summary>
+        /// <param name="baseJson">The base JSON object.</param>
+        /// <param name="overrideJson">The JSON object whose values take precedence on conflict.</param>
+        /// <param name="mergedJson">The merged JSON text on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if both inputs parsed as JSON objects and were merged.</returns>
+        [Category("Json - Merge")]
+        [Description("Merges two JSON objects, with the second document's values winning on conflict. Never throws.")]
+        public bool TryMergeJson(string baseJson, string overrideJson, out string mergedJson, out string message)
+        {
+            mergedJson = null;
+            message = null;
+            try
+            {
+                JToken baseToken = ParseJson(baseJson);
+                JToken overrideToken = ParseJson(overrideJson);
+                if (baseToken is not JObject baseObject)
+                {
+                    message = $"baseJson must be a JSON object, but was a {baseToken.Type}.";
+                    return false;
+                }
+                if (overrideToken is not JObject overrideObject)
+                {
+                    message = $"overrideJson must be a JSON object, but was a {overrideToken.Type}.";
+                    return false;
+                }
+                baseObject.Merge(overrideObject, new JsonMergeSettings
+                {
+                    MergeArrayHandling = MergeArrayHandling.Concat
+                });
+                mergedJson = baseObject.ToString(Formatting.None);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryMergeJson), exception);
+                return false;
+            }
+        }
+
+        #endregion
     }
 }

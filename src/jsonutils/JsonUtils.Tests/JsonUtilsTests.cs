@@ -456,5 +456,54 @@ namespace JsonAutomation.Tests
             Assert.True(lengthSucceeded);
             Assert.Equal(3, length);
         }
+
+        [Fact]
+        public void TryMergeJson_ScalarConflict_SecondDocumentWins()
+        {
+            bool succeeded = _json.TryMergeJson("{\"a\":1,\"b\":2}", "{\"b\":3}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Null(message);
+            Assert.Equal(3, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["b"]);
+            Assert.Equal(1, (int)Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["a"]);
+        }
+
+        [Fact]
+        public void TryMergeJson_ArrayValues_Concatenates()
+        {
+            bool succeeded = _json.TryMergeJson("{\"items\":[1,2]}", "{\"items\":[3]}", out string mergedJson, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal(new[] { 1, 2, 3 }, Newtonsoft.Json.Linq.JObject.Parse(mergedJson)["items"].ToObject<int[]>());
+        }
+
+        [Fact]
+        public void TryMergeJson_BaseNotObject_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryMergeJson("[1,2]", "{\"a\":1}", out string mergedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(mergedJson);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryMergeJson_OverrideNotObject_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryMergeJson("{\"a\":1}", "[1,2]", out string mergedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(mergedJson);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryMergeJson_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryMergeJson("{not json", "{\"a\":1}", out string mergedJson, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
     }
 }
