@@ -17,10 +17,12 @@ namespace EventAutomation
     /// <c>out string message</c>.
     /// </summary>
     /// <remarks>
-    /// Call <see cref="Initialize(out string)"/> then <see cref="Start(string, out string)"/>
-    /// before any <c>WaitForX</c> or <see cref="Subscribe(string, string, string, out string)"/>
-    /// call. Wait methods block until a matching event or timeout; the timeout is
-    /// reported through their <c>out bool timedOut</c> parameter.
+    /// Call <see cref="Initialize(out string)"/> then <see cref="Start(EventCategory, out string)"/>
+    /// or <see cref="StartCategories"/> before any <c>WaitForX</c> or
+    /// <see cref="Subscribe(EventCategory, string, string, out string)"/>
+    /// call. Wait methods block until a matching event or timeout; a timeout
+    /// returns False with a message explaining it, the same as any other
+    /// failure.
     /// </remarks>
     [Description("Watches Windows UI events (window create/show/destroy, dialogs, " +
                  "titles, states, menus) and delivers them to waiters or subscriptions. " +
@@ -58,7 +60,7 @@ namespace EventAutomation
 
         /// <summary>
         /// Starts the background hook thread (idempotent). Call before
-        /// <see cref="Start(string, out string)"/>. Returns True on success;
+        /// <see cref="Start(EventCategory, out string)"/>/<see cref="StartCategories"/>. Returns True on success;
         /// <paramref name="message"/> is null on success and a human-readable
         /// reason otherwise. Never throws.
         /// </summary>
@@ -104,13 +106,16 @@ namespace EventAutomation
         }
 
         /// <summary>
-        /// Activates the given categories and installs the WinEvent hook, e.g.
-        /// <c>"Windows,Foreground,Dialogs"</c>. Idempotent; call after
-        /// <see cref="Initialize(out string)"/>. Returns True on success;
-        /// <paramref name="message"/> is null on success and a human-readable
-        /// reason otherwise. Never throws.
+        /// Activates a single category and installs the WinEvent hook — the
+        /// common case for a wait that only needs to watch one category; use
+        /// <see cref="StartCategories"/> to watch more than one. Call after
+        /// <see cref="Initialize(out string)"/>. Fails if categories are
+        /// already active — call <see cref="Stop(out string)"/> first rather
+        /// than silently replacing what is being watched. Returns True on
+        /// success; <paramref name="message"/> is null on success and a
+        /// human-readable reason otherwise. Never throws.
         /// </summary>
-        public bool Start(string categoriesCsv, out string message)
+        public bool Start(EventCategory category, out string message)
         {
             message = default;
             try
@@ -118,29 +123,7 @@ namespace EventAutomation
                 message = null;
                 try
                 {
-                    lock (_gate)
-                    {
-                        if (_disposed)
-                        {
-                            message = "EventUtils is disposed; create a new instance.";
-                            return false;
-                        }
-                        if (_engine == null && !Initialize(out message))
-                            return false;
-                        if (!TryParseCategories(categoriesCsv, out var cats, out string parseError))
-                        {
-                            message = parseError;
-                            return false;
-                        }
-                        if (cats.Count == 0)
-                        {
-                            message = "No categories in '" + categoriesCsv + "'. Pass a comma-separated list, e.g. 'Windows,Dialogs'.";
-                            return false;
-                        }
-                        _activeCategories = cats;
-                        _engine.RequestHook(true);
-                        return true;
-                    }
+                    return StartCore(new HashSet<EventCategory> { category }, out message);
                 }
                 catch (Exception ex)
                 {
@@ -153,6 +136,86 @@ namespace EventAutomation
             {
                 message = NeverThrowsGuard.Failure("Start", ex);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Activates the given categories and installs the WinEvent hook, with one
+        /// Boolean checkbox per <see cref="EventCategory"/> instead of a
+        /// comma-separated, typo-prone string. Each flag is nullable so an
+        /// unwired port is treated the same as an explicit <c>False</c> — only
+        /// <c>True</c> activates a category. Call after
+        /// <see cref="Initialize(out string)"/>. Fails if categories are
+        /// already active — call <see cref="Stop(out string)"/> first rather
+        /// than silently replacing what is being watched. Returns True on
+        /// success; <paramref name="message"/> is null on success and a
+        /// human-readable reason otherwise. Never throws.
+        /// </summary>
+        public bool StartCategories(bool? windows, bool? foreground, bool? dialogs, bool? titles, bool? states, bool? menus, bool? windowOps, bool? session, out string message)
+        {
+            message = default;
+            try
+            {
+                message = null;
+                try
+                {
+                    var cats = new HashSet<EventCategory>();
+                    if (windows == true) cats.Add(EventCategory.Windows);
+                    if (foreground == true) cats.Add(EventCategory.Foreground);
+                    if (dialogs == true) cats.Add(EventCategory.Dialogs);
+                    if (titles == true) cats.Add(EventCategory.Titles);
+                    if (states == true) cats.Add(EventCategory.States);
+                    if (menus == true) cats.Add(EventCategory.Menus);
+                    if (windowOps == true) cats.Add(EventCategory.WindowOps);
+                    if (session == true) cats.Add(EventCategory.Session);
+                    if (cats.Count == 0)
+                    {
+                        message = "No categories were selected. Set at least one category parameter to True.";
+                        return false;
+                    }
+                    return StartCore(cats, out message);
+                }
+                catch (Exception ex)
+                {
+                    message = "StartCategories failed: " + ex.Message;
+                    return false;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("StartCategories", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Shared installation logic for <see cref="Start(EventCategory, out string)"/> and
+        /// <see cref="StartCategories"/>: initializes the engine if needed, activates
+        /// the given category set, and installs the hook. Fails if categories are
+        /// already active — call <see cref="Stop(out string)"/> first rather than
+        /// silently replacing what is being watched.
+        /// </summary>
+        private bool StartCore(HashSet<EventCategory> cats, out string message)
+        {
+            message = null;
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    message = "EventUtils is disposed; create a new instance.";
+                    return false;
+                }
+                if (_activeCategories.Count > 0)
+                {
+                    message = "EventUtils is already running; call Stop() before starting again with different categories.";
+                    return false;
+                }
+                if (_engine == null && !Initialize(out message))
+                    return false;
+                _activeCategories = cats;
+                _engine.RequestHook(true);
+                return true;
             }
         }
 
@@ -296,21 +359,49 @@ namespace EventAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="BuildFilterJson(string, string, string, string, string, bool?, bool?)"/>,
+        /// but takes a single designer-selectable <see cref="EventFilterField"/>
+        /// instead of remembering which of its seven named parameters to fill
+        /// in - the common case of matching on exactly one field, optionally
+        /// combined with <paramref name="hasButtonChildren"/> (the one Boolean
+        /// field common enough to pair with a single other field - it rarely
+        /// narrows a search usefully on its own). Use the full overload
+        /// directly for <c>excludeSelf</c>, or to combine more than one
+        /// non-Boolean field in a single filter. Never throws.
+        /// </summary>
+        /// <param name="field">Which field <paramref name="value"/> applies to.</param>
+        /// <param name="value">The value to match on <paramref name="field"/>. Null/empty = not filtered on this field.</param>
+        /// <param name="hasButtonChildren">Also require a Button child window (dialog heuristic); pass null to not filter on this.</param>
+        /// <returns>The filter JSON string. Returns <c>"{}"</c> (match-all) if <paramref name="value"/> is null/empty and <paramref name="hasButtonChildren"/> is null.</returns>
+        public string BuildFilterJson(EventFilterField field, string value, bool? hasButtonChildren = null)
+        {
+            return field switch
+            {
+                EventFilterField.Process => BuildFilterJson(process: value, hasButtonChildren: hasButtonChildren),
+                EventFilterField.ProcessesCsv => BuildFilterJson(processesCsv: value, hasButtonChildren: hasButtonChildren),
+                EventFilterField.ClassName => BuildFilterJson(className: value, hasButtonChildren: hasButtonChildren),
+                EventFilterField.TitleContains => BuildFilterJson(titleContains: value, hasButtonChildren: hasButtonChildren),
+                EventFilterField.TitleMatches => BuildFilterJson(titleMatches: value, hasButtonChildren: hasButtonChildren),
+                _ => "{}"
+            };
+        }
+
         // ------------------------------------------------------------------
         // Subscribe model
         // ------------------------------------------------------------------
 
         /// <summary>
-        /// Registers a subscription: events whose category is in
-        /// <paramref name="categoriesCsv"/> and whose fields match
-        /// <paramref name="filterJson"/> are queued under
-        /// <paramref name="subscriptionId"/>. A null/empty filter matches all
-        /// events. Returns True on success; <paramref name="message"/> is null
-        /// on success and a human-readable reason otherwise (malformed filter
-        /// JSON, invalid <c>titleMatches</c> regex, unknown category, duplicate
-        /// id, empty id). Never throws.
+        /// Registers a subscription for a single category — the common case;
+        /// use <see cref="SubscribeCategories"/> to watch more than one.
+        /// Events whose fields match <paramref name="filterJson"/> are queued
+        /// under <paramref name="subscriptionId"/>. A null/empty filter
+        /// matches all events. Returns True on success; <paramref name="message"/>
+        /// is null on success and a human-readable reason otherwise (malformed
+        /// filter JSON, invalid <c>titleMatches</c> regex, duplicate id, empty
+        /// id). Never throws.
         /// </summary>
-        public bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId, out string message)
+        public bool Subscribe(EventCategory category, string filterJson, string subscriptionId, out string message)
         {
             message = default;
             try
@@ -318,28 +409,7 @@ namespace EventAutomation
                 message = null;
                 try
                 {
-                    if (string.IsNullOrWhiteSpace(subscriptionId))
-                    {
-                        message = "subscriptionId is empty.";
-                        return false;
-                    }
-                    if (!TryParseCategories(categoriesCsv, out var cats, out string parseError))
-                    {
-                        message = parseError;
-                        return false;
-                    }
-                    if (cats.Count == 0)
-                    {
-                        message = "No categories in '" + categoriesCsv + "'. Pass a comma-separated list, e.g. 'Windows,Dialogs'.";
-                        return false;
-                    }
-                    if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
-                    {
-                        message = "Invalid filter for '" + subscriptionId + "': " + filterError;
-                        return false;
-                    }
-                    filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
-                    return _subscriptions.TryAdd(subscriptionId, cats, filter, out message);
+                    return SubscribeCore(new HashSet<EventCategory> { category }, filterJson, subscriptionId, out message);
                 }
                 catch (Exception ex)
                 {
@@ -353,6 +423,77 @@ namespace EventAutomation
                 message = NeverThrowsGuard.Failure("Subscribe", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Registers a subscription across the given categories, with one
+        /// Boolean checkbox per <see cref="EventCategory"/> instead of a
+        /// comma-separated, typo-prone string. Each flag is nullable so an
+        /// unwired port is treated the same as an explicit <c>False</c> — only
+        /// <c>True</c> includes a category. Events whose fields match
+        /// <paramref name="filterJson"/> are queued under
+        /// <paramref name="subscriptionId"/>. A null/empty filter matches all
+        /// events. Returns True on success; <paramref name="message"/> is null
+        /// on success and a human-readable reason otherwise. Never throws.
+        /// </summary>
+        public bool SubscribeCategories(bool? windows, bool? foreground, bool? dialogs, bool? titles, bool? states, bool? menus, bool? windowOps, bool? session, string filterJson, string subscriptionId, out string message)
+        {
+            message = default;
+            try
+            {
+                message = null;
+                try
+                {
+                    var cats = new HashSet<EventCategory>();
+                    if (windows == true) cats.Add(EventCategory.Windows);
+                    if (foreground == true) cats.Add(EventCategory.Foreground);
+                    if (dialogs == true) cats.Add(EventCategory.Dialogs);
+                    if (titles == true) cats.Add(EventCategory.Titles);
+                    if (states == true) cats.Add(EventCategory.States);
+                    if (menus == true) cats.Add(EventCategory.Menus);
+                    if (windowOps == true) cats.Add(EventCategory.WindowOps);
+                    if (session == true) cats.Add(EventCategory.Session);
+                    if (cats.Count == 0)
+                    {
+                        message = "No categories were selected. Set at least one category parameter to True.";
+                        return false;
+                    }
+                    return SubscribeCore(cats, filterJson, subscriptionId, out message);
+                }
+                catch (Exception ex)
+                {
+                    message = "SubscribeCategories failed: " + ex.Message;
+                    return false;
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SubscribeCategories", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Shared registration logic for <see cref="Subscribe(EventCategory, string, string, out string)"/>
+        /// and <see cref="SubscribeCategories"/>: validates the subscription id
+        /// and filter, then registers the subscription.
+        /// </summary>
+        private bool SubscribeCore(HashSet<EventCategory> cats, string filterJson, string subscriptionId, out string message)
+        {
+            message = null;
+            if (string.IsNullOrWhiteSpace(subscriptionId))
+            {
+                message = "subscriptionId is empty.";
+                return false;
+            }
+            if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+            {
+                message = "Invalid filter for '" + subscriptionId + "': " + filterError;
+                return false;
+            }
+            filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
+            return _subscriptions.TryAdd(subscriptionId, cats, filter, out message);
         }
 
         /// <summary>
@@ -385,77 +526,32 @@ namespace EventAutomation
         }
 
         /// <summary>
-        /// Same as <see cref="GetNextEvent(string, int, out string, out IntPtr, out bool, out string)"/>,
-        /// but returns the dequeued event as an <see cref="EventData"/> object instead of
-        /// JSON, for .NET callers with an object proxy available.
-        /// </summary>
-        /// <remarks>
         /// Blocks up to <paramref name="timeoutMs"/> for the next queued event.
-        /// Returns True when the call succeeded; <paramref name="hasEvent"/> is
-        /// True when <paramref name="eventData"/> holds an event (False on
-        /// timeout). <paramref name="message"/> is null on success and a
-        /// human-readable reason otherwise (e.g. unknown subscription). Never
-        /// throws.
-        /// </remarks>
-        public bool GetNextEventAsEventData(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)
+        /// Returns True when an event was dequeued into <paramref name="eventData"/>.
+        /// Returns False either because the wait timed out with the queue still
+        /// empty (a normal result — <paramref name="message"/> is null) or
+        /// because of an operational failure such as an unknown subscription
+        /// (<paramref name="message"/> is set). There is no separate
+        /// <c>hasEvent</c> output. Never throws.
+        /// </summary>
+        public bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out string message)
         {
             eventData = default;
-            hasEvent = default;
             message = default;
             try
             {
                 eventData = null;
-                hasEvent = false;
                 message = null;
                 try
                 {
-                    eventData = _subscriptions.GetNextEvent(subscriptionId, timeoutMs, out hasEvent, out message);
-                    return message == null; // non-null message = unknown subscription
+                    eventData = _subscriptions.GetNextEvent(subscriptionId, timeoutMs, out bool hasEvent, out message);
+                    return hasEvent;
                 }
                 catch (Exception ex)
                 {
-                    message = "GetNextEventAsEventData failed: " + ex.Message;
+                    message = "GetNextEvent failed: " + ex.Message;
                     return false;
                 }
-
-            }
-            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-            {
-                message = NeverThrowsGuard.Failure("GetNextEventAsEventData", ex);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Blocks up to <paramref name="timeoutMs"/> for the next queued event, reported as
-        /// JSON plus a chainable window handle - the Pega-friendly counterpart to
-        /// <see cref="GetNextEventAsEventData"/>, for designers without an
-        /// <see cref="EventData"/> proxy.
-        /// </summary>
-        /// <param name="subscriptionId">The subscription to dequeue from.</param>
-        /// <param name="timeoutMs">Maximum time to wait for an event, in milliseconds.</param>
-        /// <param name="eventJson">The dequeued event as JSON, or <c>"{}"</c> if no event was dequeued (<paramref name="hasEvent"/> is <c>false</c>).</param>
-        /// <param name="hwnd">The event's window handle, ready to pass to WindowUtils/UIAutomationUtils, or <see cref="IntPtr.Zero"/> if no event was dequeued.</param>
-        /// <param name="hasEvent">True when <paramref name="eventJson"/> holds an event (false on timeout).</param>
-        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason (e.g. unknown subscription). Never throws.</param>
-        /// <returns><c>true</c> when the call succeeded (whether or not an event was dequeued); <c>false</c> on a real failure. Never throws.</returns>
-        public bool GetNextEvent(string subscriptionId, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool hasEvent, out string message)
-        {
-            eventJson = default;
-            hwnd = default;
-            hasEvent = default;
-            message = default;
-            try
-            {
-                eventJson = "{}";
-                hwnd = IntPtr.Zero;
-                bool ok = GetNextEventAsEventData(subscriptionId, timeoutMs, out EventData eventData, out hasEvent, out message);
-                if (hasEvent && eventData != null)
-                {
-                    eventJson = eventData.ToJson();
-                    hwnd = new IntPtr(eventData.Hwnd);
-                }
-                return ok;
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -730,20 +826,19 @@ namespace EventAutomation
         }
 
         /// <summary>
-        /// Non-blocking lookback: reports in <paramref name="wasCreated"/>
-        /// whether a window-created event matching <paramref name="filterJson"/>
-        /// was captured within the last <paramref name="withinLastMs"/>
-        /// milliseconds. Returns True when the check succeeded;
-        /// <paramref name="message"/> is null on success and a human-readable
-        /// reason otherwise. Never throws.
+        /// Non-blocking lookback: reports whether a window-created event matching
+        /// <paramref name="filterJson"/> was captured within the last
+        /// <paramref name="withinLastMs"/> milliseconds. Returns True when found,
+        /// False when not found or when the check itself failed —
+        /// <paramref name="message"/> distinguishes the two: null for "not
+        /// found" (a normal result), non-null for an operational failure
+        /// (engine not started, malformed filter). Never throws.
         /// </summary>
-        public bool WasWindowCreated(string filterJson, int withinLastMs, out bool wasCreated, out string message)
+        public bool WasWindowCreated(string filterJson, int withinLastMs, out string message)
         {
-            wasCreated = default;
             message = default;
             try
             {
-                wasCreated = false;
                 message = null;
                 try
                 {
@@ -764,11 +859,10 @@ namespace EventAutomation
                     {
                         if (e.Category == "WindowCreated" && e.Timestamp >= cutoff && filter.Matches(e, _hostPid))
                         {
-                            wasCreated = true;
                             return true;
                         }
                     }
-                    return true;
+                    return false;
                 }
                 catch (Exception ex)
                 {
@@ -809,32 +903,6 @@ namespace EventAutomation
                 return;
             _subscriptions.Deliver(data, cats, _hostPid);
             _waiters.Match(data);
-        }
-
-        private static bool TryParseCategories(string categoriesCsv, out HashSet<EventCategory> cats, out string error)
-        {
-            cats = new HashSet<EventCategory>();
-            error = null;
-            if (string.IsNullOrWhiteSpace(categoriesCsv))
-                return true; // caller treats an empty set as invalid input
-            var unknown = new List<string>();
-            foreach (var part in categoriesCsv.Split(','))
-            {
-                string name = part.Trim();
-                if (name.Length == 0)
-                    continue;
-                if (Enum.TryParse(name, true, out EventCategory cat))
-                    cats.Add(cat);
-                else
-                    unknown.Add(name);
-            }
-            if (unknown.Count > 0)
-            {
-                error = "Unknown event categories in '" + categoriesCsv + "': '" + string.Join("', '", unknown) +
-                        "'. Valid categories: " + string.Join(", ", Enum.GetNames(typeof(EventCategory))) + ".";
-                return false;
-            }
-            return true;
         }
     }
 }

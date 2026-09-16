@@ -334,23 +334,36 @@ exception` condition.
 
 ### EventUtils (needs Setup: a real window to create/destroy — notepad.exe works; Cleanup: kill it)
 
-Every public method returns `bool` and never throws — abnormal results are
-reported through an `out string message` (null on success), and timeouts through
-`out bool timedOut` / `out bool hasEvent`. For these, replace Phase 2's
-"exception condition on the invalid-input case" with an outcome condition
-asserting `false` (plus a non-null `message`), instead of an `Automation
-exception` condition. The engine is Windows-only: `Initialize()` returns `false`
-off-Windows, and the real-window cases below are the ones that prove the hook
-actually delivers events.
+Every public method returns `bool` and never throws — abnormal results
+(including a `WaitForX` timeout, `WasWindowCreated`'s not-found, and
+`GetNextEvent`'s empty queue) are reported through an `out string message`,
+`null` for that normal negative and set for a real operational failure; none
+of these have a separate `timedOut`/`wasCreated`/`hasEvent` output. A wait or
+dequeue always resolves to exactly one event, so `WaitForX`/`GetNextEvent`
+return `EventData` directly — there's no JSON+handle overload or
+`...AsEventData` sibling to also test. For these, replace Phase 2's "exception
+condition on the invalid-input case" with an outcome condition asserting
+`false` (plus a non-null `message`), instead of an `Automation exception`
+condition. The
+engine is Windows-only: `Initialize()` returns `false` off-Windows, and the
+real-window cases below are the ones that prove the hook actually delivers
+events.
 
-- `Initialize`/`Start`/`Stop`/`Dispose` (idempotent: call `Start` twice, `Dispose`
-  twice; `Initialize` after `Dispose` restarts the engine; `Stop` unhooks — no
-  events arrive after it, and `Start` re-hooks; invalid category CSV → `Start`
-  returns `false`)
+- `Initialize`/`Start`/`StartCategories`/`Stop`/`Dispose` (`Initialize` and
+  `Dispose` are idempotent — call each twice; `Initialize` after `Dispose`
+  restarts the engine; `Stop` unhooks — no events arrive after it, and `Start`
+  re-hooks. `Start`/`StartCategories` are **not** idempotent: calling either
+  again while categories are already active returns `false` with a message
+  instead of replacing them — call `Stop` first, then `Start`/`StartCategories`
+  succeeds again with the new categories. `StartCategories` with every flag
+  `false`/`null` also returns `false` with a message; `Start` takes
+  `EventCategory` directly, so there's no invalid-category-name case to test
+  there)
 - `WaitForWindowCreated` (launch notepad → `true` with an event whose
   `ProcessName` is "notepad" and `Hwnd` is non-zero within the timeout; no
-  window → `false` + `timedOut = true` + a timeout message; engine not started →
-  immediate `false` + `timedOut = false` + a message)
+  window → `false` + a "Timed out after..." message; engine not started →
+  immediate `false` + a different message — assert on the message text, since
+  there is no separate `timedOut` output)
 - `WaitForWindowDestroyed` (close the window → event whose `Title` was captured
   before destruction — proves enrichment-before-death; no close → timeout)
 - `WaitForWindowShown`, `WaitForForegroundChanged`, `WaitForTitleChanged` (drive
@@ -361,16 +374,25 @@ actually delivers events.
 - `WaitForStateChanged` (minimize/restore the window → `State` "Minimized"/
   "Visible"; `stateRegex` filters)
 - `WaitForMenuOpened` (open a menu in the harness → event; no menu → timeout)
-- `WasWindowCreated` (non-blocking lookback: true right after a create, false
-  after the window is long gone or for a non-matching filter)
+- `WasWindowCreated` (non-blocking lookback: true right after a create; false
+  + null message after the window is long gone or for a non-matching filter —
+  a normal negative, distinct from false + a message for engine-not-started/
+  malformed-filter; there is no separate `wasCreated` output)
 - `CancelWaits` (start two waits, cancel → both return within 100 ms with
-  `timedOut = true`)
-- `Subscribe`/`Unsubscribe`/`GetNextEvent`/`GetNextEvents`/`HasEvents`/
-  `ClearQueue` (two subscriptions with different filters/categories → independent
-  queues, no cross-feed; unknown subscription id → `GetNextEvent` returns `false`
-  with a non-null `message`; malformed filter JSON → `Subscribe` returns `false`
-  with a non-null `message`, unknown JSON keys are ignored; duplicate id →
-  `false` with a non-null `message`)
+  `false` and a timeout message)
+- `Subscribe`/`SubscribeCategories`/`Unsubscribe`/`GetNextEvent`/
+  `GetNextEvents`/`HasEvents`/`ClearQueue` (two subscriptions with different
+  filters/categories → independent queues, no cross-feed; unknown
+  subscription id → `GetNextEvent` returns `false` with a non-null `message`;
+  a valid subscription with nothing queued yet → `GetNextEvent` returns
+  `false` with a *null* `message` before the timeout expires — assert on
+  `message`, not a separate `hasEvent` output, to tell it apart from the
+  unknown-subscription case; malformed filter JSON →
+  `Subscribe` returns `false` with a non-null `message`, unknown JSON keys
+  are ignored; duplicate id → `false` with a non-null `message`;
+  `SubscribeCategories` with every flag `false`/`null` → `false` with a
+  message; `Subscribe`/`SubscribeCategories` take `EventCategory` directly,
+  so there's no invalid-category-name case to test there)
 - `SetDebounce` (rapidly show/hide a window 10× → SHOW count after debounce ≤ 3;
   `SetDebounce("WindowShown", 0)` disables coalescing)
 - `SetQueueLimits` (limit 5 + "DropOldest", flood 50 events → `HasEvents` == 5,

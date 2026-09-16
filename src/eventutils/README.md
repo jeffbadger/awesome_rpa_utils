@@ -20,12 +20,16 @@ produces *triggers* (a dialog appeared, a window was created), and the other
 utils act on them — `screencaptureutils` to capture, `dialogutils` to dismiss,
 `keyboardutils`/`mouseutils` to drive input.
 
+See the [Documentation](Documentation/README.md) folder for worked examples
+of each method category.
+
 ## Types
 
 ### `EventCategory`
-A family of WinEvents `Start`/`Subscribe` can watch, passed as a CSV of these
-names: `Windows`, `Foreground`, `Dialogs`, `Titles`, `States`, `Menus`,
-`WindowOps`, `Session`.
+A family of WinEvents to watch: `Windows`, `Foreground`, `Dialogs`, `Titles`,
+`States`, `Menus`, `WindowOps`, `Session`. `Start`/`Subscribe` each take a
+single value directly; `StartCategories`/`SubscribeCategories` take one
+Boolean per value.
 
 ### `EventName`
 A specific WinEvent name (as reported in `EventData.Category`), for
@@ -41,16 +45,22 @@ What a subscription's queue does when full, for `SetQueueLimits`'s enum
 overload: `DropOldest`, `DropNewest`, `Block` (behaves exactly like
 `DropNewest` - documented under [Tuning / ops](#tuning--ops)).
 
+### `EventFilterField`
+Which single field to match on, for `BuildFilterJson`'s designer-selectable
+enum overload instead of remembering which of its seven named parameters to
+fill in: `Process`, `ProcessesCsv`, `ClassName`, `TitleContains`,
+`TitleMatches` (documented under [Filters](#filters)).
+
 ## 30-second overview
 
 ```csharp
 var events = new EventUtils();
 events.Initialize(out _);
-events.Start("Windows,Foreground,Dialogs", out _);   // which categories to watch
+events.Start(EventCategory.Windows, out _);
 
 // Wait model: block until notepad's window appears.
-bool ok = events.WaitForWindowCreatedAsEventData("{\"process\":\"notepad\"}", 10000, out EventData created, out bool timedOut, out _);
-if (ok && !timedOut)
+bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _);
+if (ok)
     Console.WriteLine("notepad appeared: " + created.ToJson());
 ```
 
@@ -65,28 +75,35 @@ subscribed — see [Known limitations](#known-limitations).
 | Method | Signature | Description |
 |---|---|---|
 | `Initialize` | `bool Initialize(out string message)` | Starts the background hook thread (idempotent). Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
-| `Start` | `bool Start(string categoriesCsv, out string message)` | Activates the given categories (e.g. `"Windows,Foreground,Dialogs"`) and installs the hook. Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
+| `Start` | `bool Start(EventCategory category, out string message)` | Activates a single category and installs the hook — the common case for a simple wait. Fails if categories are already active (call `Stop` first). Returns True on success; `message` is null on success, a reason otherwise. Never throws. |
+| `StartCategories` | `bool StartCategories(bool? windows, bool? foreground, bool? dialogs, bool? titles, bool? states, bool? menus, bool? windowOps, bool? session, out string message)` | Same as `Start`, but with one Boolean checkbox per category instead of a comma-separated, typo-prone string. Every flag is nullable — an unwired port on the Pega design surface is treated the same as an explicit `False`. Fails if categories are already active, or if every flag is `false`/unset. Never throws. |
 | `Stop` | `bool Stop(out string message)` | Unhooks; queues are preserved so they can still be drained. Returns False with a message when the component was never initialized. Never throws. |
 | `Dispose` | `void Dispose()` | Full teardown — unhooks, stops the thread, clears subscriptions/waiters. Safe to call multiple times; the instance is final afterwards — a later `Initialize()` returns False, so create a new instance. |
 
-Call `Initialize()` then `Start(...)` before any `WaitForX` or `Subscribe` call.
-If the engine is not running, a wait returns False immediately with a message.
+Call `Initialize()` then `Start(...)`/`StartCategories(...)` before any `WaitForX`
+or `Subscribe` call. If the engine is not running, a wait returns False
+immediately with a message. To change which categories are watched, call
+`Stop()` first — calling `Start`/`StartCategories` again while categories are
+already active fails rather than silently replacing them.
 
 ## Worked example 1 — Wait: wait for notepad, then click OK
 
 ```csharp
 var events = new EventUtils();
 events.Initialize(out _);
-events.Start("Windows,Dialogs", out _);
+events.StartCategories(
+    windows: true, foreground: null, dialogs: true,
+    titles: null, states: null, menus: null, windowOps: null, session: null,
+    out _);
 
 // Launch notepad and wait for its window to appear.
 System.Diagnostics.Process.Start("notepad.exe");
-bool ok = events.WaitForWindowCreatedAsEventData("{\"process\":\"notepad\"}", 10000, out EventData created, out bool timedOut, out _);
-if (!ok || timedOut) { /* handle */ }
+bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _);
+if (!ok) { /* handle: message explains a timeout vs. a real error */ }
 
 // ... later, a Save dialog appears. Wait for it, then dismiss it with dialogUtils.
-ok = events.WaitForDialogAppearedAsEventData("{\"process\":\"notepad\"}", 10000, out EventData dialog, out timedOut, out _);
-if (ok && !timedOut)
+ok = events.WaitForDialogAppeared("{\"process\":\"notepad\"}", 10000, out EventData dialog, out _);
+if (ok)
 {
     var dialogs = new DialogAutomation.DialogUtils();
     dialogs.ClickDialogButtonByText(new IntPtr(dialog.Hwnd), "OK", out bool wasEnabled, out _);
@@ -98,13 +115,13 @@ if (ok && !timedOut)
 ```csharp
 var events = new EventUtils();
 events.Initialize(out _);
-events.Start("Dialogs", out _);
-events.Subscribe("Dialogs", "{\"process\":\"myapp\"}", "guardian", out _);
+events.Start(EventCategory.Dialogs, out _);
+events.Subscribe(EventCategory.Dialogs, "{\"process\":\"myapp\"}", "guardian", out _);
 
 while (true)
 {
-    bool ok = events.GetNextEventAsEventData("guardian", 5000, out EventData dialog, out bool hasEvent, out _);
-    if (!ok || !hasEvent) continue;
+    bool hasEvent = events.GetNextEvent("guardian", 5000, out EventData dialog, out _);
+    if (!hasEvent) continue;
 
     // Capture the dialog, then dismiss it.
     var capture = new ScreenCaptureAutomation.ScreenCaptureUtils();
@@ -147,80 +164,136 @@ was subscribed.
 
 ## Filters
 
-Filters are built fluently, from scalar parameters, or parsed from the compact
-JSON form that crosses the Pega boundary. All fields are optional — an unset
-field is a wildcard.
+Every `WaitForX`/`Subscribe` call takes a filter as a JSON string. All fields
+are optional — an unset field is a wildcard. There are three ways to produce
+that string; **prefer `BuildFilterJson` over hand-authoring the JSON
+yourself** — it's easy to typo a key name or forget to escape a quote, and a
+malformed filter fails at the call site with a message instead of at compile
+time:
 
 ```csharp
-// Fluent (.NET callers)
-EventFilter.Create().Process("saplogon").Class("#32770").TitleContains("Save As");
+// Don't: hand-authored JSON — easy to typo a key, forget a quote/comma, or
+// misspell "titleContains" and silently get an unfiltered (match-all) result
+// instead of an error, since unknown JSON keys are ignored rather than rejected.
+events.Subscribe(EventCategory.Windows, "{\"process\":\"notepad\",\"class\":\"#32770\",\"titleContains\":\"Save\"}", "sub", out _);
 
-// Scalar (Pega-friendly - no hand-authored JSON)
+// Do: BuildFilterJson — same result, no JSON to author or escape.
 string filterJson = events.BuildFilterJson(process: "notepad", className: "#32770", titleContains: "Save");
-events.Subscribe("Windows", filterJson, "sub", out _);
-
-// JSON directly (unknown keys are ignored; malformed JSON or an invalid titleMatches
-// regex makes Subscribe/WaitForX return False with a message)
-events.Subscribe("Windows", "{\"process\":\"notepad\",\"class\":\"#32770\",\"titleContains\":\"Save\"}", "sub", out _);
+events.Subscribe(EventCategory.Windows, filterJson, "sub", out _);
 ```
 
 `BuildFilterJson(process, processesCsv, className, titleContains, titleMatches, hasButtonChildren, excludeSelf)`
-builds the same JSON by hand-authoring none of it — every parameter is
-optional (omitted = not filtered on), and `processesCsv` (a comma-separated
-list) is the scalar alternative to `EventFilter.AnyOfProcesses(params string[])`,
-which isn't Pega-friendly. It never throws, returning `"{}"` (match-all) if
-every parameter is omitted.
+takes every field as its own named, optional parameter — omit whichever ones
+you don't need. `processesCsv` (a comma-separated list) is the scalar
+alternative to `EventFilter.AnyOfProcesses(params string[])`, which isn't
+Pega-friendly:
 
-Supported JSON keys: `process`, `processes` (array), `class`, `titleContains`,
-`titleMatches` (regex, IgnoreCase|Compiled, 250 ms match timeout),
-`hasButtonChildren`, `excludeSelf`.
+```csharp
+// Only the fields you pass are included; the rest are wildcards.
+string byProcess = events.BuildFilterJson(process: "notepad");
+string byClassAndTitle = events.BuildFilterJson(className: "#32770", titleContains: "Save As");
+string byProcessList = events.BuildFilterJson(processesCsv: "notepad, wordpad, calc");
+```
 
-Invalid input is rejected, never silently ignored: malformed filter JSON, an
-uncompilable `titleMatches` regex, and unknown category names (e.g.
-`"Windowz"`) all make `Start`/`Subscribe`/`WaitForX` return False with a
-message naming the problem. A fluent `TitleMatches("[Bad")` fails closed — the
-filter matches nothing.
+It never throws, returning `"{}"` (match-all) if every parameter is omitted
+or left blank.
+
+### Filtering on one field: the `EventFilterField` enum overload
+
+The most common case is filtering on exactly *one* field, where naming seven
+parameters just to fill in one is more typing than the JSON it replaces. For
+that case, pass an `EventFilterField` instead of a named parameter:
+
+```csharp
+// Same filter, three ways — pick whichever fits how the value is chosen:
+
+// 1. Hand-authored JSON (don't — shown only for comparison)
+string manual = "{\"titleContains\":\"Save As\"}";
+
+// 2. BuildFilterJson with a named parameter (the field is fixed at design time)
+string named = events.BuildFilterJson(titleContains: "Save As");
+
+// 3. BuildFilterJson with EventFilterField (the field can be a runtime/upstream
+//    value - e.g. selected by a designer dropdown or driven by config - while
+//    the value itself comes from anywhere)
+string viaEnum = events.BuildFilterJson(EventFilterField.TitleContains, "Save As");
+
+events.Subscribe(EventCategory.Windows, viaEnum, "sub", out _);
+```
+
+Use the enum overload when the *field to filter on* is itself a variable in
+the automation (a designer-selected dropdown, a value read from config); use
+the full `BuildFilterJson` overload when multiple non-Boolean fields are known
+at design time, or for `excludeSelf`, which the single-field overload doesn't
+cover. Both overloads produce identical JSON for the same field/value.
+
+The enum overload also takes an optional third `hasButtonChildren` parameter,
+since that field is rarely a useful filter *by itself* (most windows have a
+button somewhere) but is common as a second criterion alongside one other
+field:
+
+```csharp
+// "A dialog-shaped window from myapp mentioning Save" — one primary field
+// (process) plus the dialog heuristic, without needing the full 7-param overload:
+string filterJson = events.BuildFilterJson(EventFilterField.Process, "myapp", hasButtonChildren: true);
+```
+
+Supported JSON keys, for anyone parsing or hand-authoring filter JSON
+directly (e.g. from another system): `process`, `processes` (array), `class`,
+`titleContains`, `titleMatches` (regex, IgnoreCase|Compiled, 250 ms match
+timeout), `hasButtonChildren`, `excludeSelf`.
+
+### Fluent construction (.NET callers)
+
+.NET code with a compile-time-known filter can skip JSON entirely:
+
+```csharp
+EventFilter.Create().Process("saplogon").Class("#32770").TitleContains("Save As");
+```
+
+This isn't available from Pega Robot Studio, which can only wire scalar
+inputs — use `BuildFilterJson` there instead.
+
+Invalid input is rejected, never silently ignored: malformed filter JSON and
+an uncompilable `titleMatches` regex both make `Subscribe`/`WaitForX` return
+False with a message naming the problem. `Start`/`StartCategories`/
+`Subscribe`/`SubscribeCategories` all take `EventCategory` directly, so
+there's no category name to typo. A fluent `TitleMatches("[Bad")` fails
+closed — the filter matches nothing.
 
 ## Wait methods
 
 | Method | Signature | Description |
 |---|---|---|
-| `WaitForWindowCreated` | `bool WaitForWindowCreated(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)` | Matches `WindowCreated`, reported as JSON plus a chainable window handle. |
-| `WaitForWindowCreatedAsEventData` | `bool WaitForWindowCreatedAsEventData(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Same, but returns an `EventData` object instead of JSON, for .NET callers with an object proxy available. |
-| `WaitForWindowDestroyed` | `bool WaitForWindowDestroyed(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)` | Matches `WindowDestroyed`, reported as JSON plus a chainable window handle. |
-| `WaitForWindowDestroyedAsEventData` | `bool WaitForWindowDestroyedAsEventData(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Same, `EventData` object. |
-| `WaitForWindowShown` | `bool WaitForWindowShown(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)` | Matches `WindowShown`, reported as JSON plus a chainable window handle. |
-| `WaitForWindowShownAsEventData` | `bool WaitForWindowShownAsEventData(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Same, `EventData` object. |
-| `WaitForForegroundChanged` | `bool WaitForForegroundChanged(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)` | Matches `ForegroundChanged`, reported as JSON plus a chainable window handle. |
-| `WaitForForegroundChangedAsEventData` | `bool WaitForForegroundChangedAsEventData(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Same, `EventData` object. |
-| `WaitForTitleChanged` | `bool WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)` | Matches `TitleChanged` + title regex, reported as JSON plus a chainable window handle. |
-| `WaitForTitleChangedAsEventData` | `bool WaitForTitleChangedAsEventData(string filterJson, string titleRegex, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Same, `EventData` object. |
-| `WaitForDialogAppeared` | `bool WaitForDialogAppeared(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)` | Matches `DialogAppeared`/`DialogClosed` + `#32770` heuristic, reported as JSON plus a chainable window handle. |
-| `WaitForDialogAppearedAsEventData` | `bool WaitForDialogAppearedAsEventData(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Same, `EventData` object. |
-| `WaitForStateChanged` | `bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)` | Matches `StateChanged` + state regex, reported as JSON plus a chainable window handle. |
-| `WaitForStateChangedAsEventData` | `bool WaitForStateChangedAsEventData(string filterJson, string stateRegex, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Same, `EventData` object. |
-| `WaitForMenuOpened` | `bool WaitForMenuOpened(string filterJson, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool timedOut, out string message)` | Matches `MenuOpened`/`MenuPopupOpened`, reported as JSON plus a chainable window handle. |
-| `WaitForMenuOpenedAsEventData` | `bool WaitForMenuOpenedAsEventData(string filterJson, int timeoutMs, out EventData eventData, out bool timedOut, out string message)` | Same, `EventData` object. |
-| `WasWindowCreated` | `bool WasWindowCreated(string filterJson, int withinLastMs, out bool wasCreated, out string message)` | Non-blocking lookback over the ring buffer. |
+| `WaitForWindowCreated` | `bool WaitForWindowCreated(string filterJson, int timeoutMs, out EventData eventData, out string message)` | Matches `WindowCreated`. |
+| `WaitForWindowDestroyed` | `bool WaitForWindowDestroyed(string filterJson, int timeoutMs, out EventData eventData, out string message)` | Matches `WindowDestroyed`. |
+| `WaitForWindowShown` | `bool WaitForWindowShown(string filterJson, int timeoutMs, out EventData eventData, out string message)` | Matches `WindowShown`. |
+| `WaitForForegroundChanged` | `bool WaitForForegroundChanged(string filterJson, int timeoutMs, out EventData eventData, out string message)` | Matches `ForegroundChanged`. |
+| `WaitForTitleChanged` | `bool WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out EventData eventData, out string message)` | Matches `TitleChanged` + title regex. |
+| `WaitForDialogAppeared` | `bool WaitForDialogAppeared(string filterJson, int timeoutMs, out EventData eventData, out string message)` | Matches `DialogAppeared`/`DialogClosed` + `#32770` heuristic. |
+| `WaitForStateChanged` | `bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out EventData eventData, out string message)` | Matches `StateChanged` + state regex. |
+| `WaitForMenuOpened` | `bool WaitForMenuOpened(string filterJson, int timeoutMs, out EventData eventData, out string message)` | Matches `MenuOpened`/`MenuPopupOpened`. |
+| `WasWindowCreated` | `bool WasWindowCreated(string filterJson, int withinLastMs, out string message)` | Non-blocking lookback over the ring buffer. Returns True if found, False if not found (normal, `message` null) or on failure (`message` set). |
 | `CancelWaits` | `bool CancelWaits(out string message)` | Releases all pending waits (each reports a timeout). |
 
-Every `WaitForX` method's plain name is the Pega-friendly JSON+handle overload;
-the `...AsEventData` counterpart returns an `EventData` object instead, for .NET
-callers with an object proxy available. They're distinctly named (not
-overloads of each other) so a Pega designer's method picker never has to
-disambiguate two same-named methods by output-port shape alone. For example:
+A wait always resolves to exactly one event — the first match, then it stops
+listening — so every `WaitForX` method returns a single `EventData` object
+directly; there's no separate JSON+handle overload or `...AsEventData`
+suffix. Reconstruct a chainable `IntPtr` yourself when needed:
 
 ```csharp
-bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000,
-    out string eventJson, out IntPtr hwnd, out bool timedOut, out _);
-if (ok && !timedOut)
-    window.ActivateWindow(hwnd, out _); // hwnd is ready to pass to WindowUtils directly
+bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _);
+if (ok)
+    window.ActivateWindow(new IntPtr(created.Hwnd), out _); // ready to pass to WindowUtils directly
 ```
 
-A wait returns False with `timedOut = true` on timeout (`eventData` is null and
-`message` explains the timeout); it returns False with `timedOut = false` on an
-error such as the engine not being started. A `timeoutMs` of 0 or negative is
-also an immediate timeout (nothing keeps waiting) — `GetNextEvent`/`GetNextEvents`
+A wait returns False on any failure — a timeout, a stopped engine, a malformed
+filter, or an uncompilable regex — with `message` explaining which (`eventData`
+is null either way; there is no separate `timedOut` output).
+A timeout's message reads `"Timed out after <n> ms waiting for <event>."`; check
+for that prefix if an automation needs to branch on timeout specifically rather
+than treat every failure the same way. A `timeoutMs` of 0 or negative is also an
+immediate timeout (nothing keeps waiting) — `GetNextEvent`/`GetNextEvents`
 treat 0 the same way. **Do not use `WaitForX` for file or
 process waits** — these are UI-event waits; a process that never creates a window
 (or a file operation that never touches a window) will simply time out. Use
@@ -230,10 +303,10 @@ process waits** — these are UI-event waits; a process that never creates a win
 
 | Method | Signature | Description |
 |---|---|---|
-| `Subscribe` | `bool Subscribe(string categoriesCsv, string filterJson, string subscriptionId, out string message)` | Registers a subscription. Returns True on success; `message` is null on success, a reason otherwise (malformed filter JSON, duplicate id, invalid category). Never throws. |
+| `Subscribe` | `bool Subscribe(EventCategory category, string filterJson, string subscriptionId, out string message)` | Registers a subscription for a single category — the common case. Returns True on success; `message` is null on success, a reason otherwise (malformed filter JSON, duplicate id). Never throws. |
+| `SubscribeCategories` | `bool SubscribeCategories(bool? windows, bool? foreground, bool? dialogs, bool? titles, bool? states, bool? menus, bool? windowOps, bool? session, string filterJson, string subscriptionId, out string message)` | Same as `Subscribe`, but with one Boolean checkbox per category instead of a comma-separated, typo-prone string. Every flag is nullable — an unwired port is treated the same as an explicit `False`. Returns False if every flag is `false`/unset. Never throws. |
 | `Unsubscribe` | `bool Unsubscribe(string subscriptionId, out string message)` | Removes a subscription and drops its queue; a blocked `GetNextEvent` is woken and returns False with a message. Returns True if it existed; `message` is null on success, a reason otherwise. |
-| `GetNextEvent` | `bool GetNextEvent(string subscriptionId, int timeoutMs, out string eventJson, out IntPtr hwnd, out bool hasEvent, out string message)` | Blocks up to `timeoutMs` for the next queued event, reported as JSON plus a chainable window handle. Returns True when the call succeeded; `hasEvent` is True when `eventJson` holds an event (False on timeout). `message` is null on success, a reason otherwise (unknown subscription). |
-| `GetNextEventAsEventData` | `bool GetNextEventAsEventData(string subscriptionId, int timeoutMs, out EventData eventData, out bool hasEvent, out string message)` | Same, but returns an `EventData` object instead of JSON, for .NET callers with an object proxy available. Distinctly named, not an overload of `GetNextEvent`. |
+| `GetNextEvent` | `bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out string message)` | Blocks up to `timeoutMs` for the next queued event — always exactly one, so it returns `EventData` directly. Returns True when an event was dequeued; False on a normal timeout with an empty queue (`message` null) or a real failure such as an unknown subscription (`message` set). |
 | `GetNextEvents` | `bool GetNextEvents(string subscriptionId, int maxCount, int drainMs, out EventData[] events, out string message)` | Drains up to `maxCount` events into `events`. Returns True on success; `message` is null on success, a reason otherwise. |
 | `GetNextEventsJson` | `bool GetNextEventsJson(string subscriptionId, int maxCount, int drainMs, out string json, out string message)` | Same, as a JSON array (the same shape `DumpRecentEvents` produces), for designers without an `EventData[]` proxy. |
 | `HasEvents` | `bool HasEvents(string subscriptionId, out int count, out string message)` | Reports queued-event count. Returns True when the subscription exists; `message` is null on success, a reason otherwise (unknown subscription). |
@@ -252,10 +325,18 @@ process waits** — these are UI-event waits; a process that never creates a win
 ## Notes & Caveats
 
 - **Every public method returns `bool` and never throws** — abnormal results
-  (hook install failure, malformed filter JSON, invalid regex, unknown category,
-  unknown subscription) are reported through an `out string message` (null on
-  success), and timeouts through `out bool timedOut` / `out bool hasEvent` where
-  a timeout is a normal outcome. Failures are also logged at debug level via
+  (hook install failure, malformed filter JSON, invalid regex, categories
+  already active, unknown subscription) are reported through an `out string
+  message` (null on success). Where a method's real answer is itself a yes/no
+  (found a match?
+  dequeued an event?), that answer **is** the return value rather than a
+  separate output — `WaitForX`, `WasWindowCreated`, `GetNextEvent`, and
+  `GetNextEvent` all fold a timeout/not-found/empty-queue result
+  into `False` plus `message`, rather than an extra `out bool timedOut`/
+  `wasCreated`/`hasEvent`. `message` is `null` for that normal negative and set
+  for a real operational failure (engine not started, unknown subscription,
+  malformed input) — check it when an automation needs to tell the two `False`
+  cases apart. Failures are also logged at debug level via
   `System.Diagnostics.Debug.WriteLine`. Hook install failure logs the Win32
   error from `Marshal.GetLastWin32Error()`.
 - **`EventData` objects are per-consumer copies** — subscriptions and
@@ -266,14 +347,7 @@ process waits** — these are UI-event waits; a process that never creates a win
 - **`EventData.Hwnd` is a signed 64-bit `long`**, not a 32-bit value — a
   32-bit field would truncate a real 64-bit window handle on 64-bit Windows.
   Reconstruct a chainable `IntPtr` for WindowUtils/UIAutomationUtils with
-  `new IntPtr(eventData.Hwnd)`, or use a JSON+handle overload (below) that
-  already returns one.
-- **`GetNextEvent`/every `WaitForX` method's plain name is the JSON+handle
-  overload; the `...AsEventData` counterpart returns an `EventData` object.**
-  They're distinctly named rather than overloads of each other (unlike, say,
-  `GetNextEvents`/`GetNextEventsJson`, which were already distinct) so a Pega
-  designer's method picker never has to disambiguate two same-named methods
-  that differ only in output-port shape.
+  `new IntPtr(eventData.Hwnd)`.
 - **`Unsubscribe` wakes a blocked `GetNextEvent`** — instead of waiting out its
   full timeout on a removed subscription, the blocked call returns False with a
   message promptly.
