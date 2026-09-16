@@ -24,6 +24,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [stackutils](src/stackutils/README.md) | `StackAutomation` | Holds variable-count text, JSON, or file-reference work in an instance-local, in-memory LIFO stack without a collection proxy. |
 | [terminalutils](src/terminalutils/README.md) | `TerminalAutomation` | Reads and interacts with a target process's live console screen buffer: visible-screen capture, cursor position, waiting for a prompt or a screen change, keystroke injection, and starting/attaching to a console process. |
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
+| [valuestoreutils](src/valuestoreutils/README.md) | `ValueStoreAutomation` | Holds freeform named values with forgiving typed getters, dot-notation path access, wildcard key search, and JSON interop, without a schema to define or seal. |
 | [windowutils](src/windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
 
 Each component is fully standalone (no project references between them), but
