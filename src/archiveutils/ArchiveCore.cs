@@ -7,6 +7,26 @@ using System.Linq;
 namespace ArchiveAutomation
 {
     /// <summary>
+    /// A minimal (name, declared uncompressed size, declared compressed size) view over an
+    /// archive entry, used so <see cref="ArchiveCore.TryCheckExpansionLimits"/> can validate
+    /// entries from both <see cref="ZipArchiveEntry"/> (System.IO.Compression) and
+    /// SharpZipLib's <c>ZipEntry</c> without either type depending on the other's assembly.
+    /// </summary>
+    internal readonly struct ArchiveEntrySizeInfo
+    {
+        internal ArchiveEntrySizeInfo(string fullName, long length, long compressedLength)
+        {
+            FullName = fullName;
+            Length = length;
+            CompressedLength = compressedLength;
+        }
+
+        internal string FullName { get; }
+        internal long Length { get; }
+        internal long CompressedLength { get; }
+    }
+
+    /// <summary>
     /// Shared build/extract/publish logic behind <see cref="ArchiveUtils.CreateArchive"/>,
     /// <see cref="ArchiveUtils.CreateDiagnosticBundle"/>, and every extraction method, so
     /// timestamp handling, atomic-publish, and zip-bomb-limit semantics cannot drift
@@ -189,11 +209,11 @@ namespace ArchiveAutomation
         /// both checked against declared central-directory metadata, before any bytes are
         /// decompressed. A limit <c>&lt;= 0</c> means "no limit."
         /// </summary>
-        internal static bool TryCheckExpansionLimits(IEnumerable<ZipArchiveEntry> entries, long maxTotalExpandedSizeBytes, double maxCompressionRatio, out string error)
+        internal static bool TryCheckExpansionLimits(IEnumerable<ArchiveEntrySizeInfo> entries, long maxTotalExpandedSizeBytes, double maxCompressionRatio, out string error)
         {
             error = null;
             long total = 0;
-            foreach (ZipArchiveEntry entry in entries)
+            foreach (ArchiveEntrySizeInfo entry in entries)
             {
                 total += entry.Length;
 

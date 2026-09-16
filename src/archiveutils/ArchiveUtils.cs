@@ -169,7 +169,7 @@ namespace ArchiveAutomation
 
                 using (ZipArchive scan = ZipFile.OpenRead(archivePath))
                 {
-                    if (!ArchiveCore.TryCheckExpansionLimits(scan.Entries, maxTotalExpandedSizeBytes, maxCompressionRatio, out message))
+                    if (!ArchiveCore.TryCheckExpansionLimits(scan.Entries.Select(ToSizeInfo), maxTotalExpandedSizeBytes, maxCompressionRatio, out message))
                         return false;
                 }
 
@@ -338,7 +338,7 @@ namespace ArchiveAutomation
         private static bool ExtractEntrySafely(ZipArchiveEntry entry, string destinationDirectoryPath, bool overwrite, long maxExpandedSizeBytes, double maxCompressionRatio, out string message)
         {
             message = default;
-            if (!ArchiveCore.TryCheckExpansionLimits(new[] { entry }, maxExpandedSizeBytes, maxCompressionRatio, out message))
+            if (!ArchiveCore.TryCheckExpansionLimits(new[] { ToSizeInfo(entry) }, maxExpandedSizeBytes, maxCompressionRatio, out message))
                 return false;
 
             if (!ArchiveSafety.TryResolveSafeExtractionPath(destinationDirectoryPath, entry.FullName, out string safePath, out message))
@@ -356,6 +356,8 @@ namespace ArchiveAutomation
             message = null;
             return true;
         }
+
+        private static ArchiveEntrySizeInfo ToSizeInfo(ZipArchiveEntry entry) => new ArchiveEntrySizeInfo(entry.FullName, entry.Length, entry.CompressedLength);
 
         private static bool IsDirectoryEntry(ZipArchiveEntry entry) =>
             entry.FullName.EndsWith("/", StringComparison.Ordinal) || entry.FullName.EndsWith("\\", StringComparison.Ordinal);
