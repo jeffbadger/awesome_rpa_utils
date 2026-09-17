@@ -67,13 +67,13 @@ namespace WinEventAutomation
                     message = "Window existence checks require Windows.";
                     return false;
                 }
-                if (!TryEnumerateTopLevelWindows(hwnd =>
+                if (!TryEnumerateTopLevelWindows(candidateHwnd =>
                 {
-                    var data = SnapshotWindow(hwnd);
+                    var data = SnapshotWindow(candidateHwnd);
                     if ((requiredClass == null || string.Equals(data.ClassName, requiredClass, StringComparison.OrdinalIgnoreCase)) &&
                         filter.Matches(data, _hostPid))
                     {
-                        foundHwnd = hwnd;
+                        foundHwnd = candidateHwnd;
                         return false;
                     }
                     return true;

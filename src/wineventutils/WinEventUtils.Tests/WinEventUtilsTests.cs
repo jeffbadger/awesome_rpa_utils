@@ -435,6 +435,112 @@ namespace WinEventAutomation.Tests
         }
 
         [Fact]
+        public void IsDialog_message_box_returns_hwnd_with_null_message()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            string title = "WinEventUtils Dialog " + Guid.NewGuid().ToString("N");
+            string filter = utils.BuildFilterJson(process: Process.GetCurrentProcess().ProcessName, titleContains: title);
+            var thread = new Thread(() => MessageBox(IntPtr.Zero, "dialog", title, 0));
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+            try
+            {
+                bool ok = false;
+                IntPtr hwnd = IntPtr.Zero;
+                string message = null;
+                for (int i = 0; i < 50 && !ok; i++)
+                {
+                    ok = utils.IsDialog(filter, out hwnd, out message);
+                    if (!ok)
+                        Thread.Sleep(100);
+                }
+                Assert.True(ok);
+                Assert.NotEqual(IntPtr.Zero, hwnd);
+                Assert.Null(message);
+            }
+            finally
+            {
+                IntPtr dialogHwnd = FindWindow("#32770", title);
+                if (dialogHwnd != IntPtr.Zero)
+                    PostMessage(dialogHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                thread.Join(5000);
+            }
+        }
+
+        [Fact]
+        public void IsMenu_popup_menu_returns_hwnd_with_null_message()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            string filter = utils.BuildFilterJson(process: Process.GetCurrentProcess().ProcessName);
+            IntPtr ownerHwnd = IntPtr.Zero;
+            using var ownerReady = new ManualResetEventSlim(false);
+            var thread = new Thread(() =>
+            {
+                ownerHwnd = CreateWindowEx(
+                    0,
+                    "STATIC",
+                    "WinEventUtils Menu Owner",
+                    WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                    0,
+                    0,
+                    200,
+                    100,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero);
+                ownerReady.Set();
+                if (ownerHwnd == IntPtr.Zero)
+                    return;
+                IntPtr menu = CreatePopupMenu();
+                if (menu == IntPtr.Zero)
+                    return;
+                try
+                {
+                    AppendMenu(menu, MF_STRING, new UIntPtr(1), "WinEventUtils Menu Item");
+                    SetForegroundWindow(ownerHwnd);
+                    TrackPopupMenuEx(menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD, 10, 10, ownerHwnd, IntPtr.Zero);
+                }
+                finally
+                {
+                    DestroyMenu(menu);
+                    DestroyWindow(ownerHwnd);
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+            ownerReady.Wait(5000);
+            if (ownerHwnd == IntPtr.Zero)
+                return;
+            try
+            {
+                bool ok = false;
+                IntPtr hwnd = IntPtr.Zero;
+                string message = null;
+                for (int i = 0; i < 50 && !ok; i++)
+                {
+                    ok = utils.IsMenu(filter, out hwnd, out message);
+                    if (!ok)
+                        Thread.Sleep(100);
+                }
+                Assert.True(ok);
+                Assert.NotEqual(IntPtr.Zero, hwnd);
+                Assert.Null(message);
+            }
+            finally
+            {
+                EndMenu();
+                thread.Join(5000);
+            }
+        }
+
+        [Fact]
         public void IsWindow_enumwindows_failure_returns_error_message()
         {
             if (!OperatingSystem.IsWindows())
@@ -1344,5 +1450,58 @@ namespace WinEventAutomation.Tests
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private const int WM_CLOSE = 0x0010;
+        private const int WS_OVERLAPPEDWINDOW = unchecked((int)0x00CF0000);
+        private const int WS_VISIBLE = unchecked((int)0x10000000);
+        private const uint MF_STRING = 0x00000000;
+        private const uint TPM_LEFTALIGN = 0x0000;
+        private const uint TPM_TOPALIGN = 0x0000;
+        private const uint TPM_RETURNCMD = 0x0100;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string className, string windowName);
+
+        [DllImport("user32.dll")]
+        private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateWindowEx(
+            int exStyle,
+            string className,
+            string windowName,
+            int style,
+            int x,
+            int y,
+            int width,
+            int height,
+            IntPtr parent,
+            IntPtr menu,
+            IntPtr instance,
+            IntPtr param);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr CreatePopupMenu();
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool AppendMenu(IntPtr hMenu, uint flags, UIntPtr itemId, string itemText);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyMenu(IntPtr hMenu);
+
+        [DllImport("user32.dll")]
+        private static extern int TrackPopupMenuEx(IntPtr hMenu, uint flags, int x, int y, IntPtr hWnd, IntPtr rect);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool EndMenu();
     }
 }
