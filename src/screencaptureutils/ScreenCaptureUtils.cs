@@ -18,9 +18,15 @@ namespace ScreenCaptureAutomation
     /// cursor/input concerns.
     /// </summary>
     /// <remarks>
-    /// All coordinates are absolute screen pixels, consistent with MouseUtils. Screen
-    /// captures use <see cref="Graphics.CopyFromScreen(int, int, int, int, Size)"/> and
-    /// therefore have the same requirements as any GDI screen read: an interactive,
+    /// Coordinates are not all in the same space: Core Capture and Verification &amp;
+    /// Comparison methods take absolute screen pixels, consistent with MouseUtils;
+    /// Annotation &amp; Redaction methods (<see cref="DrawHighlightBox(string, int, int, int, int, Color, out string, int)"/>,
+    /// <see cref="DrawArrowToPoint(string, int, int, Color, out string, int, int)"/>,
+    /// <see cref="RedactRegion(string, int, int, int, int, Color, out string)"/>) take
+    /// image-local pixels relative to the saved file's own top-left corner, since they
+    /// operate on a file already on disk with no knowledge of where on screen it came
+    /// from. Screen captures use <see cref="Graphics.CopyFromScreen(int, int, int, int, Size)"/>
+    /// and therefore have the same requirements as any GDI screen read: an interactive,
     /// unlocked desktop, and results reflect logical (DPI-virtualized) pixels unless
     /// the hosting process is DPI-aware (see MouseUtils.IsProcessDpiAware).
     /// File format is inferred from the extension; note that .gif saves are lossy

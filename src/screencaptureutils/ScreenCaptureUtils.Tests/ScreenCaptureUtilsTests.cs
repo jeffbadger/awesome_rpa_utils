@@ -376,8 +376,7 @@ namespace ScreenCaptureAutomation.Tests
         {
             IntPtr hWnd = CreateWindowEx(0, "STATIC", "ScreenCaptureUtils Test Window",
                 WS_OVERLAPPEDWINDOW, 0, 0, 200, 100, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-            if (hWnd == IntPtr.Zero)
-                return;
+            Assert.NotEqual(IntPtr.Zero, hWnd);
             try
             {
                 ShowWindow(hWnd, SW_MINIMIZE);
