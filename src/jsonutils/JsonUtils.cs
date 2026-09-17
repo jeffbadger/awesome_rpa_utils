@@ -178,7 +178,7 @@ namespace JsonAutomation
 
         #endregion
 
-        #region Validation and typed getters
+        #region Validation
 
         /// <summary>Checks whether a string is well-formed JSON.</summary>
         /// <param name="json">The text to check.</param>
@@ -200,6 +200,10 @@ namespace JsonAutomation
                 return false;
             }
         }
+
+        #endregion
+
+        #region Get
 
         private bool TryGetTypedValue<T>(string json, string path, string methodName, out T value, out string message)
         {
@@ -230,7 +234,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <c>null</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="string"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as a string. Never throws.")]
         public bool TryGetStringValue(string json, string path, out string value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetStringValue), out value, out message);
@@ -241,7 +245,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <c>0</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="int"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as an int. Never throws.")]
         public bool TryGetIntValue(string json, string path, out int value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetIntValue), out value, out message);
@@ -252,7 +256,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <c>false</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="bool"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as a bool. Never throws.")]
         public bool TryGetBoolValue(string json, string path, out bool value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetBoolValue), out value, out message);
@@ -263,7 +267,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <c>0</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="double"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as a double. Never throws.")]
         public bool TryGetDoubleValue(string json, string path, out double value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetDoubleValue), out value, out message);
@@ -274,7 +278,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <see cref="DateTime.MinValue"/> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="DateTime"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as a DateTime. Never throws.")]
         public bool TryGetDateTimeValue(string json, string path, out DateTime value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetDateTimeValue), out value, out message);
