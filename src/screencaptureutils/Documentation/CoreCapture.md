@@ -145,6 +145,7 @@ position, so don't assume index `0` is "the left monitor." Call
 number of monitors the automation was authored on:
 
 ```csharp
+int screenIndex = 1; // e.g. "the second monitor", supplied by the automation
 screenCapture.GetScreenCount(out int screenCount, out _);
 if (screenIndex >= screenCount)
 {

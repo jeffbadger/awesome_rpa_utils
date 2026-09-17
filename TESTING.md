@@ -221,7 +221,7 @@ into the test project; `dotnet build` works anywhere).
 
 ### ScreenCaptureUtils (some cases need no live screen at all — see Phase 3)
 
-All methods here except `CaptureToClipboard` return `bool` with an
+All methods here except `CaptureScreenToClipboard` return `bool` with an
 `out string message` and never throw — for these, replace Phase 2's
 "exception condition on the invalid-input case" with an outcome condition
 asserting `false` plus a non-null `message` on the invalid-input case (bad
@@ -235,7 +235,16 @@ failure (`message` set) from a normal not-changed/exceeds-tolerance result
   `CaptureActiveWindowToFile`, `CaptureAroundPointToFile` (assert file exists,
   non-zero size, correct pixel dimensions; bad dimensions/invalid handle →
   `false` + message)
-- `CaptureToClipboard` (assert `Clipboard.ContainsImage()` — note: STA thread
+- `GetScreenCount` (assert it returns the actual number of connected
+  monitors — cross-check against Windows Display Settings)
+- `CaptureScreenToFile(int screenIndex, ...)` (assert one case per connected
+  monitor: the saved file's pixel dimensions match that monitor's resolution,
+  and its content matches that monitor rather than another one — e.g. put a
+  distinguishing image/color on each monitor's desktop background before
+  capturing; a negative index and an index `>= GetScreenCount` both → `false`
+  + message on a single-monitor test machine, since testing "the real second
+  monitor" needs one attached)
+- `CaptureScreenToClipboard` (assert `Clipboard.ContainsImage()` — note: STA thread
   requirement)
 - `CaptureStepEvidence` (assert filename pattern
   `{counter}_{step}_{timestamp}.png` and that the counter increments across
