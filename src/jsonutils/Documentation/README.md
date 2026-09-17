@@ -8,7 +8,7 @@ surface groups them) and the top-level [README](../README.md).
 - [Core](Core.md) — deserialize/serialize a .NET object, and get/set a single JSONPath value
 - [Validation](Validation.md) — checking whether text is well-formed JSON
 - [Get](Get.md) — extracting a JSONPath value as a specific .NET type
-- [Query](Query.md) — multi-match extraction and inspecting a value's kind
+- [Query](Query.md) — multi-match extraction, inspecting a value's kind, and finding a path by property name
 - [Array](Array.md) — removing, counting, appending, filtering, and sorting array elements
 - [Format](Format.md) — pretty-printing and minifying JSON text
 - [Merge](Merge.md) — combining two JSON objects

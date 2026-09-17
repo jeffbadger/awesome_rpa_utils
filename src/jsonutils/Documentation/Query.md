@@ -33,3 +33,22 @@ Useful when a field's shape can vary between documents (e.g. a value that's
 sometimes a string, sometimes `null`, sometimes absent entirely) and the
 automation needs to branch on which case it's looking at before calling one
 of the [Get](Get.md) methods or `TryGetValueFromJson`.
+
+## Find where a field lives when you don't already know its path
+
+```csharp
+string document = "{\"sku\":\"root-level\",\"order\":{\"sku\":\"nested\",\"items\":[{\"sku\":\"a\"},{\"sku\":\"b\"}]}}";
+
+json.TryFindPathsByName(document, "sku", ",", out string paths, out message);
+// paths == "sku,order.sku,order.items[0].sku,order.items[1].sku"
+```
+
+Every returned path is a real path you can pass straight into
+`TryGetValueFromJson`, `TrySetValueInJson`, or any other path-based method
+on this component — useful for a document whose overall shape is known but
+whose exact structure (how deep a field is nested, whether it's inside an
+array) varies between sources. The match is on the exact property name only
+(no wildcard/partial matching), but works correctly even for a name
+containing characters like `.` or a space that you'd otherwise need to
+escape by hand in a JSONPath expression.
+

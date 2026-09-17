@@ -46,6 +46,7 @@ examples of every method category.
 |---|---|---|
 | `TryGetValuesFromJson` | `(string json, string path, string delimiter, out string delimitedValues, out string message) : bool` | Extracts every value matching a JSONPath, delimited. |
 | `TryGetValueType` | `(string json, string path, out JsonValueKind kind, out string message) : bool` | Reports the kind of value at a JSONPath. |
+| `TryFindPathsByName` | `(string json, string name, string delimiter, out string paths, out string message) : bool` | Finds every path where a property with the given name exists, at any depth, delimited. |
 
 ### Array
 
@@ -225,3 +226,13 @@ own code path - see the caveat below.
   exclude elements missing the sort field; they're retained and sorted
   using an empty comparison value. These two closely-related methods do
   not behave symmetrically on this point.
+- **`TryFindPathsByName` matches the exact property name only** - no
+  wildcard/partial matching. Internally it searches via JSONPath's
+  recursive-descent bracket syntax (`$..['name']`), not the dot form
+  (`$..name`) the [JSONPath syntax](#jsonpath-syntax) section above shows
+  for values - verified empirically that the dot form silently matches
+  nothing (not an exception, a silent zero-match failure) once `name`
+  contains a character like `.` that dot syntax would otherwise parse as a
+  path separator. Bracket syntax handles any exact name uniformly, so this
+  method works correctly even for property names containing dots, spaces,
+  or other characters a hand-written path expression would need to escape.
