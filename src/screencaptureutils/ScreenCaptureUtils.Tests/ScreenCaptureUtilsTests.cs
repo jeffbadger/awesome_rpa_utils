@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using ScreenCaptureAutomation;
 using Xunit;
 
@@ -40,6 +41,83 @@ namespace ScreenCaptureAutomation.Tests
         public void CaptureAroundPointToFile_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
         {
             bool ok = _capture.CaptureAroundPointToFile(0, 0, width, height, "out.png", out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- Base Capture* methods (return an image): same guards as their *ToFile counterparts ---
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void CaptureRegion_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.CaptureRegion(0, 0, width, height, out System.Drawing.Bitmap image, out string message);
+
+            Assert.False(ok);
+            Assert.Null(image);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void CaptureAroundPoint_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.CaptureAroundPoint(0, 0, width, height, out System.Drawing.Bitmap image, out string message);
+
+            Assert.False(ok);
+            Assert.Null(image);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void CaptureWindow_InvalidHandle_ReturnsFalseWithMessage()
+        {
+            bool ok = _capture.CaptureWindow(IntPtr.Zero, out System.Drawing.Bitmap image, out string message);
+
+            Assert.False(ok);
+            Assert.Null(image);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- *ToClipboard methods: same guards as their *ToFile counterparts ---
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void CaptureRegionToClipboard_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.CaptureRegionToClipboard(0, 0, width, height, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void CaptureAroundPointToClipboard_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.CaptureAroundPointToClipboard(0, 0, width, height, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void CaptureWindowToClipboard_InvalidHandle_ReturnsFalseWithMessage()
+        {
+            bool ok = _capture.CaptureWindowToClipboard(IntPtr.Zero, out string message);
 
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
@@ -289,6 +367,49 @@ namespace ScreenCaptureAutomation.Tests
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        // --- CaptureWindowToFile: a minimized window is rejected before PrintWindow,
+        // which can otherwise silently return a stale/black bitmap as evidence ---
+
+        [Fact]
+        public void CaptureWindowToFile_MinimizedWindow_ReturnsFalseWithMessage()
+        {
+            IntPtr hWnd = CreateWindowEx(0, "STATIC", "ScreenCaptureUtils Test Window",
+                WS_OVERLAPPEDWINDOW, 0, 0, 200, 100, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            Assert.NotEqual(IntPtr.Zero, hWnd);
+            try
+            {
+                ShowWindow(hWnd, SW_MINIMIZE);
+                Assert.True(IsIconic(hWnd));
+
+                bool ok = _capture.CaptureWindowToFile(hWnd, "out.png", out string message);
+
+                Assert.False(ok);
+                Assert.Contains("minimized", message, StringComparison.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                DestroyWindow(hWnd);
+            }
+        }
+
+        private const int SW_MINIMIZE = 6;
+        private const int WS_OVERLAPPEDWINDOW = unchecked((int)0x00CF0000);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateWindowEx(
+            int exStyle, string className, string windowName, int style,
+            int x, int y, int width, int height,
+            IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsIconic(IntPtr hWnd);
 
         // --- Component lifecycle: construct + dispose is safe and side-effect free ---
 
