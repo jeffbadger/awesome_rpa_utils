@@ -147,11 +147,14 @@ namespace ScreenCaptureAutomation
         /// <param name="hWnd">Handle of the window to capture.</param>
         /// <param name="filePath">Destination file path. The format is inferred from the extension.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if the window's bounding rectangle is empty, <paramref name="filePath"/> is invalid, or GetWindowRect/PrintWindow failed (e.g. an invalid handle). Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if the window is minimized, its bounding rectangle is empty, <paramref name="filePath"/> is invalid, or GetWindowRect/PrintWindow failed (e.g. an invalid handle). Never throws.</returns>
         /// <remarks>
         /// Uses <c>PW_RENDERFULLCONTENT</c> so modern (DirectComposition/DirectX-backed)
         /// windows render correctly; some exclusive-fullscreen or protected-content
-        /// windows may still capture as black.
+        /// windows may still capture as black. A minimized window is rejected up front
+        /// rather than captured, since <c>PrintWindow</c> on one is unreliable across
+        /// Windows versions and app types - it can return a stale or solid-black bitmap
+        /// without failing, which would otherwise pass as a successful capture.
         /// </remarks>
         [Category("Capture - Core")]
         [Description("Captures a window to an image file via PrintWindow - works even if the window is covered by other windows. Returns True on success; never throws.")]
@@ -160,6 +163,16 @@ namespace ScreenCaptureAutomation
             message = default;
             try
             {
+                if (IsIconic(hWnd))
+                {
+                    // PrintWindow on a minimized window is unreliable across Windows
+                    // versions/app types - some return a stale or solid-black bitmap
+                    // without failing, which would silently produce bogus evidence
+                    // instead of the documented false+message on failure.
+                    message = "Target window is minimized; restore it before capturing.";
+                    return false;
+                }
+
                 if (!GetWindowRect(hWnd, out RECT rc))
                 {
                     message = new Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed.").Message;
@@ -1172,6 +1185,10 @@ namespace ScreenCaptureAutomation
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsIconic(IntPtr hWnd);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

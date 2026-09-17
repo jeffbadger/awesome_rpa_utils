@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using ScreenCaptureAutomation;
 using Xunit;
 
@@ -289,6 +290,50 @@ namespace ScreenCaptureAutomation.Tests
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        // --- CaptureWindowToFile: a minimized window is rejected before PrintWindow,
+        // which can otherwise silently return a stale/black bitmap as evidence ---
+
+        [Fact]
+        public void CaptureWindowToFile_MinimizedWindow_ReturnsFalseWithMessage()
+        {
+            IntPtr hWnd = CreateWindowEx(0, "STATIC", "ScreenCaptureUtils Test Window",
+                WS_OVERLAPPEDWINDOW, 0, 0, 200, 100, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            if (hWnd == IntPtr.Zero)
+                return;
+            try
+            {
+                ShowWindow(hWnd, SW_MINIMIZE);
+                Assert.True(IsIconic(hWnd));
+
+                bool ok = _capture.CaptureWindowToFile(hWnd, "out.png", out string message);
+
+                Assert.False(ok);
+                Assert.Contains("minimized", message, StringComparison.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                DestroyWindow(hWnd);
+            }
+        }
+
+        private const int SW_MINIMIZE = 6;
+        private const int WS_OVERLAPPEDWINDOW = unchecked((int)0x00CF0000);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateWindowEx(
+            int exStyle, string className, string windowName, int style,
+            int x, int y, int width, int height,
+            IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsIconic(IntPtr hWnd);
 
         // --- Component lifecycle: construct + dispose is safe and side-effect free ---
 

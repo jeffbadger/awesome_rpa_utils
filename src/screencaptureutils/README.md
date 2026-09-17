@@ -14,7 +14,12 @@ pixels-to-image concerns, MouseUtils owns cursor/input concerns.
 - Namespace: `ScreenCaptureAutomation`
 - Assembly: `ScreenCaptureAutomation`
 
-All coordinates are absolute screen pixels, consistent with MouseUtils.
+**Coordinates are not all in the same space** — Core Capture and Verification &
+Comparison methods take **absolute screen pixels** (consistent with MouseUtils);
+Annotation & Redaction methods take **image-local pixels** relative to the
+saved file's own top-left corner, since they operate on a file already on
+disk with no knowledge of where on screen it came from. See
+[Notes & Caveats](#notes--caveats) for how to convert between the two.
 
 ## Constructors
 
@@ -48,6 +53,11 @@ All coordinates are absolute screen pixels, consistent with MouseUtils.
 | `CompareRegionToBaseline` | `bool CompareRegionToBaseline(int left, int top, int width, int height, string baselineImagePath, double tolerancePercent, out double actualDifferencePercent, out bool comparisonCompleted, out string message)` | Same, plus a `comparisonCompleted` output so the automation can branch on out-of-tolerance vs. execution failure without a null-message test. Never throws. |
 
 ### Annotation & Redaction
+
+All coordinates below are **image-local pixels** — (0, 0) is the saved file's
+own top-left corner, not a point on screen. See
+[Notes & Caveats](#notes--caveats) if you need to annotate the same spot a
+screen/region capture just wrote.
 
 | Method | Signature | Description |
 |---|---|---|
@@ -84,6 +94,20 @@ screenCapture.CaptureWindowToFile(hWnd, @"C:\evidence\order_entry.png", out stri
   bad dimensions, an invalid file path, a missing image file, and Win32 failures
   (`GetWindowRect`/`PrintWindow`) are all reported this way, with `message` set to a
   human-readable reason whenever the method returns `false`.
+- **Annotation coordinates are relative to the saved image, not the screen.**
+  If you captured a region with `CaptureRegionToFile(left, top, width, height, ...)`
+  and want to annotate the same absolute spot in the saved file, subtract the
+  capture's own origin first: `imageLeft = screenLeft - left`, `imageTop = screenTop - top`
+  (and likewise for `right`/`bottom`). Passing the original screen coordinates
+  straight into `DrawHighlightBox`/`DrawArrowToPoint`/`RedactRegion` silently
+  annotates the wrong spot instead of failing, since any in-bounds rectangle is
+  a valid one.
+- **`GetRegionHash`/`WaitForRegionToChangeSimple`/`WaitForRegionToChange` downsample
+  the whole region to an 8x8 grid before hashing** — cheap, but coarse: a change to a
+  small amount of text inside a large region can leave the averaged result unchanged,
+  so a genuine content change can go undetected. Keep the watched region tight around
+  the content that's expected to change, or use `CompareRegionToBaseline` (a real
+  per-pixel comparison) when precision matters more than speed.
 - **Capture regions that lie entirely outside the virtual screen** (all monitors) are
   rejected with a message rather than capturing a solid black rectangle; a partially
   overlapping region is allowed, and the off-screen part comes back black.
@@ -103,6 +127,11 @@ screenCapture.CaptureWindowToFile(hWnd, @"C:\evidence\order_entry.png", out stri
 - **`CaptureWindowToFile`/`CaptureActiveWindowToFile`** use `PW_RENDERFULLCONTENT`
   so DirectComposition/DirectX-backed windows render correctly, but some
   exclusive-fullscreen or protected-content windows may still capture as black.
+- **`CaptureWindowToFile` rejects a minimized window up front** (`IsIconic`) rather
+  than calling `PrintWindow` on it — that call is unreliable for a minimized window
+  across Windows versions and app types, and can return a stale or solid-black
+  bitmap without failing, which would otherwise pass silently as valid evidence.
+  Restore the window first if it might be minimized when the automation gets there.
 - **`CaptureToClipboard`** runs its clipboard write on an internal STA thread
   regardless of the calling thread's apartment state, so the automation does not
   need to know or control it — unlike raw Windows Forms clipboard access, which
