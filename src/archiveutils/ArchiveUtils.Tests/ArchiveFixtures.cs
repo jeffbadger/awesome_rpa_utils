@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using ICSharpCode.SharpZipLib.Zip;
 
 namespace ArchiveAutomation.Tests
 {
@@ -22,6 +23,53 @@ namespace ArchiveAutomation.Tests
                 WriteEntry(archive, "data/values.csv", "a,b,c\n1,2,3\n");
                 var dirEntry = archive.CreateEntry("empty-dir/");
                 dirEntry.LastWriteTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            }
+            return path;
+        }
+
+        internal static string CreateMutableFixture(string path)
+        {
+            using (var fs = new FileStream(path, FileMode.Create))
+            using (var archive = new ZipArchive(fs, ZipArchiveMode.Create))
+            {
+                WriteEntry(archive, "readme.txt", "hello world");
+                WriteEntry(archive, "data/values.csv", "a,b,c\n1,2,3\n");
+            }
+            return path;
+        }
+
+        internal static string CreateSecondMergeFixture(string path)
+        {
+            using (var fs = new FileStream(path, FileMode.Create))
+            using (var archive = new ZipArchive(fs, ZipArchiveMode.Create))
+            {
+                WriteEntry(archive, "readme.txt", "second archive's readme, should be disambiguated");
+                WriteEntry(archive, "extra.txt", "only in the second archive");
+            }
+            return path;
+        }
+
+        internal static string CreateSharpZipLibEncryptedFixture(string path, string password, bool useAes, out string entryName)
+        {
+            entryName = "secret.txt";
+            using (var fsOut = new FileStream(path, FileMode.Create))
+            using (var zipStream = new ZipOutputStream(fsOut))
+            {
+                zipStream.SetLevel(9);
+                zipStream.Password = password;
+
+                var entry = new ZipEntry(entryName)
+                {
+                    DateTime = new DateTime(2024, 1, 1)
+                };
+                if (useAes)
+                    entry.AESKeySize = 256;
+
+                zipStream.PutNextEntry(entry);
+                byte[] content = Encoding.UTF8.GetBytes("this is the real secret content");
+                zipStream.Write(content, 0, content.Length);
+                zipStream.CloseEntry();
+                zipStream.Finish();
             }
             return path;
         }

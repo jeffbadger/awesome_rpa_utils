@@ -14,7 +14,9 @@ namespace ArchiveAutomation
     /// Pega Robot Studio-ready component for handling ZIP archives when intake arrives as
     /// ZIP files: creating/extracting archives, listing contents before extraction,
     /// extracting a single matching entry, validating CRC-32 checksums, detecting
-    /// encrypted entries, and building diagnostic/failure bundles.
+    /// encrypted entries, building diagnostic/failure bundles, mutating an existing archive
+    /// (add/replace/remove/rename entries), merging two archives, and creating/extracting
+    /// password-protected archives.
     /// <para>
     /// Like every component in this suite, all methods honor the never-throws contract:
     /// invalid input and runtime failures return <c>false</c> with a descriptive message
@@ -30,8 +32,15 @@ namespace ArchiveAutomation
     /// check on read. This is the actual value of this component over calling
     /// <see cref="System.IO.Compression"/> directly.
     /// </para>
+    /// <para>
+    /// Every method except <see cref="CreateEncryptedArchive"/> and
+    /// <see cref="ExtractArchiveWithPassword"/> is plain <see cref="System.IO.Compression"/> -
+    /// those two are the only methods backed by the <c>ICSharpCode.SharpZipLib</c> NuGet
+    /// dependency, added specifically because <see cref="System.IO.Compression"/> cannot
+    /// write or read encrypted ZIP entries under any circumstance.
+    /// </para>
     /// </summary>
-    [Description("Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection built in. " +
+    [Description("Creates, extracts, inspects, validates, mutates, merges, and password-protects ZIP archives, with zip-slip and zip-bomb protection built in. " +
                  "All methods return True/False with a failure message instead of throwing. " +
                  "Drag this component onto a Pega Robot Studio automation to use its methods.")]
     public class ArchiveUtils : Component
@@ -128,6 +137,384 @@ namespace ArchiveAutomation
 
         #endregion
 
+        #region Create Encrypted
+
+        /// <summary>
+        /// Creates a password-protected ZIP archive from a directory's contents, via
+        /// <c>ICSharpCode.SharpZipLib</c> - <see cref="System.IO.Compression"/> cannot write
+        /// encrypted entries under any circumstance, so this is the one creation method in
+        /// the component that doesn't go through <see cref="ArchiveCore"/>. Published
+        /// atomically like <see cref="CreateArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="sourceDirectoryPath">The directory to archive, recursively.</param>
+        /// <param name="archivePath">The archive's final path.</param>
+        /// <param name="password">The password every entry is encrypted with. Required (non-empty).</param>
+        /// <param name="overwrite">Whether an existing file at <paramref name="archivePath"/> may be replaced.</param>
+        /// <param name="includeBaseDirectory">Whether entries are prefixed with <paramref name="sourceDirectoryPath"/>'s own directory name.</param>
+        /// <param name="useLegacyZipCrypto"><c>false</c> (default/recommended) encrypts with AES-256; <c>true</c> uses the older, weaker ZipCrypto scheme, only for compatibility with tools that can't read AES-encrypted zips.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise.</param>
+        [Category("Archive - Create Encrypted")]
+        [Description("Creates a password-protected ZIP archive from a directory, using AES-256 by default. Never throws.")]
+        public bool CreateEncryptedArchive(string sourceDirectoryPath, string archivePath, string password, bool overwrite, bool includeBaseDirectory, bool useLegacyZipCrypto, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(sourceDirectoryPath))
+                {
+                    message = "A source directory path is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (string.IsNullOrEmpty(password))
+                {
+                    message = "A password is required.";
+                    return false;
+                }
+                if (!Directory.Exists(sourceDirectoryPath))
+                {
+                    message = $"Source directory '{sourceDirectoryPath}' does not exist.";
+                    return false;
+                }
+                if (!overwrite && File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' already exists.";
+                    return false;
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(archivePath);
+                if (!ArchiveEncryptionCore.TryBuildEncryptedArchiveFromDirectory(sourceDirectoryPath, tempPath, includeBaseDirectory, password, useLegacyZipCrypto, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, archivePath, overwrite, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CreateEncryptedArchive", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Update Existing Archive
+
+        /// <summary>
+        /// Adds each file in <paramref name="sourceFilePathsCsv"/> to an existing archive,
+        /// replacing any existing entry of the same name - there is no separate "add" vs.
+        /// "replace" mode, since a same-named entry is always replaced. Built on the same
+        /// copy-then-atomically-publish discipline as <see cref="CreateArchive"/>, so a
+        /// failure partway through never leaves <paramref name="archivePath"/> partially
+        /// modified. Never throws.
+        /// </summary>
+        /// <param name="archivePath">An existing archive to add files to.</param>
+        /// <param name="sourceFilePathsCsv">A comma-separated list of file paths to add or replace.</param>
+        /// <param name="entryNamesCsv">
+        /// An optional comma-separated list, parallel to <paramref name="sourceFilePathsCsv"/>
+        /// (same count when non-empty), giving the exact archive path/name for each source
+        /// file - use this to place a file in a subfolder inside the archive or give it a
+        /// different name than its source file. Empty/null falls back to each source file's
+        /// own name at the archive root, disambiguated with a numeric suffix on collision
+        /// (matching <see cref="CreateDiagnosticBundle"/>), but only against other
+        /// newly-added files in this same call - a fallback name that matches an existing
+        /// archive entry replaces it, which is the intended "replace" behavior.
+        /// </param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise.</param>
+        [Category("Archive - Update")]
+        [Description("Adds files to an existing archive, replacing any existing entry of the same name. Never throws.")]
+        public bool AddOrReplaceFilesInArchive(string archivePath, string sourceFilePathsCsv, string entryNamesCsv, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (!File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' does not exist.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(sourceFilePathsCsv))
+                {
+                    message = "At least one source file path is required.";
+                    return false;
+                }
+
+                List<string> sourcePaths = sourceFilePathsCsv.Split(',')
+                    .Select(p => p.Trim())
+                    .Where(p => p.Length > 0)
+                    .ToList();
+                if (sourcePaths.Count == 0)
+                {
+                    message = "At least one source file path is required.";
+                    return false;
+                }
+
+                foreach (string path in sourcePaths)
+                {
+                    if (!File.Exists(path))
+                    {
+                        message = $"Source file '{path}' does not exist.";
+                        return false;
+                    }
+                }
+
+                List<string> entryNames;
+                if (string.IsNullOrWhiteSpace(entryNamesCsv))
+                {
+                    entryNames = Enumerable.Repeat((string)null, sourcePaths.Count).ToList();
+                }
+                else
+                {
+                    entryNames = entryNamesCsv.Split(',').Select(n => n.Trim()).ToList();
+                    if (entryNames.Count != sourcePaths.Count)
+                    {
+                        message = $"entryNamesCsv has {entryNames.Count} entries but sourceFilePathsCsv has {sourcePaths.Count}; they must match.";
+                        return false;
+                    }
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(archivePath);
+                try
+                {
+                    File.Copy(archivePath, tempPath, overwrite: true);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    message = NeverThrowsGuard.Failure("AddOrReplaceFilesInArchive", ex);
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                if (!ArchiveCore.TryAddOrReplaceFilesInArchive(tempPath, sourcePaths, entryNames, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, archivePath, overwrite: true, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("AddOrReplaceFilesInArchive", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Removes one named entry from an existing archive. Built on the same
+        /// copy-then-atomically-publish discipline as <see cref="CreateArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="archivePath">An existing archive to remove an entry from.</param>
+        /// <param name="entryFullName">The entry's exact path within the archive.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise, including a missing entry.</param>
+        [Category("Archive - Update")]
+        [Description("Removes one named entry from an existing archive. Never throws.")]
+        public bool RemoveArchiveEntry(string archivePath, string entryFullName, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (!File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' does not exist.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(entryFullName))
+                {
+                    message = "An entry name is required.";
+                    return false;
+                }
+
+                using (ZipArchive scan = ZipFile.OpenRead(archivePath))
+                {
+                    if (scan.GetEntry(entryFullName) == null)
+                    {
+                        message = $"Archive '{archivePath}' contains no entry named '{entryFullName}'.";
+                        return false;
+                    }
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(archivePath);
+                try
+                {
+                    File.Copy(archivePath, tempPath, overwrite: true);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    message = NeverThrowsGuard.Failure("RemoveArchiveEntry", ex);
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                if (!ArchiveCore.TryRemoveArchiveEntry(tempPath, entryFullName, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, archivePath, overwrite: true, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RemoveArchiveEntry", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Renames one entry in an existing archive, preserving its content and timestamp.
+        /// Fails, without modifying the archive, if the source entry is missing or the target
+        /// name is already taken. Built on the same copy-then-atomically-publish discipline as
+        /// <see cref="CreateArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="archivePath">An existing archive containing the entry to rename.</param>
+        /// <param name="entryFullName">The entry's current exact path within the archive.</param>
+        /// <param name="newEntryName">The entry's new exact path within the archive.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise.</param>
+        [Category("Archive - Update")]
+        [Description("Renames one entry in an existing archive, preserving its content and timestamp. Never throws.")]
+        public bool RenameArchiveEntry(string archivePath, string entryFullName, string newEntryName, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (!File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' does not exist.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(entryFullName))
+                {
+                    message = "An entry name is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(newEntryName))
+                {
+                    message = "A new entry name is required.";
+                    return false;
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(archivePath);
+                try
+                {
+                    File.Copy(archivePath, tempPath, overwrite: true);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    message = NeverThrowsGuard.Failure("RenameArchiveEntry", ex);
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                if (!ArchiveCore.TryRenameArchiveEntry(tempPath, entryFullName, newEntryName, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, archivePath, overwrite: true, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RenameArchiveEntry", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Merge
+
+        /// <summary>
+        /// Builds a new archive containing every entry from both
+        /// <paramref name="firstArchivePath"/> and <paramref name="secondArchivePath"/>;
+        /// neither input is modified. A name collision between the two (or a repeated name
+        /// within either one) is disambiguated with a numeric suffix, the same convention
+        /// <see cref="CreateDiagnosticBundle"/> uses. Built atomically like
+        /// <see cref="CreateArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="firstArchivePath">The first archive, copied in first.</param>
+        /// <param name="secondArchivePath">The second archive, copied in second (its entries lose any name collision with the first).</param>
+        /// <param name="outputArchivePath">The merged archive's final path.</param>
+        /// <param name="overwrite">Whether an existing file at <paramref name="outputArchivePath"/> may be replaced.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise.</param>
+        [Category("Archive - Merge")]
+        [Description("Builds a new archive from every entry in two existing archives, without modifying either input. Never throws.")]
+        public bool MergeArchives(string firstArchivePath, string secondArchivePath, string outputArchivePath, bool overwrite, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(firstArchivePath))
+                {
+                    message = "A first archive path is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(secondArchivePath))
+                {
+                    message = "A second archive path is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(outputArchivePath))
+                {
+                    message = "An output archive path is required.";
+                    return false;
+                }
+                if (!File.Exists(firstArchivePath))
+                {
+                    message = $"Archive '{firstArchivePath}' does not exist.";
+                    return false;
+                }
+                if (!File.Exists(secondArchivePath))
+                {
+                    message = $"Archive '{secondArchivePath}' does not exist.";
+                    return false;
+                }
+                if (!overwrite && File.Exists(outputArchivePath))
+                {
+                    message = $"Archive '{outputArchivePath}' already exists.";
+                    return false;
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(outputArchivePath);
+                if (!ArchiveCore.TryMergeArchives(firstArchivePath, secondArchivePath, tempPath, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, outputArchivePath, overwrite, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("MergeArchives", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
         #region Extract
 
         /// <summary>
@@ -169,7 +556,7 @@ namespace ArchiveAutomation
 
                 using (ZipArchive scan = ZipFile.OpenRead(archivePath))
                 {
-                    if (!ArchiveCore.TryCheckExpansionLimits(scan.Entries, maxTotalExpandedSizeBytes, maxCompressionRatio, out message))
+                    if (!ArchiveCore.TryCheckExpansionLimits(scan.Entries.Select(ToSizeInfo), maxTotalExpandedSizeBytes, maxCompressionRatio, out message))
                         return false;
                 }
 
@@ -338,7 +725,7 @@ namespace ArchiveAutomation
         private static bool ExtractEntrySafely(ZipArchiveEntry entry, string destinationDirectoryPath, bool overwrite, long maxExpandedSizeBytes, double maxCompressionRatio, out string message)
         {
             message = default;
-            if (!ArchiveCore.TryCheckExpansionLimits(new[] { entry }, maxExpandedSizeBytes, maxCompressionRatio, out message))
+            if (!ArchiveCore.TryCheckExpansionLimits(new[] { ToSizeInfo(entry) }, maxExpandedSizeBytes, maxCompressionRatio, out message))
                 return false;
 
             if (!ArchiveSafety.TryResolveSafeExtractionPath(destinationDirectoryPath, entry.FullName, out string safePath, out message))
@@ -357,8 +744,65 @@ namespace ArchiveAutomation
             return true;
         }
 
+        private static ArchiveEntrySizeInfo ToSizeInfo(ZipArchiveEntry entry) => new ArchiveEntrySizeInfo(entry.FullName, entry.Length, entry.CompressedLength);
+
         private static bool IsDirectoryEntry(ZipArchiveEntry entry) =>
             entry.FullName.EndsWith("/", StringComparison.Ordinal) || entry.FullName.EndsWith("\\", StringComparison.Ordinal);
+
+        #endregion
+
+        #region Extract Encrypted
+
+        /// <summary>
+        /// Extracts a password-protected ZIP archive to a directory, via
+        /// <c>ICSharpCode.SharpZipLib</c> - the only extraction method in this component able
+        /// to open an encrypted entry; every other extraction method detects but never opens
+        /// one. Same declared-size/compression-ratio pre-check and zip-slip guard as
+        /// <see cref="ExtractArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="archivePath">The archive to extract.</param>
+        /// <param name="destinationDirectoryPath">The directory to extract into. Created if it doesn't already exist.</param>
+        /// <param name="password">The archive's password.</param>
+        /// <param name="overwrite">Whether existing files at the destination may be replaced.</param>
+        /// <param name="maxTotalExpandedSizeBytes">The maximum total declared uncompressed size across all entries. <c>0</c> or negative means no limit.</param>
+        /// <param name="maxCompressionRatio">The maximum declared uncompressed:compressed ratio for any single entry. <c>0</c> or negative means no limit.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise, including a wrong password.</param>
+        [Category("Archive - Extract Encrypted")]
+        [Description("Extracts a password-protected ZIP archive, rejecting it up front if declared sizes/ratios exceed the given limits. Never throws.")]
+        public bool ExtractArchiveWithPassword(string archivePath, string destinationDirectoryPath, string password, bool overwrite, long maxTotalExpandedSizeBytes, double maxCompressionRatio, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(destinationDirectoryPath))
+                {
+                    message = "A destination directory path is required.";
+                    return false;
+                }
+                if (string.IsNullOrEmpty(password))
+                {
+                    message = "A password is required.";
+                    return false;
+                }
+                if (!File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' does not exist.";
+                    return false;
+                }
+
+                return ArchiveEncryptionCore.TryExtractEncryptedArchive(archivePath, destinationDirectoryPath, password, overwrite, maxTotalExpandedSizeBytes, maxCompressionRatio, true, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ExtractArchiveWithPassword", ex);
+                return false;
+            }
+        }
 
         #endregion
 
@@ -583,12 +1027,14 @@ namespace ArchiveAutomation
 
         /// <summary>
         /// Scans a ZIP archive for any encrypted entry, stopping at the first one found.
-        /// Detection only - <see cref="System.IO.Compression"/> cannot decrypt or extract
-        /// an encrypted entry under any circumstance, and no password parameter exists
-        /// anywhere in this component. Never throws.
+        /// Detection only, no password parameter - <see cref="System.IO.Compression"/> cannot
+        /// decrypt or extract an encrypted entry under any circumstance. To actually extract a
+        /// password-protected archive, use <see cref="ExtractArchiveWithPassword"/> instead,
+        /// which is backed by SharpZipLib rather than <see cref="System.IO.Compression"/>.
+        /// Never throws.
         /// </summary>
         [Category("Archive - Validate")]
-        [Description("Scans a ZIP archive for any encrypted entry. Detection only - cannot decrypt or extract encrypted entries. Never throws.")]
+        [Description("Scans a ZIP archive for any encrypted entry (detection only, no password). Never throws.")]
         public bool HasEncryptedEntries(string archivePath, out bool hasEncryptedEntries, out string message)
         {
             hasEncryptedEntries = default;

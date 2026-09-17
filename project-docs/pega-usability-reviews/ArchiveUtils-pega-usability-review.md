@@ -82,4 +82,31 @@ choice made while drafting the method surface, not a coincidence.
 
 ## Recommended changes
 
-None outstanding - this is the initial design pass, not a retrofit.
+None outstanding from the initial design pass. See the addendum below for a
+later capability-addition pass.
+
+## Addendum: mutation, merge, and encryption pass (2026-09)
+
+Six new methods added: `AddOrReplaceFilesInArchive`, `RemoveArchiveEntry`,
+`RenameArchiveEntry` (Archive - Update), `MergeArchives` (Archive - Merge),
+`CreateEncryptedArchive` (Archive - Create Encrypted), and
+`ExtractArchiveWithPassword` (Archive - Extract Encrypted).
+
+| Method | Rating | Assessment |
+|---|---|---|
+| `AddOrReplaceFilesInArchive` | Direct | Scalar/CSV in, scalar out - same CSV-list convention as `CreateDiagnosticBundle`'s `sourceFilePathsCsv`. |
+| `RemoveArchiveEntry` | Direct | All scalar. |
+| `RenameArchiveEntry` | Direct | All scalar. |
+| `MergeArchives` | Direct | All scalar. |
+| `CreateEncryptedArchive` | Direct | All scalar; mirrors `CreateArchive`'s shape plus a password and an encryption-mode flag. |
+| `ExtractArchiveWithPassword` | Direct | All scalar; mirrors `ExtractArchive`'s shape plus a password. |
+
+No signature-uniqueness collisions: all six are new, distinct method names,
+none sharing a name with an existing method or with each other, so no
+`Simple`/`As<Type>` suffix question arises (same "no mandatory `Simple`
+collision" pattern noted in this doc's original Summary section).
+
+`ICSharpCode.SharpZipLib` is now a dependency of this component -
+`CreateEncryptedArchive`/`ExtractArchiveWithPassword` are the only two
+methods backed by it; every other method is unchanged, plain
+`System.IO.Compression`.

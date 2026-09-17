@@ -15,6 +15,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="SharpZipLib" Version="1.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Lets ArchiveUtils.Tests cover the internal ArchiveSafety/Crc32Core/ArchiveCore helpers -->
     <InternalsVisibleTo Include="ArchiveUtils.Tests" />
   </ItemGroup>
