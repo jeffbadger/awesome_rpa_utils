@@ -51,6 +51,31 @@ enum overload instead of remembering which of its seven named parameters to
 fill in: `Process`, `ProcessesCsv`, `ClassName`, `TitleContains`,
 `TitleMatches` (documented under [Filters](#filters)).
 
+## `WinEventData`
+
+The event data produced on success by `WaitForX`/`GetNextEvent` (via their
+`out WinEventData eventData` parameter), and each element of the array
+`GetNextEvents` produces, is a flattened, Pega-mappable snapshot of a single
+WinEvent. All properties are plain strings/numbers/handles and have an
+`internal` setter, so consumers can read but never mutate a delivered event.
+
+| Property | Type | Description |
+|---|---|---|
+| `EventId` | `string` | Unique id for this event (GUID, no dashes). |
+| `Category` | `string` | Event name, e.g. `"WindowCreated"`, `"DialogAppeared"` — one of the `WinEventName` values, or `"Unknown"` for a WinEvent with no mapped category (still recorded, e.g. in the recent-events ring). |
+| `Timestamp` | `long` | `DateTime.UtcNow` ticks at capture time. Use this, not arrival order, to correlate events across processes — see [Known limitations](#known-limitations). |
+| `Hwnd` | `IntPtr` | Window handle (`IntPtr.Zero` if none). Preserves the native handle width (32-bit on x86, 64-bit on x64) and can be passed directly to WindowUtils/UIAutomationUtils methods without reconstructing it. |
+| `ProcessName` | `string` | Process image name (e.g. `"notepad"`), or null if unknown. |
+| `ProcessId` | `uint` | Owning process id. |
+| `ClassName` | `string` | Window class name (e.g. `"#32770"` for a dialog), or null. |
+| `Title` | `string` | Window title at capture time, or null. Destroyed-window events still carry this — enrichment happens inside the callback while the window still exists. |
+| `State` | `string` | Normalized state for state-change events, e.g. `"Visible"`, `"Minimized"`. Null for every other event category. |
+
+| Method | Signature | Description |
+|---|---|---|
+| `Clone` | `WinEventData Clone()` | Returns a shallow copy with the same property values. Subscriptions and waiters each receive their own clone, so mutating one delivered event cannot affect another consumer. |
+| `ToJson` | `string ToJson()` | Serializes this event to a compact JSON object — the same shape `GetNextEventsJson`/`DumpRecentEvents` produce. Never throws; returns `"{}"` on a serialization failure. |
+
 ## 30-second overview
 
 ```csharp
