@@ -157,9 +157,9 @@ namespace WinEventAutomation.Tests
         {
             var d = new ThrottleDebounce();
             d.Set("WindowShown", 150);
-            Assert.False(d.ShouldDrop(100, "WindowShown")); // first kept
-            Assert.True(d.ShouldDrop(100, "WindowShown"));  // second dropped
-            Assert.False(d.ShouldDrop(200, "WindowShown")); // different hwnd kept
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowShown")); // first kept
+            Assert.True(d.ShouldDrop(new IntPtr(100), "WindowShown"));  // second dropped
+            Assert.False(d.ShouldDrop(new IntPtr(200), "WindowShown")); // different hwnd kept
         }
 
         [Fact]
@@ -167,28 +167,28 @@ namespace WinEventAutomation.Tests
         {
             var d = new ThrottleDebounce();
             d.Set("WindowShown", 30);
-            Assert.False(d.ShouldDrop(100, "WindowShown"));
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowShown"));
             Thread.Sleep(50);
-            Assert.False(d.ShouldDrop(100, "WindowShown")); // window elapsed
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowShown")); // window elapsed
         }
 
         [Fact]
         public void Debounce_defaults_show_hide_to_150ms_others_zero()
         {
             var d = new ThrottleDebounce();
-            Assert.False(d.ShouldDrop(100, "WindowShown"));
-            Assert.True(d.ShouldDrop(100, "WindowShown"));
-            Assert.False(d.ShouldDrop(100, "WindowCreated")); // no default debounce
-            Assert.False(d.ShouldDrop(100, "WindowCreated"));
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowShown"));
+            Assert.True(d.ShouldDrop(new IntPtr(100), "WindowShown"));
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowCreated")); // no default debounce
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowCreated"));
         }
 
         [Fact]
         public void Debounce_distinguishes_hwnds_differing_only_in_high_32_bits()
         {
-            // Regression test for the Hwnd truncation bug: before the fix, ShouldDrop
-            // took a long, so a handle whose value only differs in its high 32 bits
-            // collapsed to the same key as a different handle and was wrongly debounced
-            // away as a duplicate of it.
+            if (IntPtr.Size < 8)
+                return;
+            // Regression test for full-handle keying: two handles that share low
+            // 32 bits but differ in high 32 bits must remain distinct debounce keys.
             var d = new ThrottleDebounce();
             d.Set("WindowShown", 150);
             IntPtr low = new IntPtr(0x1234);
@@ -405,6 +405,36 @@ namespace WinEventAutomation.Tests
         }
 
         [Fact]
+        public void IsWindow_notepad_returns_hwnd_with_null_message()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            using var proc = StartNotepad();
+            if (proc == null)
+                return;
+            try
+            {
+                bool ok = false;
+                IntPtr hwnd = IntPtr.Zero;
+                string message = null;
+                for (int i = 0; i < 20 && !ok; i++)
+                {
+                    ok = utils.IsWindow("{\"process\":\"notepad\"}", out hwnd, out message);
+                    if (!ok)
+                        Thread.Sleep(100);
+                }
+                Assert.True(ok);
+                Assert.NotEqual(IntPtr.Zero, hwnd);
+                Assert.Null(message);
+            }
+            finally
+            {
+                Kill(proc);
+            }
+        }
+
+        [Fact]
         public void GetNextEvent_unknown_subscription_returns_false_with_message()
         {
             var utils = new WinEventUtils();
@@ -472,6 +502,8 @@ namespace WinEventAutomation.Tests
         [Fact]
         public void EventData_Hwnd_does_not_truncate_a_64_bit_handle()
         {
+            if (IntPtr.Size < 8)
+                return;
             IntPtr fullHandle = new IntPtr(unchecked((long)0x00007FF6_12345678UL)); // realistic 64-bit handle magnitude
             var e = new WinEventData { Hwnd = fullHandle };
             Assert.Equal(fullHandle, e.Hwnd);
@@ -992,7 +1024,7 @@ namespace WinEventAutomation.Tests
             d.ShouldDrop(new IntPtr(99999), "WindowShown"); // count exceeded → prune pass
             Assert.True(d.CachedKeys <= 2, "stale entries were not pruned: " + d.CachedKeys);
             // The still-live key (99999) is tracked again, and pruning does not break debounce.
-            Assert.False(d.ShouldDrop(99998, "WindowShown"));
+            Assert.False(d.ShouldDrop(new IntPtr(99998), "WindowShown"));
         }
 
         [Fact]
@@ -1251,7 +1283,7 @@ namespace WinEventAutomation.Tests
                 EventId = Guid.NewGuid().ToString("N"),
                 Category = category,
                 Timestamp = DateTime.UtcNow.Ticks,
-                Hwnd = 0x1234,
+                Hwnd = new IntPtr(0x1234),
                 ProcessName = processName,
                 ProcessId = processId,
                 ClassName = className,

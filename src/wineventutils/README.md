@@ -282,7 +282,7 @@ closed — the filter matches nothing.
 A wait always resolves to exactly one event — the first match, then it stops
 listening — so every `WaitForX` method returns a single `WinEventData` object
 directly; there's no separate JSON+handle overload or `...AsEventData`
-suffix. Reconstruct a chainable `IntPtr` yourself when needed:
+suffix. `WinEventData.Hwnd` is already an `IntPtr`, so pass it directly when needed:
 
 ```csharp
 bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _);
@@ -347,10 +347,9 @@ process waits** — these are UI-event waits; a process that never creates a win
   affect another consumer. Treat the object as read-only anyway (its members
   are properties with an `internal` setter, so external code cannot mutate
   them even by choice).
-- **`WinEventData.Hwnd` is a signed 64-bit `long`**, not a 32-bit value — a
-  32-bit field would truncate a real 64-bit window handle on 64-bit Windows.
-  Reconstruct a chainable `IntPtr` for WindowUtils/UIAutomationUtils with
-  `eventData.Hwnd`.
+- **`WinEventData.Hwnd` is an `IntPtr`** so it preserves the native handle width
+  (32-bit on x86, 64-bit on x64) and can be passed directly to
+  WindowUtils/UIAutomationUtils.
 - **`Unsubscribe` wakes a blocked `GetNextEvent`** — instead of waiting out its
   full timeout on a removed subscription, the blocked call returns False with a
   message promptly.

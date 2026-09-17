@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using WinEventAutomation.Native;
@@ -66,7 +67,7 @@ namespace WinEventAutomation
                     message = "Window existence checks require Windows.";
                     return false;
                 }
-                WinEventInterop.EnumWindows((hwnd, lParam) =>
+                bool enumerationCompleted = WinEventInterop.EnumWindows((hwnd, lParam) =>
                 {
                     var data = SnapshotWindow(hwnd);
                     if ((requiredClass == null || string.Equals(data.ClassName, requiredClass, StringComparison.OrdinalIgnoreCase)) &&
@@ -77,6 +78,14 @@ namespace WinEventAutomation
                     }
                     return true;
                 }, IntPtr.Zero);
+                if (!enumerationCompleted && foundHwnd == IntPtr.Zero)
+                {
+                    int win32Error = Marshal.GetLastWin32Error();
+                    message = win32Error != 0
+                        ? $"{operation} failed unexpectedly (Win32): EnumWindows failed with error {win32Error}."
+                        : $"{operation} failed unexpectedly (Win32): EnumWindows failed.";
+                    return false;
+                }
                 hwnd = foundHwnd;
                 return foundHwnd != IntPtr.Zero;
             }
