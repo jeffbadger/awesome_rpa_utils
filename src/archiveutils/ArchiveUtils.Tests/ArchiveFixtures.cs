@@ -26,6 +26,17 @@ namespace ArchiveAutomation.Tests
             return path;
         }
 
+        internal static string CreateMutableFixture(string path)
+        {
+            using (var fs = new FileStream(path, FileMode.Create))
+            using (var archive = new ZipArchive(fs, ZipArchiveMode.Create))
+            {
+                WriteEntry(archive, "readme.txt", "hello world");
+                WriteEntry(archive, "data/values.csv", "a,b,c\n1,2,3\n");
+            }
+            return path;
+        }
+
         internal static string CreateEmptyFixture(string path)
         {
             using (var fs = new FileStream(path, FileMode.Create))

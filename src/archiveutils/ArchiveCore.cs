@@ -204,6 +204,137 @@ namespace ArchiveAutomation
         }
 
         /// <summary>
+        /// Adds each source file in <paramref name="sourceFilePaths"/> to
+        /// <paramref name="tempArchivePath"/> (already a working copy of the target archive,
+        /// opened here in <see cref="ZipArchiveMode.Update"/>), replacing any existing entry
+        /// of the same name. <paramref name="entryNames"/> is parallel to
+        /// <paramref name="sourceFilePaths"/>; a null/empty element falls back to the source
+        /// file's own name, disambiguated against other newly-added-in-this-call fallback
+        /// names the same way <see cref="TryBuildArchiveFromFiles"/> disambiguates diagnostic
+        /// bundle entries - but never against a pre-existing archive entry, since replacing a
+        /// same-named existing entry is the whole point of this method. If two entries in the
+        /// same call resolve to the same final name (e.g. two explicit, identical
+        /// <paramref name="entryNames"/> values), the later one wins.
+        /// </summary>
+        internal static bool TryAddOrReplaceFilesInArchive(string tempArchivePath, IReadOnlyList<string> sourceFilePaths, IReadOnlyList<string> entryNames, out string error)
+        {
+            error = null;
+            var usedFallbackNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            using (var archive = ZipFile.Open(tempArchivePath, ZipArchiveMode.Update))
+            {
+                for (int i = 0; i < sourceFilePaths.Count; i++)
+                {
+                    string filePath = sourceFilePaths[i];
+                    string requestedName = entryNames[i];
+                    string entryName;
+
+                    if (!string.IsNullOrWhiteSpace(requestedName))
+                    {
+                        entryName = requestedName.Replace('\\', '/');
+                    }
+                    else
+                    {
+                        string fallback = Path.GetFileName(filePath);
+                        int suffix = 2;
+                        string candidate = fallback;
+                        while (!usedFallbackNames.Add(candidate))
+                            candidate = $"{Path.GetFileNameWithoutExtension(fallback)}_{suffix++}{Path.GetExtension(fallback)}";
+                        entryName = candidate;
+                    }
+
+                    DateTimeOffset timestamp = new DateTimeOffset(File.GetLastWriteTime(filePath));
+                    if (!TryValidateZipTimestamp(timestamp, out error))
+                    {
+                        error = $"'{filePath}': {error}";
+                        return false;
+                    }
+
+                    ZipArchiveEntry existing = archive.GetEntry(entryName);
+                    existing?.Delete();
+
+                    ZipArchiveEntry entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+                    entry.LastWriteTime = timestamp;
+                    using (Stream entryStream = entry.Open())
+                    using (var sourceStream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                    {
+                        sourceStream.CopyTo(entryStream);
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>Removes the one entry named <paramref name="entryFullName"/> from <paramref name="tempArchivePath"/> (a working copy, opened here in <see cref="ZipArchiveMode.Update"/>).</summary>
+        internal static bool TryRemoveArchiveEntry(string tempArchivePath, string entryFullName, out string error)
+        {
+            error = null;
+            using (var archive = ZipFile.Open(tempArchivePath, ZipArchiveMode.Update))
+            {
+                ZipArchiveEntry entry = archive.GetEntry(entryFullName);
+                if (entry == null)
+                {
+                    error = $"Archive contains no entry named '{entryFullName}'.";
+                    return false;
+                }
+                entry.Delete();
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Renames one entry in <paramref name="tempArchivePath"/> (a working copy, opened
+        /// here in <see cref="ZipArchiveMode.Update"/>) by fully buffering its content in
+        /// memory, creating a new entry under <paramref name="newEntryName"/> with that
+        /// content and the original's timestamp, then deleting the original - rather than
+        /// interleaving read/write streams from two entries of the same open archive, which
+        /// <see cref="ZipArchiveMode.Update"/> does not reliably support. Fails, without
+        /// modifying anything, if the source entry is missing or the target name is already
+        /// taken. Note this recompresses the entry (always <see cref="CompressionLevel.Optimal"/>)
+        /// since <see cref="ZipArchiveEntry"/> exposes no way to read back its original
+        /// compression level for a byte-for-byte raw copy - content is identical, only
+        /// physical size may shift slightly.
+        /// </summary>
+        internal static bool TryRenameArchiveEntry(string tempArchivePath, string entryFullName, string newEntryName, out string error)
+        {
+            error = null;
+            using (var archive = ZipFile.Open(tempArchivePath, ZipArchiveMode.Update))
+            {
+                ZipArchiveEntry existingSource = archive.GetEntry(entryFullName);
+                if (existingSource == null)
+                {
+                    error = $"Archive contains no entry named '{entryFullName}'.";
+                    return false;
+                }
+                if (archive.GetEntry(newEntryName) != null)
+                {
+                    error = $"Archive already contains an entry named '{newEntryName}'.";
+                    return false;
+                }
+
+                byte[] content;
+                using (Stream sourceStream = existingSource.Open())
+                using (var buffer = new MemoryStream())
+                {
+                    sourceStream.CopyTo(buffer);
+                    content = buffer.ToArray();
+                }
+                DateTimeOffset originalTimestamp = existingSource.LastWriteTime;
+                existingSource.Delete();
+
+                ZipArchiveEntry newEntry = archive.CreateEntry(newEntryName, CompressionLevel.Optimal);
+                newEntry.LastWriteTime = originalTimestamp;
+                using (Stream destinationStream = newEntry.Open())
+                using (var contentStream = new MemoryStream(content))
+                {
+                    contentStream.CopyTo(destinationStream);
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Checks a set of entries' declared <c>Length</c>/<c>CompressedLength</c> metadata
         /// against a total-expanded-size limit and a per-entry compression-ratio limit -
         /// both checked against declared central-directory metadata, before any bytes are

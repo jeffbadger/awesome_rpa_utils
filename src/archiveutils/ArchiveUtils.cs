@@ -128,6 +128,246 @@ namespace ArchiveAutomation
 
         #endregion
 
+        #region Update Existing Archive
+
+        /// <summary>
+        /// Adds each file in <paramref name="sourceFilePathsCsv"/> to an existing archive,
+        /// replacing any existing entry of the same name - there is no separate "add" vs.
+        /// "replace" mode, since a same-named entry is always replaced. Built on the same
+        /// copy-then-atomically-publish discipline as <see cref="CreateArchive"/>, so a
+        /// failure partway through never leaves <paramref name="archivePath"/> partially
+        /// modified. Never throws.
+        /// </summary>
+        /// <param name="archivePath">An existing archive to add files to.</param>
+        /// <param name="sourceFilePathsCsv">A comma-separated list of file paths to add or replace.</param>
+        /// <param name="entryNamesCsv">
+        /// An optional comma-separated list, parallel to <paramref name="sourceFilePathsCsv"/>
+        /// (same count when non-empty), giving the exact archive path/name for each source
+        /// file - use this to place a file in a subfolder inside the archive or give it a
+        /// different name than its source file. Empty/null falls back to each source file's
+        /// own name at the archive root, disambiguated with a numeric suffix on collision
+        /// (matching <see cref="CreateDiagnosticBundle"/>), but only against other
+        /// newly-added files in this same call - a fallback name that matches an existing
+        /// archive entry replaces it, which is the intended "replace" behavior.
+        /// </param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise.</param>
+        [Category("Archive - Update")]
+        [Description("Adds files to an existing archive, replacing any existing entry of the same name. Never throws.")]
+        public bool AddOrReplaceFilesInArchive(string archivePath, string sourceFilePathsCsv, string entryNamesCsv, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (!File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' does not exist.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(sourceFilePathsCsv))
+                {
+                    message = "At least one source file path is required.";
+                    return false;
+                }
+
+                List<string> sourcePaths = sourceFilePathsCsv.Split(',')
+                    .Select(p => p.Trim())
+                    .Where(p => p.Length > 0)
+                    .ToList();
+                if (sourcePaths.Count == 0)
+                {
+                    message = "At least one source file path is required.";
+                    return false;
+                }
+
+                foreach (string path in sourcePaths)
+                {
+                    if (!File.Exists(path))
+                    {
+                        message = $"Source file '{path}' does not exist.";
+                        return false;
+                    }
+                }
+
+                List<string> entryNames;
+                if (string.IsNullOrWhiteSpace(entryNamesCsv))
+                {
+                    entryNames = Enumerable.Repeat((string)null, sourcePaths.Count).ToList();
+                }
+                else
+                {
+                    entryNames = entryNamesCsv.Split(',').Select(n => n.Trim()).ToList();
+                    if (entryNames.Count != sourcePaths.Count)
+                    {
+                        message = $"entryNamesCsv has {entryNames.Count} entries but sourceFilePathsCsv has {sourcePaths.Count}; they must match.";
+                        return false;
+                    }
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(archivePath);
+                try
+                {
+                    File.Copy(archivePath, tempPath, overwrite: true);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    message = NeverThrowsGuard.Failure("AddOrReplaceFilesInArchive", ex);
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                if (!ArchiveCore.TryAddOrReplaceFilesInArchive(tempPath, sourcePaths, entryNames, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, archivePath, overwrite: true, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("AddOrReplaceFilesInArchive", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Removes one named entry from an existing archive. Built on the same
+        /// copy-then-atomically-publish discipline as <see cref="CreateArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="archivePath">An existing archive to remove an entry from.</param>
+        /// <param name="entryFullName">The entry's exact path within the archive.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise, including a missing entry.</param>
+        [Category("Archive - Update")]
+        [Description("Removes one named entry from an existing archive. Never throws.")]
+        public bool RemoveArchiveEntry(string archivePath, string entryFullName, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (!File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' does not exist.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(entryFullName))
+                {
+                    message = "An entry name is required.";
+                    return false;
+                }
+
+                using (ZipArchive scan = ZipFile.OpenRead(archivePath))
+                {
+                    if (scan.GetEntry(entryFullName) == null)
+                    {
+                        message = $"Archive '{archivePath}' contains no entry named '{entryFullName}'.";
+                        return false;
+                    }
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(archivePath);
+                try
+                {
+                    File.Copy(archivePath, tempPath, overwrite: true);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    message = NeverThrowsGuard.Failure("RemoveArchiveEntry", ex);
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                if (!ArchiveCore.TryRemoveArchiveEntry(tempPath, entryFullName, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, archivePath, overwrite: true, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RemoveArchiveEntry", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Renames one entry in an existing archive, preserving its content and timestamp.
+        /// Fails, without modifying the archive, if the source entry is missing or the target
+        /// name is already taken. Built on the same copy-then-atomically-publish discipline as
+        /// <see cref="CreateArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="archivePath">An existing archive containing the entry to rename.</param>
+        /// <param name="entryFullName">The entry's current exact path within the archive.</param>
+        /// <param name="newEntryName">The entry's new exact path within the archive.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise.</param>
+        [Category("Archive - Update")]
+        [Description("Renames one entry in an existing archive, preserving its content and timestamp. Never throws.")]
+        public bool RenameArchiveEntry(string archivePath, string entryFullName, string newEntryName, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (!File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' does not exist.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(entryFullName))
+                {
+                    message = "An entry name is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(newEntryName))
+                {
+                    message = "A new entry name is required.";
+                    return false;
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(archivePath);
+                try
+                {
+                    File.Copy(archivePath, tempPath, overwrite: true);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    message = NeverThrowsGuard.Failure("RenameArchiveEntry", ex);
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                if (!ArchiveCore.TryRenameArchiveEntry(tempPath, entryFullName, newEntryName, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, archivePath, overwrite: true, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("RenameArchiveEntry", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
         #region Extract
 
         /// <summary>
