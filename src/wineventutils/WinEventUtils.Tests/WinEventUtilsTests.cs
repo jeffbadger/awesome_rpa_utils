@@ -439,8 +439,7 @@ namespace WinEventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new WinEventUtils();
-            utils.EnumerateTopLevelWindows = _ => false;
+            using var utils = new FailingEnumWinEventUtils();
 
             bool ok = utils.IsWindow("{}", out IntPtr hwnd, out string message);
 
@@ -1330,6 +1329,16 @@ namespace WinEventAutomation.Tests
             }
             catch
             {
+            }
+        }
+
+        private sealed class FailingEnumWinEventUtils : WinEventUtils
+        {
+            protected internal override bool TryEnumerateTopLevelWindows(Func<IntPtr, bool> callback, out bool stoppedByCallback, out int win32Error)
+            {
+                stoppedByCallback = false;
+                win32Error = 5;
+                return false;
             }
         }
 

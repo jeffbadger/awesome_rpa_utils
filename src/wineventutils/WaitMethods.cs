@@ -22,9 +22,6 @@ namespace WinEventAutomation
     /// </summary>
     public partial class WinEventUtils
     {
-        internal Func<Func<IntPtr, bool>, bool> EnumerateTopLevelWindows { get; set; } =
-            callback => WinEventInterop.EnumWindows((hwnd, _) => callback(hwnd), IntPtr.Zero);
-
         /// <summary>
         /// Tests whether a live top-level window matches the filter. This is a
         /// non-blocking existence check and does not require the event engine.
@@ -65,27 +62,23 @@ namespace WinEventAutomation
                 }
                 filter = filter ?? WinEventFilter.Create();
                 IntPtr foundHwnd = IntPtr.Zero;
-                bool callbackRequestedStop = false;
                 if (!OperatingSystem.IsWindows())
                 {
                     message = "Window existence checks require Windows.";
                     return false;
                 }
-                bool enumerationCompleted = EnumerateTopLevelWindows(hwnd =>
+                if (!TryEnumerateTopLevelWindows(hwnd =>
                 {
                     var data = SnapshotWindow(hwnd);
                     if ((requiredClass == null || string.Equals(data.ClassName, requiredClass, StringComparison.OrdinalIgnoreCase)) &&
                         filter.Matches(data, _hostPid))
                     {
                         foundHwnd = hwnd;
-                        callbackRequestedStop = true;
                         return false;
                     }
                     return true;
-                });
-                if (!enumerationCompleted && !callbackRequestedStop && foundHwnd == IntPtr.Zero)
+                }, out _, out int win32Error))
                 {
-                    int win32Error = Marshal.GetLastWin32Error();
                     message = win32Error != 0
                         ? $"{operation} failed unexpectedly (Win32): EnumWindows failed with error {win32Error}."
                         : $"{operation} failed unexpectedly (Win32): EnumWindows failed.";
@@ -99,6 +92,29 @@ namespace WinEventAutomation
                 message = NeverThrowsGuard.Failure(operation, ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Enumerates top-level windows and invokes <paramref name="callback"/>
+        /// for each handle until completion or callback stop. Returns False only
+        /// when the native enumeration itself fails.
+        /// </summary>
+        protected internal virtual bool TryEnumerateTopLevelWindows(Func<IntPtr, bool> callback, out bool stoppedByCallback, out int win32Error)
+        {
+            win32Error = 0;
+            bool stopped = false;
+            bool completed = WinEventInterop.EnumWindows((hwnd, _) =>
+            {
+                bool keepGoing = callback(hwnd);
+                if (!keepGoing)
+                    stopped = true;
+                return keepGoing;
+            }, IntPtr.Zero);
+            stoppedByCallback = stopped;
+            if (completed)
+                return true;
+            win32Error = Marshal.GetLastWin32Error();
+            return stoppedByCallback && win32Error == 0;
         }
 
         private static WinEventData SnapshotWindow(IntPtr hwnd)
