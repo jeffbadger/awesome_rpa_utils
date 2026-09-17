@@ -178,7 +178,7 @@ namespace JsonAutomation
 
         #endregion
 
-        #region Validation and typed getters
+        #region Validation
 
         /// <summary>Checks whether a string is well-formed JSON.</summary>
         /// <param name="json">The text to check.</param>
@@ -200,6 +200,10 @@ namespace JsonAutomation
                 return false;
             }
         }
+
+        #endregion
+
+        #region Get
 
         private bool TryGetTypedValue<T>(string json, string path, string methodName, out T value, out string message)
         {
@@ -230,7 +234,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <c>null</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="string"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as a string. Never throws.")]
         public bool TryGetStringValue(string json, string path, out string value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetStringValue), out value, out message);
@@ -241,7 +245,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <c>0</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="int"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as an int. Never throws.")]
         public bool TryGetIntValue(string json, string path, out int value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetIntValue), out value, out message);
@@ -252,7 +256,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <c>false</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="bool"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as a bool. Never throws.")]
         public bool TryGetBoolValue(string json, string path, out bool value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetBoolValue), out value, out message);
@@ -263,7 +267,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <c>0</c> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="double"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as a double. Never throws.")]
         public bool TryGetDoubleValue(string json, string path, out double value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetDoubleValue), out value, out message);
@@ -274,7 +278,7 @@ namespace JsonAutomation
         /// <param name="value">The value on success; <see cref="DateTime.MinValue"/> on failure.</param>
         /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
         /// <returns><c>True</c> if <paramref name="path"/> resolved to a value convertible to <see cref="DateTime"/>.</returns>
-        [Category("Json - Validation")]
+        [Category("Json - Get")]
         [Description("Extracts a value at a JSONPath as a DateTime. Never throws.")]
         public bool TryGetDateTimeValue(string json, string path, out DateTime value, out string message) =>
             TryGetTypedValue(json, path, nameof(TryGetDateTimeValue), out value, out message);
@@ -362,6 +366,60 @@ namespace JsonAutomation
             catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
             {
                 message = NeverThrowsGuard.Failure(nameof(TryGetValueType), exception);
+                return false;
+            }
+        }
+
+        // Wraps name in JSONPath bracket-indexer syntax ($..['name']) rather than dot syntax
+        // ($..name) - verified empirically that dot syntax silently matches nothing (not an
+        // exception, a silent zero-match failure) for a name containing a character like "."
+        // that dot syntax would otherwise parse as a path separator. Bracket syntax handles
+        // any exact property name uniformly. Backslash is escaped first so a name containing
+        // a literal backslash isn't misread as the start of an escape sequence for the
+        // single-quote escaping that follows.
+        private static string ToNameSearchPath(string name) =>
+            "$..['" + name.Replace("\\", "\\\\").Replace("'", "\\'") + "']";
+
+        /// <summary>Finds every path in the document where a property named <paramref name="name"/>
+        /// exists, at any depth, and joins the matched paths into one delimited string. Each
+        /// returned path is directly usable as the <c>path</c> argument to any other method on
+        /// this component (e.g. <see cref="TryGetValueFromJson"/>).</summary>
+        /// <param name="json">The JSON text to search.</param>
+        /// <param name="name">The exact property name to search for.</param>
+        /// <param name="delimiter">The delimiter to join matched paths with.</param>
+        /// <param name="paths">The joined paths on success; <c>null</c> on failure.</param>
+        /// <param name="message"><c>null</c> on success; a description of the failure otherwise.</param>
+        /// <returns><c>True</c> if at least one property named <paramref name="name"/> was found.</returns>
+        [Category("Json - Query")]
+        [Description("Finds every path where a property with the given name exists, at any depth, and joins the paths into one delimited string. Never throws.")]
+        public bool TryFindPathsByName(string json, string name, string delimiter, out string paths, out string message)
+        {
+            paths = null;
+            message = null;
+            try
+            {
+                if (string.IsNullOrEmpty(name))
+                {
+                    message = "name is required.";
+                    return false;
+                }
+                JToken root = ParseJson(json);
+                List<string> matches = new List<string>();
+                foreach (JToken token in root.SelectTokens(ToNameSearchPath(name)))
+                {
+                    matches.Add(token.Path);
+                }
+                if (matches.Count == 0)
+                {
+                    message = $"No property named '{name}' was found.";
+                    return false;
+                }
+                paths = string.Join(delimiter, matches);
+                return true;
+            }
+            catch (Exception exception) when (NeverThrowsGuard.IsRecoverable(exception))
+            {
+                message = NeverThrowsGuard.Failure(nameof(TryFindPathsByName), exception);
                 return false;
             }
         }

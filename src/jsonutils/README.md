@@ -10,7 +10,12 @@ with a descriptive message instead of throwing.
 - Namespace: `JsonAutomation`
 - Assembly: `JsonAutomation`
 
+See the [Documentation](Documentation/README.md) folder for real-world usage
+examples of every method category.
+
 ## Methods
+
+### Core
 
 | Method | Signature | Description |
 |---|---|---|
@@ -18,25 +23,66 @@ with a descriptive message instead of throwing.
 | `TrySerializeObject` | `(object value, out string json, out string message) : bool` | Serializes an object to JSON. |
 | `TryGetValueFromJson` | `(string json, string path, out string value, out string message) : bool` | Extracts a single value at a JSONPath. |
 | `TrySetValueInJson` | `(string json, string path, string value, out string updatedJson, out string message) : bool` | Updates a value at an existing JSONPath. |
+
+### Validation
+
+| Method | Signature | Description |
+|---|---|---|
 | `IsValidJson` | `(string json, out string message) : bool` | Checks whether text is well-formed JSON. |
+
+### Get
+
+| Method | Signature | Description |
+|---|---|---|
 | `TryGetStringValue` | `(string json, string path, out string value, out string message) : bool` | Extracts a value as a string. |
 | `TryGetIntValue` | `(string json, string path, out int value, out string message) : bool` | Extracts a value as an int. |
 | `TryGetBoolValue` | `(string json, string path, out bool value, out string message) : bool` | Extracts a value as a bool. |
 | `TryGetDoubleValue` | `(string json, string path, out double value, out string message) : bool` | Extracts a value as a double. |
 | `TryGetDateTimeValue` | `(string json, string path, out DateTime value, out string message) : bool` | Extracts a value as a DateTime. |
+
+### Query
+
+| Method | Signature | Description |
+|---|---|---|
 | `TryGetValuesFromJson` | `(string json, string path, string delimiter, out string delimitedValues, out string message) : bool` | Extracts every value matching a JSONPath, delimited. |
 | `TryGetValueType` | `(string json, string path, out JsonValueKind kind, out string message) : bool` | Reports the kind of value at a JSONPath. |
+| `TryFindPathsByName` | `(string json, string name, string delimiter, out string paths, out string message) : bool` | Finds every path where a property with the given name exists, at any depth, delimited. |
+
+### Array
+
+| Method | Signature | Description |
+|---|---|---|
 | `TryRemoveValueFromJson` | `(string json, string path, out string updatedJson, out string message) : bool` | Removes a value at a JSONPath. |
 | `TryGetArrayLength` | `(string json, string path, out int length, out string message) : bool` | Reports an array's element count. |
 | `TryAppendToJsonArray` | `(string json, string path, string valueJson, out string updatedJson, out string message) : bool` | Appends an element to an array. |
-| `TryPrettyPrintJson` | `(string json, out string formattedJson, out string message) : bool` | Reformats JSON with indentation. |
-| `TryMinifyJson` | `(string json, out string minifiedJson, out string message) : bool` | Reformats JSON with whitespace removed. |
-| `TryMergeJson` | `(string baseJson, string overrideJson, out string mergedJson, out string message) : bool` | Merges two JSON objects; the second wins on conflicts. |
-| `TryDiffJson` | `(string json1, string json2, string delimiter, out bool areEqual, out string differingPaths, out string message) : bool` | Compares two JSON documents and reports differing paths. |
-| `TryConvertJsonToXml` | `(string json, string rootElementName, out string xml, out string message) : bool` | Converts JSON text to XML text. |
-| `TryConvertXmlToJson` | `(string xml, out string json, out string message) : bool` | Converts XML text to JSON text. |
 | `TryFilterJsonArrayByField` | `(string json, string path, string fieldName, JsonComparisonOperator comparisonOperator, string value, out string filteredJson, out string message) : bool` | Filters an array to elements matching a field comparison. |
 | `TrySortJsonArrayByField` | `(string json, string path, string fieldName, bool ascending, out string sortedJson, out string message) : bool` | Sorts an array by a field's value. |
+
+### Format
+
+| Method | Signature | Description |
+|---|---|---|
+| `TryPrettyPrintJson` | `(string json, out string formattedJson, out string message) : bool` | Reformats JSON with indentation. |
+| `TryMinifyJson` | `(string json, out string minifiedJson, out string message) : bool` | Reformats JSON with whitespace removed. |
+
+### Merge
+
+| Method | Signature | Description |
+|---|---|---|
+| `TryMergeJson` | `(string baseJson, string overrideJson, out string mergedJson, out string message) : bool` | Merges two JSON objects; the second wins on conflicts. |
+
+### Compare
+
+| Method | Signature | Description |
+|---|---|---|
+| `TryDiffJson` | `(string json1, string json2, string delimiter, out bool areEqual, out string differingPaths, out string message) : bool` | Compares two JSON documents and reports differing paths. |
+
+### Convert
+
+| Method | Signature | Description |
+|---|---|---|
+| `TryConvertJsonToXml` | `(string json, string rootElementName, out string xml, out string message) : bool` | Converts JSON text to XML text. |
+| `TryConvertXmlToJson` | `(string xml, out string json, out string message) : bool` | Converts XML text to JSON text. |
 
 ## JSONPath syntax
 
@@ -180,3 +226,13 @@ own code path - see the caveat below.
   exclude elements missing the sort field; they're retained and sorted
   using an empty comparison value. These two closely-related methods do
   not behave symmetrically on this point.
+- **`TryFindPathsByName` matches the exact property name only** - no
+  wildcard/partial matching. Internally it searches via JSONPath's
+  recursive-descent bracket syntax (`$..['name']`), not the dot form
+  (`$..name`) the [JSONPath syntax](#jsonpath-syntax) section above shows
+  for values - verified empirically that the dot form silently matches
+  nothing (not an exception, a silent zero-match failure) once `name`
+  contains a character like `.` that dot syntax would otherwise parse as a
+  path separator. Bracket syntax handles any exact name uniformly, so this
+  method works correctly even for property names containing dots, spaces,
+  or other characters a hand-written path expression would need to escape.

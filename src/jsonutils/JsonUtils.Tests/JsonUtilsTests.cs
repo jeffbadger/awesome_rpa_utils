@@ -284,6 +284,75 @@ namespace JsonAutomation.Tests
         }
 
         [Fact]
+        public void TryFindPathsByName_SingleMatch_ReturnsPath()
+        {
+            bool succeeded = _json.TryFindPathsByName("{\"order\":{\"sku\":\"ABC\"}}", "sku", ",", out string paths, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("order.sku", paths);
+        }
+
+        [Fact]
+        public void TryFindPathsByName_MultipleMatchesAtDifferentDepths_ReturnsAllPathsDelimited()
+        {
+            bool succeeded = _json.TryFindPathsByName(
+                "{\"sku\":\"root\",\"order\":{\"sku\":\"nested\",\"items\":[{\"sku\":\"a\"},{\"sku\":\"b\"}]}}",
+                "sku", ",", out string paths, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("sku,order.sku,order.items[0].sku,order.items[1].sku", paths);
+        }
+
+        [Fact]
+        public void TryFindPathsByName_NoMatch_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryFindPathsByName("{\"order\":{\"status\":\"open\"}}", "sku", ",", out string paths, out string message);
+
+            Assert.False(succeeded);
+            Assert.Null(paths);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryFindPathsByName_EmptyName_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryFindPathsByName("{\"sku\":\"ABC\"}", "", ",", out string paths, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryFindPathsByName_MalformedJson_ReturnsFalseWithMessage()
+        {
+            bool succeeded = _json.TryFindPathsByName("{not json", "sku", ",", out string paths, out string message);
+
+            Assert.False(succeeded);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void TryFindPathsByName_NameContainsSpecialCharacters_MatchesExactly()
+        {
+            bool succeeded = _json.TryFindPathsByName("{\"weird.name\":1,\"space name\":2,\"normal\":3}", "weird.name", ",", out string paths, out string message);
+
+            Assert.True(succeeded);
+            Assert.Equal("['weird.name']", paths);
+        }
+
+        [Fact]
+        public void TryFindPathsByName_NameContainsQuoteAndBackslash_MatchesExactly()
+        {
+            const string json = "{\"it's\\\\here\":1}";
+            bool succeeded = _json.TryFindPathsByName(json, "it's\\here", ",", out string paths, out string message);
+
+            Assert.True(succeeded);
+            Assert.False(string.IsNullOrEmpty(paths));
+            Assert.True(_json.TryGetValueFromJson(json, paths, out string value, out message));
+            Assert.Equal("1", value);
+        }
+
+        [Fact]
         public void TryGetValueFromJson_DateLikeStringPath_ReturnsExactOriginalText()
         {
             bool succeeded = _json.TryGetValueFromJson("{\"created\":\"2026-02-20T08:30:00Z\"}", "created", out string value, out string message);
