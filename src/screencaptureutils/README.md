@@ -32,14 +32,33 @@ disk with no knowledge of where on screen it came from. See
 
 ### Core Capture
 
+Every capture target (screen, region, window, active window, around-point) has
+the same three-method shape: a base method that returns an in-memory image,
+a `*ToFile` method, and a `*ToClipboard` method. The base method is the real
+implementation; `*ToFile`/`*ToClipboard` are thin wrappers that call it and
+then save/copy the result, disposing the image internally. Call the base
+method directly only when the automation needs the image itself (e.g. to run
+its own pixel processing) — **the caller then owns the returned `Bitmap` and
+must `Dispose()` it**, unlike every other method here, which manages its own
+images internally.
+
 | Method | Signature | Description |
 |---|---|---|
+| `CaptureScreen` | `bool CaptureScreen(out Bitmap image, out string message)` | Captures the entire virtual screen (all monitors) to an in-memory image. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
 | `CaptureScreenToFile` | `bool CaptureScreenToFile(string filePath, out string message)` | Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws. |
+| `CaptureScreenToClipboard` | `bool CaptureScreenToClipboard(out string message)` | Captures the entire virtual screen and copies it to the clipboard as an image, via an internal STA thread regardless of the caller's apartment state. Returns True on success; never throws. |
+| `CaptureRegion` | `bool CaptureRegion(int left, int top, int width, int height, out Bitmap image, out string message)` | Captures a specific screen region to an in-memory image. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
 | `CaptureRegionToFile` | `bool CaptureRegionToFile(int left, int top, int width, int height, string filePath, out string message)` | Captures a specific screen region to an image file. Returns True on success; never throws. |
-| `CaptureWindowToFile` | `bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)` | Captures a window via `PrintWindow` — works even if the window is covered by other windows. `hWnd` is meant to come from `WindowUtils`/`DialogUtils`, not to be typed in by hand — see the producer→consumer example below. Returns True on success; never throws. |
+| `CaptureRegionToClipboard` | `bool CaptureRegionToClipboard(int left, int top, int width, int height, out string message)` | Captures a specific screen region and copies it to the clipboard as an image. Returns True on success; never throws. |
+| `CaptureWindow` | `bool CaptureWindow(IntPtr hWnd, out Bitmap image, out string message)` | Captures a window via `PrintWindow` to an in-memory image — works even if the window is covered by other windows. `hWnd` is meant to come from `WindowUtils`/`DialogUtils`, not to be typed in by hand — see the producer→consumer example below. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
+| `CaptureWindowToFile` | `bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)` | Captures a window via `PrintWindow` to an image file. Returns True on success; never throws. |
+| `CaptureWindowToClipboard` | `bool CaptureWindowToClipboard(IntPtr hWnd, out string message)` | Captures a window via `PrintWindow` and copies it to the clipboard as an image. Returns True on success; never throws. |
+| `CaptureActiveWindow` | `bool CaptureActiveWindow(out Bitmap image, out string message)` | Captures the current foreground window to an in-memory image. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
 | `CaptureActiveWindowToFile` | `bool CaptureActiveWindowToFile(string filePath, out string message)` | Captures the current foreground window to an image file. Returns True on success; never throws. |
-| `CaptureAroundPointToFile` | `bool CaptureAroundPointToFile(int x, int y, int width, int height, string filePath, out string message)` | Captures a region centered on a point (e.g. `MouseUtils.GetX/GetY`) to an image file. Returns True on success; never throws. |
-| `CaptureToClipboard` | `bool CaptureToClipboard(out string message)` | Captures the entire virtual screen and copies it to the clipboard as an image, via an internal STA thread regardless of the caller's apartment state. Returns True on success; never throws. |
+| `CaptureActiveWindowToClipboard` | `bool CaptureActiveWindowToClipboard(out string message)` | Captures the current foreground window and copies it to the clipboard as an image. Returns True on success; never throws. |
+| `CaptureAroundPoint` | `bool CaptureAroundPoint(int x, int y, int width, int height, out Bitmap image, out string message)` | Captures a region centered on a point (e.g. `MouseUtils.GetX/GetY`) to an in-memory image. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
+| `CaptureAroundPointToFile` | `bool CaptureAroundPointToFile(int x, int y, int width, int height, string filePath, out string message)` | Captures a region centered on a point to an image file. Returns True on success; never throws. |
+| `CaptureAroundPointToClipboard` | `bool CaptureAroundPointToClipboard(int x, int y, int width, int height, out string message)` | Captures a region centered on a point and copies it to the clipboard as an image. Returns True on success; never throws. |
 | `CaptureStepEvidence` | `bool CaptureStepEvidence(string stepName, string folderPath, out string fullPath, out string message)` | Captures the screen to an auto-named, sequentially-numbered evidence file (`001_StepName_20260826_143201.png`). `fullPath` receives the file path written. Returns True on success; never throws. |
 
 ### Verification & Comparison
@@ -94,6 +113,13 @@ screenCapture.CaptureWindowToFile(hWnd, @"C:\evidence\order_entry.png", out stri
   bad dimensions, an invalid file path, a missing image file, and Win32 failures
   (`GetWindowRect`/`PrintWindow`) are all reported this way, with `message` set to a
   human-readable reason whenever the method returns `false`.
+- **The base `Capture*` methods (`CaptureScreen`, `CaptureRegion`, `CaptureWindow`,
+  `CaptureActiveWindow`, `CaptureAroundPoint`) hand ownership of the returned `Bitmap`
+  to the caller** — unlike every `*ToFile`/`*ToClipboard` method, which captures,
+  uses, and disposes its own image internally. Wrap the result in a `using` block
+  (or call `image.Dispose()` when done) to avoid leaking GDI handles; only call
+  these directly when the automation needs the image itself, e.g. custom pixel
+  processing before deciding whether/where to save it.
 - **Annotation coordinates are relative to the saved image, not the screen.**
   If you captured a region with `CaptureRegionToFile(left, top, width, height, ...)`
   and want to annotate the same absolute spot in the saved file, subtract the
@@ -124,18 +150,22 @@ screenCapture.CaptureWindowToFile(hWnd, @"C:\evidence\order_entry.png", out stri
   (`red`/`green`/`blue`, each 0-255 and clamped) and a `System.Drawing.Color` overload
   (e.g. `Color.Red`, or any named/system color), for designers who find hexadecimal
   colorRef entry inconvenient or who have a `Color` proxy available.
-- **`CaptureWindowToFile`/`CaptureActiveWindowToFile`** use `PW_RENDERFULLCONTENT`
+- **`CaptureWindow` (and its `ToFile`/`ToClipboard` wrappers)** use `PW_RENDERFULLCONTENT`
   so DirectComposition/DirectX-backed windows render correctly, but some
   exclusive-fullscreen or protected-content windows may still capture as black.
-- **`CaptureWindowToFile` rejects a minimized window up front** (`IsIconic`) rather
+- **`CaptureWindow` rejects a minimized window up front** (`IsIconic`) rather
   than calling `PrintWindow` on it — that call is unreliable for a minimized window
   across Windows versions and app types, and can return a stale or solid-black
   bitmap without failing, which would otherwise pass silently as valid evidence.
   Restore the window first if it might be minimized when the automation gets there.
-- **`CaptureToClipboard`** runs its clipboard write on an internal STA thread
+  `CaptureWindowToFile`/`CaptureWindowToClipboard`/`CaptureActiveWindow*` all inherit
+  this guard, since they call `CaptureWindow` internally.
+- **Every `*ToClipboard` method** runs its clipboard write on an internal STA thread
   regardless of the calling thread's apartment state, so the automation does not
   need to know or control it — unlike raw Windows Forms clipboard access, which
-  requires an STA caller.
+  requires an STA caller. `CaptureScreenToClipboard` was named `CaptureToClipboard`
+  before this component's capture methods were unified around the base/`ToFile`/
+  `ToClipboard` shape described above.
 - **`CompareRegionToBaseline`** requires the baseline image's dimensions to
   exactly match the requested region size, and uses a small per-channel
   tolerance internally to absorb anti-aliasing/rendering noise — it is not an

@@ -46,6 +46,83 @@ namespace ScreenCaptureAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        // --- Base Capture* methods (return an image): same guards as their *ToFile counterparts ---
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void CaptureRegion_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.CaptureRegion(0, 0, width, height, out System.Drawing.Bitmap image, out string message);
+
+            Assert.False(ok);
+            Assert.Null(image);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void CaptureAroundPoint_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.CaptureAroundPoint(0, 0, width, height, out System.Drawing.Bitmap image, out string message);
+
+            Assert.False(ok);
+            Assert.Null(image);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void CaptureWindow_InvalidHandle_ReturnsFalseWithMessage()
+        {
+            bool ok = _capture.CaptureWindow(IntPtr.Zero, out System.Drawing.Bitmap image, out string message);
+
+            Assert.False(ok);
+            Assert.Null(image);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- *ToClipboard methods: same guards as their *ToFile counterparts ---
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void CaptureRegionToClipboard_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.CaptureRegionToClipboard(0, 0, width, height, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 100)]
+        [InlineData(100, 0)]
+        [InlineData(-5, 100)]
+        [InlineData(100, -5)]
+        public void CaptureAroundPointToClipboard_NonPositiveDimensions_ReturnsFalseWithMessage(int width, int height)
+        {
+            bool ok = _capture.CaptureAroundPointToClipboard(0, 0, width, height, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void CaptureWindowToClipboard_InvalidHandle_ReturnsFalseWithMessage()
+        {
+            bool ok = _capture.CaptureWindowToClipboard(IntPtr.Zero, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         // --- Off-screen guard: a region entirely outside the virtual screen is rejected ---
 
         [Fact]

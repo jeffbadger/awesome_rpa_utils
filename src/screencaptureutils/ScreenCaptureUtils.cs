@@ -78,6 +78,37 @@ namespace ScreenCaptureAutomation
         #region Core Capture
 
         /// <summary>
+        /// Captures the entire virtual screen (all monitors) to an in-memory image.
+        /// </summary>
+        /// <param name="image">The captured image, or <c>null</c> if this method returns <c>false</c>. The caller owns this <see cref="Bitmap"/> and must <see cref="IDisposable.Dispose"/> it.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success. Never throws.</returns>
+        /// <remarks>
+        /// This is the base capture this component's other <c>CaptureScreen*</c> methods
+        /// are built on (<see cref="CaptureScreenToFile"/>, <see cref="CaptureScreenToClipboard"/>);
+        /// call it directly only when the automation needs the image itself, e.g. to run
+        /// its own pixel processing before deciding whether/where to save it.
+        /// </remarks>
+        [Category("Capture - Core")]
+        [Description("Captures the entire virtual screen (all monitors) to an in-memory image. Caller must Dispose() the returned image. Returns True on success; never throws.")]
+        public bool CaptureScreen(out Bitmap image, out string message)
+        {
+            image = default;
+            message = default;
+            try
+            {
+                Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
+                return TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out image, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureScreen", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Captures the entire virtual screen (all monitors) to an image file.
         /// </summary>
         /// <param name="filePath">Destination file path. The format is inferred from the extension (.png, .jpg/.jpeg, .bmp, .gif, .tif/.tiff); unrecognized extensions are saved as PNG.</param>
@@ -90,8 +121,7 @@ namespace ScreenCaptureAutomation
             message = default;
             try
             {
-                Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-                if (!TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out message))
+                if (!CaptureScreen(out Bitmap bmp, out message))
                     return false;
 
                 using (bmp)
@@ -103,6 +133,70 @@ namespace ScreenCaptureAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 message = NeverThrowsGuard.Failure("CaptureScreenToFile", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures the entire virtual screen and copies it to the Windows clipboard
+        /// as an image, ready to paste into an email or ticket.
+        /// </summary>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture or clipboard copy failed.</param>
+        /// <returns><c>true</c> on success. Never throws.</returns>
+        /// <remarks>
+        /// The clipboard write runs on an internal STA thread regardless of the calling
+        /// thread's apartment state, so the automation does not need to know or control it -
+        /// unlike raw Windows Forms clipboard access, which requires an STA caller.
+        /// A capture failure (locked/secure desktop) or clipboard contention with another
+        /// process is reported via <paramref name="message"/> rather than thrown.
+        /// </remarks>
+        [Category("Capture - Core")]
+        [Description("Captures the entire virtual screen and copies it to the clipboard as an image. Returns True on success; never throws.")]
+        public bool CaptureScreenToClipboard(out string message)
+        {
+            message = default;
+            try
+            {
+                if (!CaptureScreen(out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySetClipboardImageOnStaThread(bmp, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureScreenToClipboard", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures a specific screen region to an in-memory image.
+        /// </summary>
+        /// <param name="left">Left edge of the region in screen pixels.</param>
+        /// <param name="top">Top edge of the region in screen pixels.</param>
+        /// <param name="width">Region width in pixels.</param>
+        /// <param name="height">Region height in pixels.</param>
+        /// <param name="image">The captured image, or <c>null</c> if this method returns <c>false</c>. The caller owns this <see cref="Bitmap"/> and must <see cref="IDisposable.Dispose"/> it.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are not positive. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures a specific screen region to an in-memory image. Caller must Dispose() the returned image. Returns True on success; never throws.")]
+        public bool CaptureRegion(int left, int top, int width, int height, out Bitmap image, out string message)
+        {
+            image = default;
+            message = default;
+            try
+            {
+                return TryCaptureRegionToBitmap(left, top, width, height, out image, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureRegion", ex);
                 return false;
             }
         }
@@ -124,7 +218,7 @@ namespace ScreenCaptureAutomation
             message = default;
             try
             {
-                if (!TryCaptureRegionToBitmap(left, top, width, height, out Bitmap bmp, out message))
+                if (!CaptureRegion(left, top, width, height, out Bitmap bmp, out message))
                     return false;
 
                 using (bmp)
@@ -141,13 +235,45 @@ namespace ScreenCaptureAutomation
         }
 
         /// <summary>
-        /// Captures a window to an image file using <c>PrintWindow</c>, which can
+        /// Captures a specific screen region and copies it to the Windows clipboard as an image.
+        /// </summary>
+        /// <param name="left">Left edge of the region in screen pixels.</param>
+        /// <param name="top">Top edge of the region in screen pixels.</param>
+        /// <param name="width">Region width in pixels.</param>
+        /// <param name="height">Region height in pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture or clipboard copy failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are not positive. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures a specific screen region and copies it to the clipboard as an image. Returns True on success; never throws.")]
+        public bool CaptureRegionToClipboard(int left, int top, int width, int height, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!CaptureRegion(left, top, width, height, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySetClipboardImageOnStaThread(bmp, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureRegionToClipboard", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures a window to an in-memory image using <c>PrintWindow</c>, which can
         /// succeed even when the window is covered by other windows.
         /// </summary>
         /// <param name="hWnd">Handle of the window to capture.</param>
-        /// <param name="filePath">Destination file path. The format is inferred from the extension.</param>
+        /// <param name="image">The captured image, or <c>null</c> if this method returns <c>false</c>. The caller owns this <see cref="Bitmap"/> and must <see cref="IDisposable.Dispose"/> it.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if the window is minimized, its bounding rectangle is empty, <paramref name="filePath"/> is invalid, or GetWindowRect/PrintWindow failed (e.g. an invalid handle). Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if the window is minimized, its bounding rectangle is empty, or GetWindowRect/PrintWindow failed (e.g. an invalid handle). Never throws.</returns>
         /// <remarks>
         /// Uses <c>PW_RENDERFULLCONTENT</c> so modern (DirectComposition/DirectX-backed)
         /// windows render correctly; some exclusive-fullscreen or protected-content
@@ -157,9 +283,10 @@ namespace ScreenCaptureAutomation
         /// without failing, which would otherwise pass as a successful capture.
         /// </remarks>
         [Category("Capture - Core")]
-        [Description("Captures a window to an image file via PrintWindow - works even if the window is covered by other windows. Returns True on success; never throws.")]
-        public bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)
+        [Description("Captures a window to an in-memory image via PrintWindow - works even if the window is covered by other windows. Caller must Dispose() the returned image. Returns True on success; never throws.")]
+        public bool CaptureWindow(IntPtr hWnd, out Bitmap image, out string message)
         {
+            image = default;
             message = default;
             try
             {
@@ -189,7 +316,8 @@ namespace ScreenCaptureAutomation
 
                 try
                 {
-                    using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+                    Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                    try
                     {
                         using (Graphics g = Graphics.FromImage(bmp))
                         {
@@ -199,6 +327,7 @@ namespace ScreenCaptureAutomation
                                 if (!PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT))
                                 {
                                     message = new Win32Exception(Marshal.GetLastWin32Error(), "PrintWindow failed.").Message;
+                                    bmp.Dispose();
                                     return false;
                                 }
                             }
@@ -208,7 +337,14 @@ namespace ScreenCaptureAutomation
                             }
                         }
 
-                        return TrySaveBitmap(bmp, filePath, out message);
+                        image = bmp;
+                        message = null;
+                        return true;
+                    }
+                    catch
+                    {
+                        bmp.Dispose();
+                        throw;
                     }
                 }
                 catch (Exception ex)
@@ -223,7 +359,99 @@ namespace ScreenCaptureAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
+                message = NeverThrowsGuard.Failure("CaptureWindow", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures a window to an image file using <c>PrintWindow</c>, which can
+        /// succeed even when the window is covered by other windows.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to capture.</param>
+        /// <param name="filePath">Destination file path. The format is inferred from the extension.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the window is minimized, its bounding rectangle is empty, <paramref name="filePath"/> is invalid, or GetWindowRect/PrintWindow failed (e.g. an invalid handle). Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures a window to an image file via PrintWindow - works even if the window is covered by other windows. Returns True on success; never throws.")]
+        public bool CaptureWindowToFile(IntPtr hWnd, string filePath, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!CaptureWindow(hWnd, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySaveBitmap(bmp, filePath, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
                 message = NeverThrowsGuard.Failure("CaptureWindowToFile", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures a window and copies it to the Windows clipboard as an image, using
+        /// <c>PrintWindow</c> - works even if the window is covered by other windows.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to capture.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture or clipboard copy failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the window is minimized, its bounding rectangle is empty, or GetWindowRect/PrintWindow failed. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures a window and copies it to the clipboard as an image via PrintWindow. Returns True on success; never throws.")]
+        public bool CaptureWindowToClipboard(IntPtr hWnd, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!CaptureWindow(hWnd, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySetClipboardImageOnStaThread(bmp, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureWindowToClipboard", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures the current foreground window to an in-memory image.
+        /// </summary>
+        /// <param name="image">The captured image, or <c>null</c> if this method returns <c>false</c>. The caller owns this <see cref="Bitmap"/> and must <see cref="IDisposable.Dispose"/> it.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if no foreground window is currently available, or GetWindowRect/PrintWindow failed. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures the current foreground window to an in-memory image. Caller must Dispose() the returned image. Returns True on success; never throws.")]
+        public bool CaptureActiveWindow(out Bitmap image, out string message)
+        {
+            image = default;
+            message = default;
+            try
+            {
+                IntPtr hWnd = GetForegroundWindow();
+                if (hWnd == IntPtr.Zero)
+                {
+                    message = "No foreground window is currently available.";
+                    return false;
+                }
+
+                return CaptureWindow(hWnd, out image, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureActiveWindow", ex);
                 return false;
             }
         }
@@ -241,19 +469,77 @@ namespace ScreenCaptureAutomation
             message = default;
             try
             {
-                IntPtr hWnd = GetForegroundWindow();
-                if (hWnd == IntPtr.Zero)
-                {
-                    message = "No foreground window is currently available.";
+                if (!CaptureActiveWindow(out Bitmap bmp, out message))
                     return false;
-                }
 
-                return CaptureWindowToFile(hWnd, filePath, out message);
+                using (bmp)
+                {
+                    return TrySaveBitmap(bmp, filePath, out message);
+                }
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 message = NeverThrowsGuard.Failure("CaptureActiveWindowToFile", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures the current foreground window and copies it to the Windows
+        /// clipboard as an image.
+        /// </summary>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture or clipboard copy failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if no foreground window is currently available, or GetWindowRect/PrintWindow failed. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures the current foreground window and copies it to the clipboard as an image. Returns True on success; never throws.")]
+        public bool CaptureActiveWindowToClipboard(out string message)
+        {
+            message = default;
+            try
+            {
+                if (!CaptureActiveWindow(out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySetClipboardImageOnStaThread(bmp, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureActiveWindowToClipboard", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures a square region centered on the given point to an in-memory image -
+        /// e.g. "screenshot of just what was clicked", pairing naturally with
+        /// MouseUtils' cursor-position methods.
+        /// </summary>
+        /// <param name="x">Center X coordinate in screen pixels.</param>
+        /// <param name="y">Center Y coordinate in screen pixels.</param>
+        /// <param name="width">Capture width in pixels.</param>
+        /// <param name="height">Capture height in pixels.</param>
+        /// <param name="image">The captured image, or <c>null</c> if this method returns <c>false</c>. The caller owns this <see cref="Bitmap"/> and must <see cref="IDisposable.Dispose"/> it.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are not positive. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures a region centered on the given point (e.g. MouseUtils.GetX/GetY) to an in-memory image. Caller must Dispose() the returned image. Returns True on success; never throws.")]
+        public bool CaptureAroundPoint(int x, int y, int width, int height, out Bitmap image, out string message)
+        {
+            image = default;
+            message = default;
+            try
+            {
+                return CaptureRegion(x - width / 2, y - height / 2, width, height, out image, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureAroundPoint", ex);
                 return false;
             }
         }
@@ -277,7 +563,13 @@ namespace ScreenCaptureAutomation
             message = default;
             try
             {
-                return CaptureRegionToFile(x - width / 2, y - height / 2, width, height, filePath, out message);
+                if (!CaptureAroundPoint(x, y, width, height, out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySaveBitmap(bmp, filePath, out message);
+                }
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -288,27 +580,23 @@ namespace ScreenCaptureAutomation
         }
 
         /// <summary>
-        /// Captures the entire virtual screen and copies it to the Windows clipboard
-        /// as an image, ready to paste into an email or ticket.
+        /// Captures a square region centered on the given point and copies it to the
+        /// Windows clipboard as an image.
         /// </summary>
+        /// <param name="x">Center X coordinate in screen pixels.</param>
+        /// <param name="y">Center Y coordinate in screen pixels.</param>
+        /// <param name="width">Capture width in pixels.</param>
+        /// <param name="height">Capture height in pixels.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture or clipboard copy failed.</param>
-        /// <returns><c>true</c> on success. Never throws.</returns>
-        /// <remarks>
-        /// The clipboard write runs on an internal STA thread regardless of the calling
-        /// thread's apartment state, so the automation does not need to know or control it -
-        /// unlike raw Windows Forms clipboard access, which requires an STA caller.
-        /// A capture failure (locked/secure desktop) or clipboard contention with another
-        /// process is reported via <paramref name="message"/> rather than thrown.
-        /// </remarks>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="width"/>/<paramref name="height"/> are not positive. Never throws.</returns>
         [Category("Capture - Core")]
-        [Description("Captures the entire virtual screen and copies it to the clipboard as an image. Returns True on success; never throws.")]
-        public bool CaptureToClipboard(out string message)
+        [Description("Captures a region centered on the given point and copies it to the clipboard as an image. Returns True on success; never throws.")]
+        public bool CaptureAroundPointToClipboard(int x, int y, int width, int height, out string message)
         {
             message = default;
             try
             {
-                Rectangle bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-                if (!TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out Bitmap bmp, out message))
+                if (!CaptureAroundPoint(x, y, width, height, out Bitmap bmp, out message))
                     return false;
 
                 using (bmp)
@@ -319,7 +607,7 @@ namespace ScreenCaptureAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("CaptureToClipboard", ex);
+                message = NeverThrowsGuard.Failure("CaptureAroundPointToClipboard", ex);
                 return false;
             }
         }

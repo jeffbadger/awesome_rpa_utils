@@ -5,6 +5,14 @@ audit trail, visual verification, and annotated screenshot this component
 produces. All coordinates here are **absolute screen pixels**, consistent
 with MouseUtils.
 
+Every capture target follows the same shape: a base `Capture*` method that
+returns an in-memory `Bitmap`, plus `*ToFile`/`*ToClipboard` wrappers built
+on top of it. Most automations only ever call the `*ToFile`/`*ToClipboard`
+wrappers shown below; the base methods exist for the less common case where
+the automation needs the image itself. See
+[Getting the image directly](#getting-the-image-directly) at the bottom of
+this page for that case, including who owns disposing the `Bitmap`.
+
 ## `CaptureScreenToFile(string filePath)`
 
 **Scenario:** A run-level "what did the desktop look like" snapshot at the
@@ -96,13 +104,13 @@ mouse.GetY(out int y, out _);
 screenCapture.CaptureAroundPointToFile(x, y, 200, 100, @"C:\evidence\click_target.png", out string message);
 ```
 
-## `CaptureToClipboard()`
+## `CaptureScreenToClipboard()`
 
 **Scenario:** A support ticket needs a screenshot pasted directly into the
 ticket body, rather than attached as a file.
 
 ```csharp
-if (screenCapture.CaptureToClipboard(out string message))
+if (screenCapture.CaptureScreenToClipboard(out string message))
     Logger.Info("Screenshot copied to clipboard — paste it into the ticket.");
 else
     Logger.Warn("Could not copy to clipboard: " + message);
@@ -110,6 +118,10 @@ else
 
 This runs its own STA thread internally, so it works the same way whether
 the calling automation's thread is STA or MTA — nothing extra to configure.
+Every capture target has a `*ToClipboard` counterpart built the same way —
+`CaptureRegionToClipboard`, `CaptureWindowToClipboard`,
+`CaptureActiveWindowToClipboard`, `CaptureAroundPointToClipboard` — for
+copying just a region, a specific window, etc. instead of the whole screen.
 
 ## `CaptureStepEvidence(string stepName, string folderPath)`
 
@@ -127,3 +139,34 @@ screenCapture.CaptureStepEvidence("OrderSubmitted", @"C:\evidence\run_20260917",
 Create one `ScreenCaptureUtils` instance per run (the usual case when it's
 dropped onto a Pega Robot Studio automation) so the counter starts at `001`
 each time; reusing an instance across runs continues the same sequence.
+
+## Getting the image directly
+
+**Scenario:** An automation wants to compute its own statistic over a
+screenshot (e.g. an average-brightness check, or a custom color-matching
+rule beyond what `GetRegionHash`/`CompareRegionToBaseline` offer) without
+writing a temporary file just to read it back.
+
+Every `*ToFile`/`*ToClipboard` method is a thin wrapper over a base
+`Capture*` method that returns the `Bitmap` itself — call the base method
+directly for this case. **Unlike every other method in this component, the
+caller now owns the returned image and must dispose it:**
+
+```csharp
+if (!screenCapture.CaptureRegion(0, 0, 200, 50, out Bitmap region, out string message))
+{
+    Logger.Error("Capture failed: " + message);
+    return;
+}
+
+using (region)
+{
+    // Inspect the pixels directly, e.g.:
+    System.Drawing.Color topLeft = region.GetPixel(0, 0);
+    Logger.Info($"Top-left pixel: 0x{topLeft.ToArgb():X8}");
+}
+```
+
+The base methods available this way are `CaptureScreen`, `CaptureRegion`,
+`CaptureWindow`, `CaptureActiveWindow`, and `CaptureAroundPoint` — one per
+capture target, same as the `*ToFile`/`*ToClipboard` wrappers above.
