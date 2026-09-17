@@ -123,7 +123,7 @@ The JSON shape produced by every `*Json`/JSON-returning method: `TimeCreatedIso8
   via XPath - the rendered message text isn't part of a record's queryable
   XML structure. `QueryByXPath`'s raw `xpath` parameter can filter on
   structural fields (`EventID`, `Provider`, `TimeCreated`, `Level`,
-  `WinEventData` payload fields) but not on message text.
+  `EventData` payload fields) but not on message text.
 - **`CountMatchingEntries` materializes every match before counting** - for
   a very large log (Security can have hundreds of thousands of records),
   narrow the filter (especially `sinceIso8601`) rather than counting
