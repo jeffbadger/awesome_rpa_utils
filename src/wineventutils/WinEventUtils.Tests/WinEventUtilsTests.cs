@@ -479,6 +479,7 @@ namespace WinEventAutomation.Tests
             string filter = utils.BuildFilterJson(process: Process.GetCurrentProcess().ProcessName);
             IntPtr ownerHwnd = IntPtr.Zero;
             using var ownerReady = new ManualResetEventSlim(false);
+            using var menuVisible = new ManualResetEventSlim(false);
             var thread = new Thread(() =>
             {
                 ownerHwnd = CreateWindowEx(
@@ -520,15 +521,15 @@ namespace WinEventAutomation.Tests
                 return;
             try
             {
-                bool ok = false;
-                IntPtr hwnd = IntPtr.Zero;
-                string message = null;
-                for (int i = 0; i < 50 && !ok; i++)
+                for (int i = 0; i < 50 && !menuVisible.IsSet; i++)
                 {
-                    ok = utils.IsMenu(filter, out hwnd, out message);
-                    if (!ok)
+                    if (FindWindow("#32768", null) != IntPtr.Zero)
+                        menuVisible.Set();
+                    else
                         Thread.Sleep(100);
                 }
+                Assert.True(menuVisible.IsSet);
+                bool ok = utils.IsMenu(filter, out IntPtr hwnd, out string message);
                 Assert.True(ok);
                 Assert.NotEqual(IntPtr.Zero, hwnd);
                 Assert.Null(message);

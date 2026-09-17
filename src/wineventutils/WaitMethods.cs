@@ -103,6 +103,7 @@ namespace WinEventAutomation
         {
             win32Error = 0;
             bool stopped = false;
+            Marshal.SetLastPInvokeError(0);
             bool completed = WinEventInterop.EnumWindows((hwnd, _) =>
             {
                 bool keepGoing = callback(hwnd);
@@ -113,7 +114,7 @@ namespace WinEventAutomation
             stoppedByCallback = stopped;
             if (completed)
                 return true;
-            win32Error = Marshal.GetLastWin32Error();
+            win32Error = Marshal.GetLastPInvokeError();
             return stoppedByCallback && win32Error == 0;
         }
 
