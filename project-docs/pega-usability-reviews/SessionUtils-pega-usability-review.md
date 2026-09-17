@@ -27,7 +27,7 @@ Services assembly just to select or read a session's state or kind.
 | `IsSessionInteractiveSimple`/`IsSessionInteractive` | Direct, disambiguated | Same pattern; this one has no P/Invoke at all (`Environment.UserInteractive`), so `querySucceeded` is effectively always true. |
 | `IsInputDesktopAvailableSimple`/`IsInputDesktopAvailable` | Direct, disambiguated | Same pattern; deliberately answers a different, narrower question than `IsWorkstationLocked` (see the component README's Notes & Caveats) rather than being a redundant alternative. |
 | `GetIdleTimeMilliseconds` | Direct | Scalar `long` output; no session-scoping parameter since the underlying API is inherently single-session. |
-| `GetCurrentSessionUptimeMilliseconds`/`GetSystemUptimeMilliseconds` | Direct | Scalar `long` millisecond outputs, matching `GetIdleTimeMilliseconds`'s convention rather than a `TimeSpan`. Two separate methods rather than one parameterized method, since they read two genuinely unrelated clocks (session logon time vs. machine boot time) - see Operational concerns. |
+| `GetCurrentSessionUptime`/`GetSystemUptime` | Direct | Scalar `long milliseconds` outputs, not a `TimeSpan`. Unlike `GetIdleTimeMilliseconds`, the unit lives on the output parameter name rather than the method name - a deliberate naming choice for this pair, not an inconsistency to fix elsewhere. Two separate methods rather than one parameterized method, since they read two genuinely unrelated clocks (session logon time vs. machine boot time) - see Operational concerns. |
 | `WaitForSessionConnectState`/`WaitForSessionConnectStateSimple` | Direct, disambiguated | Standard `WaitForX` polling pattern from `EventLogUtils`/`ServiceUtils`. |
 | `WaitForInputDesktopAvailable`/`WaitForInputDesktopAvailableSimple` | Direct, disambiguated | Same pattern, no session ID (current session's desktop only). |
 | `WaitForWorkstationUnlocked`/`WaitForWorkstationUnlockedSimple` | Direct, disambiguated | Same pattern. Read-only observation of an externally-driven unlock - never performs one; see Operational concerns. |
@@ -75,7 +75,7 @@ Services assembly just to select or read a session's state or kind.
   measured directly against this repository's target platform, it fails
   with a Win32 error rather than returning a usable value. It and its
   numeric neighbors (9 through 22) are long-deprecated in favor of the
-  combined `WTSSessionInfo` (24) struct, which `GetCurrentSessionUptimeMilliseconds`
+  combined `WTSSessionInfo` (24) struct, which `GetCurrentSessionUptime`
   uses instead via `TryQuerySessionLogonAndCurrentTimeUtc`. That struct
   (`WTSINFOW` natively) is deliberately not modeled as a `[StructLayout]`
   type here, for the same reason `WTSINFOEX_HEADER` above only models its
@@ -94,12 +94,18 @@ Services assembly just to select or read a session's state or kind.
 ## Recommended changes
 
 None outstanding from the initial design pass. One correction was made
-after the fact, during the later addition of `GetCurrentSessionUptimeMilliseconds`/
-`GetSystemUptimeMilliseconds`: the first implementation attempt used
+after the fact, during the later addition of `GetCurrentSessionUptime`/
+`GetSystemUptime`: the first implementation attempt used
 `WTS_INFO_CLASS.WTSLogonTime` directly, following its name at face value:
 it turned out not to work at all on this repository's target platform
 (see Operational concerns above), caught by actually running the
 implementation against a real session rather than by code review alone.
 A future remote-machine extension (a `serverName` parameter backed by
 `WTSOpenServer`) is tracked as an open question in the implementation plan
-rather than here, since there is no existing rating to revise for it.
+rather than here, since there is no existing rating to revise for it. A
+follow-up review of this addition also added a doc comment directly on the
+`WTS_INFO_CLASS` enum declaration itself, flagging `WTSIdleTime`/`WTSLogonTime`
+as unreliable standalone queries - the finding above only lived in this
+document and in a comment near where the workaround is used, with nothing
+at the enum declaration itself to stop a future maintainer from trying the
+same broken standalone query again.

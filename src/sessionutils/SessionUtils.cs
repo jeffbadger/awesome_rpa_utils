@@ -395,8 +395,9 @@ namespace SessionAutomation
         }
 
         /// <summary>
-        /// Enumerates every session on the local machine, as a JSON array of session
-        /// summaries, newest information wins per query. Never throws.
+        /// Enumerates every session on the local machine as a JSON array of session
+        /// summaries. Each call takes a fresh live snapshot - nothing is cached between
+        /// calls. Never throws.
         /// </summary>
         /// <param name="connectStateFilter">Comma-separated <see cref="SessionConnectState"/> names to include (e.g. "Active,Disconnected"). Null/empty means every state.</param>
         /// <param name="json">A JSON array of session summaries on success; unset otherwise.</param>
@@ -584,7 +585,7 @@ namespace SessionAutomation
         /// Gets how long the calling process's own session has been logged on, in
         /// milliseconds. Never throws.
         /// </summary>
-        /// <param name="uptimeMilliseconds">Milliseconds since this session's logon, on success.</param>
+        /// <param name="milliseconds">Milliseconds since this session's logon, on success.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable failure reason.</param>
         /// <remarks>
         /// Reads the session's logon time via <c>WTSQuerySessionInformationW(WTSSessionInfo)</c> -
@@ -592,7 +593,7 @@ namespace SessionAutomation
         /// another per-session fact, via <see cref="TryQuerySessionLogonAndCurrentTimeUtc"/> -
         /// and compares it against that same call's own "now" timestamp (not a separate
         /// <see cref="DateTime.UtcNow"/> read, avoiding any clock-read skew between the two).
-        /// This is a different, unrelated clock from <see cref="GetSystemUptimeMilliseconds"/>:
+        /// This is a different, unrelated clock from <see cref="GetSystemUptime"/>:
         /// a session's logon time has no fixed relationship to when the machine itself last
         /// booted. A session reconnected over RDP can easily outlive several reboots of a
         /// machine that stays running, or be far younger than a machine that has been up for
@@ -600,9 +601,9 @@ namespace SessionAutomation
         /// </remarks>
         [Category("Session - Uptime")]
         [Description("Gets how long the calling process's own session has been logged on, in milliseconds. Never throws.")]
-        public bool GetCurrentSessionUptimeMilliseconds(out long uptimeMilliseconds, out string message)
+        public bool GetCurrentSessionUptime(out long milliseconds, out string message)
         {
-            uptimeMilliseconds = default;
+            milliseconds = default;
             message = default;
             try
             {
@@ -615,13 +616,13 @@ namespace SessionAutomation
                 // adjustments, virtual machine snapshots) - clamp defensively rather than
                 // ever hand back a negative duration, the same defensive posture as every
                 // guard clause above.
-                uptimeMilliseconds = elapsedMilliseconds > 0 ? (long)elapsedMilliseconds : 0;
+                milliseconds = elapsedMilliseconds > 0 ? (long)elapsedMilliseconds : 0;
                 message = null;
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("GetCurrentSessionUptimeMilliseconds", ex);
+                message = NeverThrowsGuard.Failure("GetCurrentSessionUptime", ex);
                 return false;
             }
         }
@@ -630,7 +631,7 @@ namespace SessionAutomation
         /// Gets how long the local machine has been running since it last booted, in
         /// milliseconds. Never throws.
         /// </summary>
-        /// <param name="uptimeMilliseconds">Milliseconds since the machine last booted, on success.</param>
+        /// <param name="milliseconds">Milliseconds since the machine last booted, on success.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable failure reason.</param>
         /// <remarks>
         /// Wraps <c>GetTickCount64</c> directly - the same tick source
@@ -639,23 +640,23 @@ namespace SessionAutomation
         /// exposes the full 64-bit count, so - unlike the 32-bit <c>GetTickCount</c> domain,
         /// which wraps roughly every 49.7 days - it does not wrap in any realistic uptime
         /// (roughly 584 million years). Machine-wide, not session-scoped: unrelated to
-        /// <see cref="GetCurrentSessionUptimeMilliseconds"/>'s session logon time.
+        /// <see cref="GetCurrentSessionUptime"/>'s session logon time.
         /// </remarks>
         [Category("Session - Uptime")]
         [Description("Gets how long the local machine has been running since it last booted, in milliseconds. Never throws.")]
-        public bool GetSystemUptimeMilliseconds(out long uptimeMilliseconds, out string message)
+        public bool GetSystemUptime(out long milliseconds, out string message)
         {
-            uptimeMilliseconds = default;
+            milliseconds = default;
             message = default;
             try
             {
-                uptimeMilliseconds = unchecked((long)GetTickCount64());
+                milliseconds = unchecked((long)GetTickCount64());
                 message = null;
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("GetSystemUptimeMilliseconds", ex);
+                message = NeverThrowsGuard.Failure("GetSystemUptime", ex);
                 return false;
             }
         }
@@ -960,6 +961,17 @@ namespace SessionAutomation
         private static readonly IntPtr WTS_CURRENT_SERVER_HANDLE = IntPtr.Zero;
         private const int WTS_CURRENT_SESSION = -1;
 
+        /// <remarks>
+        /// <c>WTSIdleTime</c> (17) and <c>WTSLogonTime</c> (18) - and, per Microsoft's own
+        /// numeric-neighbor deprecation, the rest of 9 through 22 - do not reliably work
+        /// queried standalone through <c>WTSQuerySessionInformationW</c> on this
+        /// repository's target platform: measured directly, <c>WTSLogonTime</c> fails
+        /// outright with a Win32 error rather than returning a usable value. Use the
+        /// combined <c>WTSSessionInfo</c> (24) struct instead for anything in that range -
+        /// see <see cref="TryQuerySessionLogonAndCurrentTimeUtc"/> for the working pattern.
+        /// These two members stay declared here only so the enum documents the full native
+        /// API; do not add a new standalone query against either one.
+        /// </remarks>
         private enum WTS_INFO_CLASS
         {
             WTSInitialProgram = 0,

@@ -97,8 +97,8 @@ The JSON shape produced by `EnumerateSessionsJson`: `SessionId`,
 
 | Method | Signature | Description |
 |---|---|---|
-| `GetCurrentSessionUptimeMilliseconds` | `bool GetCurrentSessionUptimeMilliseconds(out long uptimeMilliseconds, out string message)` | Milliseconds since the calling process's own session logged on. |
-| `GetSystemUptimeMilliseconds` | `bool GetSystemUptimeMilliseconds(out long uptimeMilliseconds, out string message)` | Milliseconds since the local machine last booted - machine-wide, not session-scoped. |
+| `GetCurrentSessionUptime` | `bool GetCurrentSessionUptime(out long milliseconds, out string message)` | Milliseconds since the calling process's own session logged on. |
+| `GetSystemUptime` | `bool GetSystemUptime(out long milliseconds, out string message)` | Milliseconds since the local machine last booted - machine-wide, not session-scoped. |
 
 ### Wait
 
@@ -164,9 +164,9 @@ The JSON shape produced by `EnumerateSessionsJson`: `SessionId`,
 - **`GetIdleTimeMilliseconds` only reflects local input to the calling
   process's own session** - another session's idle time cannot be observed
   this way.
-- **`GetCurrentSessionUptimeMilliseconds` and `GetSystemUptimeMilliseconds`
-  read two unrelated clocks - do not conflate them.** The first is how long
-  the calling process's *session* has been logged on (`WTSLogonTime`); the
+- **`GetCurrentSessionUptime` and `GetSystemUptime` read two unrelated
+  clocks - do not conflate them.** The first is how long the calling
+  process's *session* has been logged on (the session's logon time); the
   second is how long the *machine* has been running since it last booted
   (`GetTickCount64`). A session reconnected over RDP can easily outlive
   several reboots of a machine that stays running, or be far younger than a
