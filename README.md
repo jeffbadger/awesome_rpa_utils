@@ -34,6 +34,31 @@ OcrUtils own pixels-to-information (images and recognized text), and
 WindowUtils and DialogUtils own window management (general windows and
 native dialogs, respectively).
 
+## DataContractUtils vs. ValueStoreUtils
+
+Both hold named values in memory for a running automation and share the same
+never-throws contract, which makes them easy to reach for interchangeably —
+but they make opposite tradeoffs, and picking the wrong one costs you either
+safety or flexibility.
+
+| | `DataContractUtils` | `ValueStoreUtils` |
+|---|---|---|
+| **Model** | Schema-first: define a typed contract, seal it, then populate | Schema-free: any key settable/retypeable at any time |
+| **Use it for** | A phased workflow with a known, fixed set of fields — a "form" the automation fills in and validates before handoff | Passing loosely-typed data between steps — screen-scrape results, business-object fields, config values, work-item data |
+| **Type safety** | A closed declared type per item; a wrong-type write or a misspelled name fails instead of silently creating/retyping something | `object`-typed values with forgiving converters (`GetInt32`, `GetBoolean` accepting `1/0`/`yes`/`no`, etc.) that coerce from whatever's actually stored |
+| **Structure** | Flat — one name, one scalar or JSON-blob value | Supports nested structures via dot-notation path access (`GetPathString("Customer.Address.City")`, `SetPath`) |
+| **Per-field policy** | `mustHaveValue`, `readOnly`, `writeOnce`, `sensitive` (redacted from snapshots) enforced per item | None — no policy layer |
+| **Missing-value handling** | A present item of the wrong type is a real `False`/message failure | A missing key, null value, or failed conversion are all "normal negative" outcomes that fall back to a default, not an operational failure |
+
+**Use `DataContractUtils`** when you want a validated contract: known fields,
+enforced types, and required/read-only/write-once/sensitive rules that catch
+a misspelled name or wrong type at the point of use rather than downstream.
+
+**Use `ValueStoreUtils`** when the shape of the data isn't fixed up front, or
+when values naturally arrive as strings/loosely-typed and you want forgiving
+conversion plus dot-notation access into nested structures, without an
+initialization/seal step in the way.
+
 ## Requirements
 
 - Windows (most projects multi-target `net8.0-windows` and `net10.0-windows`;
