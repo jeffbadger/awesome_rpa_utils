@@ -32,6 +32,9 @@ namespace FileWatchAutomation.Tests
 
         public void Dispose()
         {
+            // Stops any background watch a Watch test left running - a no-op for every
+            // other test class, since only StartWatching acquires a live resource.
+            try { Fw.Dispose(); } catch { /* best-effort cleanup */ }
             try { Directory.Delete(TempDir, recursive: true); } catch { /* best-effort cleanup */ }
         }
     }

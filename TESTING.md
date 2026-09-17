@@ -502,6 +502,13 @@ genuinely can't be exercised there:
   the test process holds on itself, which is the real code path, but
   confirming behavior against, say, Excel or Notepad holding a file open is
   worth a manual spot-check.
+- `StartWatching`'s `WatchError` event (the underlying `FileSystemWatcher`
+  failing outright, e.g. an internal notification-buffer overflow) needs a
+  real OS-level overflow condition to trigger deterministically, so it
+  isn't exercised by an automated test; `Created`/`Changed`/`Deleted`/
+  `Renamed` and the crash-isolation behavior (a throwing handler doesn't
+  take down the process or block other subscribers) are all covered in
+  the xunit project.
 
 The full guard-clause, enum-mapping, and real-functional-behavior xunit
 coverage is in `src/filewatchutils/FileWatchUtils.Tests`

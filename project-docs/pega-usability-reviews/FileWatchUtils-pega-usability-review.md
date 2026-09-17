@@ -28,6 +28,10 @@ established filter convention.
 | `WaitForFileUnlocked`/`Simple` | Direct, disambiguated | Same filter/timeout shape as the other `WaitForX` methods. |
 | `WaitForFileMatchingPattern`/`Simple` | Direct, disambiguated | `matchedFilePath` is a plain scalar string output. |
 | `WatchForChange`/`Simple` | Direct, disambiguated | Uses `FileSystemWatcher.WaitForChanged` internally - a BCL detail entirely hidden behind scalar parameters and the repository-owned `FileChangeKind` output. |
+| `StartWatching` | Direct | Non-blocking counterpart to `WatchForChange` - see "Event-based design" below for why it has no `changeKindsFilter`. |
+| `StopWatching` | Direct | Plain scalar in/out; fails if no watch is running. |
+| `IsWatching` | Direct, no-message | Plain `bool`, no `out` parameters at all - matches `WindowUtils.IsWindowVisible`'s shape for a query with no failure mode. |
+| `Created`/`Changed`/`Deleted`/`Renamed`/`WatchError` (events) | Direct | `EventHandler<T>` with repository-owned, scalar-property args (`FileWatchChangeEventArgs`, `FileWatchRenamedEventArgs`, `FileWatchErrorEventArgs`) instead of the BCL's `FileSystemEventArgs`/`RenamedEventArgs` - same reasoning as `FileChangeKind` avoiding `WatcherChangeTypes`. |
 | `AtomicMoveFile` | Direct | Plain scalar in/out, no disambiguation needed - only method of its name. |
 | `ReplaceFile` | Direct | Same; `backupPath` accepts null/empty for "no backup," a plain scalar convention already used elsewhere in this suite (e.g. delimiter defaults). |
 | `ClaimFile` | Direct | `claimedPath` is a plain scalar string output - no live/disposable object crosses the boundary. |
@@ -47,9 +51,57 @@ established filter convention.
 - `WaitForFileUnlockedSimple`/`WaitForFileUnlocked` - both share `(string, int, int)`, so `Simple` is required.
 - `WaitForFileMatchingPatternSimple`/`WaitForFileMatchingPattern` - both share `(string, string, bool, int, int)` plus a shared `out string matchedFilePath`; the collision is on the non-`out` list regardless of the `out` shapes involved, so `Simple` is required.
 - `WatchForChangeSimple`/`WatchForChange` - both share `(string, string, string, bool, int)`, so `Simple` is required.
+- `StartWatching`, `StopWatching`, `IsWatching` - distinct names and arities from every other method in this component (and from each other); no collision, no `Simple` sibling needed.
 - `AtomicMoveFile`, `ReplaceFile`, `ClaimFile` - distinct names and/or arities from every other method in this component; no collision, no `Simple` sibling needed.
 - `ComputeFileHashSha256` vs. `ComputeFileHash` - distinct names and different arity (`(string)` vs. `(string, string)`); no collision.
 - No `As<Type>`-suffixed overloads exist in this component - there is no case here (unlike `ServiceUtils`'s `ServiceControllerStatus`/`ServiceStatus` pair) where two overloads return the same logical value via a different type.
+
+## Event-based design (added after the initial pass)
+
+`StartWatching` plus the `Created`/`Changed`/`Deleted`/`Renamed`/
+`WatchError` events are this suite's **first use of a real C# event**.
+Every other filesystem/UI-event mechanism in the suite either blocks
+(`WatchForChange` here, `WinEventUtils`' `WaitForX`) or polls a queue
+(`WinEventUtils`' `Subscribe`/`GetNextEvent`). This component deliberately
+does neither:
+
+- **Confirmed genuinely supported, not speculative**:
+  `component-browser/ComponentBrowser.Core/AssemblyInspector.cs` already
+  reflects `componentType.GetEvents(...)` and reads `[Category]`/
+  `[Description]` off each `EventInfo`, exactly like it does for methods -
+  Robot Studio's "Events" (the E in PME) is real, already-built
+  infrastructure.
+- **No `changeKindsFilter` parameter on `StartWatching`.** Kind selection
+  is "did you wire that event's handler," not an input - a developer who
+  doesn't want `Deleted` notifications just doesn't subscribe to
+  `Deleted`. This is simpler than `WatchForChange`'s CSV filter, but only
+  works because there's no queue to pre-filter before delivery.
+- **No `WinEventUtils`-style multi-subscription/`subscriptionId` model.**
+  Confirmed with the component owner: one instance runs at most one
+  watch. `FileSystemWatcher` is cheap enough per-instance that a second
+  folder just means a second `FileWatchUtils` component on the canvas,
+  unlike `WinEventUtils`' single shared global hook, which justified its
+  multi-subscription machinery.
+- **The one real new risk this design introduces**: `FileSystemWatcher`'s
+  native events fire on ThreadPool threads, so a Pega-wired (or any)
+  subscriber's handler that throws would otherwise escape unhandled on a
+  background thread and terminate the host process - and since a
+  multicast event delegate invokes its subscribers in one call, a
+  throwing handler would also stop every subscriber registered after it
+  from ever running, not just crash the process. Every native-event
+  handler invokes its public event's subscribers individually (not via a
+  single `handler?.Invoke(...)`), catching and debug-logging each one's
+  exception separately, so one bad handler can't take down the process
+  or block its neighbors. This is the component's first "guard external
+  boundary" concern that involves invoking caller-supplied code from a
+  thread this component doesn't control.
+- **`FileSystemWatcher.Error`** (an internal notification-buffer overflow
+  - a different, rarer failure than a subscriber's own handler exception)
+  stops the watch and raises `WatchError`, so a developer who wired it
+  can react (e.g. restart the watch) instead of it silently going quiet.
+- **This is also the component's first held resource**, and therefore its
+  first `Dispose(bool)` override, to stop and dispose the background
+  watcher if the automation forgets to call `StopWatching`.
 
 ## Operational concerns
 
@@ -77,4 +129,7 @@ established filter convention.
 
 ## Recommended changes
 
-None outstanding - this is the initial design pass, not a retrofit.
+None outstanding. The initial design pass (Wait/Watch/Actions/Hash/
+Metadata) had none; the later event-based `StartWatching` addition (see
+"Event-based design" above) was reviewed for the same signature-uniqueness
+and never-throws concerns before being added, not after the fact.
