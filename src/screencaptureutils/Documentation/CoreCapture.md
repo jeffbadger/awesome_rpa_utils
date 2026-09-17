@@ -13,13 +13,13 @@ the automation needs the image itself. See
 [Getting the image directly](#getting-the-image-directly) at the bottom of
 this page for that case, including who owns disposing the `Bitmap`.
 
-## `CaptureScreenToFile(string filePath)`
+## `CaptureAllScreensToFile(string filePath)`
 
 **Scenario:** A run-level "what did the desktop look like" snapshot at the
 start of an automation, before anything has been clicked.
 
 ```csharp
-screenCapture.CaptureScreenToFile(@"C:\evidence\run_start.png", out string message);
+screenCapture.CaptureAllScreensToFile(@"C:\evidence\run_start.png", out string message);
 ```
 
 ## `CaptureRegionToFile(int left, int top, int width, int height, string filePath)`
@@ -104,13 +104,13 @@ mouse.GetY(out int y, out _);
 screenCapture.CaptureAroundPointToFile(x, y, 200, 100, @"C:\evidence\click_target.png", out string message);
 ```
 
-## `CaptureScreenToClipboard()`
+## `CaptureAllScreensToClipboard()`
 
 **Scenario:** A support ticket needs a screenshot pasted directly into the
 ticket body, rather than attached as a file.
 
 ```csharp
-if (screenCapture.CaptureScreenToClipboard(out string message))
+if (screenCapture.CaptureAllScreensToClipboard(out string message))
     Logger.Info("Screenshot copied to clipboard — paste it into the ticket.");
 else
     Logger.Warn("Could not copy to clipboard: " + message);
@@ -155,12 +155,11 @@ if (screenIndex >= screenCount)
 screenCapture.CaptureScreenToFile(screenIndex, @"C:\evidence\target_monitor.png", out string message);
 ```
 
-The plain, parameterless `CaptureScreenToFile`/`CaptureScreen`/
-`CaptureScreenToClipboard` overloads are unchanged by this — they still
-capture the entire virtual screen (every monitor combined) exactly as
-before. `CaptureScreen(int, ...)` and `CaptureScreenToClipboard(int, ...)`
-follow the same base/`ToFile`/`ToClipboard` shape as every other capture
-target in this component.
+`CaptureAllScreensToFile`/`CaptureAllScreens`/`CaptureAllScreensToClipboard`
+are unchanged by this — they still capture the entire virtual screen (every
+monitor combined) exactly as before. `CaptureScreen(int, ...)` and
+`CaptureScreenToClipboard(int, ...)` follow the same base/`ToFile`/
+`ToClipboard` shape as every other capture target in this component.
 
 ## `CaptureStepEvidence(string stepName, string folderPath)`
 
@@ -206,6 +205,7 @@ using (region)
 }
 ```
 
-The base methods available this way are `CaptureScreen`, `CaptureRegion`,
-`CaptureWindow`, `CaptureActiveWindow`, and `CaptureAroundPoint` — one per
-capture target, same as the `*ToFile`/`*ToClipboard` wrappers above.
+The base methods available this way are `CaptureAllScreens`, `CaptureScreen`
+(single monitor by index), `CaptureRegion`, `CaptureWindow`,
+`CaptureActiveWindow`, and `CaptureAroundPoint` — one per capture target,
+same as the `*ToFile`/`*ToClipboard` wrappers above.
