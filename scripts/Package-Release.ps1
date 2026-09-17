@@ -79,11 +79,18 @@ function Get-ChannelArchivePath([string]$BasePath, [string]$Label) {
 
 # {tfm} in these NuGet-package paths is substituted with each channel's
 # SupportTfm below, so every channel embeds the support-DLL flavor that
-# matches its target framework.
+# matches its target framework. SharpZipLib (ArchiveUtils' password/
+# encryption dependency) doesn't follow this pattern - as of 1.4.2 it ships
+# one netstandard2.1 assembly (also compatible net6.0/netstandard2.0 folders
+# exist in the package, but netstandard2.1 is the most compatible single
+# choice for this repo's net8.0/net10.0 consumers), not per-TFM win-runtime
+# folders like the two packages below, so its path is a literal, not
+# {tfm}-templated.
 $supportAssemblies = @(
     "system.serviceprocess.servicecontroller/9.0.0/runtimes/win/lib/{tfm}/System.ServiceProcess.ServiceController.dll"
     "system.diagnostics.eventlog/9.0.0/runtimes/win/lib/{tfm}/System.Diagnostics.EventLog.dll"
     "system.diagnostics.eventlog/9.0.0/runtimes/win/lib/{tfm}/System.Diagnostics.EventLog.Messages.dll"
+    "sharpziplib/1.4.2/lib/netstandard2.1/ICSharpCode.SharpZipLib.dll"
 )
 
 # The RestCodeGenerator is a design-time command-line tool, not a component the
