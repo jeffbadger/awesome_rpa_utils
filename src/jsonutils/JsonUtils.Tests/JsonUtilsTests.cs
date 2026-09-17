@@ -343,10 +343,13 @@ namespace JsonAutomation.Tests
         [Fact]
         public void TryFindPathsByName_NameContainsQuoteAndBackslash_MatchesExactly()
         {
-            bool succeeded = _json.TryFindPathsByName("{\"it's\\\\here\":1}", "it's\\here", ",", out string paths, out string message);
+            const string json = "{\"it's\\\\here\":1}";
+            bool succeeded = _json.TryFindPathsByName(json, "it's\\here", ",", out string paths, out string message);
 
             Assert.True(succeeded);
             Assert.False(string.IsNullOrEmpty(paths));
+            Assert.True(_json.TryGetValueFromJson(json, paths, out string value, out message));
+            Assert.Equal("1", value);
         }
 
         [Fact]
