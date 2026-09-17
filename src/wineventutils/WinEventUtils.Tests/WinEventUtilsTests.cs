@@ -435,6 +435,22 @@ namespace WinEventAutomation.Tests
         }
 
         [Fact]
+        public void IsWindow_enumwindows_failure_returns_error_message()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            utils.EnumerateTopLevelWindows = _ => false;
+
+            bool ok = utils.IsWindow("{}", out IntPtr hwnd, out string message);
+
+            Assert.False(ok);
+            Assert.Equal(IntPtr.Zero, hwnd);
+            Assert.NotNull(message);
+            Assert.Contains("EnumWindows failed", message);
+        }
+
+        [Fact]
         public void GetNextEvent_unknown_subscription_returns_false_with_message()
         {
             var utils = new WinEventUtils();

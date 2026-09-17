@@ -22,6 +22,9 @@ namespace WinEventAutomation
     /// </summary>
     public partial class WinEventUtils
     {
+        internal Func<Func<IntPtr, bool>, bool> EnumerateTopLevelWindows { get; set; } =
+            callback => WinEventInterop.EnumWindows((hwnd, _) => callback(hwnd), IntPtr.Zero);
+
         /// <summary>
         /// Tests whether a live top-level window matches the filter. This is a
         /// non-blocking existence check and does not require the event engine.
@@ -62,23 +65,25 @@ namespace WinEventAutomation
                 }
                 filter = filter ?? WinEventFilter.Create();
                 IntPtr foundHwnd = IntPtr.Zero;
+                bool callbackRequestedStop = false;
                 if (!OperatingSystem.IsWindows())
                 {
                     message = "Window existence checks require Windows.";
                     return false;
                 }
-                bool enumerationCompleted = WinEventInterop.EnumWindows((hwnd, lParam) =>
+                bool enumerationCompleted = EnumerateTopLevelWindows(hwnd =>
                 {
                     var data = SnapshotWindow(hwnd);
                     if ((requiredClass == null || string.Equals(data.ClassName, requiredClass, StringComparison.OrdinalIgnoreCase)) &&
                         filter.Matches(data, _hostPid))
                     {
                         foundHwnd = hwnd;
+                        callbackRequestedStop = true;
                         return false;
                     }
                     return true;
-                }, IntPtr.Zero);
-                if (!enumerationCompleted && foundHwnd == IntPtr.Zero)
+                });
+                if (!enumerationCompleted && !callbackRequestedStop && foundHwnd == IntPtr.Zero)
                 {
                     int win32Error = Marshal.GetLastWin32Error();
                     message = win32Error != 0
