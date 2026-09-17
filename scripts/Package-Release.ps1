@@ -34,7 +34,7 @@ $releaseAssemblies = @(
     "TerminalAutomation.dll"
     "LocalQueueAutomation.dll"
     "StackAutomation.dll"
-    "DataBagAutomation.dll"
+    "DataContractAutomation.dll"
     "JsonAutomation.dll"
     "ValueStoreAutomation.dll"
 )

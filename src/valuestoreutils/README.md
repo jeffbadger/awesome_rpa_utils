@@ -4,7 +4,7 @@ A Pega Robot Studio-ready component (`ValueStoreUtils`) for passing loosely-
 typed data between RPA automation steps — screen-scrape results, business-
 object fields, config values, work-item data — where values often arrive as
 strings and need forgiving conversion to the type the automation actually
-needs. Unlike `DataBagUtils`, there is no schema to define or seal: any key
+needs. Unlike `DataContractUtils`, there is no schema to define or seal: any key
 can be set at any time. Like every component in this suite, its methods
 report recoverable failures as `False` with a descriptive message instead of
 throwing.
@@ -134,8 +134,8 @@ a missing key is a normal outcome, not a failure:
 
 ## Notes & Caveats
 
-- **No schema.** Unlike `DataBagUtils`, any key can be set or retyped at any
-  time; there is no `Initialize`/seal step. Use `DataBagUtils` instead when a
+- **No schema.** Unlike `DataContractUtils`, any key can be set or retyped at any
+  time; there is no `Initialize`/seal step. Use `DataContractUtils` instead when a
   fixed, validated contract is what you want.
 - **`CaseSensitiveKeys` rebuilds the internal map when changed**, preserving
   existing entries under the new comparer. Switching from case-sensitive to

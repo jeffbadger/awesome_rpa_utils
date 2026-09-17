@@ -1,4 +1,4 @@
-# DataBagUtils Pega usability review
+# DataContractUtils Pega usability review
 
 This review was completed before implementation.
 
@@ -27,3 +27,13 @@ The DataTable loaders require a proxy when the caller does not already have a
 table; JSON alternatives cover that case. Raw JSON is used for design-time
 definitions because a custom Property Grid collection editor would add a much
 larger designer/deployment surface and requires separate Pega validation.
+
+## Addendum: renamed from DataBagUtils (2026-09)
+
+Renamed the component (class, namespace/assembly, enums, folder) from
+`DataBagUtils`/`DataBagAutomation` to `DataContractUtils`/
+`DataContractAutomation`. The original name read as the looser, freeform
+component and `ValueStoreUtils` read as the more structured one - the
+opposite of their actual behavior (this component is the schema-validated,
+sealed-contract one; `ValueStoreUtils` is the freeform one). No behavior
+change - pure rename, done pre-adoption so no compatibility shim was needed.

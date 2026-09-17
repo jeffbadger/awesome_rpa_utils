@@ -13,7 +13,7 @@ store.SetJson("Address", "{\"City\":\"Columbus\",\"Zip\":\"43215\"}", out messag
 ```
 
 Every setter creates the key if it is missing or overwrites it if present —
-there is no separate "declare" step like `DataBagUtils`. `SetJson` accepts
+there is no separate "declare" step like `DataContractUtils`. `SetJson` accepts
 any JSON value at the root (object, array, string, number, boolean, or
 null); an object or array becomes a nested structure reachable through
 [Path](Path.md) access. `SetNull` clears a value without removing the key,

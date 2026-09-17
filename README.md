@@ -8,7 +8,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 |---|---|---|
 | [archiveutils](src/archiveutils/README.md) | `ArchiveAutomation` | Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection and independent CRC-32 verification built in. |
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
-| [databagutils](src/databagutils/README.md) | `DataBagAutomation` | Defines a typed named-value contract during initialization, then provides strict scalar getters/setters and atomic JSON/DataTable updates at runtime. |
+| [datacontractutils](src/datacontractutils/README.md) | `DataContractAutomation` | Defines a typed named-value contract during initialization, then provides strict scalar getters/setters and atomic JSON/DataTable updates at runtime. |
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 | [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
 | [eventutils](src/eventutils/README.md) | `EventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
@@ -176,7 +176,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [archiveutils/README.md](src/archiveutils/README.md) and [archiveutils/Documentation/](src/archiveutils/Documentation/README.md)
 - [localqueueutils/README.md](src/localqueueutils/README.md) and [localqueueutils/Documentation/](src/localqueueutils/Documentation/README.md)
 - [stackutils/README.md](src/stackutils/README.md) and [stackutils/Documentation/](src/stackutils/Documentation/README.md)
-- [databagutils/README.md](src/databagutils/README.md) and [databagutils/Documentation/](src/databagutils/Documentation/README.md)
+- [datacontractutils/README.md](src/datacontractutils/README.md) and [datacontractutils/Documentation/](src/datacontractutils/Documentation/README.md)
 
 ## Developer tools
 
@@ -239,7 +239,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataBagUtils`, and `JsonUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, and `JsonUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -256,7 +256,7 @@ and
 and
 `dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj`,
 and
-`dotnet test src/databagutils/DataBagUtils.Tests/DataBagUtils.Tests.csproj`,
+`dotnet test src/datacontractutils/DataContractUtils.Tests/DataContractUtils.Tests.csproj`,
 and
 `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
