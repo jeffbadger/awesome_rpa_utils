@@ -86,6 +86,60 @@ namespace ScreenCaptureAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        // --- Multi-monitor: GetScreenCount and the indexed CaptureScreen overloads ---
+
+        [Fact]
+        public void GetScreenCount_ReturnsAtLeastOneScreenWithNullMessage()
+        {
+            bool ok = _capture.GetScreenCount(out int count, out string message);
+
+            Assert.True(ok);
+            Assert.True(count >= 1);
+            Assert.Null(message);
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(int.MinValue)]
+        public void CaptureScreen_NegativeIndex_ReturnsFalseWithMessage(int screenIndex)
+        {
+            bool ok = _capture.CaptureScreen(screenIndex, out System.Drawing.Bitmap image, out string message);
+
+            Assert.False(ok);
+            Assert.Null(image);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void CaptureScreen_IndexAtOrBeyondCount_ReturnsFalseWithMessage()
+        {
+            _capture.GetScreenCount(out int count, out _);
+
+            bool ok = _capture.CaptureScreen(count, out System.Drawing.Bitmap image, out string message);
+
+            Assert.False(ok);
+            Assert.Null(image);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void CaptureScreenToFile_InvalidIndex_ReturnsFalseWithMessage()
+        {
+            bool ok = _capture.CaptureScreenToFile(-1, "out.png", out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void CaptureScreenToClipboard_InvalidIndex_ReturnsFalseWithMessage()
+        {
+            bool ok = _capture.CaptureScreenToClipboard(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         // --- *ToClipboard methods: same guards as their *ToFile counterparts ---
 
         [Theory]

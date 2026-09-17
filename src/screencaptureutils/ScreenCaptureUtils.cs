@@ -91,7 +91,8 @@ namespace ScreenCaptureAutomation
         /// <returns><c>true</c> on success. Never throws.</returns>
         /// <remarks>
         /// This is the base capture this component's other <c>CaptureScreen*</c> methods
-        /// are built on (<see cref="CaptureScreenToFile"/>, <see cref="CaptureScreenToClipboard"/>);
+        /// are built on (<see cref="CaptureScreenToFile(string, out string)"/>,
+        /// <see cref="CaptureScreenToClipboard(out string)"/>);
         /// call it directly only when the automation needs the image itself, e.g. to run
         /// its own pixel processing before deciding whether/where to save it.
         /// </remarks>
@@ -115,6 +116,66 @@ namespace ScreenCaptureAutomation
         }
 
         /// <summary>
+        /// Captures a single screen (monitor) to an in-memory image, for a multi-monitor
+        /// session where <see cref="CaptureScreen(out Bitmap, out string)"/>'s
+        /// whole-virtual-screen capture spans more than one physical display.
+        /// </summary>
+        /// <param name="screenIndex">Zero-based index into the detected screens, in the
+        /// same order <see cref="GetScreenCount"/> counts them - the underlying .NET/
+        /// Windows enumeration order, not guaranteed to match physical left-to-right position.</param>
+        /// <param name="image">The captured image, or <c>null</c> if this method returns <c>false</c>. The caller owns this <see cref="Bitmap"/> and must <see cref="IDisposable.Dispose"/> it.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="screenIndex"/> is out of range. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures a single screen (monitor) by index to an in-memory image. Caller must Dispose() the returned image. Returns True on success; never throws.")]
+        public bool CaptureScreen(int screenIndex, out Bitmap image, out string message)
+        {
+            image = default;
+            message = default;
+            try
+            {
+                if (!TryGetScreenBounds(screenIndex, out Rectangle bounds, out message))
+                    return false;
+
+                return TryCaptureRegionToBitmap(bounds.Left, bounds.Top, bounds.Width, bounds.Height, out image, out message);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureScreen", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Reports how many screens (monitors) this session sees, so an automation can
+        /// validate a <c>screenIndex</c> before passing it to the indexed
+        /// <c>CaptureScreen*</c> overloads.
+        /// </summary>
+        /// <param name="count">The number of screens detected (at least 1), or <c>0</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the count could not be determined.</param>
+        /// <returns><c>true</c> on success. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Reports how many screens (monitors) this session sees. Returns True on success; never throws.")]
+        public bool GetScreenCount(out int count, out string message)
+        {
+            count = default;
+            message = default;
+            try
+            {
+                count = System.Windows.Forms.Screen.AllScreens.Length;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                count = 0;
+                message = NeverThrowsGuard.Failure("GetScreenCount", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Captures the entire virtual screen (all monitors) to an image file.
         /// </summary>
         /// <param name="filePath">Destination file path. The format is inferred from the extension (.png, .jpg/.jpeg, .bmp, .gif, .tif/.tiff); unrecognized extensions are saved as PNG.</param>
@@ -128,6 +189,36 @@ namespace ScreenCaptureAutomation
             try
             {
                 if (!CaptureScreen(out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySaveBitmap(bmp, filePath, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureScreenToFile", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures a single screen (monitor) to an image file.
+        /// </summary>
+        /// <param name="screenIndex">Zero-based index into the detected screens; see <see cref="CaptureScreen(int, out Bitmap, out string)"/>.</param>
+        /// <param name="filePath">Destination file path. The format is inferred from the extension.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="screenIndex"/> is out of range, or <paramref name="filePath"/> is invalid. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures a single screen (monitor) by index to an image file. Returns True on success; never throws.")]
+        public bool CaptureScreenToFile(int screenIndex, string filePath, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!CaptureScreen(screenIndex, out Bitmap bmp, out message))
                     return false;
 
                 using (bmp)
@@ -164,6 +255,36 @@ namespace ScreenCaptureAutomation
             try
             {
                 if (!CaptureScreen(out Bitmap bmp, out message))
+                    return false;
+
+                using (bmp)
+                {
+                    return TrySetClipboardImageOnStaThread(bmp, out message);
+                }
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CaptureScreenToClipboard", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Captures a single screen (monitor) and copies it to the Windows clipboard as
+        /// an image.
+        /// </summary>
+        /// <param name="screenIndex">Zero-based index into the detected screens; see <see cref="CaptureScreen(int, out Bitmap, out string)"/>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture or clipboard copy failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="screenIndex"/> is out of range. Never throws.</returns>
+        [Category("Capture - Core")]
+        [Description("Captures a single screen (monitor) by index and copies it to the clipboard as an image. Returns True on success; never throws.")]
+        public bool CaptureScreenToClipboard(int screenIndex, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!CaptureScreen(screenIndex, out Bitmap bmp, out message))
                     return false;
 
                 using (bmp)
@@ -1278,6 +1399,26 @@ namespace ScreenCaptureAutomation
                 return false;
             }
 
+            message = null;
+            return true;
+        }
+
+        /// <summary>
+        /// Resolves a zero-based screen index to that screen's bounds (in the same
+        /// virtual-screen coordinate space <see cref="TryCaptureRegionToBitmap"/> expects),
+        /// rejecting an out-of-range index with a message naming how many screens exist.
+        /// </summary>
+        private static bool TryGetScreenBounds(int screenIndex, out Rectangle bounds, out string message)
+        {
+            bounds = default;
+            var screens = System.Windows.Forms.Screen.AllScreens;
+            if (screenIndex < 0 || screenIndex >= screens.Length)
+            {
+                message = $"Screen index {screenIndex} is out of range; {screens.Length} screen(s) detected (valid range 0-{screens.Length - 1}).";
+                return false;
+            }
+
+            bounds = screens[screenIndex].Bounds;
             message = null;
             return true;
         }

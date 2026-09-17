@@ -123,6 +123,45 @@ Every capture target has a `*ToClipboard` counterpart built the same way —
 `CaptureActiveWindowToClipboard`, `CaptureAroundPointToClipboard` — for
 copying just a region, a specific window, etc. instead of the whole screen.
 
+## `CaptureScreenToFile(int screenIndex, string filePath)`
+
+**Scenario:** A multi-monitor workstation runs one application per screen,
+and evidence for "what the second monitor showed" needs to be its own file
+rather than a slice cropped out of a combined all-monitors screenshot.
+
+```csharp
+screenCapture.GetScreenCount(out int screenCount, out _);
+for (int i = 0; i < screenCount; i++)
+{
+    screenCapture.CaptureScreenToFile(i, $@"C:\evidence\monitor_{i}.png", out string message);
+}
+```
+
+`screenIndex` is a zero-based index into however many screens Windows
+reports — it does **not** necessarily correspond to physical left-to-right
+position, so don't assume index `0` is "the left monitor." Call
+`GetScreenCount` first and treat an out-of-range index as a real failure
+(`message` explains it) rather than assuming every session has the same
+number of monitors the automation was authored on:
+
+```csharp
+int screenIndex = 1; // e.g. "the second monitor", supplied by the automation
+screenCapture.GetScreenCount(out int screenCount, out _);
+if (screenIndex >= screenCount)
+{
+    Logger.Warn($"Expected monitor {screenIndex}, but this session only has {screenCount}.");
+    return;
+}
+screenCapture.CaptureScreenToFile(screenIndex, @"C:\evidence\target_monitor.png", out string message);
+```
+
+The plain, parameterless `CaptureScreenToFile`/`CaptureScreen`/
+`CaptureScreenToClipboard` overloads are unchanged by this — they still
+capture the entire virtual screen (every monitor combined) exactly as
+before. `CaptureScreen(int, ...)` and `CaptureScreenToClipboard(int, ...)`
+follow the same base/`ToFile`/`ToClipboard` shape as every other capture
+target in this component.
+
 ## `CaptureStepEvidence(string stepName, string folderPath)`
 
 **Scenario:** The most common RPA evidence pattern — one screenshot per

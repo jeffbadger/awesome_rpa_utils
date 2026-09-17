@@ -47,6 +47,10 @@ images internally.
 | `CaptureScreen` | `bool CaptureScreen(out Bitmap image, out string message)` | Captures the entire virtual screen (all monitors) to an in-memory image. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
 | `CaptureScreenToFile` | `bool CaptureScreenToFile(string filePath, out string message)` | Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws. |
 | `CaptureScreenToClipboard` | `bool CaptureScreenToClipboard(out string message)` | Captures the entire virtual screen and copies it to the clipboard as an image, via an internal STA thread regardless of the caller's apartment state. Returns True on success; never throws. |
+| `CaptureScreen` | `bool CaptureScreen(int screenIndex, out Bitmap image, out string message)` | Captures a single screen (monitor) by index to an in-memory image, for a multi-monitor session. Caller must `Dispose()` the returned image. Returns True on success; `false` if `screenIndex` is out of range. Never throws. |
+| `CaptureScreenToFile` | `bool CaptureScreenToFile(int screenIndex, string filePath, out string message)` | Captures a single screen (monitor) by index to an image file. Returns True on success; `false` if `screenIndex` is out of range. Never throws. |
+| `CaptureScreenToClipboard` | `bool CaptureScreenToClipboard(int screenIndex, out string message)` | Captures a single screen (monitor) by index and copies it to the clipboard as an image. Returns True on success; `false` if `screenIndex` is out of range. Never throws. |
+| `GetScreenCount` | `bool GetScreenCount(out int count, out string message)` | Reports how many screens (monitors) this session sees, for validating `screenIndex` before calling the methods above. Returns True on success; never throws. |
 | `CaptureRegion` | `bool CaptureRegion(int left, int top, int width, int height, out Bitmap image, out string message)` | Captures a specific screen region to an in-memory image. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
 | `CaptureRegionToFile` | `bool CaptureRegionToFile(int left, int top, int width, int height, string filePath, out string message)` | Captures a specific screen region to an image file. Returns True on success; never throws. |
 | `CaptureRegionToClipboard` | `bool CaptureRegionToClipboard(int left, int top, int width, int height, out string message)` | Captures a specific screen region and copies it to the clipboard as an image. Returns True on success; never throws. |
@@ -120,6 +124,14 @@ screenCapture.CaptureWindowToFile(hWnd, @"C:\evidence\order_entry.png", out stri
   (or call `image.Dispose()` when done) to avoid leaking GDI handles; only call
   these directly when the automation needs the image itself, e.g. custom pixel
   processing before deciding whether/where to save it.
+- **`screenIndex` on the indexed `CaptureScreen*` overloads is not a physical
+  left-to-right position** — it's a zero-based index into the underlying .NET/Windows
+  screen enumeration, whatever order that happens to return. Call `GetScreenCount`
+  first to learn the valid range (`0` through `count - 1`); an automation that needs
+  to identify *which* monitor is which (e.g. "the leftmost one") has to reason about
+  the screens some other way, since this component doesn't expose per-screen bounds.
+  The parameterless `CaptureScreen`/`CaptureScreenToFile`/`CaptureScreenToClipboard`
+  overloads are unaffected — they still capture every monitor as one combined image.
 - **Annotation coordinates are relative to the saved image, not the screen.**
   If you captured a region with `CaptureRegionToFile(left, top, width, height, ...)`
   and want to annotate the same absolute spot in the saved file, subtract the
