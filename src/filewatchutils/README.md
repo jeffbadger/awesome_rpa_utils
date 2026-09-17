@@ -26,12 +26,19 @@ real, full functional coverage on Linux (real files, real locks, real
 ### `FileChangeKind`
 The kind of filesystem change `WatchForChange` detected: `Created`,
 `Renamed`, `Changed`, `Deleted`. A single-value output counterpart to the
-combinable `changeKindsFilter` CSV input those methods accept.
+combinable `changeKindsFilter` CSV input those methods accept. Also used
+by `FileWatchChangeEventArgs.Kind` (see [Events](#events)).
 
 ### `FileMetadata`
 The JSON shape produced by `GetFileMetadataJson`/`GetDirectoryListingJson`:
 `FullPath`, `Name`, `Extension`, `SizeBytes`, `IsDirectory`,
 `CreatedUtcIso8601`, `LastWriteUtcIso8601`.
+
+### `FileWatchChangeEventArgs`, `FileWatchRenamedEventArgs`, `FileWatchErrorEventArgs`
+Event-args types for [Events](#events)'s `Created`/`Changed`/`Deleted`,
+`Renamed`, and `WatchError` respectively - plain scalar properties
+(`FullPath`, `Kind`, `OldFullPath`, `Message`) rather than the BCL's
+`System.IO.FileSystemEventArgs`/`RenamedEventArgs`.
 
 ## Constructors
 
@@ -83,6 +90,21 @@ The JSON shape produced by `GetFileMetadataJson`/`GetDirectoryListingJson`:
 | `WatchForChange` | `bool WatchForChange(string directoryPath, string filter, string changeKindsFilter, bool includeSubdirectories, int timeoutMs, out string changedPath, out FileChangeKind detectedKind, out bool timedOut, out string message)` | Blocks until a matching created/renamed/changed/deleted event occurs, via the OS's native change-notification API rather than polling. The directory must already exist. |
 | `WatchForChangeSimple` | `bool WatchForChangeSimple(string directoryPath, string filter, string changeKindsFilter, bool includeSubdirectories, int timeoutMs, out string changedPath, out FileChangeKind detectedKind, out string message)` | Same, without the `timedOut` output. |
 
+### Watch - Background (non-blocking)
+
+Starts a watch that runs in the background instead of blocking the calling
+thread, and reports changes via events instead of an output parameter.
+Subscribe to whichever of `Created`/`Changed`/`Deleted`/`Renamed` the
+automation cares about; an event with no subscriber simply never fires, so
+there's no separate "which kinds" filter parameter here (contrast
+`WatchForChange`'s `changeKindsFilter`).
+
+| Method | Signature | Description |
+|---|---|---|
+| `StartWatching` | `bool StartWatching(string directoryPath, string filter, bool includeSubdirectories, out string message)` | Starts watching a directory in the background, without blocking. Fails if a watch is already running (call `StopWatching` first), or the directory is invalid. |
+| `StopWatching` | `bool StopWatching(out string message)` | Stops and disposes the background watcher. Fails if no watch is currently running. |
+| `IsWatching` | `bool IsWatching()` | Reports whether a background watch is currently running. A plain Boolean query with no failure mode - no `out string message`, matching `WindowUtils.IsWindowVisible`'s shape. |
+
 ### Actions
 
 | Method | Signature | Description |
@@ -106,6 +128,28 @@ The JSON shape produced by `GetFileMetadataJson`/`GetDirectoryListingJson`:
 | `TryGetFileMetadata` | `bool TryGetFileMetadata(string path, out long sizeBytes, out string lastWriteUtcIso8601, out string createdUtcIso8601, out string message)` | Gets a file's size and timestamps as scalar outputs. |
 | `GetFileMetadataJson` | `bool GetFileMetadataJson(string path, out string json, out string message)` | Gets a file or directory's metadata as a JSON object (includes `IsDirectory`/`Extension`). |
 | `GetDirectoryListingJson` | `bool GetDirectoryListingJson(string directoryPath, string searchPattern, bool includeSubdirectories, out string json, out string message)` | Lists files in a directory matching a pattern as a JSON array of metadata. Pairs naturally with `WaitForFileMatchingPattern`. |
+
+## Events
+
+Raised only while a background watch started by `StartWatching` is
+running. Subscribe to whichever of `Created`/`Changed`/`Deleted`/`Renamed`
+the automation cares about; an event with no subscriber simply never
+fires, so there's no separate "which kinds" filter to configure (contrast
+`WatchForChange`'s `changeKindsFilter` parameter).
+
+| Event | Type | Description |
+|---|---|---|
+| `Created` | `EventHandler<FileWatchChangeEventArgs>` | Raised when a file/directory is created. |
+| `Changed` | `EventHandler<FileWatchChangeEventArgs>` | Raised on a content/attribute/timestamp change. |
+| `Deleted` | `EventHandler<FileWatchChangeEventArgs>` | Raised when a file/directory is deleted. |
+| `Renamed` | `EventHandler<FileWatchRenamedEventArgs>` | Raised on a rename. Carries both the new and old path. |
+| `WatchError` | `EventHandler<FileWatchErrorEventArgs>` | Raised if the underlying watcher itself fails (e.g. an internal notification-buffer overflow); the watch has already stopped by the time this fires. Never raised for a subscriber's own handler exception - see Notes & Caveats. |
+
+`FileWatchChangeEventArgs` (`FullPath`, `Kind`), `FileWatchRenamedEventArgs`
+(`FullPath`, `OldFullPath`), and `FileWatchErrorEventArgs` (`Message`) are
+repository-owned, scalar-property types - the same reasoning that produced
+the `FileChangeKind` enum instead of exposing `System.IO.WatcherChangeTypes`
+directly.
 
 ## Notes & Caveats
 
@@ -179,3 +223,42 @@ The JSON shape produced by `GetFileMetadataJson`/`GetDirectoryListingJson`:
   actual file locks, actual `FileSystemWatcher` events, actual concurrent
   `ClaimFile` races, and actual hashing. It runs on Linux too - see
   `TESTING.md` at the repo root.
+- **`Created`/`Changed`/`Deleted`/`Renamed`/`WatchError` fire on a
+  background thread-pool thread, not the thread that called
+  `StartWatching`.** A handler must not assume it runs synchronously with
+  the rest of the automation.
+- **A handler that throws is caught and logged, never allowed to crash the
+  host process** - every other subscriber on the same event still runs,
+  including ones registered after the one that threw. This is deliberate:
+  a multicast event delegate normally invokes its subscribers in one call,
+  so an unhandled exception from one would otherwise stop every subscriber
+  after it from running too, in addition to being an unhandled exception
+  on a background thread (which terminates the process by default in
+  .NET). The exception itself is discarded after being logged via
+  `System.Diagnostics.Debug.WriteLine` - there is no `message` output to
+  report it through, since the method call that started the watch has
+  already returned by the time any event fires.
+- **`WatchError` is not a substitute for handling exceptions in your own
+  `Created`/`Changed`/`Deleted`/`Renamed` handlers.** It only fires when
+  the underlying watcher itself fails (e.g. an internal notification-
+  buffer overflow), which is a different, rarer failure mode than a
+  handler bug. A delayed `Error` callback that arrives from a watcher
+  already replaced by a later `StopWatching`/`StartWatching` cycle is
+  recognized as stale and ignored - it cannot stop or misreport the new,
+  healthy watch.
+- **`Changed` sets an explicit `NotifyFilter`** (`LastWrite`, `FileName`,
+  `DirectoryName`, `Attributes`, `Size`, `CreationTime`) rather than
+  relying on `FileSystemWatcher`'s narrower default (`LastWrite`/
+  `FileName`/`DirectoryName` only), so a pure attribute or creation-time
+  change genuinely raises it, matching the "content/attribute/timestamp
+  change" description above.
+- **`StartWatching`/`StopWatching`/`IsWatching` and the events they
+  control are this component's first use of a real C# event** (previously
+  every filesystem notification in this suite was polled or blocked on).
+  They are the only members here that hold a live resource between calls
+  - the background `FileSystemWatcher` - which is why this is also the
+  first method in this component with a `Dispose(bool)` override to clean
+  it up if the automation forgets to call `StopWatching`. Once disposed,
+  the instance is final: a later `StartWatching` call fails rather than
+  silently creating a watcher this disposed instance could never stop
+  again - create a new `FileWatchUtils` instead.
