@@ -578,6 +578,90 @@ namespace SessionAutomation
 
         #endregion
 
+        #region Uptime
+
+        /// <summary>
+        /// Gets how long the calling process's own session has been logged on, in
+        /// milliseconds. Never throws.
+        /// </summary>
+        /// <param name="uptimeMilliseconds">Milliseconds since this session's logon, on success.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable failure reason.</param>
+        /// <remarks>
+        /// Reads the session's logon time via <c>WTSQuerySessionInformationW(WTSSessionInfo)</c> -
+        /// the same native mechanism <see cref="GetCurrentSessionUser"/> already uses for
+        /// another per-session fact, via <see cref="TryQuerySessionLogonAndCurrentTimeUtc"/> -
+        /// and compares it against that same call's own "now" timestamp (not a separate
+        /// <see cref="DateTime.UtcNow"/> read, avoiding any clock-read skew between the two).
+        /// This is a different, unrelated clock from <see cref="GetSystemUptimeMilliseconds"/>:
+        /// a session's logon time has no fixed relationship to when the machine itself last
+        /// booted. A session reconnected over RDP can easily outlive several reboots of a
+        /// machine that stays running, or be far younger than a machine that has been up for
+        /// weeks.
+        /// </remarks>
+        [Category("Session - Uptime")]
+        [Description("Gets how long the calling process's own session has been logged on, in milliseconds. Never throws.")]
+        public bool GetCurrentSessionUptimeMilliseconds(out long uptimeMilliseconds, out string message)
+        {
+            uptimeMilliseconds = default;
+            message = default;
+            try
+            {
+                if (!TryQuerySessionLogonAndCurrentTimeUtc(WTS_CURRENT_SESSION, out DateTime logonTimeUtc, out DateTime currentTimeUtc, out message))
+                    return false;
+
+                double elapsedMilliseconds = (currentTimeUtc - logonTimeUtc).TotalMilliseconds;
+                // The OS-reported logon time should never be later than its own reported
+                // "now", but this is a reported fact this component doesn't control (clock
+                // adjustments, virtual machine snapshots) - clamp defensively rather than
+                // ever hand back a negative duration, the same defensive posture as every
+                // guard clause above.
+                uptimeMilliseconds = elapsedMilliseconds > 0 ? (long)elapsedMilliseconds : 0;
+                message = null;
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetCurrentSessionUptimeMilliseconds", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets how long the local machine has been running since it last booted, in
+        /// milliseconds. Never throws.
+        /// </summary>
+        /// <param name="uptimeMilliseconds">Milliseconds since the machine last booted, on success.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable failure reason.</param>
+        /// <remarks>
+        /// Wraps <c>GetTickCount64</c> directly - the same tick source
+        /// <see cref="GetIdleTimeMilliseconds"/> already uses internally to correct for
+        /// <c>GetLastInputInfo</c>'s 32-bit wraparound. Unlike that internal use, this method
+        /// exposes the full 64-bit count, so - unlike the 32-bit <c>GetTickCount</c> domain,
+        /// which wraps roughly every 49.7 days - it does not wrap in any realistic uptime
+        /// (roughly 584 million years). Machine-wide, not session-scoped: unrelated to
+        /// <see cref="GetCurrentSessionUptimeMilliseconds"/>'s session logon time.
+        /// </remarks>
+        [Category("Session - Uptime")]
+        [Description("Gets how long the local machine has been running since it last booted, in milliseconds. Never throws.")]
+        public bool GetSystemUptimeMilliseconds(out long uptimeMilliseconds, out string message)
+        {
+            uptimeMilliseconds = default;
+            message = default;
+            try
+            {
+                uptimeMilliseconds = unchecked((long)GetTickCount64());
+                message = null;
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetSystemUptimeMilliseconds", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
         #region Wait
 
         /// <summary>Polls until an arbitrary session reaches the expected connect state, or the timeout elapses. Never throws.</summary>
@@ -999,6 +1083,68 @@ namespace SessionAutomation
             try
             {
                 value = Marshal.PtrToStringUni(buffer) ?? string.Empty;
+                return true;
+            }
+            finally
+            {
+                WTSFreeMemory(buffer);
+            }
+        }
+
+        /// <summary>
+        /// Gets a session's logon time and the server's own "now" timestamp at the moment
+        /// of the query, both as UTC file times, via <c>WTSQuerySessionInformationW(WTSSessionInfo)</c>.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately does not use the standalone <c>WTS_INFO_CLASS.WTSLogonTime</c> (18)
+        /// info class, even though it exists: measured directly against this repository's
+        /// target platform, querying it that way fails outright (a Win32 error, not a
+        /// usable value) - it and several of its numeric neighbors (9 through 22) are
+        /// long-deprecated in favor of the combined <c>WTSSessionInfo</c> (24) struct this
+        /// method uses instead.
+        /// <para>
+        /// That struct (<c>WTSINFOW</c> natively) is not modeled here as a
+        /// <c>[StructLayout]</c> type, deliberately - the same reasoning
+        /// <see cref="WTSINFOEX_HEADER"/>'s own doc comment gives for that struct: its
+        /// earlier fields include several fixed-size character arrays (station name,
+        /// domain, username) whose exact lengths are inconsistently documented across
+        /// public sources, and getting one wrong would silently misalign every field
+        /// after it - not fail loudly, just quietly hand back the wrong bytes as a
+        /// plausible-looking timestamp. Instead, this reads only the struct's
+        /// documented, stable *tail*: its last two members are consecutive 8-byte
+        /// <c>LARGE_INTEGER</c> values, <c>LogonTime</c> then <c>CurrentTime</c>, so
+        /// they sit at fixed, computable offsets from the end of whatever buffer size
+        /// the API actually returns - correct regardless of the uncertain layout
+        /// earlier in the struct. Verified directly against this repository's target
+        /// platform: the tail-read <c>CurrentTime</c> matches <see cref="DateTime.UtcNow"/>
+        /// to within milliseconds.
+        /// </para>
+        /// </remarks>
+        private static bool TryQuerySessionLogonAndCurrentTimeUtc(int sessionId, out DateTime logonTimeUtc, out DateTime currentTimeUtc, out string message)
+        {
+            logonTimeUtc = default;
+            currentTimeUtc = default;
+            message = default;
+            if (!WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, sessionId, WTS_INFO_CLASS.WTSSessionInfo, out IntPtr buffer, out int bytesReturned))
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), $"WTSQuerySessionInformationW(WTSSessionInfo) failed for session {sessionId}.").Message;
+                return false;
+            }
+            try
+            {
+                // Same defensive reasoning as TryQuerySessionString's sibling numeric
+                // helper: reading past an unexpectedly small native buffer is an access
+                // violation, not a catchable managed exception, so this explicit size
+                // check - not a try/catch - is what keeps this inside the never-throws
+                // contract.
+                const int TailBytes = 2 * sizeof(long);
+                if (bytesReturned < TailBytes)
+                {
+                    message = $"WTSQuerySessionInformationW(WTSSessionInfo) returned an unexpectedly small buffer ({bytesReturned} bytes) for session {sessionId}.";
+                    return false;
+                }
+                logonTimeUtc = DateTime.FromFileTimeUtc(Marshal.ReadInt64(buffer, bytesReturned - TailBytes));
+                currentTimeUtc = DateTime.FromFileTimeUtc(Marshal.ReadInt64(buffer, bytesReturned - sizeof(long)));
                 return true;
             }
             finally

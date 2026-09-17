@@ -27,6 +27,7 @@ Services assembly just to select or read a session's state or kind.
 | `IsSessionInteractiveSimple`/`IsSessionInteractive` | Direct, disambiguated | Same pattern; this one has no P/Invoke at all (`Environment.UserInteractive`), so `querySucceeded` is effectively always true. |
 | `IsInputDesktopAvailableSimple`/`IsInputDesktopAvailable` | Direct, disambiguated | Same pattern; deliberately answers a different, narrower question than `IsWorkstationLocked` (see the component README's Notes & Caveats) rather than being a redundant alternative. |
 | `GetIdleTimeMilliseconds` | Direct | Scalar `long` output; no session-scoping parameter since the underlying API is inherently single-session. |
+| `GetCurrentSessionUptimeMilliseconds`/`GetSystemUptimeMilliseconds` | Direct | Scalar `long` millisecond outputs, matching `GetIdleTimeMilliseconds`'s convention rather than a `TimeSpan`. Two separate methods rather than one parameterized method, since they read two genuinely unrelated clocks (session logon time vs. machine boot time) - see Operational concerns. |
 | `WaitForSessionConnectState`/`WaitForSessionConnectStateSimple` | Direct, disambiguated | Standard `WaitForX` polling pattern from `EventLogUtils`/`ServiceUtils`. |
 | `WaitForInputDesktopAvailable`/`WaitForInputDesktopAvailableSimple` | Direct, disambiguated | Same pattern, no session ID (current session's desktop only). |
 | `WaitForWorkstationUnlocked`/`WaitForWorkstationUnlockedSimple` | Direct, disambiguated | Same pattern. Read-only observation of an externally-driven unlock - never performs one; see Operational concerns. |
@@ -70,10 +71,35 @@ Services assembly just to select or read a session's state or kind.
 - Local machine only - no `serverName`/remote-session support in this
   version, even though the underlying WTS APIs support remote servers
   natively.
+- **`WTS_INFO_CLASS.WTSLogonTime` (18), queried standalone, does not work** -
+  measured directly against this repository's target platform, it fails
+  with a Win32 error rather than returning a usable value. It and its
+  numeric neighbors (9 through 22) are long-deprecated in favor of the
+  combined `WTSSessionInfo` (24) struct, which `GetCurrentSessionUptimeMilliseconds`
+  uses instead via `TryQuerySessionLogonAndCurrentTimeUtc`. That struct
+  (`WTSINFOW` natively) is deliberately not modeled as a `[StructLayout]`
+  type here, for the same reason `WTSINFOEX_HEADER` above only models its
+  own struct's leading fields: `WTSINFOW`'s earlier members include
+  several fixed-size character arrays (station name, domain, username)
+  whose exact lengths are inconsistently documented across public
+  sources, and getting one wrong would silently misalign every field
+  after it rather than fail loudly. Instead, the helper reads only the
+  struct's documented, stable *tail* - `LogonTime` then `CurrentTime`,
+  two consecutive 8-byte values at fixed, computable offsets from the end
+  of whatever buffer size the API actually returns - which sidesteps
+  needing to know the uncertain earlier layout at all. Verified directly
+  against this platform: the tail-read `CurrentTime` matches
+  `DateTime.UtcNow` to within milliseconds.
 
 ## Recommended changes
 
-None outstanding - this is the initial design pass, not a retrofit. A
-future remote-machine extension (a `serverName` parameter backed by
+None outstanding from the initial design pass. One correction was made
+after the fact, during the later addition of `GetCurrentSessionUptimeMilliseconds`/
+`GetSystemUptimeMilliseconds`: the first implementation attempt used
+`WTS_INFO_CLASS.WTSLogonTime` directly, following its name at face value:
+it turned out not to work at all on this repository's target platform
+(see Operational concerns above), caught by actually running the
+implementation against a real session rather than by code review alone.
+A future remote-machine extension (a `serverName` parameter backed by
 `WTSOpenServer`) is tracked as an open question in the implementation plan
-rather than here, since there is no existing rating to revise.
+rather than here, since there is no existing rating to revise for it.

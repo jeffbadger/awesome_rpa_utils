@@ -93,6 +93,13 @@ The JSON shape produced by `EnumerateSessionsJson`: `SessionId`,
 |---|---|---|
 | `GetIdleTimeMilliseconds` | `bool GetIdleTimeMilliseconds(out long idleMilliseconds, out string message)` | Milliseconds since the last local keyboard/mouse input to the calling process's own session. |
 
+### Uptime
+
+| Method | Signature | Description |
+|---|---|---|
+| `GetCurrentSessionUptimeMilliseconds` | `bool GetCurrentSessionUptimeMilliseconds(out long uptimeMilliseconds, out string message)` | Milliseconds since the calling process's own session logged on. |
+| `GetSystemUptimeMilliseconds` | `bool GetSystemUptimeMilliseconds(out long uptimeMilliseconds, out string message)` | Milliseconds since the local machine last booted - machine-wide, not session-scoped. |
+
 ### Wait
 
 | Method | Signature | Description |
@@ -157,6 +164,14 @@ The JSON shape produced by `EnumerateSessionsJson`: `SessionId`,
 - **`GetIdleTimeMilliseconds` only reflects local input to the calling
   process's own session** - another session's idle time cannot be observed
   this way.
+- **`GetCurrentSessionUptimeMilliseconds` and `GetSystemUptimeMilliseconds`
+  read two unrelated clocks - do not conflate them.** The first is how long
+  the calling process's *session* has been logged on (`WTSLogonTime`); the
+  second is how long the *machine* has been running since it last booted
+  (`GetTickCount64`). A session reconnected over RDP can easily outlive
+  several reboots of a machine that stays running, or be far younger than a
+  machine that has been up for weeks - neither value can be derived from the
+  other.
 - **Elevation requirements.** `DisconnectSession` on a session other than
   your own typically requires administrator rights (or `SeTcbPrivilege`);
   disconnecting your own session does not. `LockWorkstation` only works from
