@@ -14,6 +14,17 @@ every component in this suite, its methods report recoverable failures as
 See the [Documentation](Documentation/README.md) folder for initialization,
 transaction-processing, bulk-update, and reset examples.
 
+## DataContractUtils vs. ValueStoreUtils
+
+Use `DataContractUtils` when you want a validated contract: a known, fixed
+set of typed fields, sealed after initialization, where a misspelled name or
+wrong-type write fails instead of silently creating or retyping something.
+If your data's shape isn't fixed up front, or values arrive as loosely-typed
+strings needing forgiving conversion, use
+[`ValueStoreUtils`](../valuestoreutils/README.md) instead — see the [root
+README](../../README.md#datacontractutils-vs-valuestoreutils) for the full
+comparison.
+
 ## Types
 
 ### `DataContractValueType`

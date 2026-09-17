@@ -16,6 +16,18 @@ throwing.
 See the [Documentation](Documentation/README.md) folder for worked examples
 of each method category.
 
+## ValueStoreUtils vs. DataContractUtils
+
+Use `ValueStoreUtils` when the shape of your data isn't fixed up front, or
+when values naturally arrive as strings/loosely-typed and you want forgiving
+conversion plus dot-notation access into nested structures, with no
+initialization/seal step in the way. If you want a validated contract
+instead — known fields, enforced types, required/read-only/write-once/
+sensitive rules — use
+[`DataContractUtils`](../datacontractutils/README.md) — see the [root
+README](../../README.md#datacontractutils-vs-valuestoreutils) for the full
+comparison.
+
 ## Methods
 
 ### Core
