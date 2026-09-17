@@ -148,9 +148,10 @@ implementation, all fixed before merge:
   suite.** `IsFileLocked`→act, `WaitForFileToExist`→open, and
   `WaitForFileMatchingPattern`→read the match all have a gap where another
   process can intervene. `ClaimFile` is the one method actually designed to
-  close that gap, via an exclusively-created destination handle
-  (`FileMode.CreateNew` - see "`ClaimFile`'s concurrency bug and fix"
-  below); every other method here observes state and then acts on it.
+  close that gap, via a source-scoped exclusive lock plus an
+  exclusively-created destination handle (both `FileMode.CreateNew` - see
+  "`ClaimFile`'s concurrency bug and fix" below); every other method here
+  observes state and then acts on it.
 - **Lock-check is not a write-complete signal.** A writer holding
   `FileShare.ReadWrite` open the entire time it writes will report
   "unlocked" throughout. `WaitForFileStable` is the correct signal for "is
@@ -161,11 +162,22 @@ implementation, all fixed before merge:
   `PlatformNotSupportedException` (reported as a failure, never an
   unhandled throw) on non-Windows runtimes, and requires the destination to
   already exist, unlike `AtomicMoveFile`.
-- **`ClaimFile`'s two race-outcome messages are unified** so a caller never
-  needs to distinguish "the destination already had a file" from "the
-  source vanished before it could be read" - both are the same underlying
-  situation (another instance won the race) and both messages say "already
-  claimed."
+- **`ClaimFile` reports distinct messages for distinct failure shapes**,
+  not one unified message - losing the race to claim a given source gets
+  "already claimed," an unrelated file already occupying the destination
+  name gets its own message, and the source vanishing after this call
+  already secured its locks gets a third. An earlier version of this
+  method folded the latter two into "already claimed"; that was corrected
+  once it became clear a caller might reasonably want to distinguish "someone
+  else is processing this exact work item" from "this destination name is
+  unrelated-but-occupied."
+- **A hard process crash mid-claim leaves a stale `.claiming` sidecar
+  file** (`sourcePath + ".claiming"`) that permanently blocks a legitimate
+  future claim of that exact source until an operator or a separate
+  maintenance process removes it. This is a known, documented trade-off
+  (see below), not a gap this method's own review considers a bug -
+  closing it fully would need filesystem transactions this component does
+  not have access to.
 
 ## `ClaimFile`'s concurrency bug and fix
 
@@ -181,24 +193,59 @@ managed existence check followed by a separate move, not a single atomic
 OS call - not a guarantee the OS itself fails to honor). The same repro
 showed `new FileStream(destination, FileMode.CreateNew, ...)` reliably
 rejects one of the two racers on every trial, since it maps directly to
-the OS's own atomic exclusive-create call. `ClaimFile` now claims the
-destination that way, then streams the source's content into it and
-deletes the source - trading a true rename's near-instant, whole-file
+the OS's own atomic exclusive-create call. A first fix claimed the
+destination that way, then streamed the source's content into it and
+deleted the source - trading a true rename's near-instant, whole-file
 atomicity for a copy, the same same-volume-only trade-off
 `AtomicMoveFile` already documents for its own cross-volume fallback.
-`ClaimFile_ConcurrentClaimAttempts_ExactlyOneSucceeds` (in
-`FileWatchUtils.Tests`) now runs 20 fresh iterations of the race rather
-than one, since a single iteration was too weak a regression guard to
-have caught the original bug reliably on its own.
+
+That first fix still had a real gap, caught by code review before merge:
+exclusivity was scoped to the caller-chosen *destination* path, not the
+*source*. Two callers racing to claim the same source into two
+*different* `inProgressDirectoryPath` values compute two different
+destination paths, so a destination-only check cannot detect that race at
+all - both could exclusively create their own destination, both copy the
+source, and both report success, duplicating the work item exactly as
+this method exists to prevent. A further repro confirmed the natural
+alternative fix - moving away from a shared source to unique destinations
+via `File.Move` - is *also* unsafe on this platform, and worse: both
+racing calls reported success with no exception, yet inspection showed
+only one destination actually received the file's content; the other
+silently never existed (real data loss, not just a race). `FileMode.CreateNew`
+showed neither flaw across 500 trials.
+
+The fix now locks the *source* first, via an exclusively-created
+`sourcePath + ".claiming"` sidecar file, before ever touching a
+destination - closing the cross-directory gap regardless of where each
+caller intends to put the result. The destination-scoped `FileMode.CreateNew`
+check remains as a secondary, independent collision case (an unrelated
+file occupying that exact destination name), now reported with its own
+message rather than folded into "already claimed." One platform quirk
+surfaced during this second fix: losing a `FileMode.CreateNew` race is
+documented to throw `IOException`, but was observed on this platform to
+occasionally throw `UnauthorizedAccessException` instead in the same race
+window (an NTFS timing quirk) - both are treated identically as "lost the
+race" in the message-classification logic, or that classification would
+occasionally misreport an ordinary lost race as a generic failure.
+`ClaimFile_ConcurrentClaimAttempts_ExactlyOneSucceeds` runs 20 fresh
+iterations of the same-directory race, and a new
+`ClaimFile_ConcurrentClaimAttemptsToDifferentDirectories_ExactlyOneSucceeds`
+(both in `FileWatchUtils.Tests`) runs 20 iterations of the cross-directory
+race that the first fix could not catch.
 
 ## Recommended changes
 
 None outstanding. The initial design pass (Wait/Watch/Actions/Hash/
-Metadata) had none. Two corrections were made after the fact: `ClaimFile`'s
-concurrency mechanism (see "`ClaimFile`'s concurrency bug and fix" above)
-once its `File.Move`-based guarantee was found not to hold, and the later
-event-based `StartWatching` addition's own review pass (see "Hardening
-pass" above), which found and fixed four races/gaps before merge rather
-than after. `StartWatching` itself was reviewed for the same
+Metadata) had none. Corrections were made after the fact: `ClaimFile`'s
+concurrency mechanism went through two rounds of fixes (see "`ClaimFile`'s
+concurrency bug and fix" above) once its `File.Move`-based guarantee, and
+then its destination-only exclusivity, were each found not to hold, and
+the later event-based `StartWatching` addition's own review pass (see
+"Hardening pass" above) found and fixed four races/gaps before merge
+rather than after. `StartWatching` itself was reviewed for the same
 signature-uniqueness and never-throws concerns as the initial pass before
-being added.
+being added. A stale `.claiming` sidecar left behind by a hard process
+crash currently requires manual/operator cleanup; an automated
+reclaim-after-timeout mechanism was considered and deliberately left as a
+separate, out-of-scope follow-up rather than expanding this fix's surface
+area further.

@@ -187,11 +187,19 @@ namespace FileWatchAutomation.Tests
             Assert.False(File.Exists(source));
             Assert.Equal(Path.Combine(inProgressDir, "work.txt"), claimedPath);
             Assert.True(File.Exists(claimedPath));
+            // The source-scoped lock sidecar is a private implementation detail and must
+            // not leak once the claim resolves.
+            Assert.False(File.Exists(source + ".claiming"));
         }
 
         [Fact]
         public void ClaimFile_DestinationCollision_ReturnsFalseWithoutOverwriting()
         {
+            // An unrelated file already occupying the destination name is a distinct
+            // collision from losing the source-level claim race (see
+            // ClaimFile_ConcurrentClaimAttempts_ExactlyOneSucceeds) - it gets its own
+            // message rather than the "already claimed" wording, since no other
+            // ClaimFile call is actually contending for this source.
             string source = TempFilePath("work.txt");
             File.WriteAllText(source, "new attempt");
             string inProgressDir = TempSubdirectory("in-progress");
@@ -201,10 +209,11 @@ namespace FileWatchAutomation.Tests
 
             Assert.False(result);
             Assert.Null(claimedPath);
-            Assert.Contains("already claimed", message);
+            Assert.Contains("already exists", message);
             // The original claim must be untouched and the new attempt's source file preserved.
             Assert.Equal("already claimed by someone else", File.ReadAllText(Path.Combine(inProgressDir, "work.txt")));
             Assert.True(File.Exists(source));
+            Assert.False(File.Exists(source + ".claiming"));
         }
 
         [Fact]
@@ -257,6 +266,53 @@ namespace FileWatchAutomation.Tests
                 string[] filesInProgress = Directory.GetFiles(inProgressDir);
                 Assert.Single(filesInProgress);
                 Assert.Equal("contested work item", File.ReadAllText(filesInProgress[0]));
+            }
+        }
+
+        [Fact]
+        public async Task ClaimFile_ConcurrentClaimAttemptsToDifferentDirectories_ExactlyOneSucceeds()
+        {
+            // Regression test for a real gap in an earlier version of ClaimFile: exclusivity
+            // was scoped to the caller-chosen destination path, not the shared source, so two
+            // callers racing to claim the SAME source into two DIFFERENT in-progress
+            // directories computed two different destinations and could both "succeed" -
+            // duplicating the work item, the exact outcome this method exists to prevent.
+            // ClaimFile now locks on the source itself first, which must catch this race
+            // regardless of where each caller intends to put the result.
+            for (int iteration = 0; iteration < 20; iteration++)
+            {
+                string source = TempFilePath($"racedwork-crossdir-{iteration}.txt");
+                File.WriteAllText(source, "contested work item");
+                string inProgressDirA = TempSubdirectory($"in-progress-a-{iteration}");
+                string inProgressDirB = TempSubdirectory($"in-progress-b-{iteration}");
+
+                var results = new bool[2];
+                var messages = new string[2];
+                var claimedPaths = new string[2];
+
+                var barrier = new System.Threading.Barrier(2);
+                var t1 = Task.Run(() =>
+                {
+                    barrier.SignalAndWait();
+                    results[0] = Fw.ClaimFile(source, inProgressDirA, out claimedPaths[0], out messages[0]);
+                });
+                var t2 = Task.Run(() =>
+                {
+                    barrier.SignalAndWait();
+                    results[1] = Fw.ClaimFile(source, inProgressDirB, out claimedPaths[1], out messages[1]);
+                });
+                await Task.WhenAll(t1, t2);
+
+                int successCount = results.Count(r => r);
+                Assert.True(successCount == 1, $"Iteration {iteration}: expected exactly 1 success, got {successCount}.");
+                int failureIndex = results[0] ? 1 : 0;
+                Assert.False(results[failureIndex]);
+                Assert.Contains("already claimed", messages[failureIndex]);
+
+                // The work item must exist exactly once, total, across both candidate
+                // directories - not duplicated into both.
+                int totalFiles = Directory.GetFiles(inProgressDirA).Length + Directory.GetFiles(inProgressDirB).Length;
+                Assert.Equal(1, totalFiles);
             }
         }
     }
