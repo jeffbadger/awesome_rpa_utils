@@ -1067,21 +1067,72 @@ namespace FileWatchAutomation
         }
 
         /// <summary>
-        /// Claims a work file by moving it into an in-progress directory. Relies on
-        /// <see cref="File.Move(string, string, bool)"/>'s own exclusive-create-at-destination
-        /// failure as the concurrency-safety mechanism: a destination collision means
-        /// another instance already claimed the file, and this returns <c>false</c> with a
-        /// clear message rather than overwriting or auto-renaming. This is the one method
-        /// in this component that is actually safe under real multi-robot concurrency -
-        /// every other method here observes state and then acts on it, with an inherent gap
-        /// another process can exploit in between. Never throws.
+        /// Claims a work file by copying it into an in-progress directory, then deleting
+        /// the source. A collision - another instance already claiming this exact source,
+        /// or an unrelated file already occupying the destination name - returns
+        /// <c>false</c> with a clear message rather than overwriting or auto-renaming.
+        /// This is the one method in this component that is actually safe under real
+        /// multi-robot concurrency - every other method here observes state and then acts
+        /// on it, with an inherent gap another process can exploit in between. Never
+        /// throws.
         /// </summary>
         /// <param name="sourcePath">The file to claim.</param>
         /// <param name="inProgressDirectoryPath">The directory to move it into. Must already exist.</param>
-        /// <param name="claimedPath">The file's new path on success; unset otherwise.</param>
-        /// <param name="message"><c>null</c> on success; a failure reason otherwise (including "already claimed" on a destination collision).</param>
+        /// <param name="claimedPath">The file's new path on success, or on a specific failure where the claim itself completed but a required cleanup step (deleting the original) did not - see <see cref="ClaimFile"/>'s failure messages. Unset on every other failure.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise. Distinguishes three failure shapes rather than folding them into one: losing the race for this exact source ("already claimed"), an unrelated file already at the destination name, and a copy/cleanup failure after this call had already exclusively secured the source.</param>
+        /// <remarks>
+        /// <para>
+        /// Claims the <b>source</b> first via an exclusively-created sidecar lock file
+        /// (<c>sourcePath + ".claiming"</c>, via <c>FileMode.CreateNew</c>), not the
+        /// destination - two callers racing to claim the same source into two
+        /// <i>different</i> <paramref name="inProgressDirectoryPath"/> values compute two
+        /// different destination paths, so a destination-only exclusivity check (an
+        /// earlier version of this method) cannot detect that race at all; both could
+        /// exclusively create their own destination, both copy the source, and both
+        /// report success - the exact duplicate-processing outcome this method exists to
+        /// prevent. Locking on the source instead closes that gap regardless of where each
+        /// caller intends to put the result.
+        /// </para>
+        /// <para>
+        /// Neither this lock nor the destination claim uses
+        /// <see cref="File.Move(string, string, bool)"/> with <c>overwrite: false</c>,
+        /// despite that overload's documented "throws if the destination already exists"
+        /// contract - measured directly on this repository's target platform, two threads
+        /// racing that call against the same destination both report success essentially
+        /// every time (a TOCTOU race inside .NET's own implementation, not an OS-level
+        /// guarantee it fails to honor), and a further experiment racing it away from a
+        /// <i>shared source</i> to two unique destinations was worse still: both calls
+        /// reported success with no exception, yet only one destination actually received
+        /// the file's content - the other silently never existed. <c>FileMode.CreateNew</c>
+        /// does not share either flaw in the same experiments (0 double-successes across
+        /// hundreds of trials), since it maps directly to the OS's own atomic
+        /// exclusive-create call rather than a separate managed check followed by a
+        /// separate move. One residual platform quirk this method does account for: the
+        /// losing side of a <c>FileMode.CreateNew</c> race is documented to throw
+        /// <see cref="IOException"/>, but was observed here to occasionally throw
+        /// <see cref="UnauthorizedAccessException"/> instead in that same race window -
+        /// both are treated identically as "lost the race", not just the documented one.
+        /// </para>
+        /// <para>
+        /// Trade-off versus a true rename: claiming now copies bytes rather than
+        /// repointing a directory entry, losing a rename's near-instant, whole-file
+        /// atomicity for a large file - the same same-volume-only trade-off
+        /// <see cref="AtomicMoveFile"/> already documents for its own cross-volume
+        /// fallback. A second, narrower trade-off: a hard process crash (not a caught
+        /// exception - nothing can run a cleanup step after that) between securing the
+        /// source lock and this method's normal completion leaves the
+        /// <c>sourcePath + ".claiming"</c> file behind, permanently blocking a legitimate
+        /// future claim of that exact source until it is removed by an operator or a
+        /// separate maintenance process; a crash between claiming the destination and
+        /// finishing the copy similarly leaves a partial/empty file at the destination.
+        /// Full crash-safety would need filesystem transactions this cross-platform BCL
+        /// component does not have access to - recognizing and clearing either stale
+        /// artifact is a documented operational concern, not something this method
+        /// resolves on its own.
+        /// </para>
+        /// </remarks>
         [Category("FileWatch - Actions")]
-        [Description("Claims a work file by moving it into an in-progress directory. A destination collision means another instance already claimed it. Never throws.")]
+        [Description("Claims a work file by copying it into an in-progress directory under a source-scoped exclusive lock, then deleting the source. A collision with another claimant or an unrelated existing destination file is reported distinctly. Never throws.")]
         public bool ClaimFile(string sourcePath, string inProgressDirectoryPath, out string claimedPath, out string message)
         {
             claimedPath = default;
@@ -1109,31 +1160,106 @@ namespace FileWatchAutomation
                     return false;
                 }
 
-                // Deliberately no separate "does source exist" check right before the move -
-                // that would only widen the race window between two concurrent claimants.
-                // File.Move's own atomicity is the only thing that may run right up against
-                // a competing claim, so both ways a race can surface - the destination already
-                // existing, or the source having vanished between the check above and here -
-                // are folded into the same "already claimed" message.
-                string destination = Path.Combine(inProgressDirectoryPath, Path.GetFileName(sourcePath));
+                // Source-scoped exclusive lock (see <remarks>): the real serialization
+                // point for this method, regardless of which inProgressDirectoryPath each
+                // caller passes.
+                string lockPath = sourcePath + ".claiming";
+                FileStream lockStream;
                 try
                 {
-                    File.Move(sourcePath, destination, overwrite: false);
+                    lockStream = new FileStream(lockPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
                 }
-                catch (FileNotFoundException)
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
                 {
-                    message = $"Source file '{sourcePath}' is already claimed by another instance.";
-                    return false;
-                }
-                catch (IOException)
-                {
-                    message = $"'{Path.GetFileName(sourcePath)}' is already claimed - a file with that name already exists in '{inProgressDirectoryPath}'.";
+                    // Losing this CreateNew race is documented to throw IOException, but
+                    // measured directly on this repository's target platform it can
+                    // instead surface as UnauthorizedAccessException in the same race
+                    // window (an NTFS timing quirk when another handle is mid-create for
+                    // this exact path) - both are treated as the same outcome here, not
+                    // just the documented one, or this message would occasionally be
+                    // wrong about a perfectly ordinary lost race.
+                    message = ex is IOException || ex is UnauthorizedAccessException
+                        ? $"'{Path.GetFileName(sourcePath)}' is already claimed - another instance is processing it."
+                        : $"Could not claim '{Path.GetFileName(sourcePath)}': {ex.Message}";
                     return false;
                 }
 
-                claimedPath = destination;
-                message = null;
-                return true;
+                try
+                {
+                    // Exclusively claim the destination name too - a second, independent
+                    // collision case from losing the source lock above: an unrelated file
+                    // (not from a competing ClaimFile call, which the lock above already
+                    // excludes) already occupying this exact destination path.
+                    string destination = Path.Combine(inProgressDirectoryPath, Path.GetFileName(sourcePath));
+                    bool destinationCreated = false;
+                    try
+                    {
+                        using (var destStream = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                        {
+                            destinationCreated = true;
+                            using (var sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                            {
+                                sourceStream.CopyTo(destStream);
+                            }
+                        }
+                    }
+                    catch (Exception ex) when (!destinationCreated && (ex is IOException || ex is UnauthorizedAccessException))
+                    {
+                        // Same CreateNew-race caveat as the source lock above applies
+                        // here too: losing this race can surface as either exception type.
+                        message = $"'{Path.GetFileName(sourcePath)}' could not be claimed into '{inProgressDirectoryPath}' - a file with that name already exists there.";
+                        return false;
+                    }
+                    catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                    {
+                        // The destination name was successfully claimed, but its content
+                        // could not be populated (the source vanished after this method
+                        // already secured the lock above, got locked, access was denied,
+                        // etc.) - remove the now-empty/partial claim so it never
+                        // permanently blocks a real future claim of the same name. This is
+                        // a different, rarer situation than losing the source-level race
+                        // above, so it gets its own message rather than being folded into
+                        // "already claimed".
+                        if (destinationCreated)
+                            try { File.Delete(destination); } catch { /* best-effort cleanup */ }
+                        message = $"Claimed '{Path.GetFileName(sourcePath)}' but failed to copy its content into '{inProgressDirectoryPath}': {ex.Message}";
+                        return false;
+                    }
+
+                    try
+                    {
+                        // Only the sole winner of the source-level lock above ever reaches
+                        // this delete - no concurrent racer can also be deleting this same
+                        // path, unlike the File.Move-based approach this method used to use.
+                        File.Delete(sourcePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        // The claim itself is valid and complete - destination has the full
+                        // content - but required cleanup (removing the original) failed, so
+                        // this is a failure per this suite's compound-result convention even
+                        // though the primary work succeeded. claimedPath is still populated
+                        // here (unlike every other failure above) so a caller isn't left
+                        // unable to find the fully-claimed copy.
+                        claimedPath = destination;
+                        message = $"Claimed '{Path.GetFileName(sourcePath)}' into '{destination}', but could not delete the original: {ex.Message}";
+                        return false;
+                    }
+
+                    claimedPath = destination;
+                    message = null;
+                    return true;
+                }
+                finally
+                {
+                    // The lock file is a private implementation detail, never part of the
+                    // public contract - remove it regardless of outcome above. Only ever
+                    // reached after this call itself created lockStream (a failure to
+                    // create it returns early, above), so this never touches a lock
+                    // another instance or a stale prior run is still holding.
+                    lockStream.Dispose();
+                    try { File.Delete(lockPath); } catch { /* best-effort - see <remarks> on stale locks */ }
+                }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {

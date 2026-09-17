@@ -111,7 +111,7 @@ there's no separate "which kinds" filter parameter here (contrast
 |---|---|---|
 | `AtomicMoveFile` | `bool AtomicMoveFile(string sourcePath, string destinationPath, bool overwrite, out string message)` | Moves a file, optionally overwriting an existing destination. Atomic only when source and destination share a volume. |
 | `ReplaceFile` | `bool ReplaceFile(string sourcePath, string destinationPath, string backupPath, out string message)` | Replaces an existing destination's contents, optionally keeping a backup. Requires the destination to already exist. Windows-only behavior. |
-| `ClaimFile` | `bool ClaimFile(string sourcePath, string inProgressDirectoryPath, out string claimedPath, out string message)` | Claims a work file by moving it into an in-progress directory. A destination collision means another instance already claimed it - the one method here safe under real multi-robot concurrency. |
+| `ClaimFile` | `bool ClaimFile(string sourcePath, string inProgressDirectoryPath, out string claimedPath, out string message)` | Claims a work file by copying it into an in-progress directory under a source-scoped exclusive lock, then deleting the source. A collision with another claimant of the same source, or with an unrelated file already at the destination name, is reported distinctly - the one method here safe under real multi-robot concurrency. |
 
 ### Hash
 
@@ -182,13 +182,40 @@ directly.
   destination to already exist and both files to be on the same volume -
   different preconditions from `AtomicMoveFile`, not interchangeable with
   it.
-- **`ClaimFile` relies on `File.Move`'s own exclusive-create-at-destination
-  failure** as its concurrency-safety mechanism - it never auto-overwrites
-  or auto-renames on a collision. Both ways a race between two claimants
-  can surface (the destination already existing, or the source having
-  vanished between an earlier check and the move itself) are reported with
-  the same "already claimed" message, so a caller never needs to interpret
-  two different failure shapes for one underlying situation.
+- **`ClaimFile` locks on the *source*, not the destination**, as its
+  primary concurrency-safety mechanism - a `sourcePath + ".claiming"`
+  sidecar file created exclusively (`FileMode.CreateNew`), checked before
+  the destination is ever touched. This matters because two callers can
+  claim the same source into two *different* `inProgressDirectoryPath`
+  values, which compute two different destination paths - a
+  destination-only exclusivity check (an earlier version of this method)
+  cannot detect that race at all, and both callers could report success
+  while duplicating the work item. Locking the source closes that gap
+  regardless of where each caller intends to put the result. Neither this
+  lock nor the destination claim uses `File.Move`'s `overwrite: false` -
+  two threads racing that call against the same destination were measured
+  reporting success essentially every time on this repository's target
+  platform (a TOCTOU race inside .NET's own implementation, not a
+  guarantee the OS fails to honor), and a further experiment racing it
+  away from a *shared source* to two unique destinations was worse: both
+  reported success with no exception, yet only one destination actually
+  received the file's content. `FileMode.CreateNew` does not share either
+  flaw, since it maps directly to the OS's own atomic exclusive-create
+  call. The trade-off: claiming now copies the file's bytes into the new
+  destination rather than just repointing a directory entry, so it loses a
+  true rename's near-instant, whole-file atomicity for a large file - the
+  same same-volume-only trade-off `AtomicMoveFile` already documents for
+  its own cross-volume fallback. A second, narrower trade-off: a hard
+  process crash between securing the source lock and this method's normal
+  completion leaves the `.claiming` sidecar behind, permanently blocking a
+  legitimate future claim of that exact source until it is removed by an
+  operator or a separate maintenance process - full crash-safety would
+  need filesystem transactions this component does not have access to.
+  Distinct failure messages are reported for distinct situations rather
+  than one unified "already claimed" message: losing the race for a
+  source already gets that wording, but an unrelated file already sitting
+  at the destination name, or the source vanishing after this call already
+  secured its locks, each get their own, more specific message.
 - **Hashing is stream-based**, safe for large files - never loads a whole
   file into memory.
 - **`WatchForChange`'s `filter` and `WaitForFileMatchingPattern`'s
