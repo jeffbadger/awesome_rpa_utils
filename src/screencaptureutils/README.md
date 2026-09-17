@@ -44,9 +44,9 @@ images internally.
 
 | Method | Signature | Description |
 |---|---|---|
-| `CaptureScreen` | `bool CaptureScreen(out Bitmap image, out string message)` | Captures the entire virtual screen (all monitors) to an in-memory image. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
-| `CaptureScreenToFile` | `bool CaptureScreenToFile(string filePath, out string message)` | Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws. |
-| `CaptureScreenToClipboard` | `bool CaptureScreenToClipboard(out string message)` | Captures the entire virtual screen and copies it to the clipboard as an image, via an internal STA thread regardless of the caller's apartment state. Returns True on success; never throws. |
+| `CaptureAllScreens` | `bool CaptureAllScreens(out Bitmap image, out string message)` | Captures the entire virtual screen (all monitors) to an in-memory image. Caller must `Dispose()` the returned image. Returns True on success; never throws. |
+| `CaptureAllScreensToFile` | `bool CaptureAllScreensToFile(string filePath, out string message)` | Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws. |
+| `CaptureAllScreensToClipboard` | `bool CaptureAllScreensToClipboard(out string message)` | Captures the entire virtual screen and copies it to the clipboard as an image, via an internal STA thread regardless of the caller's apartment state. Returns True on success; never throws. |
 | `CaptureScreen` | `bool CaptureScreen(int screenIndex, out Bitmap image, out string message)` | Captures a single screen (monitor) by index to an in-memory image, for a multi-monitor session. Caller must `Dispose()` the returned image. Returns True on success; `false` if `screenIndex` is out of range. Never throws. |
 | `CaptureScreenToFile` | `bool CaptureScreenToFile(int screenIndex, string filePath, out string message)` | Captures a single screen (monitor) by index to an image file. Returns True on success; `false` if `screenIndex` is out of range. Never throws. |
 | `CaptureScreenToClipboard` | `bool CaptureScreenToClipboard(int screenIndex, out string message)` | Captures a single screen (monitor) by index and copies it to the clipboard as an image. Returns True on success; `false` if `screenIndex` is out of range. Never throws. |
@@ -117,21 +117,23 @@ screenCapture.CaptureWindowToFile(hWnd, @"C:\evidence\order_entry.png", out stri
   bad dimensions, an invalid file path, a missing image file, and Win32 failures
   (`GetWindowRect`/`PrintWindow`) are all reported this way, with `message` set to a
   human-readable reason whenever the method returns `false`.
-- **The base `Capture*` methods (`CaptureScreen`, `CaptureRegion`, `CaptureWindow`,
-  `CaptureActiveWindow`, `CaptureAroundPoint`) hand ownership of the returned `Bitmap`
-  to the caller** — unlike every `*ToFile`/`*ToClipboard` method, which captures,
-  uses, and disposes its own image internally. Wrap the result in a `using` block
-  (or call `image.Dispose()` when done) to avoid leaking GDI handles; only call
-  these directly when the automation needs the image itself, e.g. custom pixel
-  processing before deciding whether/where to save it.
-- **`screenIndex` on the indexed `CaptureScreen*` overloads is not a physical
-  left-to-right position** — it's a zero-based index into the underlying .NET/Windows
-  screen enumeration, whatever order that happens to return. Call `GetScreenCount`
-  first to learn the valid range (`0` through `count - 1`); an automation that needs
-  to identify *which* monitor is which (e.g. "the leftmost one") has to reason about
-  the screens some other way, since this component doesn't expose per-screen bounds.
-  The parameterless `CaptureScreen`/`CaptureScreenToFile`/`CaptureScreenToClipboard`
-  overloads are unaffected — they still capture every monitor as one combined image.
+- **The base `Capture*` methods (`CaptureAllScreens`, `CaptureScreen`, `CaptureRegion`,
+  `CaptureWindow`, `CaptureActiveWindow`, `CaptureAroundPoint`) hand ownership of the
+  returned `Bitmap` to the caller** — unlike every `*ToFile`/`*ToClipboard` method,
+  which captures, uses, and disposes its own image internally. Wrap the result in a
+  `using` block (or call `image.Dispose()` when done) to avoid leaking GDI handles;
+  only call these directly when the automation needs the image itself, e.g. custom
+  pixel processing before deciding whether/where to save it.
+- **`screenIndex` on the indexed `CaptureScreen`/`CaptureScreenToFile`/
+  `CaptureScreenToClipboard` overloads is not a physical left-to-right position** —
+  it's a zero-based index into the underlying .NET/Windows screen enumeration,
+  whatever order that happens to return. Call `GetScreenCount` first to learn the
+  valid range (`0` through `count - 1`); an automation that needs to identify
+  *which* monitor is which (e.g. "the leftmost one") has to reason about the
+  screens some other way, since this component doesn't expose per-screen bounds.
+  `CaptureAllScreens`/`CaptureAllScreensToFile`/`CaptureAllScreensToClipboard` are
+  unaffected — they still capture every monitor as one combined image regardless
+  of how many screens exist.
 - **Annotation coordinates are relative to the saved image, not the screen.**
   If you captured a region with `CaptureRegionToFile(left, top, width, height, ...)`
   and want to annotate the same absolute spot in the saved file, subtract the
@@ -175,9 +177,10 @@ screenCapture.CaptureWindowToFile(hWnd, @"C:\evidence\order_entry.png", out stri
 - **Every `*ToClipboard` method** runs its clipboard write on an internal STA thread
   regardless of the calling thread's apartment state, so the automation does not
   need to know or control it — unlike raw Windows Forms clipboard access, which
-  requires an STA caller. `CaptureScreenToClipboard` was named `CaptureToClipboard`
-  before this component's capture methods were unified around the base/`ToFile`/
-  `ToClipboard` shape described above.
+  requires an STA caller. `CaptureAllScreensToClipboard` was named `CaptureToClipboard`,
+  then briefly `CaptureScreenToClipboard`, before settling on its current name to stay
+  unambiguous once the indexed, single-monitor `CaptureScreen`/`CaptureScreenToFile`/
+  `CaptureScreenToClipboard` overloads were added.
 - **`CompareRegionToBaseline`** requires the baseline image's dimensions to
   exactly match the requested region size, and uses a small per-channel
   tolerance internally to absorb anti-aliasing/rendering noise — it is not an

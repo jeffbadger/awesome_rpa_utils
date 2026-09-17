@@ -90,15 +90,16 @@ namespace ScreenCaptureAutomation
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the capture failed.</param>
         /// <returns><c>true</c> on success. Never throws.</returns>
         /// <remarks>
-        /// This is the base capture this component's other <c>CaptureScreen*</c> methods
-        /// are built on (<see cref="CaptureScreenToFile(string, out string)"/>,
-        /// <see cref="CaptureScreenToClipboard(out string)"/>);
-        /// call it directly only when the automation needs the image itself, e.g. to run
-        /// its own pixel processing before deciding whether/where to save it.
+        /// This is the base capture this component's other <c>CaptureAllScreens*</c>
+        /// methods are built on (<see cref="CaptureAllScreensToFile(string, out string)"/>,
+        /// <see cref="CaptureAllScreensToClipboard(out string)"/>); call it directly only
+        /// when the automation needs the image itself, e.g. to run its own pixel
+        /// processing before deciding whether/where to save it. For a single monitor in a
+        /// multi-monitor session, see <see cref="CaptureScreen(int, out Bitmap, out string)"/> instead.
         /// </remarks>
         [Category("Capture - Core")]
         [Description("Captures the entire virtual screen (all monitors) to an in-memory image. Caller must Dispose() the returned image. Returns True on success; never throws.")]
-        public bool CaptureScreen(out Bitmap image, out string message)
+        public bool CaptureAllScreens(out Bitmap image, out string message)
         {
             image = default;
             message = default;
@@ -110,14 +111,14 @@ namespace ScreenCaptureAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("CaptureScreen", ex);
+                message = NeverThrowsGuard.Failure("CaptureAllScreens", ex);
                 return false;
             }
         }
 
         /// <summary>
         /// Captures a single screen (monitor) to an in-memory image, for a multi-monitor
-        /// session where <see cref="CaptureScreen(out Bitmap, out string)"/>'s
+        /// session where <see cref="CaptureAllScreens(out Bitmap, out string)"/>'s
         /// whole-virtual-screen capture spans more than one physical display.
         /// </summary>
         /// <param name="screenIndex">Zero-based index into the detected screens, in the
@@ -150,7 +151,8 @@ namespace ScreenCaptureAutomation
         /// <summary>
         /// Reports how many screens (monitors) this session sees, so an automation can
         /// validate a <c>screenIndex</c> before passing it to the indexed
-        /// <c>CaptureScreen*</c> overloads.
+        /// <c>CaptureScreen</c>/<c>CaptureScreenToFile</c>/<c>CaptureScreenToClipboard</c>
+        /// overloads.
         /// </summary>
         /// <param name="count">The number of screens detected (at least 1), or <c>0</c> if this method returns <c>false</c>.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the count could not be determined.</param>
@@ -183,12 +185,12 @@ namespace ScreenCaptureAutomation
         /// <returns><c>true</c> on success; <c>false</c> if <paramref name="filePath"/> is null, empty, or whitespace. Never throws.</returns>
         [Category("Capture - Core")]
         [Description("Captures the entire virtual screen (all monitors) to an image file. Returns True on success; never throws.")]
-        public bool CaptureScreenToFile(string filePath, out string message)
+        public bool CaptureAllScreensToFile(string filePath, out string message)
         {
             message = default;
             try
             {
-                if (!CaptureScreen(out Bitmap bmp, out message))
+                if (!CaptureAllScreens(out Bitmap bmp, out message))
                     return false;
 
                 using (bmp)
@@ -199,7 +201,7 @@ namespace ScreenCaptureAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("CaptureScreenToFile", ex);
+                message = NeverThrowsGuard.Failure("CaptureAllScreensToFile", ex);
                 return false;
             }
         }
@@ -249,12 +251,12 @@ namespace ScreenCaptureAutomation
         /// </remarks>
         [Category("Capture - Core")]
         [Description("Captures the entire virtual screen and copies it to the clipboard as an image. Returns True on success; never throws.")]
-        public bool CaptureScreenToClipboard(out string message)
+        public bool CaptureAllScreensToClipboard(out string message)
         {
             message = default;
             try
             {
-                if (!CaptureScreen(out Bitmap bmp, out message))
+                if (!CaptureAllScreens(out Bitmap bmp, out message))
                     return false;
 
                 using (bmp)
@@ -265,7 +267,7 @@ namespace ScreenCaptureAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                message = NeverThrowsGuard.Failure("CaptureScreenToClipboard", ex);
+                message = NeverThrowsGuard.Failure("CaptureAllScreensToClipboard", ex);
                 return false;
             }
         }
@@ -818,7 +820,7 @@ namespace ScreenCaptureAutomation
 
                 string fileName = $"{_evidenceCounter:D3}_{SanitizeFileNameSegment(stepName)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
                 string candidatePath = Path.Combine(folderPath, fileName);
-                if (!CaptureScreenToFile(candidatePath, out message))
+                if (!CaptureAllScreensToFile(candidatePath, out message))
                 {
                     // Roll the counter back so a failed capture doesn't leave a gap in
                     // the evidence sequence (001, 003, ...).
