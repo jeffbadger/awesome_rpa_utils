@@ -53,15 +53,16 @@ fill in: `Process`, `ProcessesCsv`, `ClassName`, `TitleContains`,
 
 ## `WinEventData`
 
-The object every `WaitForX`/`GetNextEvent`/`GetNextEvents` call returns — one
-flattened, Pega-mappable snapshot of a single WinEvent. All properties are
-plain strings/numbers/handles and have an `internal` setter, so consumers can
-read but never mutate a delivered event.
+The event data produced on success by `WaitForX`/`GetNextEvent` (via their
+`out WinEventData eventData` parameter), and each element of the array
+`GetNextEvents` produces, is a flattened, Pega-mappable snapshot of a single
+WinEvent. All properties are plain strings/numbers/handles and have an
+`internal` setter, so consumers can read but never mutate a delivered event.
 
 | Property | Type | Description |
 |---|---|---|
 | `EventId` | `string` | Unique id for this event (GUID, no dashes). |
-| `Category` | `string` | Event name, e.g. `"WindowCreated"`, `"DialogAppeared"` — one of the `WinEventName` values. |
+| `Category` | `string` | Event name, e.g. `"WindowCreated"`, `"DialogAppeared"` — one of the `WinEventName` values, or `"Unknown"` for a WinEvent with no mapped category (still recorded, e.g. in the recent-events ring). |
 | `Timestamp` | `long` | `DateTime.UtcNow` ticks at capture time. Use this, not arrival order, to correlate events across processes — see [Known limitations](#known-limitations). |
 | `Hwnd` | `IntPtr` | Window handle (`IntPtr.Zero` if none). Preserves the native handle width (32-bit on x86, 64-bit on x64) and can be passed directly to WindowUtils/UIAutomationUtils methods without reconstructing it. |
 | `ProcessName` | `string` | Process image name (e.g. `"notepad"`), or null if unknown. |
