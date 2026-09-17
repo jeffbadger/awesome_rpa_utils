@@ -89,7 +89,7 @@ The JSON shape produced by `GetFileMetadataJson`/`GetDirectoryListingJson`:
 |---|---|---|
 | `AtomicMoveFile` | `bool AtomicMoveFile(string sourcePath, string destinationPath, bool overwrite, out string message)` | Moves a file, optionally overwriting an existing destination. Atomic only when source and destination share a volume. |
 | `ReplaceFile` | `bool ReplaceFile(string sourcePath, string destinationPath, string backupPath, out string message)` | Replaces an existing destination's contents, optionally keeping a backup. Requires the destination to already exist. Windows-only behavior. |
-| `ClaimFile` | `bool ClaimFile(string sourcePath, string inProgressDirectoryPath, out string claimedPath, out string message)` | Claims a work file by moving it into an in-progress directory. A destination collision means another instance already claimed it - the one method here safe under real multi-robot concurrency. |
+| `ClaimFile` | `bool ClaimFile(string sourcePath, string inProgressDirectoryPath, out string claimedPath, out string message)` | Claims a work file by copying it into an in-progress directory under an exclusively-created destination handle, then deleting the source. A destination collision means another instance already claimed it - the one method here safe under real multi-robot concurrency. |
 
 ### Hash
 
@@ -138,13 +138,26 @@ The JSON shape produced by `GetFileMetadataJson`/`GetDirectoryListingJson`:
   destination to already exist and both files to be on the same volume -
   different preconditions from `AtomicMoveFile`, not interchangeable with
   it.
-- **`ClaimFile` relies on `File.Move`'s own exclusive-create-at-destination
-  failure** as its concurrency-safety mechanism - it never auto-overwrites
-  or auto-renames on a collision. Both ways a race between two claimants
-  can surface (the destination already existing, or the source having
-  vanished between an earlier check and the move itself) are reported with
-  the same "already claimed" message, so a caller never needs to interpret
-  two different failure shapes for one underlying situation.
+- **`ClaimFile` relies on an exclusively-created destination handle
+  (`FileMode.CreateNew`), not `File.Move`'s `overwrite: false`**, as its
+  concurrency-safety mechanism - it never auto-overwrites or auto-renames
+  on a collision. This is a deliberate correction: two threads racing
+  `File.Move(src, dst, overwrite: false)` against the same destination
+  were measured reporting success essentially every time on this
+  repository's target platform - a TOCTOU race inside .NET's own
+  implementation of that overload, not a guarantee the OS fails to
+  honor - so it could not be trusted as the exclusivity mechanism this
+  method's whole purpose depends on. `FileMode.CreateNew` does not share
+  that flaw, since it maps directly to the OS's own atomic exclusive-create
+  call. The trade-off: claiming now copies the file's bytes into the new
+  destination rather than just repointing a directory entry, so it loses a
+  true rename's near-instant, whole-file atomicity for a large file - the
+  same same-volume-only trade-off `AtomicMoveFile` already documents for
+  its own cross-volume fallback. Both ways a race between two claimants
+  can surface (the destination already existing, or the source vanishing
+  before it can be read) are reported with the same "already claimed"
+  message, so a caller never needs to interpret two different failure
+  shapes for one underlying situation.
 - **Hashing is stream-based**, safe for large files - never loads a whole
   file into memory.
 - **`WatchForChange`'s `filter` and `WaitForFileMatchingPattern`'s

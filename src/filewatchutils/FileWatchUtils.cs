@@ -725,21 +725,40 @@ namespace FileWatchAutomation
         }
 
         /// <summary>
-        /// Claims a work file by moving it into an in-progress directory. Relies on
-        /// <see cref="File.Move(string, string, bool)"/>'s own exclusive-create-at-destination
-        /// failure as the concurrency-safety mechanism: a destination collision means
-        /// another instance already claimed the file, and this returns <c>false</c> with a
-        /// clear message rather than overwriting or auto-renaming. This is the one method
-        /// in this component that is actually safe under real multi-robot concurrency -
-        /// every other method here observes state and then acts on it, with an inherent gap
-        /// another process can exploit in between. Never throws.
+        /// Claims a work file by copying it into an in-progress directory under an
+        /// exclusively-created destination handle, then deleting the source. A destination
+        /// collision means another instance already claimed the file, and this returns
+        /// <c>false</c> with a clear message rather than overwriting or auto-renaming. This
+        /// is the one method in this component that is actually safe under real
+        /// multi-robot concurrency - every other method here observes state and then acts
+        /// on it, with an inherent gap another process can exploit in between. Never
+        /// throws.
         /// </summary>
         /// <param name="sourcePath">The file to claim.</param>
         /// <param name="inProgressDirectoryPath">The directory to move it into. Must already exist.</param>
         /// <param name="claimedPath">The file's new path on success; unset otherwise.</param>
         /// <param name="message"><c>null</c> on success; a failure reason otherwise (including "already claimed" on a destination collision).</param>
+        /// <remarks>
+        /// This uses <c>new FileStream(destination, FileMode.CreateNew, ...)</c> to
+        /// atomically claim the destination path, then streams the source's content into
+        /// it and deletes the source - <b>not</b> <see cref="File.Move(string, string, bool)"/>
+        /// with <c>overwrite: false</c>, despite that overload's documented "throws if the
+        /// destination already exists" contract. Measured directly on this repository's
+        /// target platform: two threads racing <c>File.Move(src, dst, overwrite: false)</c>
+        /// against the same destination both report success essentially every time (a
+        /// TOCTOU race inside .NET's own implementation, not an OS-level guarantee it
+        /// fails to honor) - so it cannot be the concurrency-safety mechanism this method's
+        /// whole purpose depends on. <c>FileMode.CreateNew</c> does not share that flaw:
+        /// the same experiment shows it reliably fails one of the two racers every time,
+        /// since it maps directly to the OS's own atomic exclusive-create call rather than
+        /// a separate managed existence check followed by a separate move. The trade-off is
+        /// losing a true rename's near-instant, whole-file atomicity for a large file -
+        /// this now copies bytes rather than just repointing a directory entry, the same
+        /// same-volume-only trade-off <see cref="AtomicMoveFile"/> already documents for
+        /// its own cross-volume fallback.
+        /// </remarks>
         [Category("FileWatch - Actions")]
-        [Description("Claims a work file by moving it into an in-progress directory. A destination collision means another instance already claimed it. Never throws.")]
+        [Description("Claims a work file by copying it into an in-progress directory under an exclusively-created destination handle, then deleting the source. A destination collision means another instance already claimed it. Never throws.")]
         public bool ClaimFile(string sourcePath, string inProgressDirectoryPath, out string claimedPath, out string message)
         {
             claimedPath = default;
@@ -767,25 +786,53 @@ namespace FileWatchAutomation
                     return false;
                 }
 
-                // Deliberately no separate "does source exist" check right before the move -
-                // that would only widen the race window between two concurrent claimants.
-                // File.Move's own atomicity is the only thing that may run right up against
-                // a competing claim, so both ways a race can surface - the destination already
-                // existing, or the source having vanished between the check above and here -
-                // are folded into the same "already claimed" message.
+                // The exclusive FileMode.CreateNew open below - not the check above, which
+                // is just a fast-path/friendlier-message optimization - is what actually
+                // makes two concurrent claimants safe: exactly one of them can ever succeed
+                // in creating this destination handle, so only that one ever goes on to
+                // read the source. See the <remarks> above for why File.Move's own
+                // overwrite:false guarantee is not adequate for this.
                 string destination = Path.Combine(inProgressDirectoryPath, Path.GetFileName(sourcePath));
+                bool claimedDestination = false;
                 try
                 {
-                    File.Move(sourcePath, destination, overwrite: false);
+                    using (var destStream = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    {
+                        claimedDestination = true;
+                        using (var sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                        {
+                            sourceStream.CopyTo(destStream);
+                        }
+                    }
                 }
-                catch (FileNotFoundException)
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
                 {
-                    message = $"Source file '{sourcePath}' is already claimed by another instance.";
+                    if (!claimedDestination)
+                    {
+                        message = $"'{Path.GetFileName(sourcePath)}' is already claimed - a file with that name already exists in '{inProgressDirectoryPath}'.";
+                        return false;
+                    }
+
+                    // The destination name was successfully claimed, but its content could
+                    // not be populated (the source vanished, got locked, access was denied,
+                    // etc.) - remove the now-empty/partial claim so it never permanently
+                    // blocks a real future claim of the same name.
+                    try { File.Delete(destination); } catch { /* best-effort cleanup */ }
+                    message = $"Claimed '{Path.GetFileName(sourcePath)}' but failed to copy its content: {ex.Message}";
                     return false;
                 }
-                catch (IOException)
+
+                try
                 {
-                    message = $"'{Path.GetFileName(sourcePath)}' is already claimed - a file with that name already exists in '{inProgressDirectoryPath}'.";
+                    File.Delete(sourcePath);
+                }
+                catch (Exception ex)
+                {
+                    // The claim itself is valid and complete - destination has the full
+                    // content - but required cleanup (removing the original) failed, so
+                    // this is a failure per this suite's compound-result convention even
+                    // though the primary work succeeded.
+                    message = $"Claimed '{Path.GetFileName(sourcePath)}' into '{destination}', but could not delete the original: {ex.Message}";
                     return false;
                 }
 

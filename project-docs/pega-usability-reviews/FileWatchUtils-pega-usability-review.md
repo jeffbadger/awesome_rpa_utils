@@ -57,8 +57,9 @@ established filter convention.
   suite.** `IsFileLocked`→act, `WaitForFileToExist`→open, and
   `WaitForFileMatchingPattern`→read the match all have a gap where another
   process can intervene. `ClaimFile` is the one method actually designed to
-  close that gap via `File.Move`'s own exclusive-create-at-destination
-  failure; every other method here observes state and then acts on it.
+  close that gap, via an exclusively-created destination handle
+  (`FileMode.CreateNew` - see "`ClaimFile`'s concurrency bug and fix"
+  below); every other method here observes state and then acts on it.
 - **Lock-check is not a write-complete signal.** A writer holding
   `FileShare.ReadWrite` open the entire time it writes will report
   "unlocked" throughout. `WaitForFileStable` is the correct signal for "is
@@ -71,10 +72,37 @@ established filter convention.
   already exist, unlike `AtomicMoveFile`.
 - **`ClaimFile`'s two race-outcome messages are unified** so a caller never
   needs to distinguish "the destination already had a file" from "the
-  source vanished out from under me mid-move" - both are the same
-  underlying situation (another instance won the race) and both messages
-  say "already claimed."
+  source vanished before it could be read" - both are the same underlying
+  situation (another instance won the race) and both messages say "already
+  claimed."
+
+## `ClaimFile`'s concurrency bug and fix
+
+The initial implementation relied on `File.Move(sourcePath, destination,
+overwrite: false)`'s documented "throws if the destination already
+exists" contract as the sole concurrency-safety mechanism - the entire
+reason this method exists. That contract turned out not to hold under
+concurrency: two threads racing `File.Move(src, dst, overwrite: false)`
+against the same destination on this repository's target platform both
+reported success essentially every time in an isolated, non-xunit repro
+(a TOCTOU race inside .NET's own implementation of that overload - a
+managed existence check followed by a separate move, not a single atomic
+OS call - not a guarantee the OS itself fails to honor). The same repro
+showed `new FileStream(destination, FileMode.CreateNew, ...)` reliably
+rejects one of the two racers on every trial, since it maps directly to
+the OS's own atomic exclusive-create call. `ClaimFile` now claims the
+destination that way, then streams the source's content into it and
+deletes the source - trading a true rename's near-instant, whole-file
+atomicity for a copy, the same same-volume-only trade-off
+`AtomicMoveFile` already documents for its own cross-volume fallback.
+`ClaimFile_ConcurrentClaimAttempts_ExactlyOneSucceeds` (in
+`FileWatchUtils.Tests`) now runs 20 fresh iterations of the race rather
+than one, since a single iteration was too weak a regression guard to
+have caught the original bug reliably on its own.
 
 ## Recommended changes
 
-None outstanding - this is the initial design pass, not a retrofit.
+None outstanding. The initial design pass (Wait/Watch/Actions/Hash/
+Metadata) had none; `ClaimFile`'s concurrency mechanism was corrected
+after the fact (see above) once its `File.Move`-based guarantee was found
+not to hold.
