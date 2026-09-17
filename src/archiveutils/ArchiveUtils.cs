@@ -128,6 +128,73 @@ namespace ArchiveAutomation
 
         #endregion
 
+        #region Create Encrypted
+
+        /// <summary>
+        /// Creates a password-protected ZIP archive from a directory's contents, via
+        /// <c>ICSharpCode.SharpZipLib</c> - <see cref="System.IO.Compression"/> cannot write
+        /// encrypted entries under any circumstance, so this is the one creation method in
+        /// the component that doesn't go through <see cref="ArchiveCore"/>. Published
+        /// atomically like <see cref="CreateArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="sourceDirectoryPath">The directory to archive, recursively.</param>
+        /// <param name="archivePath">The archive's final path.</param>
+        /// <param name="password">The password every entry is encrypted with. Required (non-empty).</param>
+        /// <param name="overwrite">Whether an existing file at <paramref name="archivePath"/> may be replaced.</param>
+        /// <param name="includeBaseDirectory">Whether entries are prefixed with <paramref name="sourceDirectoryPath"/>'s own directory name.</param>
+        /// <param name="useLegacyZipCrypto"><c>false</c> (default/recommended) encrypts with AES-256; <c>true</c> uses the older, weaker ZipCrypto scheme, only for compatibility with tools that can't read AES-encrypted zips.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise.</param>
+        [Category("Archive - Create Encrypted")]
+        [Description("Creates a password-protected ZIP archive from a directory, using AES-256 by default. Never throws.")]
+        public bool CreateEncryptedArchive(string sourceDirectoryPath, string archivePath, string password, bool overwrite, bool includeBaseDirectory, bool useLegacyZipCrypto, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(sourceDirectoryPath))
+                {
+                    message = "A source directory path is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (string.IsNullOrEmpty(password))
+                {
+                    message = "A password is required.";
+                    return false;
+                }
+                if (!Directory.Exists(sourceDirectoryPath))
+                {
+                    message = $"Source directory '{sourceDirectoryPath}' does not exist.";
+                    return false;
+                }
+                if (!overwrite && File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' already exists.";
+                    return false;
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(archivePath);
+                if (!ArchiveEncryptionCore.TryBuildEncryptedArchiveFromDirectory(sourceDirectoryPath, tempPath, includeBaseDirectory, password, useLegacyZipCrypto, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, archivePath, overwrite, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("CreateEncryptedArchive", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
         #region Update Existing Archive
 
         /// <summary>
@@ -672,6 +739,61 @@ namespace ArchiveAutomation
 
         private static bool IsDirectoryEntry(ZipArchiveEntry entry) =>
             entry.FullName.EndsWith("/", StringComparison.Ordinal) || entry.FullName.EndsWith("\\", StringComparison.Ordinal);
+
+        #endregion
+
+        #region Extract Encrypted
+
+        /// <summary>
+        /// Extracts a password-protected ZIP archive to a directory, via
+        /// <c>ICSharpCode.SharpZipLib</c> - the only extraction method in this component able
+        /// to open an encrypted entry; every other extraction method detects but never opens
+        /// one. Same declared-size/compression-ratio pre-check and zip-slip guard as
+        /// <see cref="ExtractArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="archivePath">The archive to extract.</param>
+        /// <param name="destinationDirectoryPath">The directory to extract into. Created if it doesn't already exist.</param>
+        /// <param name="password">The archive's password.</param>
+        /// <param name="overwrite">Whether existing files at the destination may be replaced.</param>
+        /// <param name="maxTotalExpandedSizeBytes">The maximum total declared uncompressed size across all entries. <c>0</c> or negative means no limit.</param>
+        /// <param name="maxCompressionRatio">The maximum declared uncompressed:compressed ratio for any single entry. <c>0</c> or negative means no limit.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise, including a wrong password.</param>
+        [Category("Archive - Extract Encrypted")]
+        [Description("Extracts a password-protected ZIP archive, rejecting it up front if declared sizes/ratios exceed the given limits. Never throws.")]
+        public bool ExtractArchiveWithPassword(string archivePath, string destinationDirectoryPath, string password, bool overwrite, long maxTotalExpandedSizeBytes, double maxCompressionRatio, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(archivePath))
+                {
+                    message = "An archive path is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(destinationDirectoryPath))
+                {
+                    message = "A destination directory path is required.";
+                    return false;
+                }
+                if (string.IsNullOrEmpty(password))
+                {
+                    message = "A password is required.";
+                    return false;
+                }
+                if (!File.Exists(archivePath))
+                {
+                    message = $"Archive '{archivePath}' does not exist.";
+                    return false;
+                }
+
+                return ArchiveEncryptionCore.TryExtractEncryptedArchive(archivePath, destinationDirectoryPath, password, overwrite, maxTotalExpandedSizeBytes, maxCompressionRatio, true, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ExtractArchiveWithPassword", ex);
+                return false;
+            }
+        }
 
         #endregion
 
