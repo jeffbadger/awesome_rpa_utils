@@ -278,7 +278,7 @@ state ownership and cleanup requirements are understood.
 | UIAutomationUtils | Stale elements, COM exceptions, timeouts, and pattern availability. |
 | CommandLineUtils | Process/stream disposal, timeout termination, deadlocks, and partial output. |
 | ServiceUtils | Controller/handle disposal and service-state races. |
-| EventUtils | Hook unregistration, callback isolation, subscription cleanup, and concurrency. |
+| WinEventUtils | Hook unregistration, callback isolation, subscription cleanup, and concurrency. |
 
 ## Completion criteria
 

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
     /// Per-(hwnd, event-name) debounce. A second identical-key event arriving

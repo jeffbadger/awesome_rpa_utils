@@ -15,8 +15,8 @@ FILES = [
     "src/uiautomationutils/UIAutomationUtils.cs",
     "src/commandlineutils/CommandLineUtils.cs",
     "src/serviceutils/ServiceUtils.cs",
-    "src/eventutils/EventUtils.cs",
-    "src/eventutils/WaitMethods.cs",
+    "src/wineventutils/WinEventUtils.cs",
+    "src/wineventutils/WaitMethods.cs",
 ]
 
 

@@ -1,12 +1,12 @@
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
-    /// A specific WinEvent name, as reported in <see cref="EventData.Category"/> and
-    /// mapped internally by <c>EventCategoryMap.EventName</c>. Exposed as an enum so
-    /// Pega Robot Studio can select an event name (e.g. for <see cref="EventUtils.SetDebounce(EventName, int, out string)"/>)
+    /// A specific WinEvent name, as reported in <see cref="WinEventData.Category"/> and
+    /// mapped internally by <c>WinEventCategoryMap.WinEventName</c>. Exposed as an enum so
+    /// Pega Robot Studio can select an event name (e.g. for <see cref="WinEventUtils.SetDebounce(WinEventName, int, out string)"/>)
     /// instead of typing a free-form, typo-prone string.
     /// </summary>
-    public enum EventName
+    public enum WinEventName
     {
         /// <summary>A window was created (EVENT_OBJECT_CREATE).</summary>
         WindowCreated,

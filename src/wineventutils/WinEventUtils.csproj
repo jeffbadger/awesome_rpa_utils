@@ -5,17 +5,17 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
-    <AssemblyName>EventAutomation</AssemblyName>
-    <RootNamespace>EventAutomation</RootNamespace>
+    <AssemblyName>WinEventAutomation</AssemblyName>
+    <RootNamespace>WinEventAutomation</RootNamespace>
     <Platforms>AnyCPU;x64</Platforms>
-    <!-- Emit EventAutomation.xml next to the DLL so the XML doc comments are consumable -->
+    <!-- Emit WinEventAutomation.xml next to the DLL so the XML doc comments are consumable -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Expose internals to the unit-test project; exclude test sources from the DLL. -->
-    <InternalsVisibleTo Include="EventUtils.Tests" />
-    <Compile Remove="EventUtils.Tests/**/*.cs" />
+    <InternalsVisibleTo Include="WinEventUtils.Tests" />
+    <Compile Remove="WinEventUtils.Tests/**/*.cs" />
   </ItemGroup>
 
 </Project>

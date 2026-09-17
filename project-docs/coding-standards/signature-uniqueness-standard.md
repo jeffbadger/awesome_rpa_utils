@@ -59,7 +59,7 @@ suite lets a reader predict a renamed method's new name on sight.
   plain name; its sibling without that output becomes `...Simple`.
 - The overload returning scalar/primitive outputs keeps the plain name; the
   sibling returning a single framework/object type (`Rectangle`, `Point`,
-  `ServiceControllerStatus`, `EventData`, …) becomes `...As<Type>`.
+  `ServiceControllerStatus`, `WinEventData`, …) becomes `...As<Type>`.
 
 ### Exceptions
 

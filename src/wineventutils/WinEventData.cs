@@ -1,10 +1,10 @@
 using System;
 using System.Text.Json;
 
-namespace EventAutomation
+namespace WinEventAutomation
 {
-    /// <summary>Shared serializer options for <see cref="EventData"/>.</summary>
-    internal static class EventJson
+    /// <summary>Shared serializer options for <see cref="WinEventData"/>.</summary>
+    internal static class WinEventJson
     {
         public static readonly JsonSerializerOptions Options = new JsonSerializerOptions();
     }
@@ -16,7 +16,7 @@ namespace EventAutomation
     /// plain strings/numbers so the object maps directly onto Pega properties;
     /// use <see cref="ToJson"/> for anything structured.
     /// </summary>
-    public class EventData
+    public class WinEventData
     {
         /// <summary>Unique id for this event (GUID, no dashes).</summary>
         public string EventId { get; internal set; }
@@ -50,9 +50,9 @@ namespace EventAutomation
         public string State { get; internal set; }
 
         /// <summary>Returns a shallow copy with the same property values.</summary>
-        public EventData Clone()
+        public WinEventData Clone()
         {
-            return new EventData
+            return new WinEventData
             {
                 EventId = EventId,
                 Category = Category,
@@ -71,7 +71,7 @@ namespace EventAutomation
         {
             try
             {
-                return JsonSerializer.Serialize(this, EventJson.Options);
+                return JsonSerializer.Serialize(this, WinEventJson.Options);
             }
             catch
             {

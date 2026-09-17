@@ -31,7 +31,7 @@ kind of object.
 - Arrays, `params` arrays, lists, dictionaries, and other collections.
 - Framework objects such as `AutomationElement`, `Encoding`, `Point`, and
   `Rectangle`.
-- Repository result objects such as `CommandResult`, `OcrResult`, and `EventData`.
+- Repository result objects such as `CommandResult`, `OcrResult`, and `WinEventData`.
 - Complex outputs that require proxies even when all inputs are scalar.
 - Overload and optional-parameter shapes that expose difficult ports for common
   use cases.
@@ -52,7 +52,7 @@ enum is not rendered as a selectable constant.
 | UIAutomationUtils | `AutomationElement` is intentionally chain-based, but nearly the entire utility depends on object proxies; element lists add more friction. |
 | CommandLineUtils | `IDictionary<string,string>`, `Encoding`, and `string[]` inputs have no simple Pega producer; `CommandResult` requires a proxy. |
 | ServiceUtils | Control methods are scalar; service-name list results require proxies/loops. |
-| EventUtils | `EventData` and `EventData[]` outputs require proxies; JSON dump methods provide a partial scalar escape hatch. |
+| WinEventUtils | `WinEventData` and `WinEventData[]` outputs require proxies; JSON dump methods provide a partial scalar escape hatch. |
 | LocalQueueUtils | All ports are scalar; JSON and bulk-ingestion methods deliberately eliminate collection-proxy construction. |
 | StackUtils | Instance-local LIFO work with scalar ports, mixed-kind routing, atomic bulk bridges, and explicit empty results. |
 | DataContractUtils | Typed named values with design-time JSON preload, staged initialization, strict scalar access, and optional DataTable bridges. |
@@ -68,7 +68,7 @@ enum is not rendered as a selectable constant.
 7. [UIAutomationUtils](UIAutomationUtils-pega-usability-review.md)
 8. [CommandLineUtils](CommandLineUtils-pega-usability-review.md)
 9. [ServiceUtils](ServiceUtils-pega-usability-review.md)
-10. [EventUtils](EventUtils-pega-usability-review.md)
+10. [WinEventUtils](WinEventUtils-pega-usability-review.md)
 11. [StackUtils](StackUtils-pega-usability-review.md)
 12. [DataContractUtils](DataContractUtils-pega-usability-review.md)
 
@@ -78,7 +78,7 @@ Each utility's detailed findings are in its own file in this folder.
 
 All twelve listed utility reviews are complete. Recommended implementation order:
 
-1. **EventUtils handle correctness:** replace the 32-bit `EventData.Hwnd`, expose
+1. **WinEventUtils handle correctness:** replace the 32-bit `WinEventData.Hwnd`, expose
    properties, and add flattened/JSON single-event methods.
 2. **CommandLineUtils scalar API:** flatten `CommandResult` and add scalar adapters
    for environment variables, encoding, and shell allowlists.

@@ -1,10 +1,10 @@
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
     /// What a subscription's event queue does when it's full and a new event
-    /// arrives, set via <see cref="EventUtils.SetQueueLimits(int, EventOverflowPolicy, out string)"/>.
+    /// arrives, set via <see cref="WinEventUtils.SetQueueLimits(int, WinEventOverflowPolicy, out string)"/>.
     /// </summary>
-    public enum EventOverflowPolicy
+    public enum WinEventOverflowPolicy
     {
         /// <summary>Drops the oldest queued event to make room for the new one.</summary>
         DropOldest,

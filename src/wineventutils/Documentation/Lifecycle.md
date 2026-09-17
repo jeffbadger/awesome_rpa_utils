@@ -4,11 +4,11 @@
 activates the categories to watch and installs the hook:
 
 ```csharp
-var events = new EventUtils();
+var events = new WinEventUtils();
 events.Initialize(out string message);
 
 // A single category — the common case for a simple wait:
-events.Start(EventCategory.Dialogs, out message);
+events.Start(WinEventCategory.Dialogs, out message);
 
 // ... later, to watch something different, Stop first:
 events.Stop(out message);
@@ -32,5 +32,5 @@ calling either one again while categories are already active returns `False`
 with a message — call `Stop()` first. `StartCategories` also returns `False`
 if every flag is `false`/`null` (nothing to watch); `Start` always has exactly
 one category, so it can't hit that case. Once `Dispose()` runs, the instance
-is final — a later `Initialize()` returns `False`; create a new `EventUtils`
+is final — a later `Initialize()` returns `False`; create a new `WinEventUtils`
 instead.

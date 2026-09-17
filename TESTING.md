@@ -332,7 +332,7 @@ exception` condition.
   `WindowUtils.FindWindowsByProcessId` or a direct process check; nonexistent
   executable → `false` + message)
 
-### EventUtils (needs Setup: a real window to create/destroy — notepad.exe works; Cleanup: kill it)
+### WinEventUtils (needs Setup: a real window to create/destroy — notepad.exe works; Cleanup: kill it)
 
 Every public method returns `bool` and never throws — abnormal results
 (including a `WaitForX` timeout, `WasWindowCreated`'s not-found, and
@@ -340,7 +340,7 @@ Every public method returns `bool` and never throws — abnormal results
 `null` for that normal negative and set for a real operational failure; none
 of these have a separate `timedOut`/`wasCreated`/`hasEvent` output. A wait or
 dequeue always resolves to exactly one event, so `WaitForX`/`GetNextEvent`
-return `EventData` directly — there's no JSON+handle overload or
+return `WinEventData` directly — there's no JSON+handle overload or
 `...AsEventData` sibling to also test. For these, replace Phase 2's "exception
 condition on the invalid-input case" with an outcome condition asserting
 `false` (plus a non-null `message`), instead of an `Automation exception`
@@ -357,7 +357,7 @@ events.
   instead of replacing them — call `Stop` first, then `Start`/`StartCategories`
   succeeds again with the new categories. `StartCategories` with every flag
   `false`/`null` also returns `false` with a message; `Start` takes
-  `EventCategory` directly, so there's no invalid-category-name case to test
+  `WinEventCategory` directly, so there's no invalid-category-name case to test
   there)
 - `WaitForWindowCreated` (launch notepad → `true` with an event whose
   `ProcessName` is "notepad" and `Hwnd` is non-zero within the timeout; no
@@ -391,7 +391,7 @@ events.
   `Subscribe` returns `false` with a non-null `message`, unknown JSON keys
   are ignored; duplicate id → `false` with a non-null `message`;
   `SubscribeCategories` with every flag `false`/`null` → `false` with a
-  message; `Subscribe`/`SubscribeCategories` take `EventCategory` directly,
+  message; `Subscribe`/`SubscribeCategories` take `WinEventCategory` directly,
   so there's no invalid-category-name case to test there)
 - `SetDebounce` (rapidly show/hide a window 10× → SHOW count after debounce ≤ 3;
   `SetDebounce("WindowShown", 0)` disables coalescing)

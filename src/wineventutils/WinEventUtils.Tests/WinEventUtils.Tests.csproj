@@ -8,8 +8,8 @@
     <IsPackable>false</IsPackable>
     <!-- Lets `dotnet build` (not `dotnet test`) work on non-Windows CI machines. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <AssemblyName>EventUtils.Tests</AssemblyName>
-    <RootNamespace>EventAutomation.Tests</RootNamespace>
+    <AssemblyName>WinEventUtils.Tests</AssemblyName>
+    <RootNamespace>WinEventAutomation.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\EventUtils.csproj" />
+    <ProjectReference Include="..\WinEventUtils.csproj" />
   </ItemGroup>
 
 </Project>

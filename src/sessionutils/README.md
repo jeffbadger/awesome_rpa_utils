@@ -15,7 +15,7 @@ failures return `False` with a descriptive message instead of throwing.
 See the [Documentation](Documentation/README.md) folder for real-world usage
 examples of every method.
 
-**Not to be confused with `EventUtils`/`EventLogUtils`** - this component is
+**Not to be confused with `WinEventUtils`/`EventLogUtils`** - this component is
 exclusively about Windows Terminal Services session state
 (`WTSQuerySessionInformation`/`WTSEnumerateSessions`) and desktop/session
 Win32 APIs, not window messages or the Event Log.

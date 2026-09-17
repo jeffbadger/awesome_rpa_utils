@@ -22,7 +22,7 @@ namespace EventLogAutomation
     /// of throwing. Timeouts are likewise <c>false</c> returns.
     /// </para>
     /// <para>
-    /// Distinct from <c>EventUtils</c> (window messages/WinEvent hooks/input events) -
+    /// Distinct from <c>WinEventUtils</c> (window messages/WinEvent hooks/input events) -
     /// this component is exclusively about the Windows Event Log subsystem
     /// (<see cref="System.Diagnostics.EventLog"/>/<see cref="EventLogReader"/>).
     /// </para>

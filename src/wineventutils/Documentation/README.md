@@ -1,4 +1,4 @@
-# EventUtils worked examples
+# WinEventUtils worked examples
 
 - [Lifecycle](Lifecycle.md) — initialize, start/stop, dispose
 - [Filters](Filters.md) — fluent, scalar, and raw-JSON filter construction

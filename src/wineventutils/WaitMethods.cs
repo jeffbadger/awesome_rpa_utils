@@ -2,27 +2,27 @@ using System;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
     /// The Wait model: synchronous <c>WaitForX</c> calls that block until a
     /// matching event or timeout. These are thin sugar over the same engine as
     /// the Subscribe model — each call registers a matcher, not a new mechanism.
-    /// Call <see cref="EventUtils.Start(EventCategory, out string)"/> or
-    /// <see cref="EventUtils.StartCategories"/> first; if the engine is not
+    /// Call <see cref="WinEventUtils.Start(WinEventCategory, out string)"/> or
+    /// <see cref="WinEventUtils.StartCategories"/> first; if the engine is not
     /// running a wait returns False immediately with a message. A wait always
     /// resolves to exactly one event — the first match — so every method here
-    /// returns a single <see cref="EventData"/>, not JSON or an array.
+    /// returns a single <see cref="WinEventData"/>, not JSON or an array.
     /// Every method returns <c>bool</c> and never throws: any failure —
     /// including a timeout — returns False with a message via
     /// <c>out string message</c> explaining what happened.
     /// </summary>
-    public partial class EventUtils
+    public partial class WinEventUtils
     {
         /// <summary>
         /// Waits for a window-created event matching the filter.
         /// </summary>
-        public bool WaitForWindowCreated(string filterJson, int timeoutMs, out EventData eventData, out string message)
+        public bool WaitForWindowCreated(string filterJson, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -42,7 +42,7 @@ namespace EventAutomation
         /// <summary>
         /// Waits for a window-destroyed event matching the filter.
         /// </summary>
-        public bool WaitForWindowDestroyed(string filterJson, int timeoutMs, out EventData eventData, out string message)
+        public bool WaitForWindowDestroyed(string filterJson, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -62,7 +62,7 @@ namespace EventAutomation
         /// <summary>
         /// Waits for a window-shown event matching the filter.
         /// </summary>
-        public bool WaitForWindowShown(string filterJson, int timeoutMs, out EventData eventData, out string message)
+        public bool WaitForWindowShown(string filterJson, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -82,7 +82,7 @@ namespace EventAutomation
         /// <summary>
         /// Waits for a foreground-change event matching the filter.
         /// </summary>
-        public bool WaitForForegroundChanged(string filterJson, int timeoutMs, out EventData eventData, out string message)
+        public bool WaitForForegroundChanged(string filterJson, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -105,7 +105,7 @@ namespace EventAutomation
         /// A regex that does not compile returns False with a message before any
         /// waiting begins.
         /// </summary>
-        public bool WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out EventData eventData, out string message)
+        public bool WaitForTitleChanged(string filterJson, string titleRegex, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -132,7 +132,7 @@ namespace EventAutomation
         /// Waits for a dialog event (SYSTEM_DIALOGSTART/END or a "#32770" window
         /// being created/shown) matching the filter.
         /// </summary>
-        public bool WaitForDialogAppeared(string filterJson, int timeoutMs, out EventData eventData, out string message)
+        public bool WaitForDialogAppeared(string filterJson, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -157,7 +157,7 @@ namespace EventAutomation
         /// A regex that does not compile returns False with a message before any
         /// waiting begins.
         /// </summary>
-        public bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out EventData eventData, out string message)
+        public bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -183,7 +183,7 @@ namespace EventAutomation
         /// <summary>
         /// Waits for a menu-opened or menu-popup-opened event matching the filter.
         /// </summary>
-        public bool WaitForMenuOpened(string filterJson, int timeoutMs, out EventData eventData, out string message)
+        public bool WaitForMenuOpened(string filterJson, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -239,18 +239,18 @@ namespace EventAutomation
         /// other failure — False plus a message explaining it — rather than a
         /// separate output parameter.
         /// </summary>
-        private bool WaitFor(string filterJson, int timeoutMs, string eventName, out EventData eventData, out string message, Func<EventData, bool> predicate)
+        private bool WaitFor(string filterJson, int timeoutMs, string eventName, out WinEventData eventData, out string message, Func<WinEventData, bool> predicate)
         {
             eventData = null;
             message = null;
             try
             {
-                if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+                if (!WinEventFilter.TryFromJson(filterJson, out var filter, out string filterError))
                 {
                     message = filterError;
                     return false;
                 }
-                filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
+                filter = filter ?? WinEventFilter.Create(); // null/empty filter = match-all
                 if (_engine == null || _activeCategories.Count == 0)
                 {
                     message = "Engine not started; call Initialize() and Start() first.";

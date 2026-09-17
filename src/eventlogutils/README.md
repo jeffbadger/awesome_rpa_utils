@@ -13,7 +13,7 @@ with a descriptive message instead of throwing.
 See the [Documentation](Documentation/README.md) folder for real-world usage
 examples of every method.
 
-**Not to be confused with `EventUtils`** (`EventAutomation`) - that component
+**Not to be confused with `WinEventUtils`** (`WinEventAutomation`) - that component
 watches window messages/WinEvent hooks/global input events. This component
 is exclusively about the Windows Event Log subsystem
 (`System.Diagnostics.EventLog`/`EventLogReader`).
