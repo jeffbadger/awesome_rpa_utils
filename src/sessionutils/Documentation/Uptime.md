@@ -23,7 +23,8 @@ if (session.GetSystemUptime(out long milliseconds, out string message))
 ```
 
 These read two unrelated clocks - do not use one to infer the other. A
-session's logon time and the machine's boot time have no fixed relationship:
-a session reconnected over RDP can easily outlive several reboots of a
-machine that stays running, or be far younger than a machine that has been up
-for weeks.
+machine reboot ends every session on it, so a session can never outlive one -
+but its client can disconnect and reconnect over RDP any number of times
+without resetting its logon time, while a freshly logged-on session on a
+machine that has been running for weeks will report a much smaller uptime
+than the machine's own.

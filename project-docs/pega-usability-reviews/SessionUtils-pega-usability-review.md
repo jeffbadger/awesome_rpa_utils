@@ -87,9 +87,23 @@ Services assembly just to select or read a session's state or kind.
   struct's documented, stable *tail* - `LogonTime` then `CurrentTime`,
   two consecutive 8-byte values at fixed, computable offsets from the end
   of whatever buffer size the API actually returns - which sidesteps
-  needing to know the uncertain earlier layout at all. Verified directly
-  against this platform: the tail-read `CurrentTime` matches
-  `DateTime.UtcNow` to within milliseconds.
+  needing to know the uncertain earlier layout at all.
+- **The exact tail order (`ConnectTime`, `DisconnectTime`, `LastInputTime`,
+  `LogonTime`, `CurrentTime`) is itself easy to get wrong** - a PR review
+  bot flagged this exact code with a *different*, incorrect ordering
+  (`LogonTime` first rather than fourth), which would have made
+  `GetCurrentSessionUptime` silently read `LastInputTime` instead. Rather
+  than trust either claim, this was settled two ways against the real
+  platform: the tail-read `CurrentTime` matches `DateTime.UtcNow` to
+  within milliseconds, and the value one field before it is the *only*
+  non-zero candidate consistent with `ConnectTime` - which cannot
+  legitimately be zero for a session this query can even reach, since
+  reaching it requires an already-connected session (confirmed `Active`
+  via `GetCurrentSessionConnectState` on the same test run). A third
+  candidate ordering was ruled out by injecting a synthetic keystroke via
+  `SendInput` and confirming no tail field changed in response, consistent
+  with `LastInputTime` sitting at the zero-valued field it was expected
+  at, not the field this method actually reads.
 
 ## Recommended changes
 

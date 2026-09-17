@@ -168,10 +168,12 @@ The JSON shape produced by `EnumerateSessionsJson`: `SessionId`,
   clocks - do not conflate them.** The first is how long the calling
   process's *session* has been logged on (the session's logon time); the
   second is how long the *machine* has been running since it last booted
-  (`GetTickCount64`). A session reconnected over RDP can easily outlive
-  several reboots of a machine that stays running, or be far younger than a
-  machine that has been up for weeks - neither value can be derived from the
-  other.
+  (`GetTickCount64`). A machine reboot ends every session on it, so a
+  session can never outlive one - but its client can disconnect and
+  reconnect over RDP any number of times without resetting its logon time,
+  while a freshly logged-on session on a machine that has been running for
+  weeks will report a much smaller uptime than the machine's own - neither
+  value can be derived from the other.
 - **Elevation requirements.** `DisconnectSession` on a session other than
   your own typically requires administrator rights (or `SeTcbPrivilege`);
   disconnecting your own session does not. `LockWorkstation` only works from

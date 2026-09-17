@@ -595,9 +595,11 @@ namespace SessionAutomation
         /// <see cref="DateTime.UtcNow"/> read, avoiding any clock-read skew between the two).
         /// This is a different, unrelated clock from <see cref="GetSystemUptime"/>:
         /// a session's logon time has no fixed relationship to when the machine itself last
-        /// booted. A session reconnected over RDP can easily outlive several reboots of a
-        /// machine that stays running, or be far younger than a machine that has been up for
-        /// weeks.
+        /// booted. A machine reboot ends every session on it, so a session can never outlive
+        /// one - but its client can disconnect and reconnect over RDP any number of times
+        /// without resetting its logon time, while a freshly logged-on session on a machine
+        /// that has been running for weeks will report a much smaller uptime than the
+        /// machine's own.
         /// </remarks>
         [Category("Session - Uptime")]
         [Description("Gets how long the calling process's own session has been logged on, in milliseconds. Never throws.")]
@@ -1127,9 +1129,24 @@ namespace SessionAutomation
         /// <c>LARGE_INTEGER</c> values, <c>LogonTime</c> then <c>CurrentTime</c>, so
         /// they sit at fixed, computable offsets from the end of whatever buffer size
         /// the API actually returns - correct regardless of the uncertain layout
-        /// earlier in the struct. Verified directly against this repository's target
-        /// platform: the tail-read <c>CurrentTime</c> matches <see cref="DateTime.UtcNow"/>
-        /// to within milliseconds.
+        /// earlier in the struct.
+        /// </para>
+        /// <para>
+        /// This exact tail order is easy to misremember even for the struct's better-
+        /// documented members - <c>WTSINFOW</c>'s five trailing <c>LARGE_INTEGER</c>
+        /// fields (<c>ConnectTime</c>, <c>DisconnectTime</c>, <c>LastInputTime</c>,
+        /// <c>LogonTime</c>, <c>CurrentTime</c>, in that order) get cited with the wrong
+        /// order across public sources often enough that it isn't safe to take on faith
+        /// either. Confirmed directly against this repository's target platform, two
+        /// ways: the tail-read <c>CurrentTime</c> matches <see cref="DateTime.UtcNow"/>
+        /// to within milliseconds, and the value one field before it (this method's
+        /// <c>logonTimeUtc</c>) is the *only* non-zero candidate consistent with
+        /// <c>ConnectTime</c> - which cannot legitimately be zero for a session this
+        /// query can reach at all, since reaching it requires the session to already be
+        /// connected. The two zero-valued fields ahead of it are consistent with
+        /// <c>DisconnectTime</c> (never disconnected) and <c>LastInputTime</c> (not
+        /// updated by this session's own local input in this environment, confirmed by
+        /// injecting a synthetic keystroke and observing no change).
         /// </para>
         /// </remarks>
         private static bool TryQuerySessionLogonAndCurrentTimeUtc(int sessionId, out DateTime logonTimeUtc, out DateTime currentTimeUtc, out string message)
