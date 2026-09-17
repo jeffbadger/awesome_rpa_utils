@@ -368,6 +368,77 @@ namespace ArchiveAutomation
 
         #endregion
 
+        #region Merge
+
+        /// <summary>
+        /// Builds a new archive containing every entry from both
+        /// <paramref name="firstArchivePath"/> and <paramref name="secondArchivePath"/>;
+        /// neither input is modified. A name collision between the two (or a repeated name
+        /// within either one) is disambiguated with a numeric suffix, the same convention
+        /// <see cref="CreateDiagnosticBundle"/> uses. Built atomically like
+        /// <see cref="CreateArchive"/>. Never throws.
+        /// </summary>
+        /// <param name="firstArchivePath">The first archive, copied in first.</param>
+        /// <param name="secondArchivePath">The second archive, copied in second (its entries lose any name collision with the first).</param>
+        /// <param name="outputArchivePath">The merged archive's final path.</param>
+        /// <param name="overwrite">Whether an existing file at <paramref name="outputArchivePath"/> may be replaced.</param>
+        /// <param name="message"><c>null</c> on success; a failure reason otherwise.</param>
+        [Category("Archive - Merge")]
+        [Description("Builds a new archive from every entry in two existing archives, without modifying either input. Never throws.")]
+        public bool MergeArchives(string firstArchivePath, string secondArchivePath, string outputArchivePath, bool overwrite, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(firstArchivePath))
+                {
+                    message = "A first archive path is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(secondArchivePath))
+                {
+                    message = "A second archive path is required.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(outputArchivePath))
+                {
+                    message = "An output archive path is required.";
+                    return false;
+                }
+                if (!File.Exists(firstArchivePath))
+                {
+                    message = $"Archive '{firstArchivePath}' does not exist.";
+                    return false;
+                }
+                if (!File.Exists(secondArchivePath))
+                {
+                    message = $"Archive '{secondArchivePath}' does not exist.";
+                    return false;
+                }
+                if (!overwrite && File.Exists(outputArchivePath))
+                {
+                    message = $"Archive '{outputArchivePath}' already exists.";
+                    return false;
+                }
+
+                string tempPath = ArchiveCore.MakeTempSiblingPath(outputArchivePath);
+                if (!ArchiveCore.TryMergeArchives(firstArchivePath, secondArchivePath, tempPath, out message))
+                {
+                    TryDeleteBestEffort(tempPath);
+                    return false;
+                }
+
+                return ArchiveCore.TryPublishAtomically(tempPath, outputArchivePath, overwrite, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("MergeArchives", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
         #region Extract
 
         /// <summary>

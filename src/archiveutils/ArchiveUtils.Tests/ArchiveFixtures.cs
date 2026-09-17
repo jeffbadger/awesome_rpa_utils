@@ -37,6 +37,17 @@ namespace ArchiveAutomation.Tests
             return path;
         }
 
+        internal static string CreateSecondMergeFixture(string path)
+        {
+            using (var fs = new FileStream(path, FileMode.Create))
+            using (var archive = new ZipArchive(fs, ZipArchiveMode.Create))
+            {
+                WriteEntry(archive, "readme.txt", "second archive's readme, should be disambiguated");
+                WriteEntry(archive, "extra.txt", "only in the second archive");
+            }
+            return path;
+        }
+
         internal static string CreateEmptyFixture(string path)
         {
             using (var fs = new FileStream(path, FileMode.Create))

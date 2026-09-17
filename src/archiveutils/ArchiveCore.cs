@@ -335,6 +335,66 @@ namespace ArchiveAutomation
         }
 
         /// <summary>
+        /// Builds a new ZIP archive at <paramref name="tempArchivePath"/> containing every
+        /// entry from <paramref name="firstArchivePath"/> followed by every entry from
+        /// <paramref name="secondArchivePath"/>, disambiguating any entry-name collision
+        /// between the two (or within either one) with the same numeric-suffix convention as
+        /// <see cref="TryBuildArchiveFromFiles"/>. Directory entries are copied as bare
+        /// entries (no content stream); file entries are stream-copied byte for byte.
+        /// </summary>
+        internal static bool TryMergeArchives(string firstArchivePath, string secondArchivePath, string tempArchivePath, out string error)
+        {
+            error = null;
+            var usedNames = new HashSet<string>(StringComparer.Ordinal);
+
+            using (var fs = new FileStream(tempArchivePath, FileMode.Create, FileAccess.Write))
+            using (var output = new ZipArchive(fs, ZipArchiveMode.Create))
+            {
+                foreach (string sourcePath in new[] { firstArchivePath, secondArchivePath })
+                {
+                    using ZipArchive source = ZipFile.OpenRead(sourcePath);
+                    foreach (ZipArchiveEntry sourceEntry in source.Entries)
+                    {
+                        string entryName = sourceEntry.FullName;
+                        if (!usedNames.Add(entryName))
+                        {
+                            bool isDirectory = entryName.EndsWith("/", StringComparison.Ordinal);
+                            string baseName = isDirectory ? entryName.TrimEnd('/') : entryName;
+                            string directory = Path.GetDirectoryName(baseName)?.Replace('\\', '/') ?? string.Empty;
+                            string fileName = Path.GetFileName(baseName);
+                            int suffix = 2;
+                            string candidate;
+                            do
+                            {
+                                string candidateFileName = $"{Path.GetFileNameWithoutExtension(fileName)}_{suffix++}{Path.GetExtension(fileName)}";
+                                candidate = (directory.Length > 0 ? directory + "/" : string.Empty) + candidateFileName + (isDirectory ? "/" : string.Empty);
+                            }
+                            while (!usedNames.Add(candidate));
+                            entryName = candidate;
+                        }
+
+                        if (entryName.EndsWith("/", StringComparison.Ordinal))
+                        {
+                            ZipArchiveEntry dirEntry = output.CreateEntry(entryName);
+                            dirEntry.LastWriteTime = sourceEntry.LastWriteTime;
+                            continue;
+                        }
+
+                        ZipArchiveEntry newEntry = output.CreateEntry(entryName, CompressionLevel.Optimal);
+                        newEntry.LastWriteTime = sourceEntry.LastWriteTime;
+                        using (Stream sourceStream = sourceEntry.Open())
+                        using (Stream destinationStream = newEntry.Open())
+                        {
+                            sourceStream.CopyTo(destinationStream);
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Checks a set of entries' declared <c>Length</c>/<c>CompressedLength</c> metadata
         /// against a total-expanded-size limit and a per-entry compression-ratio limit -
         /// both checked against declared central-directory metadata, before any bytes are
