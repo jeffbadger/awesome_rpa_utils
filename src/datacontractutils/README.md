@@ -1,6 +1,6 @@
-# DataBagAutomation
+# DataContractAutomation
 
-A Pega Robot Studio-ready component (`DataBagUtils`) for storing named, typed
+A Pega Robot Studio-ready component (`DataContractUtils`) for storing named, typed
 values without creating a custom class or collection proxy. Initialization
 defines the data contract; after sealing, runtime setters can update existing
 items but cannot accidentally create misspelled names or change types. Like
@@ -8,15 +8,26 @@ every component in this suite, its methods report recoverable failures as
 `False` with a descriptive message instead of throwing.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
-- Namespace: `DataBagAutomation`
-- Assembly: `DataBagAutomation`
+- Namespace: `DataContractAutomation`
+- Assembly: `DataContractAutomation`
 
 See the [Documentation](Documentation/README.md) folder for initialization,
 transaction-processing, bulk-update, and reset examples.
 
+## DataContractUtils vs. ValueStoreUtils
+
+Use `DataContractUtils` when you want a validated contract: a known, fixed
+set of typed fields, sealed after initialization, where a misspelled name or
+wrong-type write fails instead of silently creating or retyping something.
+If your data's shape isn't fixed up front, or values arrive as loosely-typed
+strings needing forgiving conversion, use
+[`ValueStoreUtils`](../valuestoreutils/README.md) instead — see the [root
+README](../../README.md#datacontractutils-vs-valuestoreutils) for the full
+comparison.
+
 ## Types
 
-### `DataBagValueType`
+### `DataContractValueType`
 
 Supported declared types: `String`, `Boolean`, `Int32`, `Int64`, `Decimal`,
 `Double`, `DateTime`, `Json`, and `Null`.
@@ -25,17 +36,17 @@ Supported declared types: `String`, `Boolean`, `Int32`, `Int64`, `Decimal`,
 
 | Enum | Values | Purpose |
 |---|---|---|
-| `DataBagState` | `NotInitialized`, `Initializing`, `Ready`, `Disposed` | Reports the component lifecycle phase. |
-| `DataBagInitializationSource` | `None`, `DesignTimeJson`, `JsonFile` | Selects how `Initialize` preloads definitions. |
-| `DataBagConflictPolicy` | `Fail`, `Replace`, `KeepExisting` | Controls duplicate names during initialization loads. |
-| `DataBagUnknownNamePolicy` | `Fail`, `Ignore` | Controls unknown names during runtime bulk updates. |
+| `DataContractState` | `NotInitialized`, `Initializing`, `Ready`, `Disposed` | Reports the component lifecycle phase. |
+| `DataContractInitializationSource` | `None`, `DesignTimeJson`, `JsonFile` | Selects how `Initialize` preloads definitions. |
+| `DataContractConflictPolicy` | `Fail`, `Replace`, `KeepExisting` | Controls duplicate names during initialization loads. |
+| `DataContractUnknownNamePolicy` | `Fail`, `Ignore` | Controls unknown names during runtime bulk updates. |
 
 ## Constructors
 
 | Constructor | Description |
 |---|---|
-| `DataBagUtils()` | Creates an empty, uninitialized component. |
-| `DataBagUtils(IContainer container)` | Standard designer constructor; attaches the component to a container. |
+| `DataContractUtils()` | Creates an empty, uninitialized component. |
+| `DataContractUtils(IContainer container)` | Standard designer constructor; attaches the component to a container. |
 
 ## Properties
 
@@ -45,7 +56,7 @@ Supported declared types: `String`, `Boolean`, `Int32`, `Int64`, `Decimal`,
 | `CaseSensitiveNames` | `bool` | Selects ordinal or ordinal-ignore-case names before initialization. Default `False`. |
 | `InitialItemsJson` | `string` | Embedded typed definitions used by `Initialize`. |
 | `InitialItemsFilePath` | `string` | Absolute or application-base-relative typed JSON definition file. |
-| `InitializationSource` | `DataBagInitializationSource` | Selects empty, embedded-JSON, or JSON-file initialization. |
+| `InitializationSource` | `DataContractInitializationSource` | Selects empty, embedded-JSON, or JSON-file initialization. |
 | `SealAfterInitialization` | `bool` | Makes `Initialize` enter `Ready` immediately. Default `True`. |
 
 ## Design-time initialization template
@@ -172,11 +183,11 @@ published atomically; `CancelInitialization` discards them.
 |---|---|---|
 | `Initialize` | `bool Initialize(out int loadedCount, out string message)` | Atomically loads the selected design-time source and optionally seals it. |
 | `BeginInitialization` | `bool BeginInitialization(bool clearExisting, out string message)` | Starts a staged schema transaction, either empty or copied from the active bag. |
-| `SetTypedValue` | `bool SetTypedValue(string name, DataBagValueType valueType, string value, out string message)` | Defines or updates one staged item using invariant text. |
-| `LoadTypedJson` | `bool LoadTypedJson(string typedJson, DataBagConflictPolicy conflictPolicy, out int addedCount, out int replacedCount, out int skippedCount, out string message)` | Atomically loads explicit typed definitions into staging. |
-| `LoadJsonObject` | `bool LoadJsonObject(string jsonObject, DataBagConflictPolicy conflictPolicy, out int addedCount, out int replacedCount, out int skippedCount, out string message)` | Infers definitions from a flat JSON object and loads them atomically. |
-| `LoadDataTable` | `bool LoadDataTable(DataTable table, DataBagConflictPolicy conflictPolicy, out int addedCount, out int replacedCount, out int skippedCount, out string message)` | Loads conventional `Name`, `Type`, `Value`, and optional flag columns. |
-| `LoadDataTableMapped` | `bool LoadDataTableMapped(DataTable table, string nameColumn, string typeColumn, string valueColumn, string mustHaveValueColumn, string readOnlyColumn, string writeOnceColumn, string sensitiveColumn, DataBagConflictPolicy conflictPolicy, out int addedCount, out int replacedCount, out int skippedCount, out string message)` | Loads definitions from explicitly mapped columns. |
+| `SetTypedValue` | `bool SetTypedValue(string name, DataContractValueType valueType, string value, out string message)` | Defines or updates one staged item using invariant text. |
+| `LoadTypedJson` | `bool LoadTypedJson(string typedJson, DataContractConflictPolicy conflictPolicy, out int addedCount, out int replacedCount, out int skippedCount, out string message)` | Atomically loads explicit typed definitions into staging. |
+| `LoadJsonObject` | `bool LoadJsonObject(string jsonObject, DataContractConflictPolicy conflictPolicy, out int addedCount, out int replacedCount, out int skippedCount, out string message)` | Infers definitions from a flat JSON object and loads them atomically. |
+| `LoadDataTable` | `bool LoadDataTable(DataTable table, DataContractConflictPolicy conflictPolicy, out int addedCount, out int replacedCount, out int skippedCount, out string message)` | Loads conventional `Name`, `Type`, `Value`, and optional flag columns. |
+| `LoadDataTableMapped` | `bool LoadDataTableMapped(DataTable table, string nameColumn, string typeColumn, string valueColumn, string mustHaveValueColumn, string readOnlyColumn, string writeOnceColumn, string sensitiveColumn, DataContractConflictPolicy conflictPolicy, out int addedCount, out int replacedCount, out int skippedCount, out string message)` | Loads definitions from explicitly mapped columns. |
 | `CompleteInitialization` | `bool CompleteInitialization(out int itemCount, out string message)` | Atomically publishes staging and enters `Ready`. |
 | `CancelInitialization` | `bool CancelInitialization(out int discardedCount, out string message)` | Discards staging and preserves the last active bag. |
 | `PopulateInitialItemsJsonTemplate` | `bool PopulateInitialItemsJsonTemplate(out string message)` | Design-time helper that fills `InitialItemsJson` with an editable one-row, all-fields template and selects `DesignTimeJson`. |
@@ -195,14 +206,14 @@ published atomically; `CancelInitialization` discards them.
 | `SetDateTime` | `bool SetDateTime(string name, DateTime value, out string message)` | Sets an existing `DateTime` item. |
 | `SetJson` | `bool SetJson(string name, string valueJson, out string message)` | Validates and sets an existing `Json` item. |
 | `SetNull` | `bool SetNull(string name, out string message)` | Clears an existing mutable item without changing its declared type. |
-| `SetFromJsonObject` | `bool SetFromJsonObject(string valuesJson, DataBagUnknownNamePolicy unknownNamePolicy, out int updatedCount, out int skippedCount, out string message)` | Atomically maps JSON properties to existing definitions. |
-| `SetFromDataRow` | `bool SetFromDataRow(DataTable table, int rowIndex, DataBagUnknownNamePolicy unknownNamePolicy, out int updatedCount, out int skippedCount, out string message)` | Atomically maps one row's column names to existing definitions. |
+| `SetFromJsonObject` | `bool SetFromJsonObject(string valuesJson, DataContractUnknownNamePolicy unknownNamePolicy, out int updatedCount, out int skippedCount, out string message)` | Atomically maps JSON properties to existing definitions. |
+| `SetFromDataRow` | `bool SetFromDataRow(DataTable table, int rowIndex, DataContractUnknownNamePolicy unknownNamePolicy, out int updatedCount, out int skippedCount, out string message)` | Atomically maps one row's column names to existing definitions. |
 
 ### Get
 
 | Method | Signature | Description |
 |---|---|---|
-| `TryGetValue` | `bool TryGetValue(string name, out bool found, out DataBagValueType valueType, out string value, out string message)` | Gets any value as invariant text with its declared type. |
+| `TryGetValue` | `bool TryGetValue(string name, out bool found, out DataContractValueType valueType, out string value, out string message)` | Gets any value as invariant text with its declared type. |
 | `TryGetString` | `bool TryGetString(string name, out bool found, out string value, out string message)` | Gets a `String` item. |
 | `TryGetBoolean` | `bool TryGetBoolean(string name, out bool found, out bool value, out string message)` | Gets a `Boolean` item. |
 | `TryGetInt32` | `bool TryGetInt32(string name, out bool found, out int value, out string message)` | Gets an `Int32` item. |
@@ -217,7 +228,7 @@ published atomically; `CancelInitialization` discards them.
 | Method | Signature | Description |
 |---|---|---|
 | `Contains` | `bool Contains(string name, out bool exists, out string message)` | Checks whether a name is defined. |
-| `GetState` | `bool GetState(out DataBagState dataBagState, out int itemCount, out string message)` | Returns lifecycle state and active item count. |
+| `GetState` | `bool GetState(out DataContractState dataContractState, out int itemCount, out string message)` | Returns lifecycle state and active item count. |
 | `GetSnapshotJson` | `bool GetSnapshotJson(out string snapshotJson, out string message)` | Returns typed definitions and values; sensitive values are redacted. |
 
 ### Reset

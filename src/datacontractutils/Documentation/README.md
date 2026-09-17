@@ -1,4 +1,4 @@
-# DataBagUtils Documentation
+# DataContractUtils Documentation
 
 - [Initialization](Initialization.md) — preload definitions or build a schema programmatically
 - [Set](Set.md) — strict runtime updates and bulk mapping

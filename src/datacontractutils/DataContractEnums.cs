@@ -1,7 +1,7 @@
-namespace DataBagAutomation
+namespace DataContractAutomation
 {
-    /// <summary>Supported data-bag value types.</summary>
-    public enum DataBagValueType
+    /// <summary>Supported data-contract value types.</summary>
+    public enum DataContractValueType
     {
         /// <summary>A text value.</summary>
         String,
@@ -23,8 +23,8 @@ namespace DataBagAutomation
         Null
     }
 
-    /// <summary>Current lifecycle state of a data bag.</summary>
-    public enum DataBagState
+    /// <summary>Current lifecycle state of a data contract.</summary>
+    public enum DataContractState
     {
         /// <summary>No definitions have been initialized.</summary>
         NotInitialized,
@@ -37,9 +37,9 @@ namespace DataBagAutomation
     }
 
     /// <summary>Selects the design-time initialization source.</summary>
-    public enum DataBagInitializationSource
+    public enum DataContractInitializationSource
     {
-        /// <summary>Initialize an empty bag.</summary>
+        /// <summary>Initialize an empty contract.</summary>
         None,
         /// <summary>Load the InitialItemsJson property.</summary>
         DesignTimeJson,
@@ -48,7 +48,7 @@ namespace DataBagAutomation
     }
 
     /// <summary>Controls how initialization loads handle duplicate names.</summary>
-    public enum DataBagConflictPolicy
+    public enum DataContractConflictPolicy
     {
         /// <summary>Reject the complete load when a name already exists.</summary>
         Fail,
@@ -59,7 +59,7 @@ namespace DataBagAutomation
     }
 
     /// <summary>Controls how runtime bulk updates handle unknown names.</summary>
-    public enum DataBagUnknownNamePolicy
+    public enum DataContractUnknownNamePolicy
     {
         /// <summary>Reject the complete update when an input name is unknown.</summary>
         Fail,

@@ -55,7 +55,7 @@ enum is not rendered as a selectable constant.
 | EventUtils | `EventData` and `EventData[]` outputs require proxies; JSON dump methods provide a partial scalar escape hatch. |
 | LocalQueueUtils | All ports are scalar; JSON and bulk-ingestion methods deliberately eliminate collection-proxy construction. |
 | StackUtils | Instance-local LIFO work with scalar ports, mixed-kind routing, atomic bulk bridges, and explicit empty results. |
-| DataBagUtils | Typed named values with design-time JSON preload, staged initialization, strict scalar access, and optional DataTable bridges. |
+| DataContractUtils | Typed named values with design-time JSON preload, staged initialization, strict scalar access, and optional DataTable bridges. |
 
 ## Review order
 
@@ -70,7 +70,7 @@ enum is not rendered as a selectable constant.
 9. [ServiceUtils](ServiceUtils-pega-usability-review.md)
 10. [EventUtils](EventUtils-pega-usability-review.md)
 11. [StackUtils](StackUtils-pega-usability-review.md)
-12. [DataBagUtils](DataBagUtils-pega-usability-review.md)
+12. [DataContractUtils](DataContractUtils-pega-usability-review.md)
 
 Each utility's detailed findings are in its own file in this folder.
 

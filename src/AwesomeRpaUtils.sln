@@ -105,11 +105,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StackUtils", "stackutils\St
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StackUtils.Tests", "stackutils\StackUtils.Tests\StackUtils.Tests.csproj", "{062D9AE9-344C-47E1-9BDE-587BFE3CBDBF}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "databagutils", "databagutils", "{5D409C57-A06C-435A-C208-DCE13B354E8B}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "datacontractutils", "datacontractutils", "{5D409C57-A06C-435A-C208-DCE13B354E8B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataBagUtils", "databagutils\DataBagUtils.csproj", "{F1712697-74C5-418D-9DCF-CB00EEEBFB95}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataContractUtils", "datacontractutils\DataContractUtils.csproj", "{F1712697-74C5-418D-9DCF-CB00EEEBFB95}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataBagUtils.Tests", "databagutils\DataBagUtils.Tests\DataBagUtils.Tests.csproj", "{217FD671-A6D4-4696-9285-78EC4A640C2B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataContractUtils.Tests", "datacontractutils\DataContractUtils.Tests\DataContractUtils.Tests.csproj", "{217FD671-A6D4-4696-9285-78EC4A640C2B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "jsonutils", "jsonutils", "{A5FF9977-0242-4669-A29C-100506089000}"
 EndProject

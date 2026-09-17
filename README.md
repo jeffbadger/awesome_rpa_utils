@@ -8,7 +8,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 |---|---|---|
 | [archiveutils](src/archiveutils/README.md) | `ArchiveAutomation` | Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection and independent CRC-32 verification built in. |
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
-| [databagutils](src/databagutils/README.md) | `DataBagAutomation` | Defines a typed named-value contract during initialization, then provides strict scalar getters/setters and atomic JSON/DataTable updates at runtime. |
+| [datacontractutils](src/datacontractutils/README.md) | `DataContractAutomation` | Defines a typed named-value contract during initialization, then provides strict scalar getters/setters and atomic JSON/DataTable updates at runtime. |
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 | [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
 | [eventutils](src/eventutils/README.md) | `EventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
@@ -33,6 +33,31 @@ input (cursor/click and keyboard, respectively), ScreenCaptureUtils and
 OcrUtils own pixels-to-information (images and recognized text), and
 WindowUtils and DialogUtils own window management (general windows and
 native dialogs, respectively).
+
+## DataContractUtils vs. ValueStoreUtils
+
+Both hold named values in memory for a running automation and share the same
+never-throws contract, which makes them easy to reach for interchangeably —
+but they make opposite tradeoffs, and picking the wrong one costs you either
+safety or flexibility.
+
+| | `DataContractUtils` | `ValueStoreUtils` |
+|---|---|---|
+| **Model** | Schema-first: define a typed contract, seal it, then populate | Schema-free: any key settable/retypeable at any time |
+| **Use it for** | A phased workflow with a known, fixed set of fields — a "form" the automation fills in and validates before handoff | Passing loosely-typed data between steps — screen-scrape results, business-object fields, config values, work-item data |
+| **Type safety** | A closed declared type per item; a wrong-type write or a misspelled name fails instead of silently creating/retyping something | `object`-typed values with forgiving converters (`GetInt32`, `GetBoolean` accepting `1/0`/`yes`/`no`, etc.) that coerce from whatever's actually stored |
+| **Structure** | Flat — one name, one scalar or JSON-blob value | Supports nested structures via dot-notation path access (`GetPathString("Customer.Address.City")`, `SetPath`) |
+| **Per-field policy** | `mustHaveValue`, `readOnly`, `writeOnce`, `sensitive` (redacted from snapshots) enforced per item | None — no policy layer |
+| **Missing-value handling** | A present item of the wrong type is a real `False`/message failure | A missing key, null value, or failed conversion are all "normal negative" outcomes that fall back to a default, not an operational failure |
+
+**Use `DataContractUtils`** when you want a validated contract: known fields,
+enforced types, and required/read-only/write-once/sensitive rules that catch
+a misspelled name or wrong type at the point of use rather than downstream.
+
+**Use `ValueStoreUtils`** when the shape of the data isn't fixed up front, or
+when values naturally arrive as strings/loosely-typed and you want forgiving
+conversion plus dot-notation access into nested structures, without an
+initialization/seal step in the way.
 
 ## Requirements
 
@@ -176,7 +201,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [archiveutils/README.md](src/archiveutils/README.md) and [archiveutils/Documentation/](src/archiveutils/Documentation/README.md)
 - [localqueueutils/README.md](src/localqueueutils/README.md) and [localqueueutils/Documentation/](src/localqueueutils/Documentation/README.md)
 - [stackutils/README.md](src/stackutils/README.md) and [stackutils/Documentation/](src/stackutils/Documentation/README.md)
-- [databagutils/README.md](src/databagutils/README.md) and [databagutils/Documentation/](src/databagutils/Documentation/README.md)
+- [datacontractutils/README.md](src/datacontractutils/README.md) and [datacontractutils/Documentation/](src/datacontractutils/Documentation/README.md)
 
 ## Developer tools
 
@@ -239,7 +264,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataBagUtils`, and `JsonUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, and `JsonUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -256,7 +281,7 @@ and
 and
 `dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj`,
 and
-`dotnet test src/databagutils/DataBagUtils.Tests/DataBagUtils.Tests.csproj`,
+`dotnet test src/datacontractutils/DataContractUtils.Tests/DataContractUtils.Tests.csproj`,
 and
 `dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
