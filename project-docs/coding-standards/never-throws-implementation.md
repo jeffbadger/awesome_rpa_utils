@@ -21,7 +21,7 @@ Pega boundary through a project-local `NeverThrowsGuard`.
 | UIAutomationUtils | 25 |
 | CommandLineUtils | 4 |
 | ServiceUtils | 11 |
-| EventUtils and WaitMethods | 22 |
+| WinEventUtils and WaitMethods | 22 |
 | **Total** | **156** |
 
 Expression-bodied MouseUtils convenience methods delegate directly to guarded

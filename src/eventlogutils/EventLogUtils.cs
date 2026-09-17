@@ -22,7 +22,7 @@ namespace EventLogAutomation
     /// of throwing. Timeouts are likewise <c>false</c> returns.
     /// </para>
     /// <para>
-    /// Distinct from <c>EventUtils</c> (window messages/WinEvent hooks/input events) -
+    /// Distinct from <c>WinEventUtils</c> (window messages/WinEvent hooks/input events) -
     /// this component is exclusively about the Windows Event Log subsystem
     /// (<see cref="System.Diagnostics.EventLog"/>/<see cref="EventLogReader"/>).
     /// </para>
@@ -357,7 +357,7 @@ namespace EventLogAutomation
 
         /// <summary>
         /// Queries a live log with a raw <see cref="EventLogQuery"/> XPath expression, for
-        /// filters the scalar helpers above can't express (e.g. an <c>EventData</c> payload
+        /// filters the scalar helpers above can't express (e.g. an <c>WinEventData</c> payload
         /// field). Returns matches as a JSON array of entry objects, newest first. Never throws.
         /// </summary>
         [Category("EventLog - Query")]

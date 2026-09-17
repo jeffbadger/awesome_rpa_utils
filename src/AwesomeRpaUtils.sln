@@ -67,11 +67,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DialogUtils.Tests", "dialog
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CommandLineUtils.Tests", "commandlineutils\CommandLineUtils.Tests\CommandLineUtils.Tests.csproj", "{BCA33886-0BA9-4D63-ABB7-2108A97898EF}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "eventutils", "eventutils", "{9E3E4913-7E10-9607-0F97-F12A9A4FD240}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "wineventutils", "wineventutils", "{9E3E4913-7E10-9607-0F97-F12A9A4FD240}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventUtils", "eventutils\EventUtils.csproj", "{29043F2D-ADFA-42C9-B032-407A5E0210D1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WinEventUtils", "wineventutils\WinEventUtils.csproj", "{29043F2D-ADFA-42C9-B032-407A5E0210D1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventUtils.Tests", "eventutils\EventUtils.Tests\EventUtils.Tests.csproj", "{5B6EF467-A0CE-474B-87F0-F07FD2309CD3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WinEventUtils.Tests", "wineventutils\WinEventUtils.Tests\WinEventUtils.Tests.csproj", "{5B6EF467-A0CE-474B-87F0-F07FD2309CD3}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowUtils.Tests", "windowutils\WindowUtils.Tests\WindowUtils.Tests.csproj", "{4D9A7C31-8E52-4B6F-A7D3-1E9C58D2F4B8}"
 EndProject

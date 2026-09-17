@@ -1,4 +1,4 @@
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
     /// A family of WinEvents the engine can watch. A plain (non-flags) enum: the
@@ -6,7 +6,7 @@ namespace EventAutomation
     /// to more than one category (e.g. a "#32770" dialog is both a window-created
     /// event and a dialog event).
     /// </summary>
-    public enum EventCategory
+    public enum WinEventCategory
     {
         /// <summary>Window create/destroy/show/hide (OBJECT_CREATE/DESTROY/SHOW/HIDE).</summary>
         Windows,

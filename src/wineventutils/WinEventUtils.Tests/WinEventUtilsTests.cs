@@ -4,27 +4,27 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
-using EventAutomation;
+using WinEventAutomation;
 using Xunit;
 
-namespace EventAutomation.Tests
+namespace WinEventAutomation.Tests
 {
     /// <summary>
-    /// Tests for EventUtils. Pure-logic tests (filter parsing/matching, category
+    /// Tests for WinEventUtils. Pure-logic tests (filter parsing/matching, category
     /// mapping, debounce, queue overflow, waiter registry) run on any platform.
     /// Real-window integration tests spawn notepad.exe and are gated behind
     /// OperatingSystem.IsWindows() — they self-skip elsewhere.
     /// </summary>
-    public class EventUtilsTests
+    public class WinEventUtilsTests
     {
         // ------------------------------------------------------------------
-        // EventFilter: JSON parsing
+        // WinEventFilter: JSON parsing
         // ------------------------------------------------------------------
 
         [Fact]
         public void FromJson_parses_known_keys()
         {
-            var f = EventFilter.FromJson("{\"process\":\"notepad\",\"class\":\"#32770\",\"titleContains\":\"Save\"}");
+            var f = WinEventFilter.FromJson("{\"process\":\"notepad\",\"class\":\"#32770\",\"titleContains\":\"Save\"}");
             Assert.NotNull(f);
             Assert.True(f.Matches(Ev("notepad.exe", "#32770", "Save As"), 0));
             Assert.False(f.Matches(Ev("calc.exe", "#32770", "Save As"), 0));
@@ -34,7 +34,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void FromJson_ignores_unknown_keys()
         {
-            var f = EventFilter.FromJson("{\"bogusKey\":1,\"process\":\"calc\",\"another\":true}");
+            var f = WinEventFilter.FromJson("{\"bogusKey\":1,\"process\":\"calc\",\"another\":true}");
             Assert.NotNull(f);
             Assert.True(f.Matches(Ev("calc.exe", null, null), 0));
             Assert.False(f.Matches(Ev("notepad.exe", null, null), 0));
@@ -43,17 +43,17 @@ namespace EventAutomation.Tests
         [Fact]
         public void FromJson_bad_json_returns_null()
         {
-            Assert.Null(EventFilter.FromJson("{not json"));
-            Assert.Null(EventFilter.FromJson("{\"process\":"));
-            Assert.Null(EventFilter.FromJson("[]"));
-            Assert.Null(EventFilter.FromJson(null));
-            Assert.Null(EventFilter.FromJson(""));
+            Assert.Null(WinEventFilter.FromJson("{not json"));
+            Assert.Null(WinEventFilter.FromJson("{\"process\":"));
+            Assert.Null(WinEventFilter.FromJson("[]"));
+            Assert.Null(WinEventFilter.FromJson(null));
+            Assert.Null(WinEventFilter.FromJson(""));
         }
 
         [Fact]
         public void FromJson_parses_processes_array_and_regex()
         {
-            var f = EventFilter.FromJson("{\"processes\":[\"notepad\",\"calc\"],\"titleMatches\":\"Report\\\\s*\\\\d{4}\"}");
+            var f = WinEventFilter.FromJson("{\"processes\":[\"notepad\",\"calc\"],\"titleMatches\":\"Report\\\\s*\\\\d{4}\"}");
             Assert.NotNull(f);
             Assert.True(f.Matches(Ev("notepad.exe", null, "Report 2024"), 0));
             Assert.True(f.Matches(Ev("calc.exe", null, "Report2024"), 0));
@@ -62,13 +62,13 @@ namespace EventAutomation.Tests
         }
 
         // ------------------------------------------------------------------
-        // EventFilter: fluent builder + matching
+        // WinEventFilter: fluent builder + matching
         // ------------------------------------------------------------------
 
         [Fact]
         public void Fluent_filter_matches_process_case_insensitive_with_exe_suffix()
         {
-            var f = EventFilter.Create().Process("notepad");
+            var f = WinEventFilter.Create().Process("notepad");
             Assert.True(f.Matches(Ev("notepad.exe", null, null), 0));
             Assert.True(f.Matches(Ev("NOTEPAD.EXE", null, null), 0));
             Assert.False(f.Matches(Ev("calc.exe", null, null), 0));
@@ -77,7 +77,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void Fluent_filter_matches_title_contains_and_regex()
         {
-            var f = EventFilter.Create().TitleContains("Save").TitleMatches(@"\d{4}");
+            var f = WinEventFilter.Create().TitleContains("Save").TitleMatches(@"\d{4}");
             Assert.True(f.Matches(Ev("notepad.exe", null, "Save Report 2024"), 0));
             Assert.False(f.Matches(Ev("notepad.exe", null, "Save Report"), 0));
         }
@@ -85,7 +85,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void Fluent_filter_any_of_processes()
         {
-            var f = EventFilter.Create().AnyOfProcesses("notepad", "calc");
+            var f = WinEventFilter.Create().AnyOfProcesses("notepad", "calc");
             Assert.True(f.Matches(Ev("notepad.exe", null, null), 0));
             Assert.True(f.Matches(Ev("calc.exe", null, null), 0));
             Assert.False(f.Matches(Ev("mspaint.exe", null, null), 0));
@@ -94,7 +94,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void Fluent_filter_exclude_self()
         {
-            var f = EventFilter.Create().ExcludeSelf(true);
+            var f = WinEventFilter.Create().ExcludeSelf(true);
             Assert.False(f.Matches(Ev("testhost.exe", null, null, processId: 42), 42));
             Assert.True(f.Matches(Ev("notepad.exe", null, null, processId: 7), 42));
         }
@@ -102,50 +102,50 @@ namespace EventAutomation.Tests
         [Fact]
         public void Empty_filter_matches_everything()
         {
-            var f = EventFilter.Create();
+            var f = WinEventFilter.Create();
             Assert.True(f.Matches(Ev("anything.exe", "SomeClass", "Some Title"), 0));
         }
 
         // ------------------------------------------------------------------
-        // EventCategoryMap
+        // WinEventCategoryMap
         // ------------------------------------------------------------------
 
         [Fact]
         public void CategoryMap_event_names_are_stable()
         {
-            Assert.Equal("WindowCreated", EventCategoryMap.EventName(0x8000));
-            Assert.Equal("WindowDestroyed", EventCategoryMap.EventName(0x8001));
-            Assert.Equal("WindowShown", EventCategoryMap.EventName(0x8002));
-            Assert.Equal("WindowHidden", EventCategoryMap.EventName(0x8003));
-            Assert.Equal("ForegroundChanged", EventCategoryMap.EventName(0x0003));
-            Assert.Equal("DialogAppeared", EventCategoryMap.EventName(0x0010));
-            Assert.Equal("TitleChanged", EventCategoryMap.EventName(0x800C));
-            Assert.Equal("StateChanged", EventCategoryMap.EventName(0x800A));
-            Assert.Equal("MenuOpened", EventCategoryMap.EventName(0x0004));
-            Assert.Equal("SessionSwitched", EventCategoryMap.EventName(0x0012));
+            Assert.Equal("WindowCreated", WinEventCategoryMap.WinEventName(0x8000));
+            Assert.Equal("WindowDestroyed", WinEventCategoryMap.WinEventName(0x8001));
+            Assert.Equal("WindowShown", WinEventCategoryMap.WinEventName(0x8002));
+            Assert.Equal("WindowHidden", WinEventCategoryMap.WinEventName(0x8003));
+            Assert.Equal("ForegroundChanged", WinEventCategoryMap.WinEventName(0x0003));
+            Assert.Equal("DialogAppeared", WinEventCategoryMap.WinEventName(0x0010));
+            Assert.Equal("TitleChanged", WinEventCategoryMap.WinEventName(0x800C));
+            Assert.Equal("StateChanged", WinEventCategoryMap.WinEventName(0x800A));
+            Assert.Equal("MenuOpened", WinEventCategoryMap.WinEventName(0x0004));
+            Assert.Equal("SessionSwitched", WinEventCategoryMap.WinEventName(0x0012));
         }
 
         [Fact]
         public void CategoryMap_maps_events_to_categories()
         {
-            Assert.Contains(EventCategory.Windows, EventCategoryMap.CategoriesForEvent(0x8000, null));
-            Assert.Contains(EventCategory.Windows, EventCategoryMap.CategoriesForEvent(0x8003, null));
-            Assert.Contains(EventCategory.Foreground, EventCategoryMap.CategoriesForEvent(0x0003, null));
-            Assert.Contains(EventCategory.Titles, EventCategoryMap.CategoriesForEvent(0x800C, null));
-            Assert.Contains(EventCategory.States, EventCategoryMap.CategoriesForEvent(0x800A, null));
-            Assert.Contains(EventCategory.Menus, EventCategoryMap.CategoriesForEvent(0x0006, null));
-            Assert.Contains(EventCategory.WindowOps, EventCategoryMap.CategoriesForEvent(0x000A, null));
-            Assert.Contains(EventCategory.Session, EventCategoryMap.CategoriesForEvent(0x0012, null));
+            Assert.Contains(WinEventCategory.Windows, WinEventCategoryMap.CategoriesForEvent(0x8000, null));
+            Assert.Contains(WinEventCategory.Windows, WinEventCategoryMap.CategoriesForEvent(0x8003, null));
+            Assert.Contains(WinEventCategory.Foreground, WinEventCategoryMap.CategoriesForEvent(0x0003, null));
+            Assert.Contains(WinEventCategory.Titles, WinEventCategoryMap.CategoriesForEvent(0x800C, null));
+            Assert.Contains(WinEventCategory.States, WinEventCategoryMap.CategoriesForEvent(0x800A, null));
+            Assert.Contains(WinEventCategory.Menus, WinEventCategoryMap.CategoriesForEvent(0x0006, null));
+            Assert.Contains(WinEventCategory.WindowOps, WinEventCategoryMap.CategoriesForEvent(0x000A, null));
+            Assert.Contains(WinEventCategory.Session, WinEventCategoryMap.CategoriesForEvent(0x0012, null));
         }
 
         [Fact]
         public void CategoryMap_dialog_heuristic_adds_dialogs_for_32770()
         {
-            var cats = EventCategoryMap.CategoriesForEvent(0x8000, "#32770");
-            Assert.Contains(EventCategory.Windows, cats);
-            Assert.Contains(EventCategory.Dialogs, cats);
+            var cats = WinEventCategoryMap.CategoriesForEvent(0x8000, "#32770");
+            Assert.Contains(WinEventCategory.Windows, cats);
+            Assert.Contains(WinEventCategory.Dialogs, cats);
             // A non-dialog class does not get the Dialogs category.
-            Assert.DoesNotContain(EventCategory.Dialogs, EventCategoryMap.CategoriesForEvent(0x8000, "Notepad"));
+            Assert.DoesNotContain(WinEventCategory.Dialogs, WinEventCategoryMap.CategoriesForEvent(0x8000, "Notepad"));
         }
 
         // ------------------------------------------------------------------
@@ -205,10 +205,10 @@ namespace EventAutomation.Tests
         public void Queue_overflow_drop_oldest_keeps_newest_five()
         {
             var mgr = new SubscriptionManager();
-            Assert.True(mgr.TryAdd("s1", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
+            Assert.True(mgr.TryAdd("s1", new HashSet<WinEventCategory> { WinEventCategory.Windows }, WinEventFilter.Create(), out _));
             mgr.SetQueueLimits(5, "DropOldest");
             for (int i = 0; i < 50; i++)
-                mgr.Deliver(Ev("notepad.exe", null, "t" + i, processId: 1), new List<EventCategory> { EventCategory.Windows }, 0);
+                mgr.Deliver(Ev("notepad.exe", null, "t" + i, processId: 1), new List<WinEventCategory> { WinEventCategory.Windows }, 0);
 
             Assert.True(mgr.HasEvents("s1", out int count, out _));
             Assert.Equal(5, count);
@@ -221,10 +221,10 @@ namespace EventAutomation.Tests
         public void Queue_overflow_drop_newest_keeps_oldest()
         {
             var mgr = new SubscriptionManager();
-            Assert.True(mgr.TryAdd("s1", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
+            Assert.True(mgr.TryAdd("s1", new HashSet<WinEventCategory> { WinEventCategory.Windows }, WinEventFilter.Create(), out _));
             mgr.SetQueueLimits(3, "DropNewest");
             for (int i = 0; i < 10; i++)
-                mgr.Deliver(Ev("notepad.exe", null, "t" + i, processId: 1), new List<EventCategory> { EventCategory.Windows }, 0);
+                mgr.Deliver(Ev("notepad.exe", null, "t" + i, processId: 1), new List<WinEventCategory> { WinEventCategory.Windows }, 0);
 
             Assert.True(mgr.HasEvents("s1", out int count, out _));
             Assert.Equal(3, count);
@@ -237,10 +237,10 @@ namespace EventAutomation.Tests
         public void Queue_overflow_block_never_exceeds_limit()
         {
             var mgr = new SubscriptionManager();
-            Assert.True(mgr.TryAdd("s1", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
+            Assert.True(mgr.TryAdd("s1", new HashSet<WinEventCategory> { WinEventCategory.Windows }, WinEventFilter.Create(), out _));
             mgr.SetQueueLimits(2, "Block");
             for (int i = 0; i < 10; i++)
-                mgr.Deliver(Ev("notepad.exe", null, "t" + i, processId: 1), new List<EventCategory> { EventCategory.Windows }, 0);
+                mgr.Deliver(Ev("notepad.exe", null, "t" + i, processId: 1), new List<WinEventCategory> { WinEventCategory.Windows }, 0);
 
             Assert.True(mgr.HasEvents("s1", out int count, out _));
             Assert.Equal(2, count);
@@ -250,11 +250,11 @@ namespace EventAutomation.Tests
         public void Subscription_delivery_respects_filter_and_categories()
         {
             var mgr = new SubscriptionManager();
-            var filter = EventFilter.FromJson("{\"process\":\"notepad\"}");
-            Assert.True(mgr.TryAdd("s1", new HashSet<EventCategory> { EventCategory.Windows }, filter, out _));
-            mgr.Deliver(Ev("notepad.exe", null, "a", processId: 1), new List<EventCategory> { EventCategory.Windows }, 0);
-            mgr.Deliver(Ev("calc.exe", null, "b", processId: 2), new List<EventCategory> { EventCategory.Windows }, 0);
-            mgr.Deliver(Ev("notepad.exe", null, "c", processId: 1), new List<EventCategory> { EventCategory.Titles }, 0);
+            var filter = WinEventFilter.FromJson("{\"process\":\"notepad\"}");
+            Assert.True(mgr.TryAdd("s1", new HashSet<WinEventCategory> { WinEventCategory.Windows }, filter, out _));
+            mgr.Deliver(Ev("notepad.exe", null, "a", processId: 1), new List<WinEventCategory> { WinEventCategory.Windows }, 0);
+            mgr.Deliver(Ev("calc.exe", null, "b", processId: 2), new List<WinEventCategory> { WinEventCategory.Windows }, 0);
+            mgr.Deliver(Ev("notepad.exe", null, "c", processId: 1), new List<WinEventCategory> { WinEventCategory.Titles }, 0);
 
             Assert.True(mgr.HasEvents("s1", out int count, out _));
             Assert.Equal(1, count); // only the notepad Windows event
@@ -324,20 +324,20 @@ namespace EventAutomation.Tests
         [Fact]
         public void Subscribe_bad_json_returns_false_with_message_never_throws()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                Assert.False(utils.Subscribe(EventCategory.Windows, "{not json", "s1", out string m1));
+                Assert.False(utils.Subscribe(WinEventCategory.Windows, "{not json", "s1", out string m1));
                 Assert.NotNull(m1);
-                Assert.False(utils.Subscribe(EventCategory.Windows, "{\"process\":", "s2", out _));
-                Assert.False(utils.Subscribe(EventCategory.Windows, "[]", "s3", out _));
+                Assert.False(utils.Subscribe(WinEventCategory.Windows, "{\"process\":", "s2", out _));
+                Assert.False(utils.Subscribe(WinEventCategory.Windows, "[]", "s3", out _));
                 // Unknown keys are ignored → valid filter → True.
-                Assert.True(utils.Subscribe(EventCategory.Windows, "{\"bogusKey\":1,\"process\":\"notepad\"}", "s4", out _));
+                Assert.True(utils.Subscribe(WinEventCategory.Windows, "{\"bogusKey\":1,\"process\":\"notepad\"}", "s4", out _));
                 // Empty filter = match-all.
-                Assert.True(utils.Subscribe(EventCategory.Windows, null, "s5", out _));
-                Assert.True(utils.Subscribe(EventCategory.Windows, "", "s6", out _));
+                Assert.True(utils.Subscribe(WinEventCategory.Windows, null, "s5", out _));
+                Assert.True(utils.Subscribe(WinEventCategory.Windows, "", "s6", out _));
                 // Duplicate id → False with a message.
-                Assert.False(utils.Subscribe(EventCategory.Windows, null, "s5", out string m2));
+                Assert.False(utils.Subscribe(WinEventCategory.Windows, null, "s5", out string m2));
                 Assert.NotNull(m2);
             }
             finally
@@ -349,10 +349,10 @@ namespace EventAutomation.Tests
         [Fact]
         public void WaitFor_without_start_returns_false_with_message()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                bool ok = utils.WaitForWindowCreated(null, 100, out EventData e, out string message);
+                bool ok = utils.WaitForWindowCreated(null, 100, out WinEventData e, out string message);
                 Assert.False(ok);
                 Assert.Null(e);
                 Assert.NotNull(message);
@@ -367,10 +367,10 @@ namespace EventAutomation.Tests
         [Fact]
         public void GetNextEvent_unknown_subscription_returns_false_with_message()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                bool ok = utils.GetNextEvent("nope", 0, out EventData e, out string message);
+                bool ok = utils.GetNextEvent("nope", 0, out WinEventData e, out string message);
                 Assert.False(ok);
                 Assert.Null(e);
                 Assert.NotNull(message);
@@ -386,14 +386,14 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new EventUtils();
+            using var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
-            Assert.True(utils.Start(EventCategory.Windows, out _));
-            Assert.True(utils.Subscribe(EventCategory.Windows, null, "empty", out _));
+            Assert.True(utils.Start(WinEventCategory.Windows, out _));
+            Assert.True(utils.Subscribe(WinEventCategory.Windows, null, "empty", out _));
 
             // A valid subscription with nothing queued is a normal timeout,
             // not a failure — distinct from the unknown-subscription case above.
-            bool ok = utils.GetNextEvent("empty", 200, out EventData e, out string message);
+            bool ok = utils.GetNextEvent("empty", 200, out WinEventData e, out string message);
 
             Assert.False(ok);
             Assert.Null(e);
@@ -403,7 +403,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void SetQueueLimits_invalid_args_return_false_with_message()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.False(utils.SetQueueLimits(0, "DropOldest", out string m1));
@@ -433,7 +433,7 @@ namespace EventAutomation.Tests
         public void EventData_Hwnd_does_not_truncate_a_64_bit_handle()
         {
             long fullHandle = unchecked((long)0x00007FF6_12345678UL); // realistic 64-bit handle magnitude
-            var e = new EventData { Hwnd = fullHandle };
+            var e = new WinEventData { Hwnd = fullHandle };
             Assert.Equal(fullHandle, e.Hwnd);
 
             using var doc = JsonDocument.Parse(e.ToJson());
@@ -447,7 +447,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void BuildFilterJson_noParameters_returnsMatchAll()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.Equal("{}", utils.BuildFilterJson());
@@ -461,11 +461,11 @@ namespace EventAutomation.Tests
         [Fact]
         public void BuildFilterJson_process_roundtrips_through_TryFromJson_and_matches()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 string json = utils.BuildFilterJson(process: "notepad");
-                Assert.True(EventFilter.TryFromJson(json, out var filter, out string error));
+                Assert.True(WinEventFilter.TryFromJson(json, out var filter, out string error));
                 Assert.Null(error);
                 Assert.True(filter.Matches(Ev("notepad.exe", null, null), 0));
                 Assert.False(filter.Matches(Ev("calc.exe", null, null), 0));
@@ -479,11 +479,11 @@ namespace EventAutomation.Tests
         [Fact]
         public void BuildFilterJson_processesCsv_matches_any_listed_process()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 string json = utils.BuildFilterJson(processesCsv: "notepad, calc");
-                Assert.True(EventFilter.TryFromJson(json, out var filter, out _));
+                Assert.True(WinEventFilter.TryFromJson(json, out var filter, out _));
                 Assert.True(filter.Matches(Ev("notepad.exe", null, null), 0));
                 Assert.True(filter.Matches(Ev("calc.exe", null, null), 0));
                 Assert.False(filter.Matches(Ev("explorer.exe", null, null), 0));
@@ -497,11 +497,11 @@ namespace EventAutomation.Tests
         [Fact]
         public void BuildFilterJson_invalid_titleMatches_is_rejected_by_TryFromJson()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 string json = utils.BuildFilterJson(titleMatches: "[Bad");
-                Assert.False(EventFilter.TryFromJson(json, out var filter, out string error));
+                Assert.False(WinEventFilter.TryFromJson(json, out var filter, out string error));
                 Assert.Null(filter);
                 Assert.NotNull(error);
             }
@@ -512,14 +512,14 @@ namespace EventAutomation.Tests
         }
 
         [Theory]
-        [InlineData(EventFilterField.Process, "process")]
-        [InlineData(EventFilterField.ProcessesCsv, "processes")]
-        [InlineData(EventFilterField.ClassName, "class")]
-        [InlineData(EventFilterField.TitleContains, "titleContains")]
-        [InlineData(EventFilterField.TitleMatches, "titleMatches")]
-        public void BuildFilterJson_enumOverload_setsExpectedJsonKey(EventFilterField field, string expectedKey)
+        [InlineData(WinEventFilterField.Process, "process")]
+        [InlineData(WinEventFilterField.ProcessesCsv, "processes")]
+        [InlineData(WinEventFilterField.ClassName, "class")]
+        [InlineData(WinEventFilterField.TitleContains, "titleContains")]
+        [InlineData(WinEventFilterField.TitleMatches, "titleMatches")]
+        public void BuildFilterJson_enumOverload_setsExpectedJsonKey(WinEventFilterField field, string expectedKey)
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 string json = utils.BuildFilterJson(field, "notepad");
@@ -535,10 +535,10 @@ namespace EventAutomation.Tests
         [Fact]
         public void BuildFilterJson_enumOverload_matchesFullOverload_forSameField()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                string viaEnum = utils.BuildFilterJson(EventFilterField.Process, "notepad");
+                string viaEnum = utils.BuildFilterJson(WinEventFilterField.Process, "notepad");
                 string viaNamed = utils.BuildFilterJson(process: "notepad");
                 Assert.Equal(viaNamed, viaEnum);
             }
@@ -551,11 +551,11 @@ namespace EventAutomation.Tests
         [Fact]
         public void BuildFilterJson_enumOverload_nullOrEmptyValue_returnsMatchAll()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                Assert.Equal("{}", utils.BuildFilterJson(EventFilterField.Process, null));
-                Assert.Equal("{}", utils.BuildFilterJson(EventFilterField.TitleContains, ""));
+                Assert.Equal("{}", utils.BuildFilterJson(WinEventFilterField.Process, null));
+                Assert.Equal("{}", utils.BuildFilterJson(WinEventFilterField.TitleContains, ""));
             }
             finally
             {
@@ -566,10 +566,10 @@ namespace EventAutomation.Tests
         [Fact]
         public void BuildFilterJson_enumOverload_withHasButtonChildren_setsBothKeys()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                string json = utils.BuildFilterJson(EventFilterField.TitleContains, "Save", hasButtonChildren: true);
+                string json = utils.BuildFilterJson(WinEventFilterField.TitleContains, "Save", hasButtonChildren: true);
                 using var doc = JsonDocument.Parse(json);
                 Assert.Equal("Save", doc.RootElement.GetProperty("titleContains").GetString());
                 Assert.True(doc.RootElement.GetProperty("hasButtonChildren").GetBoolean());
@@ -583,10 +583,10 @@ namespace EventAutomation.Tests
         [Fact]
         public void BuildFilterJson_enumOverload_hasButtonChildrenAlone_setsOnlyThatKey()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                string json = utils.BuildFilterJson(EventFilterField.Process, null, hasButtonChildren: true);
+                string json = utils.BuildFilterJson(WinEventFilterField.Process, null, hasButtonChildren: true);
                 using var doc = JsonDocument.Parse(json);
                 Assert.False(doc.RootElement.TryGetProperty("process", out _));
                 Assert.True(doc.RootElement.GetProperty("hasButtonChildren").GetBoolean());
@@ -598,16 +598,16 @@ namespace EventAutomation.Tests
         }
 
         // ------------------------------------------------------------------
-        // EventName / EventOverflowPolicy enum overloads
+        // WinEventName / WinEventOverflowPolicy enum overloads
         // ------------------------------------------------------------------
 
         [Fact]
         public void SetDebounce_enum_overload_behaves_like_string_overload()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                Assert.True(utils.SetDebounce(EventName.WindowShown, 250, out string message));
+                Assert.True(utils.SetDebounce(WinEventName.WindowShown, 250, out string message));
                 Assert.Null(message);
             }
             finally
@@ -619,10 +619,10 @@ namespace EventAutomation.Tests
         [Fact]
         public void SetQueueLimits_enum_overload_behaves_like_string_overload()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                Assert.True(utils.SetQueueLimits(10, EventOverflowPolicy.DropOldest, out string message));
+                Assert.True(utils.SetQueueLimits(10, WinEventOverflowPolicy.DropOldest, out string message));
                 Assert.Null(message);
             }
             finally
@@ -633,13 +633,13 @@ namespace EventAutomation.Tests
 
         // ------------------------------------------------------------------
         // Multi-event JSON companion: GetNextEventsJson (plural; GetNextEvent/
-        // WaitForX are single-event and return EventData directly, no JSON form)
+        // WaitForX are single-event and return WinEventData directly, no JSON form)
         // ------------------------------------------------------------------
 
         [Fact]
         public void GetNextEventsJson_unknown_subscription_returns_false_with_message()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 bool ok = utils.GetNextEventsJson("nope", 10, 0, out string json, out string message);
@@ -660,13 +660,13 @@ namespace EventAutomation.Tests
         [Fact]
         public void Subscribe_malformed_titleMatches_regex_is_rejected()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                Assert.False(utils.Subscribe(EventCategory.Windows, "{\"titleMatches\":\"[Bad\"}", "s1", out string m1));
+                Assert.False(utils.Subscribe(WinEventCategory.Windows, "{\"titleMatches\":\"[Bad\"}", "s1", out string m1));
                 Assert.NotNull(m1);
                 // A valid regex is still accepted.
-                Assert.True(utils.Subscribe(EventCategory.Windows, "{\"titleMatches\":\"\\\\d{4}\"}", "s2", out _));
+                Assert.True(utils.Subscribe(WinEventCategory.Windows, "{\"titleMatches\":\"\\\\d{4}\"}", "s2", out _));
             }
             finally
             {
@@ -677,7 +677,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void SubscribeCategories_no_flags_set_returns_false_with_message()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.False(utils.SubscribeCategories(false, false, false, false, false, false, false, false, null, "s1", out string message));
@@ -692,7 +692,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void SubscribeCategories_allNullFlags_returnsFalseWithMessage_sameAsAllFalse()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.False(utils.SubscribeCategories(null, null, null, null, null, null, null, null, null, "s1", out string message));
@@ -707,7 +707,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void SubscribeCategories_multipleFlags_registersAcrossCategories()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.True(utils.SubscribeCategories(true, null, true, null, null, null, null, null, null, "sub", out string message));
@@ -722,7 +722,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void StartCategories_no_flags_set_returns_false_with_message()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.False(utils.StartCategories(false, false, false, false, false, false, false, false, out string message));
@@ -737,7 +737,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void StartCategories_allNullFlags_returnsFalseWithMessage_sameAsAllFalse()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.False(utils.StartCategories(null, null, null, null, null, null, null, null, out string message));
@@ -754,7 +754,7 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows()) return;
 
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 // windows: null should behave exactly like windows: false - only
@@ -774,7 +774,7 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows()) return;
 
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.True(utils.StartCategories(true, false, false, false, false, false, false, false, out string message));
@@ -790,11 +790,11 @@ namespace EventAutomation.Tests
         [Fact]
         public void WaitForTitleChanged_malformed_regex_returns_false_never_throws()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 // Validation happens before the engine check, so this runs anywhere.
-                bool ok = utils.WaitForTitleChanged(null, "[Bad", 100, out EventData e, out string message);
+                bool ok = utils.WaitForTitleChanged(null, "[Bad", 100, out WinEventData e, out string message);
                 Assert.False(ok);
                 Assert.Null(e);
                 Assert.NotNull(message);
@@ -813,10 +813,10 @@ namespace EventAutomation.Tests
         [Fact]
         public void WaitFor_malformed_filter_json_returns_false_never_throws()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                bool ok = utils.WaitForWindowCreated("{not json", 100, out EventData e, out string message);
+                bool ok = utils.WaitForWindowCreated("{not json", 100, out WinEventData e, out string message);
                 Assert.False(ok);
                 Assert.Null(e);
                 Assert.NotNull(message);
@@ -830,10 +830,10 @@ namespace EventAutomation.Tests
         [Fact]
         public void Fluent_filter_invalid_regex_fails_closed()
         {
-            var f = EventFilter.Create().TitleMatches("[Bad");
+            var f = WinEventFilter.Create().TitleMatches("[Bad");
             Assert.False(f.Matches(Ev("notepad.exe", null, "Anything"), 0));
             // Other fields still narrow: with no regex error the filter matches.
-            var valid = EventFilter.Create().Process("notepad");
+            var valid = WinEventFilter.Create().Process("notepad");
             Assert.True(valid.Matches(Ev("notepad.exe", null, null), 0));
         }
 
@@ -842,10 +842,10 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows()) return;
 
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                Assert.True(utils.Start(EventCategory.Dialogs, out string message));
+                Assert.True(utils.Start(WinEventCategory.Dialogs, out string message));
                 Assert.Null(message);
                 Assert.True(utils.Stop(out _));
             }
@@ -860,14 +860,14 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows()) return;
 
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
-                Assert.True(utils.Start(EventCategory.Windows, out _));
+                Assert.True(utils.Start(WinEventCategory.Windows, out _));
 
                 // A second Start before Stop must fail, not silently replace
                 // the active category set.
-                Assert.False(utils.Start(EventCategory.Dialogs, out string message));
+                Assert.False(utils.Start(WinEventCategory.Dialogs, out string message));
                 Assert.NotNull(message);
 
                 Assert.False(utils.StartCategories(false, false, true, false, false, false, false, false, out string message2));
@@ -875,7 +875,7 @@ namespace EventAutomation.Tests
 
                 // Stop, then Start succeeds again.
                 Assert.True(utils.Stop(out _));
-                Assert.True(utils.Start(EventCategory.Dialogs, out _));
+                Assert.True(utils.Start(WinEventCategory.Dialogs, out _));
             }
             finally
             {
@@ -886,7 +886,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void Stop_before_initialize_returns_false_with_message()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 Assert.False(utils.Stop(out string message));
@@ -895,7 +895,7 @@ namespace EventAutomation.Tests
                 if (OperatingSystem.IsWindows())
                 {
                     Assert.True(utils.Initialize(out _));
-                    Assert.True(utils.Start(EventCategory.Windows, out _));
+                    Assert.True(utils.Start(WinEventCategory.Windows, out _));
                     Assert.True(utils.Stop(out _));
                 }
             }
@@ -919,9 +919,9 @@ namespace EventAutomation.Tests
         public void Delivery_clones_events_per_subscription()
         {
             var mgr = new SubscriptionManager();
-            Assert.True(mgr.TryAdd("a", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
-            Assert.True(mgr.TryAdd("b", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
-            mgr.Deliver(Ev("notepad.exe", null, "orig", processId: 1), new List<EventCategory> { EventCategory.Windows }, 0);
+            Assert.True(mgr.TryAdd("a", new HashSet<WinEventCategory> { WinEventCategory.Windows }, WinEventFilter.Create(), out _));
+            Assert.True(mgr.TryAdd("b", new HashSet<WinEventCategory> { WinEventCategory.Windows }, WinEventFilter.Create(), out _));
+            mgr.Deliver(Ev("notepad.exe", null, "orig", processId: 1), new List<WinEventCategory> { WinEventCategory.Windows }, 0);
 
             var a = mgr.GetNextEvent("a", 0, out _, out _);
             a.Title = "mutated-by-consumer-a";
@@ -933,7 +933,7 @@ namespace EventAutomation.Tests
         public async System.Threading.Tasks.Task Unsubscribe_wakes_blocked_GetNextEvent()
         {
             var mgr = new SubscriptionManager();
-            Assert.True(mgr.TryAdd("s", new HashSet<EventCategory> { EventCategory.Windows }, EventFilter.Create(), out _));
+            Assert.True(mgr.TryAdd("s", new HashSet<WinEventCategory> { WinEventCategory.Windows }, WinEventFilter.Create(), out _));
             var wait = System.Threading.Tasks.Task.Run(() =>
                 mgr.GetNextEvent("s", 10000, out _, out string message));
             Thread.Sleep(100); // let it park inside the wait
@@ -958,7 +958,7 @@ namespace EventAutomation.Tests
         [Fact]
         public void WasWindowCreated_malformed_filter_json_returns_false_never_throws()
         {
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             try
             {
                 bool ok = utils.WasWindowCreated("{not json", 500, out string message);
@@ -976,9 +976,9 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new EventUtils();
+            using var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
-            Assert.True(utils.Start(EventCategory.Windows, out _));
+            Assert.True(utils.Start(WinEventCategory.Windows, out _));
 
             // Nothing matching this process has happened, but the check itself
             // succeeded — a normal negative, not an operational failure.
@@ -997,15 +997,15 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new EventUtils();
+            using var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
-            Assert.True(utils.Start(EventCategory.Windows, out _));
+            Assert.True(utils.Start(WinEventCategory.Windows, out _));
             using var proc = StartNotepad();
             if (proc == null)
                 return; // notepad unavailable on this image
             try
             {
-                bool ok = utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData e, out _);
+                bool ok = utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData e, out _);
                 Assert.True(ok);
                 Assert.NotNull(e);
                 Assert.Equal("notepad", e.ProcessName, ignoreCase: true);
@@ -1022,18 +1022,18 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new EventUtils();
+            using var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
-            Assert.True(utils.Start(EventCategory.Windows, out _));
+            Assert.True(utils.Start(WinEventCategory.Windows, out _));
             using var proc = StartNotepad();
             if (proc == null)
                 return;
             try
             {
-                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _));
+                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _));
                 Assert.NotNull(created);
                 Thread.Sleep(300); // let the window finish coming up
-                bool ok = utils.WaitForWindowDestroyed("{\"process\":\"notepad\"}", 10000, out EventData destroyed, out _);
+                bool ok = utils.WaitForWindowDestroyed("{\"process\":\"notepad\"}", 10000, out WinEventData destroyed, out _);
                 Kill(proc); // close the window → DESTROY event
                 Assert.True(ok);
                 Assert.NotNull(destroyed);
@@ -1051,17 +1051,17 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new EventUtils();
+            using var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
-            Assert.True(utils.Start(EventCategory.Windows, out _));
-            Assert.True(utils.Subscribe(EventCategory.Windows, "{\"process\":\"notepad\"}", "subA", out _));
-            Assert.True(utils.Subscribe(EventCategory.Windows, "{\"process\":\"nonexistentprocessxyz\"}", "subB", out _));
+            Assert.True(utils.Start(WinEventCategory.Windows, out _));
+            Assert.True(utils.Subscribe(WinEventCategory.Windows, "{\"process\":\"notepad\"}", "subA", out _));
+            Assert.True(utils.Subscribe(WinEventCategory.Windows, "{\"process\":\"nonexistentprocessxyz\"}", "subB", out _));
             using var proc = StartNotepad();
             if (proc == null)
                 return;
             try
             {
-                bool ok = utils.GetNextEvent("subA", 10000, out EventData e, out _);
+                bool ok = utils.GetNextEvent("subA", 10000, out WinEventData e, out _);
                 Assert.True(ok);
                 Assert.NotNull(e);
                 Assert.Equal("notepad", e.ProcessName, ignoreCase: true);
@@ -1079,16 +1079,16 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new EventUtils();
+            using var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
-            Assert.True(utils.Start(EventCategory.Windows, out _));
-            Assert.True(utils.Subscribe(EventCategory.Windows, null, "deb", out _));
+            Assert.True(utils.Start(WinEventCategory.Windows, out _));
+            Assert.True(utils.Subscribe(WinEventCategory.Windows, null, "deb", out _));
             using var proc = StartNotepad();
             if (proc == null)
                 return;
             try
             {
-                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _));
+                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _));
                 Assert.NotNull(created);
                 IntPtr hwnd = new IntPtr((long)created.Hwnd);
                 Thread.Sleep(300);
@@ -1098,7 +1098,7 @@ namespace EventAutomation.Tests
                     ShowWindow(hwnd, 5); // SW_SHOW
                 }
                 Thread.Sleep(400); // let the debounce window pass
-                Assert.True(utils.GetNextEvents("deb", 100, 0, out EventData[] events, out _));
+                Assert.True(utils.GetNextEvents("deb", 100, 0, out WinEventData[] events, out _));
                 int showCount = 0;
                 foreach (var e in events)
                     if (e.Category == "WindowShown")
@@ -1116,16 +1116,16 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new EventUtils();
+            using var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
-            Assert.True(utils.Start(EventCategory.Windows, out _));
-            Assert.True(utils.Subscribe(EventCategory.Windows, null, "s", out _));
+            Assert.True(utils.Start(WinEventCategory.Windows, out _));
+            Assert.True(utils.Subscribe(WinEventCategory.Windows, null, "s", out _));
             using var proc = StartNotepad();
             if (proc == null)
                 return;
             try
             {
-                Assert.True(utils.GetNextEvent("s", 10000, out EventData e, out _));
+                Assert.True(utils.GetNextEvent("s", 10000, out WinEventData e, out _));
                 Assert.NotNull(e);
                 Assert.True(utils.Stop(out _));
                 Assert.True(utils.ClearQueue("s", out _));
@@ -1134,7 +1134,7 @@ namespace EventAutomation.Tests
                     return;
                 try
                 {
-                    Assert.False(utils.GetNextEvent("s", 1500, out EventData e2, out _));
+                    Assert.False(utils.GetNextEvent("s", 1500, out WinEventData e2, out _));
                     Assert.Null(e2);
                 }
                 finally
@@ -1153,7 +1153,7 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            var utils = new EventUtils();
+            var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
             utils.Dispose();
             utils.Dispose(); // second dispose is a no-op
@@ -1168,16 +1168,16 @@ namespace EventAutomation.Tests
         {
             if (!OperatingSystem.IsWindows())
                 return;
-            using var utils = new EventUtils();
+            using var utils = new WinEventUtils();
             Assert.True(utils.Initialize(out _));
-            Assert.True(utils.Start(EventCategory.Windows, out _));
-            Assert.True(utils.Subscribe(EventCategory.Windows, null, "stress", out _));
+            Assert.True(utils.Start(WinEventCategory.Windows, out _));
+            Assert.True(utils.Subscribe(WinEventCategory.Windows, null, "stress", out _));
             using var proc = StartNotepad();
             if (proc == null)
                 return;
             try
             {
-                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out EventData created, out _));
+                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _));
                 Assert.NotNull(created);
                 IntPtr hwnd = new IntPtr((long)created.Hwnd);
                 Thread.Sleep(300);
@@ -1187,7 +1187,7 @@ namespace EventAutomation.Tests
                     ShowWindow(hwnd, 5);
                 }
                 // The pump must still be delivering: a fresh event arrives promptly.
-                Assert.True(utils.GetNextEvent("stress", 5000, out EventData e, out _), "pump stalled after stress");
+                Assert.True(utils.GetNextEvent("stress", 5000, out WinEventData e, out _), "pump stalled after stress");
                 Assert.NotNull(e);
                 // Ring buffer stays bounded at 500.
                 Assert.True(utils.DumpRecentEvents(1000, out string dump, out _));
@@ -1204,9 +1204,9 @@ namespace EventAutomation.Tests
         // Helpers
         // ------------------------------------------------------------------
 
-        private static EventData Ev(string processName, string className, string title, uint processId = 0, string category = "WindowCreated")
+        private static WinEventData Ev(string processName, string className, string title, uint processId = 0, string category = "WindowCreated")
         {
-            return new EventData
+            return new WinEventData
             {
                 EventId = Guid.NewGuid().ToString("N"),
                 Category = category,

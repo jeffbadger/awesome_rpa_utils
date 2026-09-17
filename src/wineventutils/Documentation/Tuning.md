@@ -5,10 +5,10 @@ diagnostics:
 
 ```csharp
 events.SetDebounce("WindowShown", 150, out string message);       // dedupe per (hwnd, event name)
-events.SetDebounce(EventName.ValueChanged, 50, out message);      // enum overload, no typos
+events.SetDebounce(WinEventName.ValueChanged, 50, out message);      // enum overload, no typos
 
 events.SetQueueLimits(1000, "DropOldest", out message);
-events.SetQueueLimits(1000, EventOverflowPolicy.DropOldest, out message);
+events.SetQueueLimits(1000, WinEventOverflowPolicy.DropOldest, out message);
 
 events.DumpRecentEvents(50, out string recent, out message);      // last 50 events as JSON, ring buffer max 500
 ```

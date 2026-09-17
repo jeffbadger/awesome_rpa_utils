@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace EventAutomation.Native
+namespace WinEventAutomation.Native
 {
     /// <summary>
     /// All P/Invoke signatures and constants used by the event engine. Kept in

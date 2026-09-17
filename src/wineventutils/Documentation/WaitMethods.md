@@ -4,7 +4,7 @@ Block until a matching event or timeout:
 
 ```csharp
 bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000,
-    out EventData created, out string message);
+    out WinEventData created, out string message);
 if (ok)
     window.ActivateWindow(new IntPtr(created.Hwnd), out _); // ready to pass to WindowUtils directly
 
@@ -13,7 +13,7 @@ bool wasCreated = events.WasWindowCreated("{\"process\":\"notepad\"}", 5000, out
 ```
 
 A wait always resolves to exactly one event — the first match, then it stops
-listening — so every `WaitForX` method returns a single `EventData` object
+listening — so every `WaitForX` method returns a single `WinEventData` object
 directly; there's no separate JSON+handle overload or `...AsEventData`
 sibling to pick between.
 

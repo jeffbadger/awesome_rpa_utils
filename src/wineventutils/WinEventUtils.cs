@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Threading;
 
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
     /// Pega Robot Studio-ready component that watches Windows UI events via
@@ -17,9 +17,9 @@ namespace EventAutomation
     /// <c>out string message</c>.
     /// </summary>
     /// <remarks>
-    /// Call <see cref="Initialize(out string)"/> then <see cref="Start(EventCategory, out string)"/>
+    /// Call <see cref="Initialize(out string)"/> then <see cref="Start(WinEventCategory, out string)"/>
     /// or <see cref="StartCategories"/> before any <c>WaitForX</c> or
-    /// <see cref="Subscribe(EventCategory, string, string, out string)"/>
+    /// <see cref="Subscribe(WinEventCategory, string, string, out string)"/>
     /// call. Wait methods block until a matching event or timeout; a timeout
     /// returns False with a message explaining it, the same as any other
     /// failure.
@@ -27,7 +27,7 @@ namespace EventAutomation
     [Description("Watches Windows UI events (window create/show/destroy, dialogs, " +
                  "titles, states, menus) and delivers them to waiters or subscriptions. " +
                  "Drag this component onto a Pega Robot Studio automation to use its methods.")]
-    public partial class EventUtils : Component
+    public partial class WinEventUtils : Component
     {
         private readonly object _gate = new object();
         private readonly SubscriptionManager _subscriptions = new SubscriptionManager();
@@ -35,13 +35,13 @@ namespace EventAutomation
         private readonly ThrottleDebounce _debounce = new ThrottleDebounce();
         private readonly uint _hostPid = unchecked((uint)Environment.ProcessId);
         private WinEventEngine _engine;
-        private volatile HashSet<EventCategory> _activeCategories = new HashSet<EventCategory>();
+        private volatile HashSet<WinEventCategory> _activeCategories = new HashSet<WinEventCategory>();
         private bool _disposed;
 
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
         /// </summary>
-        public EventUtils()
+        public WinEventUtils()
         {
         }
 
@@ -49,7 +49,7 @@ namespace EventAutomation
         /// Standard designer constructor; attaches the component to a container.
         /// </summary>
         /// <param name="container">The designer container to add this component to. May be null.</param>
-        public EventUtils(IContainer container)
+        public WinEventUtils(IContainer container)
         {
             container?.Add(this);
         }
@@ -60,7 +60,7 @@ namespace EventAutomation
 
         /// <summary>
         /// Starts the background hook thread (idempotent). Call before
-        /// <see cref="Start(EventCategory, out string)"/>/<see cref="StartCategories"/>. Returns True on success;
+        /// <see cref="Start(WinEventCategory, out string)"/>/<see cref="StartCategories"/>. Returns True on success;
         /// <paramref name="message"/> is null on success and a human-readable
         /// reason otherwise. Never throws.
         /// </summary>
@@ -81,7 +81,7 @@ namespace EventAutomation
                     {
                         if (_disposed)
                         {
-                            message = "EventUtils is disposed; create a new instance.";
+                            message = "WinEventUtils is disposed; create a new instance.";
                             return false;
                         }
                         if (_engine != null)
@@ -115,7 +115,7 @@ namespace EventAutomation
         /// success; <paramref name="message"/> is null on success and a
         /// human-readable reason otherwise. Never throws.
         /// </summary>
-        public bool Start(EventCategory category, out string message)
+        public bool Start(WinEventCategory category, out string message)
         {
             message = default;
             try
@@ -123,7 +123,7 @@ namespace EventAutomation
                 message = null;
                 try
                 {
-                    return StartCore(new HashSet<EventCategory> { category }, out message);
+                    return StartCore(new HashSet<WinEventCategory> { category }, out message);
                 }
                 catch (Exception ex)
                 {
@@ -141,7 +141,7 @@ namespace EventAutomation
 
         /// <summary>
         /// Activates the given categories and installs the WinEvent hook, with one
-        /// Boolean checkbox per <see cref="EventCategory"/> instead of a
+        /// Boolean checkbox per <see cref="WinEventCategory"/> instead of a
         /// comma-separated, typo-prone string. Each flag is nullable so an
         /// unwired port is treated the same as an explicit <c>False</c> — only
         /// <c>True</c> activates a category. Call after
@@ -159,15 +159,15 @@ namespace EventAutomation
                 message = null;
                 try
                 {
-                    var cats = new HashSet<EventCategory>();
-                    if (windows == true) cats.Add(EventCategory.Windows);
-                    if (foreground == true) cats.Add(EventCategory.Foreground);
-                    if (dialogs == true) cats.Add(EventCategory.Dialogs);
-                    if (titles == true) cats.Add(EventCategory.Titles);
-                    if (states == true) cats.Add(EventCategory.States);
-                    if (menus == true) cats.Add(EventCategory.Menus);
-                    if (windowOps == true) cats.Add(EventCategory.WindowOps);
-                    if (session == true) cats.Add(EventCategory.Session);
+                    var cats = new HashSet<WinEventCategory>();
+                    if (windows == true) cats.Add(WinEventCategory.Windows);
+                    if (foreground == true) cats.Add(WinEventCategory.Foreground);
+                    if (dialogs == true) cats.Add(WinEventCategory.Dialogs);
+                    if (titles == true) cats.Add(WinEventCategory.Titles);
+                    if (states == true) cats.Add(WinEventCategory.States);
+                    if (menus == true) cats.Add(WinEventCategory.Menus);
+                    if (windowOps == true) cats.Add(WinEventCategory.WindowOps);
+                    if (session == true) cats.Add(WinEventCategory.Session);
                     if (cats.Count == 0)
                     {
                         message = "No categories were selected. Set at least one category parameter to True.";
@@ -190,25 +190,25 @@ namespace EventAutomation
         }
 
         /// <summary>
-        /// Shared installation logic for <see cref="Start(EventCategory, out string)"/> and
+        /// Shared installation logic for <see cref="Start(WinEventCategory, out string)"/> and
         /// <see cref="StartCategories"/>: initializes the engine if needed, activates
         /// the given category set, and installs the hook. Fails if categories are
         /// already active — call <see cref="Stop(out string)"/> first rather than
         /// silently replacing what is being watched.
         /// </summary>
-        private bool StartCore(HashSet<EventCategory> cats, out string message)
+        private bool StartCore(HashSet<WinEventCategory> cats, out string message)
         {
             message = null;
             lock (_gate)
             {
                 if (_disposed)
                 {
-                    message = "EventUtils is disposed; create a new instance.";
+                    message = "WinEventUtils is disposed; create a new instance.";
                     return false;
                 }
                 if (_activeCategories.Count > 0)
                 {
-                    message = "EventUtils is already running; call Stop() before starting again with different categories.";
+                    message = "WinEventUtils is already running; call Stop() before starting again with different categories.";
                     return false;
                 }
                 if (_engine == null && !Initialize(out message))
@@ -238,10 +238,10 @@ namespace EventAutomation
                     {
                         if (_engine == null)
                         {
-                            message = "EventUtils is not initialized; nothing to stop.";
+                            message = "WinEventUtils is not initialized; nothing to stop.";
                             return false;
                         }
-                        _activeCategories = new HashSet<EventCategory>();
+                        _activeCategories = new HashSet<WinEventCategory>();
                         _engine.RequestHook(false);
                         _debounce.Clear();
                         Native.ProcessHelpers.Clear();
@@ -286,7 +286,7 @@ namespace EventAutomation
                 _disposed = true;
                 engine = _engine;
                 _engine = null;
-                _activeCategories = new HashSet<EventCategory>();
+                _activeCategories = new HashSet<WinEventCategory>();
             }
             // Dispose joins the hook thread (up to 2 s) — do it outside _gate so
             // other public methods are not blocked behind teardown.
@@ -297,7 +297,7 @@ namespace EventAutomation
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("EventUtils.Dispose failed: " + ex.Message);
+                Debug.WriteLine("WinEventUtils.Dispose failed: " + ex.Message);
             }
             base.Dispose(disposing);
         }
@@ -314,7 +314,7 @@ namespace EventAutomation
         /// parameters are left out of the resulting JSON entirely. Never throws.
         /// </summary>
         /// <param name="process">Match a single process name (case-insensitive; a trailing ".exe" is ignored).</param>
-        /// <param name="processesCsv">Comma-separated process names to match any of (case-insensitive) - the scalar alternative to <c>EventFilter.AnyOfProcesses(params string[])</c>, which is not Pega-friendly.</param>
+        /// <param name="processesCsv">Comma-separated process names to match any of (case-insensitive) - the scalar alternative to <c>WinEventFilter.AnyOfProcesses(params string[])</c>, which is not Pega-friendly.</param>
         /// <param name="className">Match a window class name (case-insensitive), e.g. "#32770" for a dialog.</param>
         /// <param name="titleContains">Require the window title to contain this text (case-insensitive).</param>
         /// <param name="titleMatches">Require the window title to match this regex.</param>
@@ -361,7 +361,7 @@ namespace EventAutomation
 
         /// <summary>
         /// Same as <see cref="BuildFilterJson(string, string, string, string, string, bool?, bool?)"/>,
-        /// but takes a single designer-selectable <see cref="EventFilterField"/>
+        /// but takes a single designer-selectable <see cref="WinEventFilterField"/>
         /// instead of remembering which of its seven named parameters to fill
         /// in - the common case of matching on exactly one field, optionally
         /// combined with <paramref name="hasButtonChildren"/> (the one Boolean
@@ -374,15 +374,15 @@ namespace EventAutomation
         /// <param name="value">The value to match on <paramref name="field"/>. Null/empty = not filtered on this field.</param>
         /// <param name="hasButtonChildren">Also require a Button child window (dialog heuristic); pass null to not filter on this.</param>
         /// <returns>The filter JSON string. Returns <c>"{}"</c> (match-all) if <paramref name="value"/> is null/empty and <paramref name="hasButtonChildren"/> is null.</returns>
-        public string BuildFilterJson(EventFilterField field, string value, bool? hasButtonChildren = null)
+        public string BuildFilterJson(WinEventFilterField field, string value, bool? hasButtonChildren = null)
         {
             return field switch
             {
-                EventFilterField.Process => BuildFilterJson(process: value, hasButtonChildren: hasButtonChildren),
-                EventFilterField.ProcessesCsv => BuildFilterJson(processesCsv: value, hasButtonChildren: hasButtonChildren),
-                EventFilterField.ClassName => BuildFilterJson(className: value, hasButtonChildren: hasButtonChildren),
-                EventFilterField.TitleContains => BuildFilterJson(titleContains: value, hasButtonChildren: hasButtonChildren),
-                EventFilterField.TitleMatches => BuildFilterJson(titleMatches: value, hasButtonChildren: hasButtonChildren),
+                WinEventFilterField.Process => BuildFilterJson(process: value, hasButtonChildren: hasButtonChildren),
+                WinEventFilterField.ProcessesCsv => BuildFilterJson(processesCsv: value, hasButtonChildren: hasButtonChildren),
+                WinEventFilterField.ClassName => BuildFilterJson(className: value, hasButtonChildren: hasButtonChildren),
+                WinEventFilterField.TitleContains => BuildFilterJson(titleContains: value, hasButtonChildren: hasButtonChildren),
+                WinEventFilterField.TitleMatches => BuildFilterJson(titleMatches: value, hasButtonChildren: hasButtonChildren),
                 _ => "{}"
             };
         }
@@ -401,7 +401,7 @@ namespace EventAutomation
         /// filter JSON, invalid <c>titleMatches</c> regex, duplicate id, empty
         /// id). Never throws.
         /// </summary>
-        public bool Subscribe(EventCategory category, string filterJson, string subscriptionId, out string message)
+        public bool Subscribe(WinEventCategory category, string filterJson, string subscriptionId, out string message)
         {
             message = default;
             try
@@ -409,7 +409,7 @@ namespace EventAutomation
                 message = null;
                 try
                 {
-                    return SubscribeCore(new HashSet<EventCategory> { category }, filterJson, subscriptionId, out message);
+                    return SubscribeCore(new HashSet<WinEventCategory> { category }, filterJson, subscriptionId, out message);
                 }
                 catch (Exception ex)
                 {
@@ -427,7 +427,7 @@ namespace EventAutomation
 
         /// <summary>
         /// Registers a subscription across the given categories, with one
-        /// Boolean checkbox per <see cref="EventCategory"/> instead of a
+        /// Boolean checkbox per <see cref="WinEventCategory"/> instead of a
         /// comma-separated, typo-prone string. Each flag is nullable so an
         /// unwired port is treated the same as an explicit <c>False</c> — only
         /// <c>True</c> includes a category. Events whose fields match
@@ -444,15 +444,15 @@ namespace EventAutomation
                 message = null;
                 try
                 {
-                    var cats = new HashSet<EventCategory>();
-                    if (windows == true) cats.Add(EventCategory.Windows);
-                    if (foreground == true) cats.Add(EventCategory.Foreground);
-                    if (dialogs == true) cats.Add(EventCategory.Dialogs);
-                    if (titles == true) cats.Add(EventCategory.Titles);
-                    if (states == true) cats.Add(EventCategory.States);
-                    if (menus == true) cats.Add(EventCategory.Menus);
-                    if (windowOps == true) cats.Add(EventCategory.WindowOps);
-                    if (session == true) cats.Add(EventCategory.Session);
+                    var cats = new HashSet<WinEventCategory>();
+                    if (windows == true) cats.Add(WinEventCategory.Windows);
+                    if (foreground == true) cats.Add(WinEventCategory.Foreground);
+                    if (dialogs == true) cats.Add(WinEventCategory.Dialogs);
+                    if (titles == true) cats.Add(WinEventCategory.Titles);
+                    if (states == true) cats.Add(WinEventCategory.States);
+                    if (menus == true) cats.Add(WinEventCategory.Menus);
+                    if (windowOps == true) cats.Add(WinEventCategory.WindowOps);
+                    if (session == true) cats.Add(WinEventCategory.Session);
                     if (cats.Count == 0)
                     {
                         message = "No categories were selected. Set at least one category parameter to True.";
@@ -475,11 +475,11 @@ namespace EventAutomation
         }
 
         /// <summary>
-        /// Shared registration logic for <see cref="Subscribe(EventCategory, string, string, out string)"/>
+        /// Shared registration logic for <see cref="Subscribe(WinEventCategory, string, string, out string)"/>
         /// and <see cref="SubscribeCategories"/>: validates the subscription id
         /// and filter, then registers the subscription.
         /// </summary>
-        private bool SubscribeCore(HashSet<EventCategory> cats, string filterJson, string subscriptionId, out string message)
+        private bool SubscribeCore(HashSet<WinEventCategory> cats, string filterJson, string subscriptionId, out string message)
         {
             message = null;
             if (string.IsNullOrWhiteSpace(subscriptionId))
@@ -487,12 +487,12 @@ namespace EventAutomation
                 message = "subscriptionId is empty.";
                 return false;
             }
-            if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+            if (!WinEventFilter.TryFromJson(filterJson, out var filter, out string filterError))
             {
                 message = "Invalid filter for '" + subscriptionId + "': " + filterError;
                 return false;
             }
-            filter = filter ?? EventFilter.Create(); // null/empty filter = match-all
+            filter = filter ?? WinEventFilter.Create(); // null/empty filter = match-all
             return _subscriptions.TryAdd(subscriptionId, cats, filter, out message);
         }
 
@@ -534,7 +534,7 @@ namespace EventAutomation
         /// (<paramref name="message"/> is set). There is no separate
         /// <c>hasEvent</c> output. Never throws.
         /// </summary>
-        public bool GetNextEvent(string subscriptionId, int timeoutMs, out EventData eventData, out string message)
+        public bool GetNextEvent(string subscriptionId, int timeoutMs, out WinEventData eventData, out string message)
         {
             eventData = default;
             message = default;
@@ -568,13 +568,13 @@ namespace EventAutomation
         /// <paramref name="message"/> is null on success and a human-readable
         /// reason otherwise. Never throws.
         /// </summary>
-        public bool GetNextEvents(string subscriptionId, int maxCount, int drainMs, out EventData[] events, out string message)
+        public bool GetNextEvents(string subscriptionId, int maxCount, int drainMs, out WinEventData[] events, out string message)
         {
             events = default;
             message = default;
             try
             {
-                events = Array.Empty<EventData>();
+                events = Array.Empty<WinEventData>();
                 message = null;
                 try
                 {
@@ -596,10 +596,10 @@ namespace EventAutomation
         }
 
         /// <summary>
-        /// Same as <see cref="GetNextEvents(string, int, int, out EventData[], out string)"/>,
+        /// Same as <see cref="GetNextEvents(string, int, int, out WinEventData[], out string)"/>,
         /// but reports the drained events as a JSON array (the same shape
         /// <see cref="DumpRecentEvents"/> produces), for designers without an
-        /// <see cref="EventData"/> array/collection proxy.
+        /// <see cref="WinEventData"/> array/collection proxy.
         /// </summary>
         /// <param name="subscriptionId">The subscription to drain.</param>
         /// <param name="maxCount">Maximum number of events to drain.</param>
@@ -614,8 +614,8 @@ namespace EventAutomation
             try
             {
                 json = "[]";
-                bool ok = GetNextEvents(subscriptionId, maxCount, drainMs, out EventData[] events, out message);
-                json = JsonSerializer.Serialize(events ?? Array.Empty<EventData>(), EventJson.Options);
+                bool ok = GetNextEvents(subscriptionId, maxCount, drainMs, out WinEventData[] events, out message);
+                json = JsonSerializer.Serialize(events ?? Array.Empty<WinEventData>(), WinEventJson.Options);
                 return ok;
 
             }
@@ -728,10 +728,10 @@ namespace EventAutomation
 
         /// <summary>
         /// Same as <see cref="SetDebounce(string, int, out string)"/>, but takes the
-        /// repository-owned <see cref="EventName"/> enum instead of a free-form,
+        /// repository-owned <see cref="WinEventName"/> enum instead of a free-form,
         /// typo-prone string, for designer selection and validation.
         /// </summary>
-        public bool SetDebounce(EventName eventName, int debounceMs, out string message)
+        public bool SetDebounce(WinEventName eventName, int debounceMs, out string message)
         {
             return SetDebounce(eventName.ToString(), debounceMs, out message);
         }
@@ -782,10 +782,10 @@ namespace EventAutomation
 
         /// <summary>
         /// Same as <see cref="SetQueueLimits(int, string, out string)"/>, but takes
-        /// the repository-owned <see cref="EventOverflowPolicy"/> enum instead of a
+        /// the repository-owned <see cref="WinEventOverflowPolicy"/> enum instead of a
         /// free-form string, for designer selection and validation.
         /// </summary>
-        public bool SetQueueLimits(int maxEvents, EventOverflowPolicy overflowPolicy, out string message)
+        public bool SetQueueLimits(int maxEvents, WinEventOverflowPolicy overflowPolicy, out string message)
         {
             return SetQueueLimits(maxEvents, overflowPolicy.ToString(), out message);
         }
@@ -807,8 +807,8 @@ namespace EventAutomation
                 try
                 {
                     var engine = _engine;
-                    var events = engine != null ? engine.SnapshotRing(Math.Max(0, count)) : Array.Empty<EventData>();
-                    json = JsonSerializer.Serialize(events, EventJson.Options);
+                    var events = engine != null ? engine.SnapshotRing(Math.Max(0, count)) : Array.Empty<WinEventData>();
+                    json = JsonSerializer.Serialize(events, WinEventJson.Options);
                     return true;
                 }
                 catch (Exception ex)
@@ -848,12 +848,12 @@ namespace EventAutomation
                         message = "Engine not started; call Initialize() and Start() first.";
                         return false;
                     }
-                    if (!EventFilter.TryFromJson(filterJson, out var filter, out string filterError))
+                    if (!WinEventFilter.TryFromJson(filterJson, out var filter, out string filterError))
                     {
                         message = filterError;
                         return false;
                     }
-                    filter = filter ?? EventFilter.Create();
+                    filter = filter ?? WinEventFilter.Create();
                     long cutoff = DateTime.UtcNow.Ticks - TimeSpan.FromMilliseconds(Math.Max(0, withinLastMs)).Ticks;
                     foreach (var e in engine.SnapshotRing(500))
                     {
@@ -883,7 +883,7 @@ namespace EventAutomation
         // ------------------------------------------------------------------
 
         /// <summary>Runs on the hook thread: debounce, then fan out to subscriptions and waiters.</summary>
-        private void OnEventReceived(EventData data, List<EventCategory> cats)
+        private void OnEventReceived(WinEventData data, List<WinEventCategory> cats)
         {
             var active = _activeCategories;
             if (active == null || active.Count == 0)

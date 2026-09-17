@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 
-namespace EventAutomation.Native
+namespace WinEventAutomation.Native
 {
     /// <summary>
     /// Resolves a process id to its image name (e.g. "notepad"), cached per pid

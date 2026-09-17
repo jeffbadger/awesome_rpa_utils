@@ -3,16 +3,16 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using EventAutomation.Native;
+using WinEventAutomation.Native;
 
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
     /// A window-event filter. All fields are optional — an unset field is a
     /// wildcard. Build one fluently with <see cref="Create"/>, or parse the
     /// compact JSON form that crosses the Pega boundary (see <see cref="FromJson"/>).
     /// </summary>
-    public class EventFilter
+    public class WinEventFilter
     {
         private string _process;
         private readonly HashSet<string> _anyOfProcesses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -27,13 +27,13 @@ namespace EventAutomation
         private bool _excludeSelf;
 
         /// <summary>Starts a fluent filter builder.</summary>
-        public static EventFilter Create() => new EventFilter();
+        public static WinEventFilter Create() => new WinEventFilter();
 
         /// <summary>Matches a single process name (case-insensitive).</summary>
-        public EventFilter Process(string name) { _process = name; return this; }
+        public WinEventFilter Process(string name) { _process = name; return this; }
 
         /// <summary>Matches any of the given process names (case-insensitive).</summary>
-        public EventFilter AnyOfProcesses(params string[] names)
+        public WinEventFilter AnyOfProcesses(params string[] names)
         {
             if (names != null)
                 foreach (var n in names)
@@ -43,10 +43,10 @@ namespace EventAutomation
         }
 
         /// <summary>Matches a window class name (case-insensitive).</summary>
-        public EventFilter Class(string name) { _class = name; return this; }
+        public WinEventFilter Class(string name) { _class = name; return this; }
 
         /// <summary>Requires the window title to contain this text (case-insensitive).</summary>
-        public EventFilter TitleContains(string text) { _titleContains = text; return this; }
+        public WinEventFilter TitleContains(string text) { _titleContains = text; return this; }
 
         /// <summary>
         /// Requires the window title to match this regex (IgnoreCase | Compiled,
@@ -54,7 +54,7 @@ namespace EventAutomation
         /// filter fail closed — <see cref="Matches"/> returns False for everything
         /// — instead of silently behaving as a wildcard.
         /// </summary>
-        public EventFilter TitleMatches(string pattern)
+        public WinEventFilter TitleMatches(string pattern)
         {
             _titleRegex = CompileRegex(pattern, out string error);
             _hasRegexError = error != null;
@@ -62,10 +62,10 @@ namespace EventAutomation
         }
 
         /// <summary>Requires (or excludes) a Button child window (dialog heuristic).</summary>
-        public EventFilter HasButtonChildren(bool value) { _hasButtonChildren = value; return this; }
+        public WinEventFilter HasButtonChildren(bool value) { _hasButtonChildren = value; return this; }
 
         /// <summary>Skips events whose process id equals the engine host process.</summary>
-        public EventFilter ExcludeSelf(bool value) { _excludeSelf = value; return this; }
+        public WinEventFilter ExcludeSelf(bool value) { _excludeSelf = value; return this; }
 
         /// <summary>
         /// Parses the compact JSON filter form, e.g.
@@ -73,7 +73,7 @@ namespace EventAutomation
         /// Unknown keys are ignored. Returns <c>null</c> on malformed JSON (the
         /// caller decides whether that means "match-all" or "reject").
         /// </summary>
-        public static EventFilter FromJson(string json)
+        public static WinEventFilter FromJson(string json)
         {
             return TryFromJson(json, out var filter, out _) ? filter : null;
         }
@@ -85,7 +85,7 @@ namespace EventAutomation
         /// not compile — nothing is silently degraded to a wildcard.
         /// Null/empty <paramref name="json"/> is a match-all filter (no error).
         /// </summary>
-        public static bool TryFromJson(string json, out EventFilter filter, out string error)
+        public static bool TryFromJson(string json, out WinEventFilter filter, out string error)
         {
             filter = null;
             error = null;
@@ -100,7 +100,7 @@ namespace EventAutomation
                     error = "Filter JSON must be an object.";
                     return false;
                 }
-                filter = new EventFilter();
+                filter = new WinEventFilter();
                 foreach (var prop in root.EnumerateObject())
                 {
                     switch (prop.Name)
@@ -155,7 +155,7 @@ namespace EventAutomation
         /// Evaluates this filter against an event. <paramref name="hostPid"/> is
         /// the engine host process id, used only when <see cref="ExcludeSelf"/> is set.
         /// </summary>
-        public bool Matches(EventData e, uint hostPid)
+        public bool Matches(WinEventData e, uint hostPid)
         {
             if (e == null)
                 return false;

@@ -13,7 +13,7 @@ with a descriptive message instead of throwing.
 See the [Documentation](Documentation/README.md) folder for real-world usage
 examples of every method.
 
-**Not to be confused with `EventUtils`** (`EventAutomation`) - that component
+**Not to be confused with `WinEventUtils`** (`WinEventAutomation`) - that component
 watches window messages/WinEvent hooks/global input events. This component
 is exclusively about the Windows Event Log subsystem
 (`System.Diagnostics.EventLog`/`EventLogReader`).
@@ -123,7 +123,7 @@ The JSON shape produced by every `*Json`/JSON-returning method: `TimeCreatedIso8
   via XPath - the rendered message text isn't part of a record's queryable
   XML structure. `QueryByXPath`'s raw `xpath` parameter can filter on
   structural fields (`EventID`, `Provider`, `TimeCreated`, `Level`,
-  `EventData` payload fields) but not on message text.
+  `WinEventData` payload fields) but not on message text.
 - **`CountMatchingEntries` materializes every match before counting** - for
   a very large log (Security can have hundreds of thousands of records),
   narrow the filter (especially `sinceIso8601`) rather than counting

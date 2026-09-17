@@ -26,7 +26,7 @@ $releaseAssemblies = @(
     "UIAutomation.dll"
     "CommandLineAutomation.dll"
     "ServiceAutomation.dll"
-    "EventAutomation.dll"
+    "WinEventAutomation.dll"
     "EventLogAutomation.dll"
     "SessionAutomation.dll"
     "FileWatchAutomation.dll"

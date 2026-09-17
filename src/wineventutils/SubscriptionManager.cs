@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
     /// Per-subscription bounded event queues with overflow policy, plus the
@@ -17,7 +17,7 @@ namespace EventAutomation
         private int _defaultMaxEvents = 1000;
         private string _defaultOverflowPolicy = "DropOldest";
 
-        public bool TryAdd(string id, HashSet<EventCategory> categories, EventFilter filter, out string message)
+        public bool TryAdd(string id, HashSet<WinEventCategory> categories, WinEventFilter filter, out string message)
         {
             message = null;
             if (string.IsNullOrWhiteSpace(id))
@@ -84,7 +84,7 @@ namespace EventAutomation
         /// match. Each subscription gets its own copy of the event, so a consumer
         /// mutating one delivered event cannot affect another consumer.
         /// </summary>
-        public void Deliver(EventData data, List<EventCategory> cats, uint hostPid)
+        public void Deliver(WinEventData data, List<WinEventCategory> cats, uint hostPid)
         {
             foreach (var sub in _subscriptions.Values)
             {
@@ -96,7 +96,7 @@ namespace EventAutomation
             }
         }
 
-        public EventData GetNextEvent(string id, int timeoutMs, out bool hasEvent, out string message)
+        public WinEventData GetNextEvent(string id, int timeoutMs, out bool hasEvent, out string message)
         {
             hasEvent = false;
             message = null;
@@ -134,22 +134,22 @@ namespace EventAutomation
             return null;
         }
 
-        public EventData[] GetNextEvents(string id, int maxCount, int drainMs, out string message)
+        public WinEventData[] GetNextEvents(string id, int maxCount, int drainMs, out string message)
         {
             message = null;
             if (!_subscriptions.TryGetValue(id, out var sub))
             {
                 message = "No subscription with id '" + id + "'.";
-                return Array.Empty<EventData>();
+                return Array.Empty<WinEventData>();
             }
-            var result = new List<EventData>();
+            var result = new List<WinEventData>();
             long deadline = Environment.TickCount64 + Math.Max(0, drainMs);
             while (result.Count < maxCount)
             {
                 long remaining = deadline - Environment.TickCount64;
                 if (remaining <= 0)
                     break;
-                if (GetNextEvent(id, (int)Math.Min(remaining, int.MaxValue), out bool hasEvent, out _) is EventData e)
+                if (GetNextEvent(id, (int)Math.Min(remaining, int.MaxValue), out bool hasEvent, out _) is WinEventData e)
                     result.Add(e);
                 else
                     break;
@@ -189,7 +189,7 @@ namespace EventAutomation
             return true;
         }
 
-        private static bool CategoriesOverlap(HashSet<EventCategory> subCats, List<EventCategory> eventCats)
+        private static bool CategoriesOverlap(HashSet<WinEventCategory> subCats, List<WinEventCategory> eventCats)
         {
             foreach (var c in eventCats)
                 if (subCats.Contains(c))
@@ -197,7 +197,7 @@ namespace EventAutomation
             return false;
         }
 
-        private static void Enqueue(Subscription sub, EventData e)
+        private static void Enqueue(Subscription sub, WinEventData e)
         {
             lock (sub.Gate)
             {
@@ -222,9 +222,9 @@ namespace EventAutomation
         private sealed class Subscription
         {
             public string Id;
-            public HashSet<EventCategory> Categories;
-            public EventFilter Filter;
-            public ConcurrentQueue<EventData> Queue = new ConcurrentQueue<EventData>();
+            public HashSet<WinEventCategory> Categories;
+            public WinEventFilter Filter;
+            public ConcurrentQueue<WinEventData> Queue = new ConcurrentQueue<WinEventData>();
             public int MaxEvents;
             public string OverflowPolicy;
             public int Count;
@@ -233,7 +233,7 @@ namespace EventAutomation
     }
 
     /// <summary>
-    /// Pending WaitForX matchers. Each waiter is a predicate on <see cref="EventData"/>
+    /// Pending WaitForX matchers. Each waiter is a predicate on <see cref="WinEventData"/>
     /// completed by a <see cref="TaskCompletionSource{TResult}"/>; a timeout via
     /// <see cref="CancellationTokenSource"/> completes it with null. Matching runs on
     /// the hook thread and must be fast.
@@ -249,9 +249,9 @@ namespace EventAutomation
         /// completes immediately with null (no wait is registered), matching the
         /// queue-drain methods where 0 also means "do not wait".
         /// </summary>
-        public Task<EventData> Register(Func<EventData, bool> predicate, int timeoutMs)
+        public Task<WinEventData> Register(Func<WinEventData, bool> predicate, int timeoutMs)
         {
-            var tcs = new TaskCompletionSource<EventData>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var tcs = new TaskCompletionSource<WinEventData>(TaskCreationOptions.RunContinuationsAsynchronously);
             if (timeoutMs <= 0)
             {
                 tcs.TrySetResult(null); // 0/negative = return immediately as a timeout
@@ -272,7 +272,7 @@ namespace EventAutomation
         }
 
         /// <summary>Completes every waiter whose predicate matches (hook thread).</summary>
-        public void Match(EventData data)
+        public void Match(WinEventData data)
         {
             Waiter[] snapshot;
             lock (_gate)
@@ -319,8 +319,8 @@ namespace EventAutomation
 
         private sealed class Waiter
         {
-            public Func<EventData, bool> Predicate;
-            public TaskCompletionSource<EventData> Tcs;
+            public Func<WinEventData, bool> Predicate;
+            public TaskCompletionSource<WinEventData> Tcs;
             public CancellationTokenSource Cts;
         }
     }

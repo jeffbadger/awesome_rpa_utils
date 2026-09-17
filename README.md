@@ -11,7 +11,6 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [datacontractutils](src/datacontractutils/README.md) | `DataContractAutomation` | Defines a typed named-value contract during initialization, then provides strict scalar getters/setters and atomic JSON/DataTable updates at runtime. |
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
 | [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
-| [eventutils](src/eventutils/README.md) | `EventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
 | [filewatchutils](src/filewatchutils/README.md) | `FileWatchAutomation` | Coordinates with files produced by other applications: wait for existence/deletion/change/stability/unlock, watch for filesystem events, atomically move/replace/claim files, hash files, and read file metadata. |
 | [jsonutils](src/jsonutils/README.md) | `JsonAutomation` | Reads, updates, validates, and transforms JSON via real JSONPath, replacing the native Json component's dot-notation-only path support. |
 | [keyboardutils](src/keyboardutils/README.md) | `KeyboardAutomation` | Injects keyboard input via `SendInput`: key presses, combos, typed text, and a clipboard-paste fallback; queries key/modifier state. |
@@ -26,6 +25,7 @@ Robot Studio design surface, with its own README and per-method usage docs.
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
 | [valuestoreutils](src/valuestoreutils/README.md) | `ValueStoreAutomation` | Holds freeform named values with forgiving typed getters, dot-notation path access, wildcard key search, and JSON interop, without a schema to define or seal. |
 | [windowutils](src/windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
+| [wineventutils](src/wineventutils/README.md) | `WinEventAutomation` | Watches Windows UI events via `SetWinEventHook` and delivers them the moment they happen: synchronous `WaitForX` calls or background subscriptions polled with `GetNextEvent`. |
 
 Each component is fully standalone (no project references between them), but
 they're designed to complement each other: MouseUtils and KeyboardUtils own
@@ -184,24 +184,26 @@ signatures must also satisfy the
 [Signature Uniqueness Standard](project-docs/coding-standards/signature-uniqueness-standard.md), so every
 public method stays selectable on the Pega Robot Studio designer surface.
 
-- [mouseutils/README.md](src/mouseutils/README.md) and [mouseutils/Documentation/](src/mouseutils/Documentation/README.md)
-- [screencaptureutils/README.md](src/screencaptureutils/README.md)
-- [keyboardutils/README.md](src/keyboardutils/README.md) and [keyboardutils/Documentation/](src/keyboardutils/Documentation/README.md)
-- [windowutils/README.md](src/windowutils/README.md) and [windowutils/Documentation/](src/windowutils/Documentation/README.md)
-- [ocrutils/README.md](src/ocrutils/README.md) and [ocrutils/Documentation/](src/ocrutils/Documentation/README.md)
-- [dialogutils/README.md](src/dialogutils/README.md) and [dialogutils/Documentation/](src/dialogutils/Documentation/README.md)
-- [uiautomationutils/README.md](src/uiautomationutils/README.md) and [uiautomationutils/Documentation/](src/uiautomationutils/Documentation/README.md)
-- [commandlineutils/README.md](src/commandlineutils/README.md) and [commandlineutils/Documentation/](src/commandlineutils/Documentation/README.md)
-- [serviceutils/README.md](src/serviceutils/README.md) and [serviceutils/Documentation/](src/serviceutils/Documentation/README.md)
-- [eventutils/README.md](src/eventutils/README.md)
-- [eventlogutils/README.md](src/eventlogutils/README.md) and [eventlogutils/Documentation/](src/eventlogutils/Documentation/README.md)
-- [sessionutils/README.md](src/sessionutils/README.md) and [sessionutils/Documentation/](src/sessionutils/Documentation/README.md)
-- [terminalutils/README.md](src/terminalutils/README.md) and [terminalutils/Documentation/](src/terminalutils/Documentation/README.md)
-- [filewatchutils/README.md](src/filewatchutils/README.md) and [filewatchutils/Documentation/](src/filewatchutils/Documentation/README.md)
 - [archiveutils/README.md](src/archiveutils/README.md) and [archiveutils/Documentation/](src/archiveutils/Documentation/README.md)
-- [localqueueutils/README.md](src/localqueueutils/README.md) and [localqueueutils/Documentation/](src/localqueueutils/Documentation/README.md)
-- [stackutils/README.md](src/stackutils/README.md) and [stackutils/Documentation/](src/stackutils/Documentation/README.md)
+- [commandlineutils/README.md](src/commandlineutils/README.md) and [commandlineutils/Documentation/](src/commandlineutils/Documentation/README.md)
 - [datacontractutils/README.md](src/datacontractutils/README.md) and [datacontractutils/Documentation/](src/datacontractutils/Documentation/README.md)
+- [dialogutils/README.md](src/dialogutils/README.md) and [dialogutils/Documentation/](src/dialogutils/Documentation/README.md)
+- [eventlogutils/README.md](src/eventlogutils/README.md) and [eventlogutils/Documentation/](src/eventlogutils/Documentation/README.md)
+- [filewatchutils/README.md](src/filewatchutils/README.md) and [filewatchutils/Documentation/](src/filewatchutils/Documentation/README.md)
+- [jsonutils/README.md](src/jsonutils/README.md)
+- [keyboardutils/README.md](src/keyboardutils/README.md) and [keyboardutils/Documentation/](src/keyboardutils/Documentation/README.md)
+- [localqueueutils/README.md](src/localqueueutils/README.md) and [localqueueutils/Documentation/](src/localqueueutils/Documentation/README.md)
+- [mouseutils/README.md](src/mouseutils/README.md) and [mouseutils/Documentation/](src/mouseutils/Documentation/README.md)
+- [ocrutils/README.md](src/ocrutils/README.md) and [ocrutils/Documentation/](src/ocrutils/Documentation/README.md)
+- [screencaptureutils/README.md](src/screencaptureutils/README.md)
+- [serviceutils/README.md](src/serviceutils/README.md) and [serviceutils/Documentation/](src/serviceutils/Documentation/README.md)
+- [sessionutils/README.md](src/sessionutils/README.md) and [sessionutils/Documentation/](src/sessionutils/Documentation/README.md)
+- [stackutils/README.md](src/stackutils/README.md) and [stackutils/Documentation/](src/stackutils/Documentation/README.md)
+- [terminalutils/README.md](src/terminalutils/README.md) and [terminalutils/Documentation/](src/terminalutils/Documentation/README.md)
+- [uiautomationutils/README.md](src/uiautomationutils/README.md) and [uiautomationutils/Documentation/](src/uiautomationutils/Documentation/README.md)
+- [valuestoreutils/README.md](src/valuestoreutils/README.md) and [valuestoreutils/Documentation/](src/valuestoreutils/Documentation/README.md)
+- [windowutils/README.md](src/windowutils/README.md) and [windowutils/Documentation/](src/windowutils/Documentation/README.md)
+- [wineventutils/README.md](src/wineventutils/README.md) and [wineventutils/Documentation/](src/wineventutils/Documentation/README.md)
 
 ## Developer tools
 
@@ -262,13 +264,13 @@ dotnet run --project test-harness/TestHarness.csproj
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
-`CommandLineUtils`, `KeyboardUtils`, `EventUtils`, `ServiceUtils`,
+`CommandLineUtils`, `KeyboardUtils`, `WinEventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
 `TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, and `JsonUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
-`dotnet test src/eventutils/EventUtils.Tests/EventUtils.Tests.csproj`,
+`dotnet test src/wineventutils/WinEventUtils.Tests/WinEventUtils.Tests.csproj`,
 `dotnet test src/serviceutils/ServiceUtils.Tests/ServiceUtils.Tests.csproj`,
 `dotnet test src/eventlogutils/EventLogUtils.Tests/EventLogUtils.Tests.csproj`,
 `dotnet test src/sessionutils/SessionUtils.Tests/SessionUtils.Tests.csproj`,

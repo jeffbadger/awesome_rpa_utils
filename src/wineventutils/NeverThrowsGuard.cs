@@ -1,6 +1,6 @@
 using System;
 
-namespace EventAutomation
+namespace WinEventAutomation
 {
     internal static class NeverThrowsGuard
     {

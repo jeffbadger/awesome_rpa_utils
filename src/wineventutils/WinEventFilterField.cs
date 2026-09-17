@@ -1,13 +1,13 @@
-namespace EventAutomation
+namespace WinEventAutomation
 {
     /// <summary>
     /// A single filterable field, for
-    /// <see cref="EventUtils.BuildFilterJson(EventFilterField, string, bool?)"/>'s
+    /// <see cref="WinEventUtils.BuildFilterJson(WinEventFilterField, string, bool?)"/>'s
     /// designer-selectable single-field overload — the enum alternative to
-    /// remembering which of <see cref="EventUtils.BuildFilterJson(string, string, string, string, string, bool?, bool?)"/>'s
+    /// remembering which of <see cref="WinEventUtils.BuildFilterJson(string, string, string, string, string, bool?, bool?)"/>'s
     /// seven named parameters to fill in when only one field needs to be set.
     /// </summary>
-    public enum EventFilterField
+    public enum WinEventFilterField
     {
         /// <summary>Match a single process name (case-insensitive; a trailing ".exe" is ignored).</summary>
         Process,
