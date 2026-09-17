@@ -6,10 +6,15 @@ Block until a matching event or timeout:
 bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000,
     out WinEventData created, out string message);
 if (ok)
-    window.ActivateWindow(new IntPtr(created.Hwnd), out _); // ready to pass to WindowUtils directly
+    window.ActivateWindow(created.Hwnd, out _); // ready to pass to WindowUtils directly
 
 // Non-blocking lookback instead of waiting:
 bool wasCreated = events.WasWindowCreated("{\"process\":\"notepad\"}", 5000, out message);
+
+// Non-blocking existence checks before waiting:
+bool exists = events.IsWindow("{\"process\":\"notepad\"}", out IntPtr hwnd, out message);
+bool dialogExists = events.IsDialog("{\"class\":\"#32770\"}", out IntPtr dialogHwnd, out message);
+bool menuExists = events.IsMenu(null, out IntPtr menuHwnd, out message);
 ```
 
 A wait always resolves to exactly one event — the first match, then it stops

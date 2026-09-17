@@ -186,13 +186,13 @@ namespace WinEventAutomation.Tests
         public void Debounce_distinguishes_hwnds_differing_only_in_high_32_bits()
         {
             // Regression test for the Hwnd truncation bug: before the fix, ShouldDrop
-            // took a uint, so a handle whose value only differs in its high 32 bits
+            // took a long, so a handle whose value only differs in its high 32 bits
             // collapsed to the same key as a different handle and was wrongly debounced
             // away as a duplicate of it.
             var d = new ThrottleDebounce();
             d.Set("WindowShown", 150);
-            long low = 0x1234;
-            long high = unchecked((long)0x1_0000_1234UL); // same low 32 bits, nonzero high bits
+            IntPtr low = new IntPtr(0x1234);
+            IntPtr high = new IntPtr(unchecked((long)0x1_0000_1234UL)); // same low 32 bits, nonzero high bits
             Assert.False(d.ShouldDrop(low, "WindowShown"));  // first hwnd, kept
             Assert.False(d.ShouldDrop(high, "WindowShown")); // a genuinely different hwnd, also kept
         }
@@ -365,6 +365,46 @@ namespace WinEventAutomation.Tests
         }
 
         [Fact]
+        public void Is_methods_reject_malformed_filter_json()
+        {
+            var utils = new WinEventUtils();
+            try
+            {
+                Assert.False(utils.IsWindow("{not json", out IntPtr windowHwnd, out string windowMessage));
+                Assert.Equal(IntPtr.Zero, windowHwnd);
+                Assert.NotNull(windowMessage);
+                Assert.False(utils.IsDialog("{not json", out IntPtr dialogHwnd, out string dialogMessage));
+                Assert.Equal(IntPtr.Zero, dialogHwnd);
+                Assert.NotNull(dialogMessage);
+                Assert.False(utils.IsMenu("{not json", out IntPtr menuHwnd, out string menuMessage));
+                Assert.Equal(IntPtr.Zero, menuHwnd);
+                Assert.NotNull(menuMessage);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Is_methods_report_no_match_without_an_error()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            const string filter = "{\"process\":\"definitely-not-a-real-process-xyz\"}";
+            Assert.False(utils.IsWindow(filter, out IntPtr windowHwnd, out string windowMessage));
+            Assert.Equal(IntPtr.Zero, windowHwnd);
+            Assert.Null(windowMessage);
+            Assert.False(utils.IsDialog(filter, out IntPtr dialogHwnd, out string dialogMessage));
+            Assert.Equal(IntPtr.Zero, dialogHwnd);
+            Assert.Null(dialogMessage);
+            Assert.False(utils.IsMenu(filter, out IntPtr menuHwnd, out string menuMessage));
+            Assert.Equal(IntPtr.Zero, menuHwnd);
+            Assert.Null(menuMessage);
+        }
+
+        [Fact]
         public void GetNextEvent_unknown_subscription_returns_false_with_message()
         {
             var utils = new WinEventUtils();
@@ -432,12 +472,12 @@ namespace WinEventAutomation.Tests
         [Fact]
         public void EventData_Hwnd_does_not_truncate_a_64_bit_handle()
         {
-            long fullHandle = unchecked((long)0x00007FF6_12345678UL); // realistic 64-bit handle magnitude
+            IntPtr fullHandle = new IntPtr(unchecked((long)0x00007FF6_12345678UL)); // realistic 64-bit handle magnitude
             var e = new WinEventData { Hwnd = fullHandle };
             Assert.Equal(fullHandle, e.Hwnd);
 
             using var doc = JsonDocument.Parse(e.ToJson());
-            Assert.Equal(fullHandle, doc.RootElement.GetProperty("Hwnd").GetInt64());
+            Assert.Equal(fullHandle.ToInt64(), doc.RootElement.GetProperty("Hwnd").GetInt64());
         }
 
         // ------------------------------------------------------------------
@@ -946,10 +986,10 @@ namespace WinEventAutomation.Tests
         {
             var d = new ThrottleDebounce();
             for (uint i = 1; i <= 600; i++)
-                d.ShouldDrop(i, "WindowShown"); // 600 distinct keys, default 150 ms window
+                d.ShouldDrop(new IntPtr(i), "WindowShown"); // 600 distinct keys, default 150 ms window
             Assert.True(d.CachedKeys > 512);
             Thread.Sleep(200); // let every window elapse
-            d.ShouldDrop(99999, "WindowShown"); // count exceeded → prune pass
+            d.ShouldDrop(new IntPtr(99999), "WindowShown"); // count exceeded → prune pass
             Assert.True(d.CachedKeys <= 2, "stale entries were not pruned: " + d.CachedKeys);
             // The still-live key (99999) is tracked again, and pruning does not break debounce.
             Assert.False(d.ShouldDrop(99998, "WindowShown"));
@@ -1009,7 +1049,7 @@ namespace WinEventAutomation.Tests
                 Assert.True(ok);
                 Assert.NotNull(e);
                 Assert.Equal("notepad", e.ProcessName, ignoreCase: true);
-                Assert.NotEqual(0u, e.Hwnd);
+                Assert.NotEqual(IntPtr.Zero, e.Hwnd);
             }
             finally
             {
@@ -1090,7 +1130,7 @@ namespace WinEventAutomation.Tests
             {
                 Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _));
                 Assert.NotNull(created);
-                IntPtr hwnd = new IntPtr((long)created.Hwnd);
+                IntPtr hwnd = created.Hwnd;
                 Thread.Sleep(300);
                 for (int i = 0; i < 10; i++)
                 {
@@ -1179,7 +1219,7 @@ namespace WinEventAutomation.Tests
             {
                 Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _));
                 Assert.NotNull(created);
-                IntPtr hwnd = new IntPtr((long)created.Hwnd);
+                IntPtr hwnd = created.Hwnd;
                 Thread.Sleep(300);
                 for (int i = 0; i < 1000; i++)
                 {

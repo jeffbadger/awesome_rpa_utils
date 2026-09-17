@@ -6,8 +6,8 @@ namespace WinEventAutomation.Native
 {
     /// <summary>
     /// All P/Invoke signatures and constants used by the event engine. Kept in
-    /// one place so the interop surface is auditable. No public API exposes
-    /// <see cref="IntPtr"/> — handles cross the component boundary as <c>uint</c>.
+    /// one place so the interop surface is auditable. Native handles are kept
+    /// internal to the component and exposed through <see cref="IntPtr"/> data.
     /// </summary>
     internal static class WinEventInterop
     {
@@ -106,6 +106,9 @@ namespace WinEventAutomation.Native
 
         [DllImport("user32.dll")]
         public static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
         [DllImport("user32.dll")]
         public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
