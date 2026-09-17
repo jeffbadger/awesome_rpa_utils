@@ -103,6 +103,45 @@ does neither:
   first `Dispose(bool)` override, to stop and dispose the background
   watcher if the automation forgets to call `StopWatching`.
 
+### Hardening pass (post-review)
+
+A round of review caught four additional races/gaps in the initial
+implementation, all fixed before merge:
+
+- **Stale `Error` callback could stop a replacement watch.** A delayed
+  native `Error` event from a watcher already superseded by a
+  `StopWatching`/`StartWatching` cycle would stop the *new* watcher and
+  raise a misleading `WatchError` for it, since the handler didn't check
+  whether its `sender` was still the active instance. Fixed by comparing
+  `sender` against the current `_watcher` and clearing it atomically
+  under `_watchLock`, so a concurrent `StartWatching` can't race the
+  check-and-clear either. Covered by
+  `StaleNativeError_FromReplacedWatcher_DoesNotAffectCurrentWatch`, using
+  an `internal` test seam since a real buffer overflow isn't reliably
+  triggerable on demand.
+- **A disposed instance could still start a new watch.** `Dispose(bool)`
+  stopped the current watcher but never recorded that the instance itself
+  was disposed, so a `StartWatching` call arriving after (or racing)
+  disposal only checked `_watcher == null` and could happily create a
+  watcher a disposed instance would never stop again. Fixed with a
+  `_disposed` flag set under `_watchLock` before teardown begins.
+- **Watcher teardown itself wasn't exception-safe.** `Dispose(bool)` and
+  `OnNativeError` both called the stop/cleanup path directly with no
+  guard; if `watcher.Dispose()` (or an unsubscribe) threw, that would
+  either violate `Dispose`'s own never-throw expectation or, worse,
+  escape unhandled on `OnNativeError`'s ThreadPool thread and terminate
+  the host process - the same class of risk `RaiseSafely` already
+  protects subscriber code from, just missed for this component's own
+  cleanup code. Fixed by making the shared stop/cleanup helper itself
+  catch and debug-log any teardown exception, so every caller gets that
+  safety for free.
+- **`EnableRaisingEvents = false` happened after `_watcher` was already
+  cleared and the lock released**, leaving a brief window where a
+  concurrent `StartWatching` could start a new watcher while the old one
+  might still raise one more event. Fixed by disabling raising events
+  while still holding `_watchLock`, before `_watcher` is nulled and
+  exposed to a concurrent caller.
+
 ## Operational concerns
 
 - **TOCTOU is pervasive in this component, more than in any other in this
@@ -132,4 +171,6 @@ does neither:
 None outstanding. The initial design pass (Wait/Watch/Actions/Hash/
 Metadata) had none; the later event-based `StartWatching` addition (see
 "Event-based design" above) was reviewed for the same signature-uniqueness
-and never-throws concerns before being added, not after the fact.
+and never-throws concerns before being added, and its own subsequent
+review pass (see "Hardening pass" above) found and fixed four races/gaps
+before merge rather than after.

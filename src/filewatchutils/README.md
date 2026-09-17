@@ -229,11 +229,23 @@ directly.
   `Created`/`Changed`/`Deleted`/`Renamed` handlers.** It only fires when
   the underlying watcher itself fails (e.g. an internal notification-
   buffer overflow), which is a different, rarer failure mode than a
-  handler bug.
+  handler bug. A delayed `Error` callback that arrives from a watcher
+  already replaced by a later `StopWatching`/`StartWatching` cycle is
+  recognized as stale and ignored - it cannot stop or misreport the new,
+  healthy watch.
+- **`Changed` sets an explicit `NotifyFilter`** (`LastWrite`, `FileName`,
+  `DirectoryName`, `Attributes`, `Size`, `CreationTime`) rather than
+  relying on `FileSystemWatcher`'s narrower default (`LastWrite`/
+  `FileName`/`DirectoryName` only), so a pure attribute or creation-time
+  change genuinely raises it, matching the "content/attribute/timestamp
+  change" description above.
 - **`StartWatching`/`StopWatching`/`IsWatching` and the events they
   control are this component's first use of a real C# event** (previously
   every filesystem notification in this suite was polled or blocked on).
   They are the only members here that hold a live resource between calls
   - the background `FileSystemWatcher` - which is why this is also the
   first method in this component with a `Dispose(bool)` override to clean
-  it up if the automation forgets to call `StopWatching`.
+  it up if the automation forgets to call `StopWatching`. Once disposed,
+  the instance is final: a later `StartWatching` call fails rather than
+  silently creating a watcher this disposed instance could never stop
+  again - create a new `FileWatchUtils` instead.

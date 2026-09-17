@@ -56,6 +56,7 @@ namespace FileWatchAutomation
 
         private readonly object _watchLock = new object();
         private FileSystemWatcher _watcher;
+        private bool _disposed;
 
         /// <summary>
         /// Stops and disposes the background watcher, if one is running. Safe to call
@@ -66,6 +67,13 @@ namespace FileWatchAutomation
         {
             if (disposing)
             {
+                // Recorded before tearing down the watcher so a StartWatching call that
+                // arrives concurrently with (or immediately after) disposal cannot create
+                // a live watcher this now-disposed instance would never stop again.
+                lock (_watchLock)
+                {
+                    _disposed = true;
+                }
                 StopWatchingCore();
             }
 
@@ -696,6 +704,11 @@ namespace FileWatchAutomation
 
                 lock (_watchLock)
                 {
+                    if (_disposed)
+                    {
+                        message = "This FileWatchUtils instance has been disposed and cannot start a new watch.";
+                        return false;
+                    }
                     if (_watcher != null)
                     {
                         message = "Already watching. Call StopWatching first.";
@@ -704,7 +717,14 @@ namespace FileWatchAutomation
 
                     var watcher = new FileSystemWatcher(directoryPath)
                     {
-                        IncludeSubdirectories = includeSubdirectories
+                        IncludeSubdirectories = includeSubdirectories,
+                        // Explicit rather than FileSystemWatcher's default (LastWrite |
+                        // FileName | DirectoryName): Changed is documented as covering
+                        // content/attribute/timestamp changes, and the default alone
+                        // misses pure attribute or creation-time changes.
+                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName
+                            | NotifyFilters.DirectoryName | NotifyFilters.Attributes
+                            | NotifyFilters.Size | NotifyFilters.CreationTime
                     };
                     if (!string.IsNullOrEmpty(filter))
                         watcher.Filter = filter;
@@ -832,10 +852,27 @@ namespace FileWatchAutomation
 
         private void OnNativeError(object sender, ErrorEventArgs e)
         {
-            string message = $"StartWatching's background watcher failed unexpectedly: {e.GetException()?.Message}";
-            StopWatchingCore();
+            // Only stop/report for the watcher that actually raised this: a delayed Error
+            // callback from an already-replaced watcher (StopWatching immediately followed
+            // by a new StartWatching, racing this stale callback) must not tear down or
+            // misreport the new, healthy watch. StopWatcherIfCurrent's compare-and-clear
+            // happens atomically under _watchLock, so there is no window for it to stop the
+            // wrong instance even if another StartWatching runs concurrently with this.
+            if (!StopWatcherIfCurrent(sender as FileSystemWatcher))
+                return;
+
+            string message = $"StartWatching's background watcher failed unexpectedly: {e.GetException()}";
             RaiseSafely(WatchError, new FileWatchErrorEventArgs(message));
         }
+
+        /// <summary>
+        /// Test-only seam: invokes the native Error handling path directly, since a real
+        /// <see cref="FileSystemWatcher"/> internal buffer overflow is not reliably
+        /// triggerable on demand. Used to verify a stale callback (one whose <paramref name="sender"/>
+        /// is no longer the active watcher) is correctly ignored rather than stopping/
+        /// misreporting a subsequently-started, healthy watch.
+        /// </summary>
+        internal void SimulateNativeErrorForTests(object sender, ErrorEventArgs e) => OnNativeError(sender, e);
 
         /// <summary>
         /// Invokes each subscriber on a multicast event delegate individually, isolating
@@ -869,37 +906,71 @@ namespace FileWatchAutomation
         }
 
         /// <summary>
-        /// Stops and disposes the watcher if one is running. Returns <c>false</c> if none
-        /// was running, so <see cref="StopWatching"/> can report "not currently watching"
-        /// while <see cref="Dispose(bool)"/> and <see cref="OnNativeError"/> can both call
-        /// this unconditionally without checking first.
+        /// Stops and disposes whichever watcher is currently active. Returns <c>false</c>
+        /// if none was running, so <see cref="StopWatching"/> can report "not currently
+        /// watching".
         /// </summary>
-        private bool StopWatchingCore()
+        private bool StopWatchingCore() => StopWatcherIfCurrent(expected: null);
+
+        /// <summary>
+        /// Stops and disposes <paramref name="expected"/> only if it is still the active
+        /// watcher (or stops whichever is active when <paramref name="expected"/> is
+        /// <c>null</c>). The compare-and-clear against <c>_watcher</c> happens atomically
+        /// under <see cref="_watchLock"/>, so a caller that knows which specific instance
+        /// it means to stop (<see cref="OnNativeError"/>, guarding against a stale
+        /// callback from an already-replaced watcher) cannot race a concurrent
+        /// <see cref="StartWatching"/> into stopping the wrong one. Disabling
+        /// <c>EnableRaisingEvents</c> also happens inside that same lock, before the
+        /// watcher is unlinked from <c>_watcher</c> - otherwise a concurrent
+        /// <see cref="StartWatching"/> could start a new watcher while this one might still
+        /// raise one more event, producing an overlapping notification from a "stopped"
+        /// watch. Never throws: this runs from <see cref="Dispose(bool)"/>, which must not
+        /// throw, and from <see cref="OnNativeError"/> on a background thread-pool thread,
+        /// where an unhandled exception would terminate the host process - so any teardown
+        /// failure here is caught and debug-logged rather than propagated, the same
+        /// approach <see cref="RaiseSafely{TArgs}"/> uses for subscriber exceptions.
+        /// </summary>
+        private bool StopWatcherIfCurrent(FileSystemWatcher expected)
         {
             FileSystemWatcher watcher;
             lock (_watchLock)
             {
+                if (expected != null && !ReferenceEquals(expected, _watcher))
+                    return false;
+
                 watcher = _watcher;
+                if (watcher == null)
+                    return false;
+
+                try
+                {
+                    watcher.EnableRaisingEvents = false;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"FileWatchUtils: could not disable the background watcher's raising events: {ex}");
+                }
+
                 _watcher = null;
             }
 
-            if (watcher == null)
-                return false;
-
+            // No new StartWatching can now observe this watcher as active, and it can no
+            // longer raise events - unsubscribing/disposing outside the lock only affects
+            // this now-detached instance.
             try
             {
-                watcher.EnableRaisingEvents = false;
+                watcher.Created -= OnNativeCreated;
+                watcher.Changed -= OnNativeChanged;
+                watcher.Deleted -= OnNativeDeleted;
+                watcher.Renamed -= OnNativeRenamed;
+                watcher.Error -= OnNativeError;
+                watcher.Dispose();
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort - proceed to unsubscribe/dispose regardless.
+                System.Diagnostics.Debug.WriteLine($"FileWatchUtils: cleanup of the background watcher failed: {ex}");
             }
-            watcher.Created -= OnNativeCreated;
-            watcher.Changed -= OnNativeChanged;
-            watcher.Deleted -= OnNativeDeleted;
-            watcher.Renamed -= OnNativeRenamed;
-            watcher.Error -= OnNativeError;
-            watcher.Dispose();
+
             return true;
         }
 

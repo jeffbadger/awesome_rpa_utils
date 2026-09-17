@@ -356,6 +356,74 @@ namespace FileWatchAutomation.Tests
         }
 
         [Fact]
+        public void StaleNativeError_FromReplacedWatcher_DoesNotAffectCurrentWatch()
+        {
+            // A real FileSystemWatcher buffer overflow isn't reliably triggerable on
+            // demand, so this goes through the internal test seam instead - regression
+            // coverage for a fix where a delayed Error callback from an
+            // already-stopped-and-replaced watcher could incorrectly stop the new,
+            // healthy watch and raise a misleading WatchError for it.
+            Assert.True(Fw.StartWatching(TempDir, null, false, out _));
+
+            using var staleWatcher = new FileSystemWatcher(TempDir);
+            bool watchErrorFired = false;
+            Fw.WatchError += (sender, e) => watchErrorFired = true;
+
+            Fw.SimulateNativeErrorForTests(staleWatcher, new ErrorEventArgs(new IOException("stale watcher failure")));
+
+            Assert.False(watchErrorFired);
+            Assert.True(Fw.IsWatching());
+
+            // The current watch must still be fully functional afterward.
+            using var signal = new ManualResetEventSlim(false);
+            Fw.Created += (sender, e) => signal.Set();
+            File.WriteAllText(TempFilePath("still-alive.txt"), "content");
+            Assert.True(signal.Wait(5000));
+        }
+
+        [Fact]
+        public void StartWatching_AfterDispose_ReturnsFalseWithMessage()
+        {
+            var fw = new FileWatchUtils();
+            fw.Dispose();
+
+            bool result = fw.StartWatching(TempDir, null, false, out string message);
+
+            Assert.False(result);
+            Assert.False(string.IsNullOrEmpty(message));
+            Assert.False(fw.IsWatching());
+        }
+
+        [Fact]
+        public void Changed_FiresForAttributeOnlyChange()
+        {
+            // Regression coverage for an explicit NotifyFilter: FileSystemWatcher's
+            // default filter (LastWrite | FileName | DirectoryName) does not include
+            // Attributes, so a pure attribute change with no content/LastWrite change
+            // would otherwise never raise Changed, contradicting Changed's own
+            // documented "content/attribute/timestamp change" coverage.
+            string filePath = TempFilePath("attrs.txt");
+            File.WriteAllText(filePath, "content");
+
+            using var signal = new ManualResetEventSlim(false);
+            Fw.Changed += (sender, e) => signal.Set();
+
+            Assert.True(Fw.StartWatching(TempDir, null, false, out _));
+            File.SetAttributes(filePath, FileAttributes.ReadOnly);
+
+            try
+            {
+                Assert.True(signal.Wait(5000));
+            }
+            finally
+            {
+                // So TempDirectoryTestBase's recursive delete doesn't fail on a
+                // still-read-only file.
+                File.SetAttributes(filePath, FileAttributes.Normal);
+            }
+        }
+
+        [Fact]
         public void Dispose_WhileWatching_CleansUpWithoutThrowing()
         {
             var fw = new FileWatchUtils();
