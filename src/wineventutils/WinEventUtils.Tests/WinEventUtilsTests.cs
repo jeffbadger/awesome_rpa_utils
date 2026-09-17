@@ -535,7 +535,11 @@ namespace WinEventAutomation.Tests
             }
             finally
             {
-                EndMenu();
+                // EndMenu() only ends menu tracking on the calling thread; the popup
+                // menu's modal loop runs on `thread`, so cancel it by posting
+                // WM_CANCELMODE to the owning window that thread is pumping.
+                if (ownerHwnd != IntPtr.Zero)
+                    PostMessage(ownerHwnd, WM_CANCELMODE, IntPtr.Zero, IntPtr.Zero);
                 thread.Join(5000);
             }
         }
@@ -1452,6 +1456,7 @@ namespace WinEventAutomation.Tests
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
         private const int WM_CLOSE = 0x0010;
+        private const int WM_CANCELMODE = 0x001F;
         private const int WS_OVERLAPPEDWINDOW = unchecked((int)0x00CF0000);
         private const int WS_VISIBLE = unchecked((int)0x10000000);
         private const uint MF_STRING = 0x00000000;
@@ -1500,8 +1505,5 @@ namespace WinEventAutomation.Tests
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        private static extern bool EndMenu();
     }
 }

@@ -67,17 +67,36 @@ namespace WinEventAutomation
                     message = "Window existence checks require Windows.";
                     return false;
                 }
-                if (!TryEnumerateTopLevelWindows(candidateHwnd =>
+                // filter.Matches runs inside the EnumWindows reverse P/Invoke callback
+                // (e.g. a slow titleContains regex can throw RegexMatchTimeoutException);
+                // an exception escaping that native callback is not reliably caught by
+                // the try/catch below, so capture it here and stop enumeration instead.
+                Exception callbackException = null;
+                bool enumerationSucceeded = TryEnumerateTopLevelWindows(candidateHwnd =>
                 {
-                    var data = SnapshotWindow(candidateHwnd);
-                    if ((requiredClass == null || string.Equals(data.ClassName, requiredClass, StringComparison.OrdinalIgnoreCase)) &&
-                        filter.Matches(data, _hostPid))
+                    try
                     {
-                        foundHwnd = candidateHwnd;
+                        var data = SnapshotWindow(candidateHwnd);
+                        if ((requiredClass == null || string.Equals(data.ClassName, requiredClass, StringComparison.OrdinalIgnoreCase)) &&
+                            filter.Matches(data, _hostPid))
+                        {
+                            foundHwnd = candidateHwnd;
+                            return false;
+                        }
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        callbackException = ex;
                         return false;
                     }
-                    return true;
-                }, out _, out int win32Error))
+                }, out _, out int win32Error);
+                if (callbackException != null)
+                {
+                    message = NeverThrowsGuard.Failure(operation, callbackException);
+                    return false;
+                }
+                if (!enumerationSucceeded)
                 {
                     message = win32Error != 0
                         ? $"{operation} failed unexpectedly (Win32): EnumWindows failed with error {win32Error}."
@@ -115,7 +134,11 @@ namespace WinEventAutomation
             if (completed)
                 return true;
             win32Error = Marshal.GetLastPInvokeError();
-            return stoppedByCallback && win32Error == 0;
+            // A callback-initiated stop is success regardless of the last error:
+            // snapshot-related native calls made after the match was found can
+            // leave an unrelated nonzero error code even though EnumWindows itself
+            // was stopped intentionally, not because it failed.
+            return stoppedByCallback;
         }
 
         private static WinEventData SnapshotWindow(IntPtr hwnd)
