@@ -14,7 +14,9 @@ namespace ArchiveAutomation
     /// Pega Robot Studio-ready component for handling ZIP archives when intake arrives as
     /// ZIP files: creating/extracting archives, listing contents before extraction,
     /// extracting a single matching entry, validating CRC-32 checksums, detecting
-    /// encrypted entries, and building diagnostic/failure bundles.
+    /// encrypted entries, building diagnostic/failure bundles, mutating an existing archive
+    /// (add/replace/remove/rename entries), merging two archives, and creating/extracting
+    /// password-protected archives.
     /// <para>
     /// Like every component in this suite, all methods honor the never-throws contract:
     /// invalid input and runtime failures return <c>false</c> with a descriptive message
@@ -30,8 +32,15 @@ namespace ArchiveAutomation
     /// check on read. This is the actual value of this component over calling
     /// <see cref="System.IO.Compression"/> directly.
     /// </para>
+    /// <para>
+    /// Every method except <see cref="CreateEncryptedArchive"/> and
+    /// <see cref="ExtractArchiveWithPassword"/> is plain <see cref="System.IO.Compression"/> -
+    /// those two are the only methods backed by the <c>ICSharpCode.SharpZipLib</c> NuGet
+    /// dependency, added specifically because <see cref="System.IO.Compression"/> cannot
+    /// write or read encrypted ZIP entries under any circumstance.
+    /// </para>
     /// </summary>
-    [Description("Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection built in. " +
+    [Description("Creates, extracts, inspects, validates, mutates, merges, and password-protects ZIP archives, with zip-slip and zip-bomb protection built in. " +
                  "All methods return True/False with a failure message instead of throwing. " +
                  "Drag this component onto a Pega Robot Studio automation to use its methods.")]
     public class ArchiveUtils : Component
@@ -1018,12 +1027,14 @@ namespace ArchiveAutomation
 
         /// <summary>
         /// Scans a ZIP archive for any encrypted entry, stopping at the first one found.
-        /// Detection only - <see cref="System.IO.Compression"/> cannot decrypt or extract
-        /// an encrypted entry under any circumstance, and no password parameter exists
-        /// anywhere in this component. Never throws.
+        /// Detection only, no password parameter - <see cref="System.IO.Compression"/> cannot
+        /// decrypt or extract an encrypted entry under any circumstance. To actually extract a
+        /// password-protected archive, use <see cref="ExtractArchiveWithPassword"/> instead,
+        /// which is backed by SharpZipLib rather than <see cref="System.IO.Compression"/>.
+        /// Never throws.
         /// </summary>
         [Category("Archive - Validate")]
-        [Description("Scans a ZIP archive for any encrypted entry. Detection only - cannot decrypt or extract encrypted entries. Never throws.")]
+        [Description("Scans a ZIP archive for any encrypted entry (detection only, no password). Never throws.")]
         public bool HasEncryptedEntries(string archivePath, out bool hasEncryptedEntries, out string message)
         {
             hasEncryptedEntries = default;

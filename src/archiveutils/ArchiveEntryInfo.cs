@@ -35,9 +35,10 @@ namespace ArchiveAutomation
         public uint Crc32 { get; internal set; }
 
         /// <summary>
-        /// <c>true</c> if the entry is password-protected. Detection only -
-        /// <see cref="System.IO.Compression"/> cannot decrypt or extract an encrypted entry
-        /// under any circumstance.
+        /// <c>true</c> if the entry is password-protected. This flag itself is always
+        /// readable without a password - <see cref="System.IO.Compression"/> cannot decrypt
+        /// or extract an encrypted entry under any circumstance, but
+        /// <see cref="ArchiveUtils.ExtractArchiveWithPassword"/> can, via a separate SharpZipLib-backed path.
         /// </summary>
         public bool IsEncrypted { get; internal set; }
 

@@ -23,11 +23,16 @@ corrupted entry otherwise reads back silently with no error — so
 `ValidateArchiveCrc`/`Json` compute CRC-32 independently (hand-rolled, no
 new dependency) rather than trusting the archive's own declared checksum.
 
-Like `FileWatchUtils`, every operation here is plain cross-platform BCL
+Like `FileWatchUtils`, every method except `CreateEncryptedArchive`/
+`ExtractArchiveWithPassword` is plain cross-platform BCL
 (`System.IO.Compression`, `System.IO`) with zero P/Invoke — the `-windows`
-target framework is kept only for suite consistency. Its `.Tests` project
-gets real, full functional coverage on Linux (real archives, real corrupted
-bytes, real path-traversal attempts), not just guard-clause coverage.
+target framework is kept only for suite consistency. Those two methods
+depend on `ICSharpCode.SharpZipLib` (also cross-platform), the only
+dependency in this component, added because `System.IO.Compression` cannot
+write or read encrypted ZIP entries under any circumstance. Its `.Tests`
+project gets real, full functional coverage on Linux (real archives, real
+corrupted bytes, real path-traversal attempts, real password-protected
+archives), not just guard-clause coverage.
 
 ## Types
 
@@ -51,6 +56,12 @@ The JSON shape produced by `ListArchiveContentsJson`/`ValidateArchiveCrcJson`:
 |---|---|---|
 | `CreateArchive` | `bool CreateArchive(string sourceDirectoryPath, string archivePath, bool overwrite, bool includeBaseDirectory, bool normalizeTimestamps, string normalizedTimestampUtcIso8601, out string message)` | Creates a ZIP archive from a directory, built to a temp file and published atomically only once complete - never a partially-written archive at the final path. |
 
+### Create Encrypted
+
+| Method | Signature | Description |
+|---|---|---|
+| `CreateEncryptedArchive` | `bool CreateEncryptedArchive(string sourceDirectoryPath, string archivePath, string password, bool overwrite, bool includeBaseDirectory, bool useLegacyZipCrypto, out string message)` | Creates a password-protected ZIP archive from a directory, via `ICSharpCode.SharpZipLib`. AES-256 by default; `useLegacyZipCrypto: true` opts into the older, weaker ZipCrypto scheme for compatibility with tools that can't read AES-encrypted zips. |
+
 ### Extract
 
 | Method | Signature | Description |
@@ -64,6 +75,12 @@ The JSON shape produced by `ListArchiveContentsJson`/`ValidateArchiveCrcJson`:
 |---|---|---|
 | `ExtractSingleFile` | `bool ExtractSingleFile(string archivePath, string entryFullName, string destinationDirectoryPath, bool overwrite, long maxExpandedSizeBytes, double maxCompressionRatio, out string message)` | Extracts one entry by its exact name. Guarded against path traversal - the per-entry extraction API has no built-in protection, unlike `ExtractArchive`. |
 | `ExtractFirstMatchingFile` | `bool ExtractFirstMatchingFile(string archivePath, string entryNamePattern, string destinationDirectoryPath, bool overwrite, long maxExpandedSizeBytes, double maxCompressionRatio, out string matchedEntryName, out string message)` | Extracts the first entry matching a glob pattern (e.g. `"*.csv"`) instead of an exact name. Same guards as `ExtractSingleFile`. |
+
+### Extract Encrypted
+
+| Method | Signature | Description |
+|---|---|---|
+| `ExtractArchiveWithPassword` | `bool ExtractArchiveWithPassword(string archivePath, string destinationDirectoryPath, string password, bool overwrite, long maxTotalExpandedSizeBytes, double maxCompressionRatio, out string message)` | Extracts a password-protected ZIP archive, via `ICSharpCode.SharpZipLib`. The only extraction method able to open an encrypted entry; same zip-slip guard and declared-size/ratio pre-check as `ExtractArchive`. |
 
 ### Inspect
 
@@ -87,6 +104,20 @@ The JSON shape produced by `ListArchiveContentsJson`/`ValidateArchiveCrcJson`:
 | `CreateDiagnosticBundle` | `bool CreateDiagnosticBundle(string sourceFilePathsCsv, string outputArchivePath, bool overwrite, string manifestText, out string message)` | Zips a list of files into a diagnostic/failure bundle, with an optional `manifest.txt` entry, published atomically like `CreateArchive`. |
 | `CreateDiagnosticBundleSimple` | `bool CreateDiagnosticBundleSimple(string sourceFilePathsCsv, string outputDirectoryPath, out string createdArchivePath, out string message)` | Same, auto-naming the archive with a timestamp (`diagnostic-bundle-yyyyMMdd-HHmmss.zip`) and returning its resolved path. |
 
+### Update Existing Archive
+
+| Method | Signature | Description |
+|---|---|---|
+| `AddOrReplaceFilesInArchive` | `bool AddOrReplaceFilesInArchive(string archivePath, string sourceFilePathsCsv, string entryNamesCsv, out string message)` | Adds files to an existing archive, replacing any existing entry of the same name. `entryNamesCsv` is an optional parallel CSV giving each file's exact archive path/name; blank falls back to the file's own name at the archive root. Built on the same copy-then-atomically-publish discipline as `CreateArchive`. |
+| `RemoveArchiveEntry` | `bool RemoveArchiveEntry(string archivePath, string entryFullName, out string message)` | Removes one named entry from an existing archive. |
+| `RenameArchiveEntry` | `bool RenameArchiveEntry(string archivePath, string entryFullName, string newEntryName, out string message)` | Renames one entry in an existing archive, preserving its content and timestamp. Fails, without modifying the archive, if the target name is already taken. |
+
+### Merge
+
+| Method | Signature | Description |
+|---|---|---|
+| `MergeArchives` | `bool MergeArchives(string firstArchivePath, string secondArchivePath, string outputArchivePath, bool overwrite, out string message)` | Builds a new archive from every entry in two existing archives, without modifying either input. A name collision is disambiguated with a numeric suffix, the same convention `CreateDiagnosticBundle` uses. |
+
 ## Notes & Caveats
 
 - **Never throws.** Invalid input and runtime failures return `False` with
@@ -108,12 +139,31 @@ The JSON shape produced by `ListArchiveContentsJson`/`ValidateArchiveCrcJson`:
   otherwise reads back silently with no error. `ValidateArchiveCrc`/`Json`
   decompress and hash each entry themselves (streamed, never a full entry
   buffered into memory) and compare against the declared checksum.
-- **Encrypted entries are detection-only.** `IsEncrypted`/
-  `HasEncryptedEntries` report whether an entry is password-protected,
-  but `System.IO.Compression` cannot decrypt or extract one under any
-  circumstance - no password parameter exists anywhere in this component.
-  `ValidateArchiveCrcJson` never opens an encrypted entry; it's reported as
+- **Encrypted entries are detection-only via `System.IO.Compression`,
+  but not via this component as a whole.** `IsEncrypted`/
+  `HasEncryptedEntries` report whether an entry is password-protected using
+  `System.IO.Compression`, which cannot decrypt or extract one under any
+  circumstance. `CreateEncryptedArchive`/`ExtractArchiveWithPassword` are
+  the exception - backed by `ICSharpCode.SharpZipLib` instead, they can
+  create and open a password-protected archive. `ValidateArchiveCrcJson`
+  still never opens an encrypted entry; it's reported as
   `"SkippedEncrypted"`, never attempted or treated as a mismatch.
+- **`CreateEncryptedArchive` defaults to AES-256**, the modern, strong
+  choice; `useLegacyZipCrypto: true` opts into the older ZipCrypto scheme
+  only for compatibility with tools that can't read AES-encrypted zips.
+- **`RenameArchiveEntry` recompresses the entry** (always
+  `CompressionLevel.Optimal`) since `ZipArchiveEntry` exposes no way to
+  read back its original compression level for a byte-for-byte raw copy -
+  content is identical, only physical size may shift slightly.
+- **`AddOrReplaceFilesInArchive` always replaces a same-named entry** -
+  there's no separate "add" vs. "replace" mode. A fallback entry name
+  (when `entryNamesCsv` is blank) is disambiguated with a numeric suffix
+  only against other newly-added files in the same call, never against a
+  pre-existing entry, since replacing a same-named existing entry is the
+  intended behavior.
+- **`MergeArchives` never modifies either input** - it always builds a
+  third, new archive (which may reuse one input's own path), built
+  atomically like `CreateArchive`.
 - **The ZIP/DOS timestamp format has no time-zone field.** Only the
   wall-clock date/time round-trips through an entry's `LastWriteTime` -
   reading it back reattaches whatever machine's *local* offset, not the
