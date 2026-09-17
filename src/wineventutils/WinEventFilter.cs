@@ -215,20 +215,20 @@ namespace WinEventAutomation
         // per hwnd for a short window so repeated events for the same dialog do
         // not re-enumerate; a hung window can at worst stall the pump once per
         // cache entry, not once per event.
-        private static readonly ConcurrentDictionary<long, (long Ticks, bool Found)> ButtonChildCache =
-            new ConcurrentDictionary<long, (long, bool)>();
+        private static readonly ConcurrentDictionary<IntPtr, (long Ticks, bool Found)> ButtonChildCache =
+            new ConcurrentDictionary<IntPtr, (long, bool)>();
         private static readonly TimeSpan ButtonChildCacheTtl = TimeSpan.FromMilliseconds(500);
 
-        private static bool HasButtonChild(long hwnd)
+        private static bool HasButtonChild(IntPtr hwnd)
         {
-            if (hwnd == 0)
+            if (hwnd == IntPtr.Zero)
                 return false;
             long now = Environment.TickCount64;
             if (ButtonChildCache.TryGetValue(hwnd, out var cached) && now - cached.Ticks < ButtonChildCacheTtl.TotalMilliseconds)
                 return cached.Found;
             bool found = false;
             WinEventInterop.EnumChildWindows(
-                new IntPtr(hwnd),
+                hwnd,
                 (child, lParam) =>
                 {
                     var sb = new System.Text.StringBuilder(64);

@@ -106,7 +106,7 @@ ok = events.WaitForDialogAppeared("{\"process\":\"notepad\"}", 10000, out WinEve
 if (ok)
 {
     var dialogs = new DialogAutomation.DialogUtils();
-    dialogs.ClickDialogButtonByText(new IntPtr(dialog.Hwnd), "OK", out bool wasEnabled, out _);
+    dialogs.ClickDialogButtonByText(dialog.Hwnd, "OK", out bool wasEnabled, out _);
 }
 ```
 
@@ -125,9 +125,9 @@ while (true)
 
     // Capture the dialog, then dismiss it.
     var capture = new ScreenCaptureAutomation.ScreenCaptureUtils();
-    capture.CaptureWindow(new IntPtr(dialog.Hwnd), out _, out _);
+    capture.CaptureWindow(dialog.Hwnd, out _, out _);
     var dialogs = new DialogAutomation.DialogUtils();
-    dialogs.ClickDialogButtonByText(new IntPtr(dialog.Hwnd), "OK", out bool wasEnabled, out _);
+    dialogs.ClickDialogButtonByText(dialog.Hwnd, "OK", out bool wasEnabled, out _);
 }
 ```
 
@@ -273,18 +273,21 @@ closed — the filter matches nothing.
 | `WaitForDialogAppeared` | `bool WaitForDialogAppeared(string filterJson, int timeoutMs, out WinEventData eventData, out string message)` | Matches `DialogAppeared`/`DialogClosed` + `#32770` heuristic. |
 | `WaitForStateChanged` | `bool WaitForStateChanged(string filterJson, string stateRegex, int timeoutMs, out WinEventData eventData, out string message)` | Matches `StateChanged` + state regex. |
 | `WaitForMenuOpened` | `bool WaitForMenuOpened(string filterJson, int timeoutMs, out WinEventData eventData, out string message)` | Matches `MenuOpened`/`MenuPopupOpened`. |
+| `IsWindow` | `bool IsWindow(string filterJson, out IntPtr hwnd, out string message)` | Non-blocking check for a matching live top-level window and returns its handle. |
+| `IsDialog` | `bool IsDialog(string filterJson, out IntPtr hwnd, out string message)` | Non-blocking check for a matching live `#32770` dialog and returns its handle. |
+| `IsMenu` | `bool IsMenu(string filterJson, out IntPtr hwnd, out string message)` | Non-blocking check for a matching live `#32768` menu window and returns its handle. |
 | `WasWindowCreated` | `bool WasWindowCreated(string filterJson, int withinLastMs, out string message)` | Non-blocking lookback over the ring buffer. Returns True if found, False if not found (normal, `message` null) or on failure (`message` set). |
 | `CancelWaits` | `bool CancelWaits(out string message)` | Releases all pending waits (each reports a timeout). |
 
 A wait always resolves to exactly one event — the first match, then it stops
 listening — so every `WaitForX` method returns a single `WinEventData` object
 directly; there's no separate JSON+handle overload or `...AsEventData`
-suffix. Reconstruct a chainable `IntPtr` yourself when needed:
+suffix. `WinEventData.Hwnd` is already an `IntPtr`, so pass it directly when needed:
 
 ```csharp
 bool ok = events.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _);
 if (ok)
-    window.ActivateWindow(new IntPtr(created.Hwnd), out _); // ready to pass to WindowUtils directly
+    window.ActivateWindow(created.Hwnd, out _); // ready to pass to WindowUtils directly
 ```
 
 A wait returns False on any failure — a timeout, a stopped engine, a malformed
@@ -344,10 +347,9 @@ process waits** — these are UI-event waits; a process that never creates a win
   affect another consumer. Treat the object as read-only anyway (its members
   are properties with an `internal` setter, so external code cannot mutate
   them even by choice).
-- **`WinEventData.Hwnd` is a signed 64-bit `long`**, not a 32-bit value — a
-  32-bit field would truncate a real 64-bit window handle on 64-bit Windows.
-  Reconstruct a chainable `IntPtr` for WindowUtils/UIAutomationUtils with
-  `new IntPtr(eventData.Hwnd)`.
+- **`WinEventData.Hwnd` is an `IntPtr`** so it preserves the native handle width
+  (32-bit on x86, 64-bit on x64) and can be passed directly to
+  WindowUtils/UIAutomationUtils.
 - **`Unsubscribe` wakes a blocked `GetNextEvent`** — instead of waiting out its
   full timeout on a removed subscription, the blocked call returns False with a
   message promptly.

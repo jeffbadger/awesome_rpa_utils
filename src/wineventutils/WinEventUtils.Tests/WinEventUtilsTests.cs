@@ -157,9 +157,9 @@ namespace WinEventAutomation.Tests
         {
             var d = new ThrottleDebounce();
             d.Set("WindowShown", 150);
-            Assert.False(d.ShouldDrop(100, "WindowShown")); // first kept
-            Assert.True(d.ShouldDrop(100, "WindowShown"));  // second dropped
-            Assert.False(d.ShouldDrop(200, "WindowShown")); // different hwnd kept
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowShown")); // first kept
+            Assert.True(d.ShouldDrop(new IntPtr(100), "WindowShown"));  // second dropped
+            Assert.False(d.ShouldDrop(new IntPtr(200), "WindowShown")); // different hwnd kept
         }
 
         [Fact]
@@ -167,32 +167,32 @@ namespace WinEventAutomation.Tests
         {
             var d = new ThrottleDebounce();
             d.Set("WindowShown", 30);
-            Assert.False(d.ShouldDrop(100, "WindowShown"));
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowShown"));
             Thread.Sleep(50);
-            Assert.False(d.ShouldDrop(100, "WindowShown")); // window elapsed
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowShown")); // window elapsed
         }
 
         [Fact]
         public void Debounce_defaults_show_hide_to_150ms_others_zero()
         {
             var d = new ThrottleDebounce();
-            Assert.False(d.ShouldDrop(100, "WindowShown"));
-            Assert.True(d.ShouldDrop(100, "WindowShown"));
-            Assert.False(d.ShouldDrop(100, "WindowCreated")); // no default debounce
-            Assert.False(d.ShouldDrop(100, "WindowCreated"));
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowShown"));
+            Assert.True(d.ShouldDrop(new IntPtr(100), "WindowShown"));
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowCreated")); // no default debounce
+            Assert.False(d.ShouldDrop(new IntPtr(100), "WindowCreated"));
         }
 
         [Fact]
         public void Debounce_distinguishes_hwnds_differing_only_in_high_32_bits()
         {
-            // Regression test for the Hwnd truncation bug: before the fix, ShouldDrop
-            // took a uint, so a handle whose value only differs in its high 32 bits
-            // collapsed to the same key as a different handle and was wrongly debounced
-            // away as a duplicate of it.
+            if (IntPtr.Size < 8)
+                return;
+            // Regression test for full-handle keying: two handles that share low
+            // 32 bits but differ in high 32 bits must remain distinct debounce keys.
             var d = new ThrottleDebounce();
             d.Set("WindowShown", 150);
-            long low = 0x1234;
-            long high = unchecked((long)0x1_0000_1234UL); // same low 32 bits, nonzero high bits
+            IntPtr low = new IntPtr(0x1234);
+            IntPtr high = new IntPtr(unchecked((long)0x1_0000_1234UL)); // same low 32 bits, nonzero high bits
             Assert.False(d.ShouldDrop(low, "WindowShown"));  // first hwnd, kept
             Assert.False(d.ShouldDrop(high, "WindowShown")); // a genuinely different hwnd, also kept
         }
@@ -365,6 +365,201 @@ namespace WinEventAutomation.Tests
         }
 
         [Fact]
+        public void Is_methods_reject_malformed_filter_json()
+        {
+            var utils = new WinEventUtils();
+            try
+            {
+                Assert.False(utils.IsWindow("{not json", out IntPtr windowHwnd, out string windowMessage));
+                Assert.Equal(IntPtr.Zero, windowHwnd);
+                Assert.NotNull(windowMessage);
+                Assert.False(utils.IsDialog("{not json", out IntPtr dialogHwnd, out string dialogMessage));
+                Assert.Equal(IntPtr.Zero, dialogHwnd);
+                Assert.NotNull(dialogMessage);
+                Assert.False(utils.IsMenu("{not json", out IntPtr menuHwnd, out string menuMessage));
+                Assert.Equal(IntPtr.Zero, menuHwnd);
+                Assert.NotNull(menuMessage);
+            }
+            finally
+            {
+                utils.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Is_methods_report_no_match_without_an_error()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            const string filter = "{\"process\":\"definitely-not-a-real-process-xyz\"}";
+            Assert.False(utils.IsWindow(filter, out IntPtr windowHwnd, out string windowMessage));
+            Assert.Equal(IntPtr.Zero, windowHwnd);
+            Assert.Null(windowMessage);
+            Assert.False(utils.IsDialog(filter, out IntPtr dialogHwnd, out string dialogMessage));
+            Assert.Equal(IntPtr.Zero, dialogHwnd);
+            Assert.Null(dialogMessage);
+            Assert.False(utils.IsMenu(filter, out IntPtr menuHwnd, out string menuMessage));
+            Assert.Equal(IntPtr.Zero, menuHwnd);
+            Assert.Null(menuMessage);
+        }
+
+        [Fact]
+        public void IsWindow_notepad_returns_hwnd_with_null_message()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            using var proc = StartNotepad();
+            if (proc == null)
+                return;
+            try
+            {
+                bool ok = false;
+                IntPtr hwnd = IntPtr.Zero;
+                string message = null;
+                for (int i = 0; i < 20 && !ok; i++)
+                {
+                    ok = utils.IsWindow("{\"process\":\"notepad\"}", out hwnd, out message);
+                    if (!ok)
+                        Thread.Sleep(100);
+                }
+                Assert.True(ok);
+                Assert.NotEqual(IntPtr.Zero, hwnd);
+                Assert.Null(message);
+            }
+            finally
+            {
+                Kill(proc);
+            }
+        }
+
+        [Fact]
+        public void IsDialog_message_box_returns_hwnd_with_null_message()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            string title = "WinEventUtils Dialog " + Guid.NewGuid().ToString("N");
+            string filter = utils.BuildFilterJson(process: Process.GetCurrentProcess().ProcessName, titleContains: title);
+            var thread = new Thread(() => MessageBox(IntPtr.Zero, "dialog", title, 0));
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+            try
+            {
+                bool ok = false;
+                IntPtr hwnd = IntPtr.Zero;
+                string message = null;
+                for (int i = 0; i < 50 && !ok; i++)
+                {
+                    ok = utils.IsDialog(filter, out hwnd, out message);
+                    if (!ok)
+                        Thread.Sleep(100);
+                }
+                Assert.True(ok);
+                Assert.NotEqual(IntPtr.Zero, hwnd);
+                Assert.Null(message);
+            }
+            finally
+            {
+                IntPtr dialogHwnd = FindWindow("#32770", title);
+                if (dialogHwnd != IntPtr.Zero)
+                    PostMessage(dialogHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                thread.Join(5000);
+            }
+        }
+
+        [Fact]
+        public void IsMenu_popup_menu_returns_hwnd_with_null_message()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new WinEventUtils();
+            string filter = utils.BuildFilterJson(process: Process.GetCurrentProcess().ProcessName);
+            IntPtr ownerHwnd = IntPtr.Zero;
+            using var ownerReady = new ManualResetEventSlim(false);
+            var thread = new Thread(() =>
+            {
+                ownerHwnd = CreateWindowEx(
+                    0,
+                    "STATIC",
+                    "WinEventUtils Menu Owner",
+                    WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                    0,
+                    0,
+                    200,
+                    100,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero);
+                ownerReady.Set();
+                if (ownerHwnd == IntPtr.Zero)
+                    return;
+                IntPtr menu = CreatePopupMenu();
+                if (menu == IntPtr.Zero)
+                    return;
+                try
+                {
+                    AppendMenu(menu, MF_STRING, new UIntPtr(1), "WinEventUtils Menu Item");
+                    SetForegroundWindow(ownerHwnd);
+                    TrackPopupMenuEx(menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD, 10, 10, ownerHwnd, IntPtr.Zero);
+                }
+                finally
+                {
+                    DestroyMenu(menu);
+                    DestroyWindow(ownerHwnd);
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+            ownerReady.Wait(5000);
+            if (ownerHwnd == IntPtr.Zero)
+                return;
+            try
+            {
+                bool ok = false;
+                IntPtr hwnd = IntPtr.Zero;
+                string message = null;
+                for (int i = 0; i < 50 && !ok; i++)
+                {
+                    ok = utils.IsMenu(filter, out hwnd, out message);
+                    if (!ok)
+                        Thread.Sleep(100);
+                }
+                Assert.True(ok);
+                Assert.NotEqual(IntPtr.Zero, hwnd);
+                Assert.Null(message);
+            }
+            finally
+            {
+                // EndMenu() only ends menu tracking on the calling thread; the popup
+                // menu's modal loop runs on `thread`, so cancel it by posting
+                // WM_CANCELMODE to the owning window that thread is pumping.
+                if (ownerHwnd != IntPtr.Zero)
+                    PostMessage(ownerHwnd, WM_CANCELMODE, IntPtr.Zero, IntPtr.Zero);
+                thread.Join(5000);
+            }
+        }
+
+        [Fact]
+        public void IsWindow_enumwindows_failure_returns_error_message()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+            using var utils = new FailingEnumWinEventUtils();
+
+            bool ok = utils.IsWindow("{}", out IntPtr hwnd, out string message);
+
+            Assert.False(ok);
+            Assert.Equal(IntPtr.Zero, hwnd);
+            Assert.NotNull(message);
+            Assert.Contains("EnumWindows failed", message);
+        }
+
+        [Fact]
         public void GetNextEvent_unknown_subscription_returns_false_with_message()
         {
             var utils = new WinEventUtils();
@@ -432,12 +627,14 @@ namespace WinEventAutomation.Tests
         [Fact]
         public void EventData_Hwnd_does_not_truncate_a_64_bit_handle()
         {
-            long fullHandle = unchecked((long)0x00007FF6_12345678UL); // realistic 64-bit handle magnitude
+            if (IntPtr.Size < 8)
+                return;
+            IntPtr fullHandle = new IntPtr(unchecked((long)0x00007FF6_12345678UL)); // realistic 64-bit handle magnitude
             var e = new WinEventData { Hwnd = fullHandle };
             Assert.Equal(fullHandle, e.Hwnd);
 
             using var doc = JsonDocument.Parse(e.ToJson());
-            Assert.Equal(fullHandle, doc.RootElement.GetProperty("Hwnd").GetInt64());
+            Assert.Equal(fullHandle.ToInt64(), doc.RootElement.GetProperty("Hwnd").GetInt64());
         }
 
         // ------------------------------------------------------------------
@@ -946,13 +1143,13 @@ namespace WinEventAutomation.Tests
         {
             var d = new ThrottleDebounce();
             for (uint i = 1; i <= 600; i++)
-                d.ShouldDrop(i, "WindowShown"); // 600 distinct keys, default 150 ms window
+                d.ShouldDrop(new IntPtr(i), "WindowShown"); // 600 distinct keys, default 150 ms window
             Assert.True(d.CachedKeys > 512);
             Thread.Sleep(200); // let every window elapse
-            d.ShouldDrop(99999, "WindowShown"); // count exceeded → prune pass
+            d.ShouldDrop(new IntPtr(99999), "WindowShown"); // count exceeded → prune pass
             Assert.True(d.CachedKeys <= 2, "stale entries were not pruned: " + d.CachedKeys);
             // The still-live key (99999) is tracked again, and pruning does not break debounce.
-            Assert.False(d.ShouldDrop(99998, "WindowShown"));
+            Assert.False(d.ShouldDrop(new IntPtr(99998), "WindowShown"));
         }
 
         [Fact]
@@ -1009,7 +1206,7 @@ namespace WinEventAutomation.Tests
                 Assert.True(ok);
                 Assert.NotNull(e);
                 Assert.Equal("notepad", e.ProcessName, ignoreCase: true);
-                Assert.NotEqual(0u, e.Hwnd);
+                Assert.NotEqual(IntPtr.Zero, e.Hwnd);
             }
             finally
             {
@@ -1090,7 +1287,7 @@ namespace WinEventAutomation.Tests
             {
                 Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _));
                 Assert.NotNull(created);
-                IntPtr hwnd = new IntPtr((long)created.Hwnd);
+                IntPtr hwnd = created.Hwnd;
                 Thread.Sleep(300);
                 for (int i = 0; i < 10; i++)
                 {
@@ -1179,7 +1376,7 @@ namespace WinEventAutomation.Tests
             {
                 Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _));
                 Assert.NotNull(created);
-                IntPtr hwnd = new IntPtr((long)created.Hwnd);
+                IntPtr hwnd = created.Hwnd;
                 Thread.Sleep(300);
                 for (int i = 0; i < 1000; i++)
                 {
@@ -1211,7 +1408,7 @@ namespace WinEventAutomation.Tests
                 EventId = Guid.NewGuid().ToString("N"),
                 Category = category,
                 Timestamp = DateTime.UtcNow.Ticks,
-                Hwnd = 0x1234,
+                Hwnd = new IntPtr(0x1234),
                 ProcessName = processName,
                 ProcessId = processId,
                 ClassName = className,
@@ -1245,7 +1442,68 @@ namespace WinEventAutomation.Tests
             }
         }
 
+        private sealed class FailingEnumWinEventUtils : WinEventUtils
+        {
+            protected internal override bool TryEnumerateTopLevelWindows(Func<IntPtr, bool> callback, out bool stoppedByCallback, out int win32Error)
+            {
+                stoppedByCallback = false;
+                win32Error = 5;
+                return false;
+            }
+        }
+
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private const int WM_CLOSE = 0x0010;
+        private const int WM_CANCELMODE = 0x001F;
+        private const int WS_OVERLAPPEDWINDOW = unchecked((int)0x00CF0000);
+        private const int WS_VISIBLE = unchecked((int)0x10000000);
+        private const uint MF_STRING = 0x00000000;
+        private const uint TPM_LEFTALIGN = 0x0000;
+        private const uint TPM_TOPALIGN = 0x0000;
+        private const uint TPM_RETURNCMD = 0x0100;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string className, string windowName);
+
+        [DllImport("user32.dll")]
+        private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateWindowEx(
+            int exStyle,
+            string className,
+            string windowName,
+            int style,
+            int x,
+            int y,
+            int width,
+            int height,
+            IntPtr parent,
+            IntPtr menu,
+            IntPtr instance,
+            IntPtr param);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr CreatePopupMenu();
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool AppendMenu(IntPtr hMenu, uint flags, UIntPtr itemId, string itemText);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyMenu(IntPtr hMenu);
+
+        [DllImport("user32.dll")]
+        private static extern int TrackPopupMenuEx(IntPtr hMenu, uint flags, int x, int y, IntPtr hWnd, IntPtr rect);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
     }
 }

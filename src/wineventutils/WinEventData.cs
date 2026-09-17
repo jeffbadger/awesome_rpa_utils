@@ -1,19 +1,40 @@
 using System;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace WinEventAutomation
 {
     /// <summary>Shared serializer options for <see cref="WinEventData"/>.</summary>
     internal static class WinEventJson
     {
-        public static readonly JsonSerializerOptions Options = new JsonSerializerOptions();
+        public static readonly JsonSerializerOptions Options = CreateOptions();
+
+        private static JsonSerializerOptions CreateOptions()
+        {
+            var options = new JsonSerializerOptions();
+            options.Converters.Add(new IntPtrJsonConverter());
+            return options;
+        }
+    }
+
+    internal sealed class IntPtrJsonConverter : JsonConverter<IntPtr>
+    {
+        public override IntPtr Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return new IntPtr(reader.GetInt64());
+        }
+
+        public override void Write(Utf8JsonWriter writer, IntPtr value, JsonSerializerOptions options)
+        {
+            writer.WriteNumberValue(value.ToInt64());
+        }
     }
 
     /// <summary>
     /// A single WinEvent, flattened into Pega-mappable properties. Produced by the
     /// event engine and delivered to subscriptions and waiters — each consumer
     /// receives its own copy, but treat the object as read-only. All properties are
-    /// plain strings/numbers so the object maps directly onto Pega properties;
+    /// plain strings/numbers/handles so the object maps directly onto Pega properties;
     /// use <see cref="ToJson"/> for anything structured.
     /// </summary>
     public class WinEventData
@@ -28,11 +49,10 @@ namespace WinEventAutomation
         public long Timestamp { get; internal set; }
 
         /// <summary>
-        /// Window handle as a signed 64-bit value (0 if none), safe for both 32- and
-        /// 64-bit handles. Reconstruct an <see cref="IntPtr"/> for WindowUtils/
-        /// UIAutomationUtils methods with <c>new IntPtr(Hwnd)</c>.
+        /// Window handle (zero if none), represented as an <see cref="IntPtr"/> so
+        /// it can be passed directly to WindowUtils/UIAutomationUtils methods.
         /// </summary>
-        public long Hwnd { get; internal set; }
+        public IntPtr Hwnd { get; internal set; }
 
         /// <summary>Process image name (e.g. "notepad"), or null if unknown.</summary>
         public string ProcessName { get; internal set; }
