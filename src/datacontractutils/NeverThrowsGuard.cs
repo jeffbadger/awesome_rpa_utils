@@ -1,6 +1,6 @@
 using System;
 
-namespace DataBagAutomation
+namespace DataContractAutomation
 {
     internal static class NeverThrowsGuard
     {

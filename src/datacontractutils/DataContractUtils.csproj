@@ -4,13 +4,13 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
-    <AssemblyName>DataBagAutomation</AssemblyName>
-    <RootNamespace>DataBagAutomation</RootNamespace>
+    <AssemblyName>DataContractAutomation</AssemblyName>
+    <RootNamespace>DataContractAutomation</RootNamespace>
     <Platforms>AnyCPU;x64</Platforms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="DataBagUtils.Tests/**/*.cs" />
+    <Compile Remove="DataContractUtils.Tests/**/*.cs" />
   </ItemGroup>
 </Project>
