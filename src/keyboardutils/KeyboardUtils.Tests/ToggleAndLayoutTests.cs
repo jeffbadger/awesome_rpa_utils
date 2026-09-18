@@ -103,10 +103,16 @@ namespace KeyboardAutomation.Tests
             Assert.Equal(expected, KeyboardLayoutLookup.LanguageTag(languageId));
         }
 
-        [Fact]
-        public void LanguageTag_UnknownLanguage_IsAnEmptyStringRatherThanAnException()
+        // Language IDs that are not assigned to any culture (0x7F is reserved for the
+        // invariant culture, so 0x7F7F is not a real language either). .NET throws
+        // CultureNotFoundException for these; the documented result is an empty string.
+        [Theory]
+        [InlineData(0x7F7F)]
+        [InlineData(0x3F3F)]
+        [InlineData(0xFFFE)]
+        public void LanguageTag_UnknownLanguage_IsAnEmptyStringRatherThanAnException(int languageId)
         {
-            Assert.NotNull(KeyboardLayoutLookup.LanguageTag(0x7F7F));
+            Assert.Equal(string.Empty, KeyboardLayoutLookup.LanguageTag(languageId));
         }
 
         // ------------------------------------------------------------------
