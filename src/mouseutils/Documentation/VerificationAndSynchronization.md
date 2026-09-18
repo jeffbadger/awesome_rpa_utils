@@ -4,8 +4,8 @@ Confirming an action actually had an effect, and waiting for the application
 to finish processing — the pieces most RPA scripts are missing when they fall
 back to guessing with fixed `Thread.Sleep` calls.
 
-None of these methods throw. `GetPixelColor` returns `bool` (success) with an
-`out int color` and `out string message`. The other four keep their original
+None of these methods throw. `GetPixelColor` and `GetCurrentCursorType` return
+`bool` (success) with an `out` value and an `out string message`. The other four keep their original
 `bool` meaning (matched/idle vs. not) and add an `out string message` that is
 only set if `timeoutMs` was invalid or a Win32 failure aborted the poll early
 — check whether `message` is non-null to tell "genuinely timed out" apart
@@ -66,6 +66,42 @@ understand why a later step is timing out.
 if (mouse.IsBusyCursorActive(out _))
     Logger.Info("Application currently shows a busy cursor.");
 ```
+
+## `GetCurrentCursorType()`
+
+**Scenario:** A legacy order-entry screen turns its labels into links only once
+the record has loaded. Before clicking, the automation moves the pointer over
+the "Customer" label and confirms the cursor became a hand - a cheap check that
+the label really is clickable now, without OCR or a pixel guess.
+
+```csharp
+mouse.MoveTo(labelX, labelY, out _);
+Thread.Sleep(150);   // let the cursor settle after the move
+
+if (mouse.GetCurrentCursorType(out CurrentCursorType cursor, out string message))
+{
+    if (cursor == CurrentCursorType.Hand)
+        mouse.LeftClick(out _);
+    else
+        Logger.Warn($"Label is not a link yet (cursor is {cursor}).");
+}
+else
+{
+    Logger.Error($"Could not read the cursor: {message}");
+}
+```
+
+The same check works to confirm a text field is editable (`IBeam`), that a
+drop target refuses a drop (`No`), or that a splitter can be dragged
+(`SizeWestEast`/`SizeNorthSouth`). `IsBusyCursorActive` is the special case for
+`Wait`/`AppStarting`.
+
+Two results mean "nothing to match against" rather than "the wrong cursor":
+`Hidden` (no cursor is showing over that window) and `Unknown` (an application
+drew its own cursor image; many browsers and games do, even for shapes that look
+standard). Treat a match as reliable and a mismatch as "not sure", and keep a
+fallback. A slot with a replaced image is still reported by its own name, so a
+crosshair installed into the arrow slot with `SetCursor` reads as `Arrow`.
 
 ## `WaitForIdleCursor(int timeoutMs, int pollIntervalMs)`
 
