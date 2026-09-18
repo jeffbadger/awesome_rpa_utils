@@ -142,5 +142,154 @@ namespace MouseAutomation.Tests
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        // --- Validation tightening: reject invalid numeric input instead of silently
+        // coercing it. Every check below returns before any native call, so these are
+        // safe to test the same way as every other guard test in this file. ---
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void SmoothMoveTo_StepsBelowOne_ReturnsFalseWithMessage(int steps)
+        {
+            bool ok = _mouse.SmoothMoveTo(0, 0, steps, 5, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void SmoothMoveTo_NegativeDelay_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.SmoothMoveTo(0, 0, 25, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void JiggleMouse_PixelsBelowOne_ReturnsFalseWithMessage(int pixels)
+        {
+            bool ok = _mouse.JiggleMouse(out string message, pixels);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickAndHold_NegativeHoldMilliseconds_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickAndHold(MouseButton.Left, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void DragAndHold_NegativeHoldMilliseconds_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.DragAndHold(0, 0, 10, 10, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void MoveMouseBezier_DurationBelowOne_ReturnsFalseWithMessage(int durationMs)
+        {
+            bool ok = _mouse.MoveMouseBezier(0, 0, out string message, durationMs);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ScrollUp_NegativeNotches_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ScrollUp(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ScrollDown_NegativeNotches_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ScrollDown(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ScrollRight_NegativeNotches_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ScrollRight(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ScrollLeft_NegativeNotches_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ScrollLeft(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickWithRetry_MaxAttemptsBelowOne_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, 0, 10, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickWithRetry_NegativeRetryDelay_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, 3, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 3, 200, 3)]  // radius
+        [InlineData(30, 0, 200, 3)] // flashes
+        [InlineData(30, 3, 0, 3)]   // flashMs
+        [InlineData(30, 3, 200, 0)] // ringWidth
+        public void FlashCursorHighlight_ParameterBelowOne_ReturnsFalseWithMessage(int radius, int flashes, int flashMs, int ringWidth)
+        {
+            bool ok = _mouse.FlashCursorHighlight(out string message, radius, flashes, flashMs, ringWidth);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickWithModifiers_UndefinedModifierBits_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithModifiers(MouseButton.Left, (ModifierKeys)0x8, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void RubberBandSelect_UndefinedModifierBits_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.RubberBandSelect(0, 0, 10, 10, (ModifierKeys)0x8, 30, 10, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
     }
 }

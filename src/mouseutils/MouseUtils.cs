@@ -358,10 +358,10 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <param name="steps">Number of intermediate move events; values below 1 are treated as 1.</param>
-        /// <param name="delayMilliseconds">Delay between steps in milliseconds; 0 moves without pausing.</param>
+        /// <param name="steps">Number of intermediate move events. Must be at least 1.</param>
+        /// <param name="delayMilliseconds">Delay between steps in milliseconds; 0 moves without pausing. Must be zero or positive.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="steps"/> is below 1, <paramref name="delayMilliseconds"/> is negative, or a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Position")]
         [Description("Smoothly moves the cursor to the target position using the given number of steps and delay between steps. Returns True on success; never throws.")]
         public bool SmoothMoveTo(int x, int y, int steps, int delayMilliseconds, out string message)
@@ -369,7 +369,16 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (steps < 1) steps = 1;
+                if (steps < 1)
+                {
+                    message = "steps must be at least 1.";
+                    return false;
+                }
+                if (delayMilliseconds < 0)
+                {
+                    message = "delayMilliseconds must be zero or positive.";
+                    return false;
+                }
 
                 if (!TryGetPoint(out POINT start, out message))
                     return false;
@@ -398,8 +407,8 @@ namespace MouseAutomation
         /// position unchanged but generating real mouse-move input.
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the nudge failed.</param>
-        /// <param name="pixels">Distance to nudge in each direction; values below 1 are treated as 1.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call failed. Never throws.</returns>
+        /// <param name="pixels">Distance to nudge in each direction. Must be at least 1.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="pixels"/> is below 1 or a Win32 cursor call failed. Never throws.</returns>
         /// <remarks>
         /// Intended to be called periodically (e.g. from a Robot Studio loop) during a
         /// long unattended run to reset idle timers and prevent the screen from locking
@@ -416,7 +425,11 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (pixels < 1) pixels = 1;
+                if (pixels < 1)
+                {
+                    message = "pixels must be at least 1.";
+                    return false;
+                }
                 if (!TryGetPoint(out POINT original, out message))
                     return false;
                 if (!MoveBy(pixels, 0, out message))
@@ -621,6 +634,17 @@ namespace MouseAutomation
         public bool RightClickAt(int x, int y, out string message) => ClickAt(x, y, MouseButton.Right, out message);
 
         /// <summary>
+        /// Middle-clicks at the given screen coordinates.
+        /// </summary>
+        /// <param name="x">Target X coordinate in screen pixels.</param>
+        /// <param name="y">Target Y coordinate in screen pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        [Category("Mouse - Click")]
+        [Description("Middle-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool MiddleClickAt(int x, int y, out string message) => ClickAt(x, y, MouseButton.Middle, out message);
+
+        /// <summary>
         /// Double left-clicks at the current cursor position.
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
@@ -639,6 +663,15 @@ namespace MouseAutomation
         public bool RightDoubleClick(out string message) => DoubleClick(MouseButton.Right, out message);
 
         /// <summary>
+        /// Double middle-clicks at the current cursor position.
+        /// </summary>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        [Category("Mouse - Click")]
+        [Description("Double middle-clicks at the current cursor position. Returns True on success; never throws.")]
+        public bool MiddleDoubleClick(out string message) => DoubleClick(MouseButton.Middle, out message);
+
+        /// <summary>
         /// Double left-clicks at the given screen coordinates.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
@@ -648,6 +681,28 @@ namespace MouseAutomation
         [Category("Mouse - Click")]
         [Description("Double left-clicks at the given screen coordinates. Returns True on success; never throws.")]
         public bool LeftDoubleClickAt(int x, int y, out string message) => DoubleClickAt(x, y, MouseButton.Left, out message);
+
+        /// <summary>
+        /// Double right-clicks at the given screen coordinates.
+        /// </summary>
+        /// <param name="x">Target X coordinate in screen pixels.</param>
+        /// <param name="y">Target Y coordinate in screen pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        [Category("Mouse - Click")]
+        [Description("Double right-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool RightDoubleClickAt(int x, int y, out string message) => DoubleClickAt(x, y, MouseButton.Right, out message);
+
+        /// <summary>
+        /// Double middle-clicks at the given screen coordinates.
+        /// </summary>
+        /// <param name="x">Target X coordinate in screen pixels.</param>
+        /// <param name="y">Target Y coordinate in screen pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        [Category("Mouse - Click")]
+        [Description("Double middle-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool MiddleDoubleClickAt(int x, int y, out string message) => DoubleClickAt(x, y, MouseButton.Middle, out message);
 
         /// <summary>
         /// Presses and holds the given mouse button. Pair with <see cref="MouseUp"/>.
@@ -699,9 +754,9 @@ namespace MouseAutomation
         /// Holds the given button down for the specified time, then releases it.
         /// </summary>
         /// <param name="button">The mouse button to hold.</param>
-        /// <param name="holdMilliseconds">How long to hold the button; values below 0 are treated as 0.</param>
+        /// <param name="holdMilliseconds">How long to hold the button. Must be zero or positive.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the hold failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, a negative <paramref name="holdMilliseconds"/>, or a failed input injection. Never throws.</returns>
         [Category("Mouse - Click")]
         [Description("Holds the given button down for the specified time, then releases it. Returns True on success; never throws.")]
         public bool ClickAndHold(MouseButton button, int holdMilliseconds, out string message)
@@ -709,6 +764,12 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (holdMilliseconds < 0)
+                {
+                    message = "holdMilliseconds must be zero or positive.";
+                    return false;
+                }
+
                 if (!MouseDown(button, out message))
                     return false;
 
@@ -717,7 +778,7 @@ namespace MouseAutomation
                 string cleanupMessage = null;
                 try
                 {
-                    Thread.Sleep(Math.Max(0, holdMilliseconds));
+                    Thread.Sleep(holdMilliseconds);
                     primaryOk = true;
                 }
                 catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -750,7 +811,7 @@ namespace MouseAutomation
         /// <param name="button">The mouse button to click.</param>
         /// <param name="modifiers">Modifier keys to hold during the click; combinable flags.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection (locked desktop, UAC/secure desktop, or integrity level). Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, an undefined bit set in <paramref name="modifiers"/>, or a failed input injection (locked desktop, UAC/secure desktop, or integrity level). Never throws.</returns>
         /// <remarks>
         /// The click happens at the current cursor position - call <see cref="MoveTo"/> first
         /// to target it. Caveat: Alt+Click activates the menu bar in some classic Win32
@@ -763,6 +824,12 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if ((modifiers & ~AllDefinedModifierKeys) != 0)
+                {
+                    message = $"Undefined ModifierKeys bit(s) set: {modifiers}.";
+                    return false;
+                }
+
                 // Batch 1: press the modifiers and the button down, atomically.
                 List<INPUT> downBatch = new List<INPUT>();
 
@@ -879,10 +946,10 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to click.</param>
-        /// <param name="maxAttempts">Maximum number of attempts; values below 1 are treated as 1.</param>
-        /// <param name="retryDelayMilliseconds">Delay between attempts in milliseconds.</param>
+        /// <param name="maxAttempts">Maximum number of attempts. Must be at least 1.</param>
+        /// <param name="retryDelayMilliseconds">Delay between attempts in milliseconds. Must be zero or positive.</param>
         /// <param name="message"><c>null</c> on success; otherwise the last attempt's failure reason.</param>
-        /// <returns><c>true</c> if any attempt succeeded; <c>false</c> if every attempt failed. Never throws.</returns>
+        /// <returns><c>true</c> if any attempt succeeded; <c>false</c> if <paramref name="maxAttempts"/> is below 1, <paramref name="retryDelayMilliseconds"/> is negative, or every attempt failed. Never throws.</returns>
         /// <remarks>
         /// Useful for unattended runs where a momentary UAC flicker or timing hiccup can
         /// cause a single click attempt to fail even though the desktop is otherwise usable.
@@ -894,7 +961,16 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (maxAttempts < 1) maxAttempts = 1;
+                if (maxAttempts < 1)
+                {
+                    message = "maxAttempts must be at least 1.";
+                    return false;
+                }
+                if (retryDelayMilliseconds < 0)
+                {
+                    message = "retryDelayMilliseconds must be zero or positive.";
+                    return false;
+                }
 
                 message = null;
                 for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -905,7 +981,7 @@ namespace MouseAutomation
                         return true;
                     }
                     if (attempt < maxAttempts)
-                        Thread.Sleep(Math.Max(0, retryDelayMilliseconds));
+                        Thread.Sleep(retryDelayMilliseconds);
                 }
                 return false;
 
@@ -1065,7 +1141,7 @@ namespace MouseAutomation
         /// <param name="steps">Number of intermediate move events during the drag.</param>
         /// <param name="stepDelayMilliseconds">Delay between drag steps in milliseconds.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if an undefined bit is set in <paramref name="modifiers"/>, or a Win32 cursor call or input injection failed. Never throws.</returns>
         /// <remarks>
         /// Modifier keys are always released in a <c>finally</c> block, so a failed drag
         /// never leaves Ctrl/Shift/Alt stuck down. If that release itself fails, this
@@ -1080,6 +1156,12 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if ((modifiers & ~AllDefinedModifierKeys) != 0)
+                {
+                    message = $"Undefined ModifierKeys bit(s) set: {modifiers}.";
+                    return false;
+                }
+
                 List<INPUT> downBatch = new List<INPUT>();
                 if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
                 if ((modifiers & ModifierKeys.Shift) != 0) downBatch.Add(MakeKeyInput(VK_SHIFT, false));
@@ -1127,9 +1209,9 @@ namespace MouseAutomation
         /// <param name="startY">Drag start Y coordinate in screen pixels.</param>
         /// <param name="endX">Drag end X coordinate in screen pixels.</param>
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
-        /// <param name="holdMilliseconds">How long to hold the button at the destination before releasing; values below 0 are treated as 0.</param>
+        /// <param name="holdMilliseconds">How long to hold the button at the destination before releasing. Must be zero or positive.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="holdMilliseconds"/> is negative or a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Drag")]
         [Description("Drags from start to end, then holds the button down at the destination before releasing (for hover-to-expand drop targets). Returns True on success; never throws.")]
         public bool DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds, out string message)
@@ -1137,6 +1219,12 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (holdMilliseconds < 0)
+                {
+                    message = "holdMilliseconds must be zero or positive.";
+                    return false;
+                }
+
                 if (!MoveTo(startX, startY, out message)) return false;
                 Thread.Sleep(50);
                 if (!MouseDown(MouseButton.Left, out message)) return false;
@@ -1149,7 +1237,7 @@ namespace MouseAutomation
                     Thread.Sleep(50);
                     primaryOk = SmoothMoveTo(endX, endY, 30, 10, out primaryMessage);
                     if (primaryOk)
-                        Thread.Sleep(Math.Max(0, holdMilliseconds));
+                        Thread.Sleep(holdMilliseconds);
                 }
                 finally
                 {
@@ -1205,12 +1293,20 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls up the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
+        /// <param name="notches">Number of notches. Must be zero or positive; the value is clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="notches"/> is negative or input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls up the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollUp(int notches, out string message) => Scroll(WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
+        public bool ScrollUp(int notches, out string message)
+        {
+            if (notches < 0)
+            {
+                message = "notches must be zero or positive.";
+                return false;
+            }
+            return Scroll(WHEEL_DELTA * ClampNotches(notches), out message);
+        }
 
         /// <summary>
         /// Scrolls down one wheel notch.
@@ -1224,12 +1320,20 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls down the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
+        /// <param name="notches">Number of notches. Must be zero or positive; the value is clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="notches"/> is negative or input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls down the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollDown(int notches, out string message) => Scroll(-WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
+        public bool ScrollDown(int notches, out string message)
+        {
+            if (notches < 0)
+            {
+                message = "notches must be zero or positive.";
+                return false;
+            }
+            return Scroll(-WHEEL_DELTA * ClampNotches(notches), out message);
+        }
 
         /// <summary>
         /// Scrolls horizontally at the current cursor position.
@@ -1266,12 +1370,20 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls right the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
+        /// <param name="notches">Number of notches. Must be zero or positive; the value is clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="notches"/> is negative or input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls right the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollRight(int notches, out string message) => ScrollHorizontal(WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
+        public bool ScrollRight(int notches, out string message)
+        {
+            if (notches < 0)
+            {
+                message = "notches must be zero or positive.";
+                return false;
+            }
+            return ScrollHorizontal(WHEEL_DELTA * ClampNotches(notches), out message);
+        }
 
         /// <summary>
         /// Scrolls left one wheel notch.
@@ -1285,35 +1397,125 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls left the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
+        /// <param name="notches">Number of notches. Must be zero or positive; the value is clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="notches"/> is negative or input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls left the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollLeft(int notches, out string message) => ScrollHorizontal(-WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
+        public bool ScrollLeft(int notches, out string message)
+        {
+            if (notches < 0)
+            {
+                message = "notches must be zero or positive.";
+                return false;
+            }
+            return ScrollHorizontal(-WHEEL_DELTA * ClampNotches(notches), out message);
+        }
 
         /// <summary>
-        /// Moves the cursor to the coordinates and scrolls horizontally there. Wheel
-        /// messages go to the window under the cursor, so this targets the control that
-        /// actually receives the scroll.
+        /// Moves the cursor to the coordinates, scrolls vertically there, then returns
+        /// the cursor to its original position - the vertical counterpart to
+        /// <see cref="ScrollHorizontalAt"/>. Wheel messages go to the window under the
+        /// cursor, so this targets the control that actually receives the scroll.
+        /// </summary>
+        /// <param name="x">Target X coordinate in screen pixels.</param>
+        /// <param name="y">Target Y coordinate in screen pixels.</param>
+        /// <param name="wheelDelta">Scroll amount; positive scrolls up, negative scrolls down. 120 = one wheel notch.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the cursor could not be restored afterward, or a Win32 cursor call/input injection failed. Never throws.</returns>
+        [Category("Mouse - Wheel")]
+        [Description("Moves the cursor to the coordinates, scrolls vertically there, then restores the cursor's original position (positive = up, negative = down; 120 = one notch). Returns True on success; never throws.")]
+        public bool ScrollAt(int x, int y, int wheelDelta, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!TryGetPoint(out POINT original, out message))
+                    return false;
+
+                bool moved;
+                bool scrolled = false;
+                string failureMessage = null;
+                bool restored = true;
+                try
+                {
+                    moved = MoveTo(x, y, out failureMessage);
+                    if (moved)
+                    {
+                        Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
+                        scrolled = Scroll(wheelDelta, out failureMessage);
+                    }
+                }
+                finally
+                {
+                    restored = SetCursorPos(original.X, original.Y);
+                }
+
+                if (!restored)
+                {
+                    message = "The cursor could not be restored to its original position after the scroll attempt.";
+                    return false;
+                }
+
+                message = scrolled ? null : failureMessage;
+                return scrolled;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ScrollAt", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Moves the cursor to the coordinates, scrolls horizontally there, then
+        /// returns the cursor to its original position. Wheel messages go to the
+        /// window under the cursor, so this targets the control that actually
+        /// receives the scroll.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="wheelDelta">Scroll amount; positive scrolls right, negative scrolls left. 120 = one notch.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if the cursor could not be restored afterward, or a Win32 cursor call/input injection failed. Never throws.</returns>
         /// <remarks>Some applications invert or ignore horizontal wheel input.</remarks>
         [Category("Mouse - Wheel")]
-        [Description("Moves the cursor to the coordinates and scrolls horizontally there (positive = right, negative = left; 120 = one notch). Returns True on success; never throws.")]
+        [Description("Moves the cursor to the coordinates, scrolls horizontally there, then restores the cursor's original position (positive = right, negative = left; 120 = one notch). Returns True on success; never throws.")]
         public bool ScrollHorizontalAt(int x, int y, int wheelDelta, out string message)
         {
             message = default;
             try
             {
-                if (!MoveTo(x, y, out message))
+                if (!TryGetPoint(out POINT original, out message))
                     return false;
-                Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
-                return ScrollHorizontal(wheelDelta, out message);
+
+                bool moved;
+                bool scrolled = false;
+                string failureMessage = null;
+                bool restored = true;
+                try
+                {
+                    moved = MoveTo(x, y, out failureMessage);
+                    if (moved)
+                    {
+                        Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
+                        scrolled = ScrollHorizontal(wheelDelta, out failureMessage);
+                    }
+                }
+                finally
+                {
+                    restored = SetCursorPos(original.X, original.Y);
+                }
+
+                if (!restored)
+                {
+                    message = "The cursor could not be restored to its original position after the scroll attempt.";
+                    return false;
+                }
+
+                message = scrolled ? null : failureMessage;
+                return scrolled;
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -2599,10 +2801,10 @@ namespace MouseAutomation
         /// twice erases it exactly (no permanent pixels left behind). All GDI objects
         /// and the DC are restored/released in a <c>finally</c> block.
         /// </summary>
-        /// <param name="radius">Ring radius in pixels (default 30).</param>
-        /// <param name="flashes">Number of on/off flashes (default 3).</param>
-        /// <param name="flashMs">Milliseconds each flash stays visible (default 200).</param>
-        /// <param name="ringWidth">Pen width in pixels (default 3).</param>
+        /// <param name="radius">Ring radius in pixels (default 30). Must be at least 1.</param>
+        /// <param name="flashes">Number of on/off flashes (default 3). Must be at least 1.</param>
+        /// <param name="flashMs">Milliseconds each flash stays visible (default 200). Must be at least 1.</param>
+        /// <param name="ringWidth">Pen width in pixels (default 3). Must be at least 1.</param>
         /// <param name="colorRef">
         /// RGB color for the ring as a 0xBBGGRR value (e.g. 0x0000FF = red).
         /// Because the ring uses XOR drawing, the visible color depends on what is
@@ -2616,6 +2818,7 @@ namespace MouseAutomation
         ///  - The XOR blend means the apparent color varies by background.
         /// </remarks>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the highlight failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="radius"/>/<paramref name="flashes"/>/<paramref name="flashMs"/>/<paramref name="ringWidth"/> is below 1, or a GDI/cursor call failed. Never throws.</returns>
         [Category("Mouse - Highlight")]
         [Description("Flashes an inverting ring around the cursor for demos/recordings. Erases itself exactly via XOR drawing. Returns True on success; never throws.")]
         public bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)
@@ -2623,10 +2826,26 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (radius < 1) radius = 1;
-                if (flashes < 1) flashes = 1;
-                if (flashMs < 1) flashMs = 1;
-                if (ringWidth < 1) ringWidth = 1;
+                if (radius < 1)
+                {
+                    message = "radius must be at least 1.";
+                    return false;
+                }
+                if (flashes < 1)
+                {
+                    message = "flashes must be at least 1.";
+                    return false;
+                }
+                if (flashMs < 1)
+                {
+                    message = "flashMs must be at least 1.";
+                    return false;
+                }
+                if (ringWidth < 1)
+                {
+                    message = "ringWidth must be at least 1.";
+                    return false;
+                }
 
                 if (!TryGetPhysicalPoint(out POINT pos, out message))
                     return false;
@@ -2712,7 +2931,7 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
+        /// <param name="durationMs">Total movement time in milliseconds (default 500). Must be at least 1.</param>
         /// <remarks>
         /// The curve, timing, and jitter vary on every call, so repeated movements to
         /// the same target do not look identical — useful for anti-detection and for
@@ -2720,6 +2939,7 @@ namespace MouseAutomation
         /// jitter on the final step), so the click lands precisely where intended.
         /// </remarks>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="durationMs"/> is below 1 or a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Movement")]
         [Description("Moves the cursor to the target along a randomized Bezier curve with ease-in-out timing (human-like). Returns True on success; never throws.")]
         public bool MoveMouseBezier(int x, int y, out string message, int durationMs = 500)
@@ -2727,7 +2947,11 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (durationMs < 1) durationMs = 1;
+                if (durationMs < 1)
+                {
+                    message = "durationMs must be at least 1.";
+                    return false;
+                }
 
                 if (!TryGetPoint(out POINT start, out message))
                     return false;
@@ -3359,6 +3583,8 @@ namespace MouseAutomation
 
         // Largest |notches| whose WHEEL_DELTA product cannot overflow int.
         private const int MAX_WHEEL_NOTCHES = int.MaxValue / WHEEL_DELTA;
+
+        private const ModifierKeys AllDefinedModifierKeys = ModifierKeys.Control | ModifierKeys.Shift | ModifierKeys.Alt;
 
         private const int XBUTTON1 = 0x0001;
         private const int XBUTTON2 = 0x0002;
