@@ -67,13 +67,17 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 | `MiddleClick` | `bool MiddleClick(out string message)` | Middle-clicks at the current cursor position. |
 | `LeftClickAt` | `bool LeftClickAt(int x, int y, out string message)` | Left-clicks at the given screen coordinates. |
 | `RightClickAt` | `bool RightClickAt(int x, int y, out string message)` | Right-clicks at the given screen coordinates. |
+| `MiddleClickAt` | `bool MiddleClickAt(int x, int y, out string message)` | Middle-clicks at the given screen coordinates. |
 | `LeftDoubleClick` | `bool LeftDoubleClick(out string message)` | Double left-clicks at the current cursor position. |
 | `RightDoubleClick` | `bool RightDoubleClick(out string message)` | Double right-clicks at the current cursor position. |
+| `MiddleDoubleClick` | `bool MiddleDoubleClick(out string message)` | Double middle-clicks at the current cursor position. |
 | `LeftDoubleClickAt` | `bool LeftDoubleClickAt(int x, int y, out string message)` | Double left-clicks at the given screen coordinates. |
-| `MouseDown` | `bool MouseDown(MouseButton button, out string message)` | Presses and holds the given mouse button. Pair with `MouseUp`. |
+| `RightDoubleClickAt` | `bool RightDoubleClickAt(int x, int y, out string message)` | Double right-clicks at the given screen coordinates. |
+| `MiddleDoubleClickAt` | `bool MiddleDoubleClickAt(int x, int y, out string message)` | Double middle-clicks at the given screen coordinates. |
+| `MouseDown` | `bool MouseDown(MouseButton button, out string message)` | Presses and holds the given mouse button. Pair with `MouseUp`; the one method here intentionally stateful across calls (see Notes & Caveats). |
 | `MouseUp` | `bool MouseUp(MouseButton button, out string message)` | Releases the given mouse button. |
-| `ClickAndHold` | `bool ClickAndHold(MouseButton button, int holdMilliseconds, out string message)` | Holds the given button down for the specified time, then releases it. |
-| `ClickWithModifiers` | `bool ClickWithModifiers(MouseButton button, ModifierKeys modifiers, out string message)` | Clicks a button while holding modifier keys (Control/Shift/Alt, combinable), injected as one atomic batch. |
+| `ClickAndHold` | `bool ClickAndHold(MouseButton button, int holdMilliseconds, out string message)` | Holds the given button down for the specified time (max 60 seconds), then releases it. |
+| `ClickWithModifiers` | `bool ClickWithModifiers(MouseButton button, ModifierKeys modifiers, out string message)` | Clicks a button while holding modifier keys (Control/Shift/Alt, combinable), injected as two atomic batches (press, then release) with a brief press duration between them. |
 | `ClickAndRestore` | `bool ClickAndRestore(int x, int y, MouseButton button, out string message)` | Clicks at the given coordinates, then immediately returns the cursor to its original position. |
 | `ClickWithRetry` | `bool ClickWithRetry(int x, int y, MouseButton button, int maxAttempts, int retryDelayMilliseconds, out string message)` | Clicks at the given coordinates, retrying on failure up to `maxAttempts` times. |
 | `TripleClick` | `bool TripleClick(MouseButton button, out string message)` | Triple-clicks the given button at the current cursor position (select-line/paragraph gesture). |
@@ -86,7 +90,7 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 | `DragAndDrop` | `bool DragAndDrop(int startX, int startY, int endX, int endY, int steps, int stepDelayMilliseconds, out string message)` | Performs a left-button drag with a custom step count and step delay. |
 | `RubberBandSelect` | `bool RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers, out string message)` | Performs a left-button rubber-band drag while holding modifier keys (e.g. Ctrl-drag to add to a selection). |
 | `RubberBandSelect` | `bool RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers, int steps, int stepDelayMilliseconds, out string message)` | Same, with a custom step count and step delay. |
-| `DragAndHold` | `bool DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds, out string message)` | Drags from start to end, then holds the button down at the destination before releasing (for hover-to-expand drop targets). |
+| `DragAndHold` | `bool DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds, out string message)` | Drags from start to end, then holds the button down at the destination (max 60 seconds) before releasing (for hover-to-expand drop targets). |
 
 ### Wheel / Scrolling
 
@@ -102,7 +106,8 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 | `ScrollRight` | `bool ScrollRight(int notches, out string message)` | Scrolls right the given number of wheel notches. |
 | `ScrollLeft` | `bool ScrollLeft(out string message)` | Scrolls left one wheel notch. |
 | `ScrollLeft` | `bool ScrollLeft(int notches, out string message)` | Scrolls left the given number of wheel notches. |
-| `ScrollHorizontalAt` | `bool ScrollHorizontalAt(int x, int y, int wheelDelta, out string message)` | Moves the cursor to the coordinates and scrolls horizontally there. |
+| `ScrollAt` | `bool ScrollAt(int x, int y, int wheelDelta, out string message)` | Moves the cursor to the coordinates, scrolls vertically there, then restores the cursor's original position - the vertical counterpart to `ScrollHorizontalAt`. |
+| `ScrollHorizontalAt` | `bool ScrollHorizontalAt(int x, int y, int wheelDelta, out string message)` | Moves the cursor to the coordinates, scrolls horizontally there, then restores the cursor's original position. |
 
 ### Cursor Appearance / Visibility / Confinement
 
@@ -177,13 +182,13 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 
 | Method | Signature | Description |
 |---|---|---|
-| `FlashCursorHighlight` | `bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting ring around the cursor for demos/recordings. Erases itself exactly via XOR drawing. |
+| `FlashCursorHighlight` | `bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting ring around the cursor for demos/recordings (`flashes * flashMs` capped at 60 seconds total). Erases itself exactly via XOR drawing. |
 
 ### Human-like Movement
 
 | Method | Signature | Description |
 |---|---|---|
-| `MoveMouseBezier` | `bool MoveMouseBezier(int x, int y, out string message, int durationMs = 500)` | Moves the cursor to the target along a randomized Bezier curve with ease-in-out timing (human-like). |
+| `MoveMouseBezier` | `bool MoveMouseBezier(int x, int y, out string message, int durationMs = 500)` | Moves the cursor to the target along a randomized Bezier curve with ease-in-out timing (human-like). `durationMs` capped at 60 seconds. |
 | `BezierClickAt` | `bool BezierClickAt(int x, int y, MouseButton button, out string message, int durationMs = 500)` | Moves along a randomized Bezier curve to the target, then clicks — the human-like counterpart to `ClickAt`. |
 | `BezierDoubleClickAt` | `bool BezierDoubleClickAt(int x, int y, MouseButton button, out string message, int durationMs = 500)` | Moves along a randomized Bezier curve to the target, then double-clicks. |
 | `BezierDragAndDrop` | `bool BezierDragAndDrop(int startX, int startY, int endX, int endY, out string message, int durationMs = 500)` | Performs a left-button drag along a randomized Bezier curve instead of a straight line — the human-like counterpart to `DragAndDrop`. |
@@ -193,10 +198,10 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 | Method | Signature | Description |
 |---|---|---|
 | `GetPixelColor` | `bool GetPixelColor(int x, int y, out int color, out string message)` | Reads the color of the screen pixel at the given coordinates, as a 0x00BBGGRR COLORREF value (same format as `FlashCursorHighlight`'s `colorRef`). |
-| `WaitForPixelColor` | `bool WaitForPixelColor(int x, int y, int expectedColorRef, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen pixel until it matches the expected COLORREF or the timeout elapses. `message` is only set if a Win32 failure aborted the poll early. |
-| `WaitForPixelChange` | `bool WaitForPixelChange(int x, int y, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen pixel until its color changes from its value at call time, or the timeout elapses. `message` is only set if a Win32 failure aborted the poll early. |
+| `WaitForPixelColor` | `bool WaitForPixelColor(int x, int y, int expectedColorRef, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen pixel until it matches the expected COLORREF or the timeout elapses (`timeoutMs` capped at 30 minutes). `message` is only set if `timeoutMs` was invalid or a Win32 failure aborted the poll early. |
+| `WaitForPixelChange` | `bool WaitForPixelChange(int x, int y, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen pixel until its color changes from its value at call time, or the timeout elapses (`timeoutMs` capped at 30 minutes). `message` is only set if `timeoutMs` was invalid or a Win32 failure aborted the poll early. |
 | `IsBusyCursorActive` | `bool IsBusyCursorActive(out string message)` | Returns `true` if the current system cursor is the Wait or AppStarting busy indicator. `message` is only set if the underlying query failed. |
-| `WaitForIdleCursor` | `bool WaitForIdleCursor(int timeoutMs, int pollIntervalMs, out string message)` | Waits until the busy cursor (Wait/AppStarting) clears, or the timeout elapses. `message` is only set if a Win32 failure aborted the poll early. |
+| `WaitForIdleCursor` | `bool WaitForIdleCursor(int timeoutMs, int pollIntervalMs, out string message)` | Waits until the busy cursor (Wait/AppStarting) clears, or the timeout elapses (`timeoutMs` capped at 30 minutes). `message` is only set if `timeoutMs` was invalid or a Win32 failure aborted the poll early. |
 
 ## Notes & Caveats
 
@@ -215,11 +220,45 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
   whether `message` is non-null to tell those two cases apart.
 - **Cursor changes are system-wide** (all applications) for the current session and persist
   until `ResetSystemCursors` is called — always restore them (ideally in a `Finally` block).
-- **`ClickWithModifiers`** injects modifier presses, the click, and modifier releases as a
-  single `SendInput` batch, so real user input cannot interleave mid-sequence. Alt+Click can
-  activate the menu bar in some classic Win32 applications.
+  Disposing this component also restores each individual slot it touched (to what was there
+  immediately before, not necessarily the Windows default) as a backstop, but that should not
+  be relied on as the primary cleanup path.
+- **`ClipCursor`/`ReleaseCursorClip`** now restore the exact clip (or lack of one) that was in
+  effect immediately before `ClipCursor` was called, rather than always clearing to "no clip" -
+  the latter could otherwise stomp a clip another app or another instance of this component
+  legitimately owns. Disposing this component also restores that same saved clip as a backstop.
+- **`Dispose` cleans up component-owned state left behind by an automation that exits (or
+  throws) before its own matching cleanup runs**: a button still held via `MouseDown`, a
+  `BlockUserInput` block or `HideCursor` hide (each only when disposing on the same thread
+  that acquired them - both are thread-affine Win32 APIs), a `ClipCursor` confinement, and any
+  system cursor slots replaced via `SetCursor`/`ReplaceSystemCursor`/`SetCursorFromFile`. This
+  is a safety net, not a substitute for calling `MouseUp`/`UnblockUserInput`/`ShowCursor`/
+  `ReleaseCursorClip`/`ResetSystemCursors` yourself - some of it (thread-affine state disposed
+  from a different thread) cannot be recovered at all this way.
+- **Blocking waits/holds/movements are bounded, not cancellable**: Pega Robot Studio
+  automations execute steps sequentially on one thread, so there is no mechanism for a
+  separate step to interrupt a call already blocked in this component. `WaitForPixelColor`/
+  `WaitForPixelChange`/`WaitForIdleCursor`'s `timeoutMs` is capped at 30 minutes (a genuine
+  external wait can legitimately take that long); `ClickAndHold`/`DragAndHold`/
+  `MoveMouseBezier`/`FlashCursorHighlight`/`SmoothMoveTo`'s durations are capped at 60 seconds
+  total (these are synthetic actions this component performs itself, with no legitimate reason
+  to run long). A value exceeding its cap returns `false` with a message rather than blocking.
+- **Invalid numeric/enum input is rejected, not silently coerced**: negative delays/durations/
+  attempts/notch counts, an out-of-range fraction (including `NaN`/infinity), and undefined
+  `ModifierKeys` bits all return `false` with a message instead of being clamped to a nearby
+  valid value - a previous version of several of these methods coerced instead, which could
+  hide a caller-side wiring bug behind a plausible-looking result.
+- **`ClickWithModifiers`** injects the modifier presses and the button down as one atomic
+  `SendInput` batch, then the button up and modifier releases as a second, so real user input
+  cannot interleave mid-sequence. If that second batch fails, it's retried once as a whole
+  batch, then - if that also fails - falls back to releasing each event individually
+  (best-effort) so one bad event can't strand the rest; the return value still reflects the
+  original batch attempt's outcome, not the fallback's. Alt+Click can activate the menu bar in
+  some classic Win32 applications.
 - **`BlockUserInput`** blocks real input but not input injected by this component. Only the
   blocking thread can unblock; Ctrl+Alt+Del always breaks the block as a safety hatch.
+  Disposing this component on that same thread also attempts an unblock as a backstop (see
+  the Dispose bullet below), but that should not be relied on as the primary cleanup path.
 - **Background clicks (`ClickWindow*`)** are blocked by UIPI against higher-integrity
   (elevated) targets, and are often ignored by browsers, DirectX games, and frameworks that
   read raw input directly. Target the raw child control handle, not the top-level window.
@@ -229,7 +268,13 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
   automation less detectable/robotic), but always lands exactly on the requested endpoint.
 - **`SafeClickAt`** compares the window under the point (and its root ancestor) against
   `expectedWindowHandle`; pass the top-level/root window handle you expect to own that screen
-  region, not necessarily the exact child control.
+  region, not necessarily the exact child control. `expectedWindowHandle` must not be
+  `IntPtr.Zero` - a zero handle is rejected outright, rather than potentially matching a point
+  over empty desktop (where the window-under-the-point lookup also returns zero) and
+  authorizing a click on nothing.
+- **`ClickAtRelativePosition`** rejects `NaN`/infinity for `xFraction`/`yFraction` explicitly,
+  in addition to the `[0.0, 1.0]` range check - every comparison against `NaN` is `false` in
+  C#, so the range check alone cannot catch it.
 - **`IsBusyCursorActive`/`WaitForIdleCursor`** are heuristics based on which system cursor is
   currently showing — an app can be busy without changing the cursor, so treat a "not busy"
   result as a hint, not a guarantee the app finished processing.

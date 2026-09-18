@@ -37,3 +37,6 @@ finally
 
 Note that the operator can always break the block with Ctrl+Alt+Del as a
 Windows safety hatch, and the block requires an interactive, non-secure desktop.
+Only the thread that called `BlockUserInput` can unblock it - disposing the
+component on that same thread also attempts an unblock as a backstop, but
+that should not be relied on instead of the `finally` block above.

@@ -63,6 +63,12 @@ holds there before releasing, giving the tree view time to auto-expand.
 mouse.DragAndHold(startX: 120, startY: 300, endX: 60, endY: 180, holdMilliseconds: 1200, out _);
 ```
 
+`holdMilliseconds` is capped at 60 seconds - a longer value returns `false`
+with a message rather than blocking the automation thread for that long.
+`RubberBandSelect`'s modifier-key release (Ctrl/Shift/Alt up) is best-effort,
+but a failure there now surfaces in the returned message rather than being
+silently discarded.
+
 ## Checking why a drag failed
 
 ```csharp

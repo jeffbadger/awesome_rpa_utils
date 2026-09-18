@@ -82,6 +82,11 @@ finally
 }
 ```
 
+Disposing the component also restores each individual slot it touched (to
+whatever was there immediately before, not necessarily the Windows default)
+as a backstop, but that should not be relied on instead of calling
+`ResetSystemCursors` yourself.
+
 ## `HideCursor()` / `ShowCursor()` / `IsCursorVisible()`
 
 **Scenario:** A kiosk application hides the mouse cursor entirely while an
@@ -123,6 +128,12 @@ above finishes, so the operator regains normal control.
 ```csharp
 mouse.ReleaseCursorClip(out _);
 ```
+
+This restores the exact clip (or lack of one) that was in effect immediately
+before the matching `ClipCursor` call, rather than always clearing to "no
+clip" - so it won't clear a clip another app, or another instance of this
+component, legitimately owns. Disposing the component also restores that
+same saved clip as a backstop if `ReleaseCursorClip` was never called.
 
 ## `GetCursorClipAsRectangle()`
 

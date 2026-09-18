@@ -37,6 +37,10 @@ instead of looping notch-by-notch, when the automation already knows how far to 
 mouse.ScrollDown(25, out _); // jump ~25 notches down the document
 ```
 
+`notches` must be zero or positive - a negative value now returns `false`
+with a message instead of silently scrolling the same direction as if the
+sign had been dropped, which previously could mask a sign-wiring bug.
+
 ## `ScrollHorizontal(int wheelDelta)`
 
 **Scenario:** Nudging a wide Gantt chart sideways by a small amount to align a
@@ -58,16 +62,22 @@ mouse.ScrollRight(10, out _); // move right to reach column AK
 mouse.ScrollLeft(10, out _);  // return to column A
 ```
 
-## `ScrollHorizontalAt(int x, int y, int wheelDelta)`
+## `ScrollAt(int x, int y, int wheelDelta)` / `ScrollHorizontalAt(int x, int y, int wheelDelta)`
 
 **Scenario:** A dashboard has several independently-scrollable horizontal
 carousels; the automation must scroll the *second* carousel specifically, which
 requires the cursor to be over that control (wheel messages target whatever is
-under the cursor) rather than wherever it happened to be left.
+under the cursor) rather than wherever it happened to be left. `ScrollAt` is
+the vertical counterpart, for the same situation with a vertically-scrollable
+panel elsewhere on screen.
 
 ```csharp
 mouse.ScrollHorizontalAt(x: 700, y: 480, wheelDelta: 120, out _); // scroll the carousel under (700,480)
+mouse.ScrollAt(x: 300, y: 500, wheelDelta: -240, out _);          // scroll a different panel down two notches
 ```
+
+Both restore the cursor to wherever it was before the call, the same way
+`ClickAndRestore` does - the operator's pointer effectively never moves.
 
 ## Checking why a scroll failed
 

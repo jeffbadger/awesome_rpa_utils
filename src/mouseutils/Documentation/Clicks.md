@@ -58,17 +58,19 @@ mouse.LeftClick(out _);           // choose "Exit"
 mouse.MiddleClick(out _);         // close the current browser tab under the cursor
 ```
 
-## `LeftClickAt(int x, int y)` / `RightClickAt(int x, int y)`
+## `LeftClickAt(int x, int y)` / `RightClickAt(int x, int y)` / `MiddleClickAt(int x, int y)`
 
 **Scenario:** Opening a right-click context menu on a specific spreadsheet cell
-to choose "Copy", then left-clicking a fixed "Paste" toolbar button elsewhere.
+to choose "Copy", then left-clicking a fixed "Paste" toolbar button elsewhere,
+then middle-clicking a browser tab at a known position to close it.
 
 ```csharp
 mouse.RightClickAt(410, 260, out _); // context menu on cell B7
 mouse.LeftClickAt(150, 40, out _);   // Paste button in the ribbon
+mouse.MiddleClickAt(tabX, tabY, out _); // close that browser tab
 ```
 
-## `LeftDoubleClick()` / `RightDoubleClick()`
+## `LeftDoubleClick()` / `RightDoubleClick()` / `MiddleDoubleClick()`
 
 **Scenario:** After moving over a column border in a grid, double-clicking
 auto-fits the column width; a right-double-click on a taskbar icon restores a
@@ -79,7 +81,7 @@ mouse.MoveTo(columnBorderX, headerY, out _);
 mouse.LeftDoubleClick(out _); // auto-fit column width
 ```
 
-## `LeftDoubleClickAt(int x, int y)`
+## `LeftDoubleClickAt(int x, int y)` / `RightDoubleClickAt(int x, int y)` / `MiddleDoubleClickAt(int x, int y)`
 
 **Scenario:** Launching a desktop shortcut icon by double-clicking its known
 position on a kiosk machine with a fixed, unchanging desktop layout.
@@ -102,6 +104,12 @@ mouse.MoveTo(endX, endY, out _);
 mouse.MouseUp(MouseButton.Left, out _);
 ```
 
+`MouseDown` is the one method in this class intentionally stateful across
+calls - the caller owns the matching `MouseUp`. Disposing the component
+sends a best-effort release for any button still held via `MouseDown` as a
+backstop, but that should not be relied on as the primary cleanup path -
+always pair it with `MouseUp` yourself, ideally in a `finally` block.
+
 ## `ClickAndHold(MouseButton button, int holdMilliseconds)`
 
 **Scenario:** A legacy terminal-emulator control only registers a click after
@@ -111,6 +119,9 @@ the button has been held for at least 500 ms (it debounces fast synthetic clicks
 mouse.MoveTo(700, 300, out _);
 mouse.ClickAndHold(MouseButton.Left, 500, out _);
 ```
+
+`holdMilliseconds` is capped at 60 seconds - a longer value returns `false`
+with a message rather than blocking the automation thread for that long.
 
 ## `ClickWithModifiers(MouseButton button, ModifierKeys modifiers)`
 
