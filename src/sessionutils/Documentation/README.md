@@ -8,6 +8,7 @@ organized by the same categories used in the source code and the top-level
 - [State](State.md) — connect state, logged-on user, enumerating every session
 - [DesktopAndLock](DesktopAndLock.md) — is the workstation locked, is the desktop available, is the session interactive
 - [IdleTime](IdleTime.md) — milliseconds since the last local input
+- [Uptime](Uptime.md) — how long the session has been logged on, and how long the machine has been running
 - [Wait](Wait.md) — polling for a session/desktop state to change
 - [Actions](Actions.md) — locking the workstation, disconnecting a session
 

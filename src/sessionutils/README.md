@@ -93,6 +93,13 @@ The JSON shape produced by `EnumerateSessionsJson`: `SessionId`,
 |---|---|---|
 | `GetIdleTimeMilliseconds` | `bool GetIdleTimeMilliseconds(out long idleMilliseconds, out string message)` | Milliseconds since the last local keyboard/mouse input to the calling process's own session. |
 
+### Uptime
+
+| Method | Signature | Description |
+|---|---|---|
+| `GetCurrentSessionUptime` | `bool GetCurrentSessionUptime(out long milliseconds, out string message)` | Milliseconds since the calling process's own session logged on. |
+| `GetSystemUptime` | `bool GetSystemUptime(out long milliseconds, out string message)` | Milliseconds since the local machine last booted - machine-wide, not session-scoped. |
+
 ### Wait
 
 | Method | Signature | Description |
@@ -157,6 +164,16 @@ The JSON shape produced by `EnumerateSessionsJson`: `SessionId`,
 - **`GetIdleTimeMilliseconds` only reflects local input to the calling
   process's own session** - another session's idle time cannot be observed
   this way.
+- **`GetCurrentSessionUptime` and `GetSystemUptime` read two unrelated
+  clocks - do not conflate them.** The first is how long the calling
+  process's *session* has been logged on (the session's logon time); the
+  second is how long the *machine* has been running since it last booted
+  (`GetTickCount64`). A machine reboot ends every session on it, so a
+  session can never outlive one - but its client can disconnect and
+  reconnect over RDP any number of times without resetting its logon time,
+  while a freshly logged-on session on a machine that has been running for
+  weeks will report a much smaller uptime than the machine's own - neither
+  value can be derived from the other.
 - **Elevation requirements.** `DisconnectSession` on a session other than
   your own typically requires administrator rights (or `SeTcbPrivilege`);
   disconnecting your own session does not. `LockWorkstation` only works from

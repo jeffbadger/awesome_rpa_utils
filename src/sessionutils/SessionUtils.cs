@@ -395,8 +395,9 @@ namespace SessionAutomation
         }
 
         /// <summary>
-        /// Enumerates every session on the local machine, as a JSON array of session
-        /// summaries, newest information wins per query. Never throws.
+        /// Enumerates every session on the local machine as a JSON array of session
+        /// summaries. Each call takes a fresh live snapshot - nothing is cached between
+        /// calls. Never throws.
         /// </summary>
         /// <param name="connectStateFilter">Comma-separated <see cref="SessionConnectState"/> names to include (e.g. "Active,Disconnected"). Null/empty means every state.</param>
         /// <param name="json">A JSON array of session summaries on success; unset otherwise.</param>
@@ -572,6 +573,92 @@ namespace SessionAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 message = NeverThrowsGuard.Failure("GetIdleTimeMilliseconds", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Uptime
+
+        /// <summary>
+        /// Gets how long the calling process's own session has been logged on, in
+        /// milliseconds. Never throws.
+        /// </summary>
+        /// <param name="milliseconds">Milliseconds since this session's logon, on success.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable failure reason.</param>
+        /// <remarks>
+        /// Reads the session's logon time via <c>WTSQuerySessionInformationW(WTSSessionInfo)</c> -
+        /// the same native mechanism <see cref="GetCurrentSessionUser"/> already uses for
+        /// another per-session fact, via <see cref="TryQuerySessionLogonAndCurrentTimeUtc"/> -
+        /// and compares it against that same call's own "now" timestamp (not a separate
+        /// <see cref="DateTime.UtcNow"/> read, avoiding any clock-read skew between the two).
+        /// This is a different, unrelated clock from <see cref="GetSystemUptime"/>:
+        /// a session's logon time has no fixed relationship to when the machine itself last
+        /// booted. A machine reboot ends every session on it, so a session can never outlive
+        /// one - but its client can disconnect and reconnect over RDP any number of times
+        /// without resetting its logon time, while a freshly logged-on session on a machine
+        /// that has been running for weeks will report a much smaller uptime than the
+        /// machine's own.
+        /// </remarks>
+        [Category("Session - Uptime")]
+        [Description("Gets how long the calling process's own session has been logged on, in milliseconds. Never throws.")]
+        public bool GetCurrentSessionUptime(out long milliseconds, out string message)
+        {
+            milliseconds = default;
+            message = default;
+            try
+            {
+                if (!TryQuerySessionLogonAndCurrentTimeUtc(WTS_CURRENT_SESSION, out DateTime logonTimeUtc, out DateTime currentTimeUtc, out message))
+                    return false;
+
+                double elapsedMilliseconds = (currentTimeUtc - logonTimeUtc).TotalMilliseconds;
+                // The OS-reported logon time should never be later than its own reported
+                // "now", but this is a reported fact this component doesn't control (clock
+                // adjustments, virtual machine snapshots) - clamp defensively rather than
+                // ever hand back a negative duration, the same defensive posture as every
+                // guard clause above.
+                milliseconds = elapsedMilliseconds > 0 ? (long)elapsedMilliseconds : 0;
+                message = null;
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetCurrentSessionUptime", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets how long the local machine has been running since it last booted, in
+        /// milliseconds. Never throws.
+        /// </summary>
+        /// <param name="milliseconds">Milliseconds since the machine last booted, on success.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable failure reason.</param>
+        /// <remarks>
+        /// Wraps <c>GetTickCount64</c> directly - the same tick source
+        /// <see cref="GetIdleTimeMilliseconds"/> already uses internally to correct for
+        /// <c>GetLastInputInfo</c>'s 32-bit wraparound. Unlike that internal use, this method
+        /// exposes the full 64-bit count, so - unlike the 32-bit <c>GetTickCount</c> domain,
+        /// which wraps roughly every 49.7 days - it does not wrap in any realistic uptime
+        /// (roughly 584 million years). Machine-wide, not session-scoped: unrelated to
+        /// <see cref="GetCurrentSessionUptime"/>'s session logon time.
+        /// </remarks>
+        [Category("Session - Uptime")]
+        [Description("Gets how long the local machine has been running since it last booted, in milliseconds. Never throws.")]
+        public bool GetSystemUptime(out long milliseconds, out string message)
+        {
+            milliseconds = default;
+            message = default;
+            try
+            {
+                milliseconds = unchecked((long)GetTickCount64());
+                message = null;
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetSystemUptime", ex);
                 return false;
             }
         }
@@ -876,6 +963,17 @@ namespace SessionAutomation
         private static readonly IntPtr WTS_CURRENT_SERVER_HANDLE = IntPtr.Zero;
         private const int WTS_CURRENT_SESSION = -1;
 
+        /// <remarks>
+        /// <c>WTSIdleTime</c> (17) and <c>WTSLogonTime</c> (18) - and, per Microsoft's own
+        /// numeric-neighbor deprecation, the rest of 9 through 22 - do not reliably work
+        /// queried standalone through <c>WTSQuerySessionInformationW</c> on this
+        /// repository's target platform: measured directly, <c>WTSLogonTime</c> fails
+        /// outright with a Win32 error rather than returning a usable value. Use the
+        /// combined <c>WTSSessionInfo</c> (24) struct instead for anything in that range -
+        /// see <see cref="TryQuerySessionLogonAndCurrentTimeUtc"/> for the working pattern.
+        /// These two members stay declared here only so the enum documents the full native
+        /// API; do not add a new standalone query against either one.
+        /// </remarks>
         private enum WTS_INFO_CLASS
         {
             WTSInitialProgram = 0,
@@ -999,6 +1097,83 @@ namespace SessionAutomation
             try
             {
                 value = Marshal.PtrToStringUni(buffer) ?? string.Empty;
+                return true;
+            }
+            finally
+            {
+                WTSFreeMemory(buffer);
+            }
+        }
+
+        /// <summary>
+        /// Gets a session's logon time and the server's own "now" timestamp at the moment
+        /// of the query, both as UTC file times, via <c>WTSQuerySessionInformationW(WTSSessionInfo)</c>.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately does not use the standalone <c>WTS_INFO_CLASS.WTSLogonTime</c> (18)
+        /// info class, even though it exists: measured directly against this repository's
+        /// target platform, querying it that way fails outright (a Win32 error, not a
+        /// usable value) - it and several of its numeric neighbors (9 through 22) are
+        /// long-deprecated in favor of the combined <c>WTSSessionInfo</c> (24) struct this
+        /// method uses instead.
+        /// <para>
+        /// That struct (<c>WTSINFOW</c> natively) is not modeled here as a
+        /// <c>[StructLayout]</c> type, deliberately - the same reasoning
+        /// <see cref="WTSINFOEX_HEADER"/>'s own doc comment gives for that struct: its
+        /// earlier fields include several fixed-size character arrays (station name,
+        /// domain, username) whose exact lengths are inconsistently documented across
+        /// public sources, and getting one wrong would silently misalign every field
+        /// after it - not fail loudly, just quietly hand back the wrong bytes as a
+        /// plausible-looking timestamp. Instead, this reads only the struct's
+        /// documented, stable *tail*: its last two members are consecutive 8-byte
+        /// <c>LARGE_INTEGER</c> values, <c>LogonTime</c> then <c>CurrentTime</c>, so
+        /// they sit at fixed, computable offsets from the end of whatever buffer size
+        /// the API actually returns - correct regardless of the uncertain layout
+        /// earlier in the struct.
+        /// </para>
+        /// <para>
+        /// This exact tail order is easy to misremember even for the struct's better-
+        /// documented members - <c>WTSINFOW</c>'s five trailing <c>LARGE_INTEGER</c>
+        /// fields (<c>ConnectTime</c>, <c>DisconnectTime</c>, <c>LastInputTime</c>,
+        /// <c>LogonTime</c>, <c>CurrentTime</c>, in that order) get cited with the wrong
+        /// order across public sources often enough that it isn't safe to take on faith
+        /// either. Confirmed directly against this repository's target platform, two
+        /// ways: the tail-read <c>CurrentTime</c> matches <see cref="DateTime.UtcNow"/>
+        /// to within milliseconds, and the value one field before it (this method's
+        /// <c>logonTimeUtc</c>) is the *only* non-zero candidate consistent with
+        /// <c>ConnectTime</c> - which cannot legitimately be zero for a session this
+        /// query can reach at all, since reaching it requires the session to already be
+        /// connected. The two zero-valued fields ahead of it are consistent with
+        /// <c>DisconnectTime</c> (never disconnected) and <c>LastInputTime</c> (not
+        /// updated by this session's own local input in this environment, confirmed by
+        /// injecting a synthetic keystroke and observing no change).
+        /// </para>
+        /// </remarks>
+        private static bool TryQuerySessionLogonAndCurrentTimeUtc(int sessionId, out DateTime logonTimeUtc, out DateTime currentTimeUtc, out string message)
+        {
+            logonTimeUtc = default;
+            currentTimeUtc = default;
+            message = default;
+            if (!WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, sessionId, WTS_INFO_CLASS.WTSSessionInfo, out IntPtr buffer, out int bytesReturned))
+            {
+                message = new Win32Exception(Marshal.GetLastWin32Error(), $"WTSQuerySessionInformationW(WTSSessionInfo) failed for session {sessionId}.").Message;
+                return false;
+            }
+            try
+            {
+                // Same defensive reasoning as TryQuerySessionString's sibling numeric
+                // helper: reading past an unexpectedly small native buffer is an access
+                // violation, not a catchable managed exception, so this explicit size
+                // check - not a try/catch - is what keeps this inside the never-throws
+                // contract.
+                const int TailBytes = 2 * sizeof(long);
+                if (bytesReturned < TailBytes)
+                {
+                    message = $"WTSQuerySessionInformationW(WTSSessionInfo) returned an unexpectedly small buffer ({bytesReturned} bytes) for session {sessionId}.";
+                    return false;
+                }
+                logonTimeUtc = DateTime.FromFileTimeUtc(Marshal.ReadInt64(buffer, bytesReturned - TailBytes));
+                currentTimeUtc = DateTime.FromFileTimeUtc(Marshal.ReadInt64(buffer, bytesReturned - sizeof(long)));
                 return true;
             }
             finally
