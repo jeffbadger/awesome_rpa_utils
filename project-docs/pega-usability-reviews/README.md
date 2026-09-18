@@ -78,13 +78,13 @@ Each utility's detailed findings are in its own file in this folder.
 
 All twelve listed utility reviews are complete, and every item below has since
 been implemented, rejected with a documented reason, or deliberately deferred
-- see each item's own component doc for the final decision and status marker.
+— see each item's own component doc for the final decision and status marker.
 This list is kept as a historical record of the original remediation order,
 not a live backlog.
 
 1. **Done.** WinEventUtils handle correctness: replaced the 32-bit
-   `WinEventData.Hwnd`, exposed properties, and added flattened/JSON
-   single-event methods.
+   `WinEventData.Hwnd`, exposed properties, kept single-event methods as
+   `WinEventData`, and added JSON adapters for multi-event output.
 2. **Done.** CommandLineUtils scalar API: flattened `CommandResult` and added
    scalar adapters for environment variables, encoding, and shell allowlists.
 3. **Done.** KeyboardUtils combo adapter: `PressKeyCombo`'s existing `params
@@ -102,9 +102,9 @@ not a live backlog.
    STA handling, removed its throwing overload entirely, and separated
    operation success from normal false states/timeouts across utilities.
 7. **Mixed - see below.** Designer-friendly enums:
-   - **Done:** wrapped external service status (`ServiceStatus`) and replaced
-     string event policies/names (`WinEventName`, `WinEventOverflowPolicy`)
-     with repository-owned enums.
+   - **Done:** wrapped external service status (`ServiceStatus`) and added
+     repository-owned enum overloads for string event policies/names
+     (`WinEventName`, `WinEventOverflowPolicy`).
    - **Rejected, documented.** Exposing `DialogButton` directly on
      `ClickDialogButtonById` was reconsidered and explicitly declined in
      [DialogUtils' own review](DialogUtils-pega-usability-review.md) -
