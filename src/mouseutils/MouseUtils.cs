@@ -147,6 +147,13 @@ namespace MouseAutomation
         private readonly Dictionary<SystemCursorType, IntPtr> _originalCursorHandlesBySlot = new Dictionary<SystemCursorType, IntPtr>();
 
         /// <summary>
+        /// The handle this instance itself most recently installed into each system
+        /// cursor slot, used to detect whether another actor has replaced it since -
+        /// see <see cref="TryApplySystemCursor"/>.
+        /// </summary>
+        private readonly Dictionary<SystemCursorType, IntPtr> _lastAppliedCursorHandleBySlot = new Dictionary<SystemCursorType, IntPtr>();
+
+        /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
         /// </summary>
         public MouseUtils()
@@ -199,9 +206,17 @@ namespace MouseAutomation
             {
                 foreach (MouseButton button in _buttonsDown.ToArray())
                 {
-                    try { TrySendMouseButton(button, false, out _); } catch { /* best-effort */ }
+                    // Only stop tracking a button once its release actually succeeds - a
+                    // transient failure here shouldn't discard the only record of it still
+                    // being held, since that record is what a second Dispose call (or, for
+                    // process-exit cleanup paths that retry, a later attempt) would need.
+                    try
+                    {
+                        if (TrySendMouseButton(button, false, out _))
+                            _buttonsDown.Remove(button);
+                    }
+                    catch { /* best-effort */ }
                 }
-                _buttonsDown.Clear();
 
                 if (_inputBlockedByThisInstance && Environment.CurrentManagedThreadId == _inputBlockedThreadId)
                 {
@@ -219,10 +234,14 @@ namespace MouseAutomation
                 {
                     try
                     {
-                        // Same ownership check as ReleaseCursorClip - don't stomp a clip
-                        // another actor has taken over since this instance's last ClipCursor call.
-                        if (!(GetClipCursor(out RECT current) &&
-                              _lastAppliedClipRect is RECT lastApplied && !current.Equals(lastApplied)))
+                        // Same ownership check as ReleaseCursorClip - only restore when we
+                        // can positively confirm the clip still matches what this instance
+                        // itself last applied. Fails closed: if GetClipCursor itself fails,
+                        // or the clip has since changed, skip the restore rather than
+                        // stomping state we can't verify is still ours.
+                        if (GetClipCursor(out RECT current) &&
+                            _lastAppliedClipRect is RECT lastApplied &&
+                            current.Equals(lastApplied))
                         {
                             RECT rc = previousClip;
                             ClipCursorRect(ref rc);
@@ -449,23 +468,8 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (steps < 1)
-                {
-                    message = "steps must be at least 1.";
+                if (!ValidateStepsAndDelay(steps, delayMilliseconds, out message))
                     return false;
-                }
-                if (delayMilliseconds < 0)
-                {
-                    message = "delayMilliseconds must be zero or positive.";
-                    return false;
-                }
-                // long arithmetic: steps/delayMilliseconds are each only bounded below, so
-                // their product could otherwise overflow int before this check saw it.
-                if ((long)steps * delayMilliseconds > MaxHeldOrMovementMilliseconds)
-                {
-                    message = $"steps * delayMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds total) - bad wiring should not block the automation thread indefinitely.";
-                    return false;
-                }
 
                 if (!TryGetPoint(out POINT start, out message))
                     return false;
@@ -1055,7 +1059,7 @@ namespace MouseAutomation
         /// <param name="maxAttempts">Maximum number of attempts. Must be at least 1.</param>
         /// <param name="retryDelayMilliseconds">Delay between attempts in milliseconds. Must be zero or positive.</param>
         /// <param name="message"><c>null</c> on success; otherwise the last attempt's failure reason.</param>
-        /// <returns><c>true</c> if any attempt succeeded; <c>false</c> if <paramref name="maxAttempts"/> is below 1, <paramref name="retryDelayMilliseconds"/> is negative, or every attempt failed. Never throws.</returns>
+        /// <returns><c>true</c> if any attempt succeeded; <c>false</c> if <paramref name="maxAttempts"/> is below 1 or above 1000, <paramref name="retryDelayMilliseconds"/> is negative, their total blocking duration exceeds 60 seconds, or every attempt failed. Never throws.</returns>
         /// <remarks>
         /// Useful for unattended runs where a momentary UAC flicker or timing hiccup can
         /// cause a single click attempt to fail even though the desktop is otherwise usable.
@@ -1075,6 +1079,23 @@ namespace MouseAutomation
                 if (retryDelayMilliseconds < 0)
                 {
                     message = "retryDelayMilliseconds must be zero or positive.";
+                    return false;
+                }
+                // Independent cap on the attempt count itself - retryDelayMilliseconds = 0
+                // would otherwise make the product check below zero regardless of
+                // maxAttempts, letting a huge attempt count through even though each
+                // attempt still costs real time (a click is not free even at zero delay).
+                if (maxAttempts > MaxRetryAttempts)
+                {
+                    message = $"maxAttempts must be at most {MaxRetryAttempts} - bad wiring should not retry indefinitely even with retryDelayMilliseconds = 0.";
+                    return false;
+                }
+                // long arithmetic: maxAttempts/retryDelayMilliseconds could otherwise
+                // overflow int before this check saw it. Only (maxAttempts - 1) delays
+                // ever actually happen - there's no sleep after the final attempt.
+                if ((long)(maxAttempts - 1) * retryDelayMilliseconds > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"(maxAttempts - 1) * retryDelayMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds total) - bad wiring should not block the automation thread indefinitely.";
                     return false;
                 }
 
@@ -1177,6 +1198,12 @@ namespace MouseAutomation
             message = default;
             try
             {
+                // Preflight before any native call - otherwise an invalid steps/delay
+                // pair would only be caught by SmoothMoveTo below, after MoveTo/MouseDown
+                // have already performed a real move and button press at the start point.
+                if (!ValidateStepsAndDelay(steps, stepDelayMilliseconds, out message))
+                    return false;
+
                 if (!MoveTo(startX, startY, out message)) return false;
                 Thread.Sleep(50);
                 if (!MouseDown(MouseButton.Left, out message)) return false;
@@ -1267,6 +1294,11 @@ namespace MouseAutomation
                     message = $"Undefined ModifierKeys bit(s) set: {modifiers}.";
                     return false;
                 }
+                // Preflight before any native call - DragAndDrop below validates steps/
+                // stepDelayMilliseconds too, but only after this method has already sent
+                // the modifier-key-down batch, which is too late.
+                if (!ValidateStepsAndDelay(steps, stepDelayMilliseconds, out message))
+                    return false;
 
                 List<INPUT> downBatch = new List<INPUT>();
                 if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
@@ -1966,9 +1998,16 @@ namespace MouseAutomation
                     // applied. If it isn't, another actor (another app, or another
                     // ClipCursor call on this or another instance) has since taken over
                     // the clip, and restoring our stale rectangle would stomp their
-                    // change instead of releasing something we actually own.
-                    if (GetClipCursor(out RECT current) &&
-                        _lastAppliedClipRect is RECT lastApplied && !current.Equals(lastApplied))
+                    // change instead of releasing something we actually own. Fails
+                    // closed: if the ownership query itself fails, skip the restore
+                    // rather than applying stale state we can't confirm is still ours.
+                    if (!GetClipCursor(out RECT current))
+                    {
+                        message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClipCursor failed while checking clip ownership before release.").Message;
+                        return false;
+                    }
+
+                    if (_lastAppliedClipRect is RECT lastApplied && !current.Equals(lastApplied))
                     {
                         ok = true;
                     }
@@ -3332,7 +3371,7 @@ namespace MouseAutomation
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
         /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="durationMs"/> is below 1 or a Win32 cursor call/input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="durationMs"/> is below 1 or above 60000, or a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Movement")]
         [Description("Performs a left-button drag along a randomized Bezier curve instead of a straight line - the human-like counterpart to DragAndDrop. Returns True on success; never throws.")]
         public bool BezierDragAndDrop(int startX, int startY, int endX, int endY, out string message, int durationMs = 500)
@@ -3343,6 +3382,14 @@ namespace MouseAutomation
                 if (durationMs < 1)
                 {
                     message = "durationMs must be at least 1.";
+                    return false;
+                }
+                // Preflight the upper bound too - otherwise MoveMouseBezier below is the
+                // only thing that catches it, after MoveTo/MouseDown have already
+                // performed a real move and button press at the start point.
+                if (durationMs > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"durationMs must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
                     return false;
                 }
 
@@ -3729,9 +3776,22 @@ namespace MouseAutomation
             IntPtr pendingOriginalCopy = IntPtr.Zero;
             if (isFirstTouch)
             {
+                // If we can't capture the original, fail before ever touching the slot -
+                // proceeding anyway would replace the cursor but leave it untracked (not
+                // in _originalCursorHandlesBySlot), silently breaking Dispose's documented
+                // guarantee to restore every slot this instance actually changed.
                 IntPtr hCurrent = LoadCursor(IntPtr.Zero, (int)slot);
-                if (hCurrent != IntPtr.Zero)
-                    pendingOriginalCopy = CopyIcon(hCurrent);
+                if (hCurrent == IntPtr.Zero)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "LoadCursor failed while capturing the original cursor for slot " + slot + ".").Message;
+                    return false;
+                }
+                pendingOriginalCopy = CopyIcon(hCurrent);
+                if (pendingOriginalCopy == IntPtr.Zero)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "CopyIcon failed while capturing the original cursor for slot " + slot + ".").Message;
+                    return false;
+                }
             }
 
             IntPtr hCopy = CopyIcon(hSource); // CopyCursor is a macro for CopyIcon
@@ -3757,6 +3817,9 @@ namespace MouseAutomation
             // original cursor is actually committed.
             if (pendingOriginalCopy != IntPtr.Zero)
                 _originalCursorHandlesBySlot[slot] = pendingOriginalCopy;
+            // Track what this instance itself just installed, so a later restore can
+            // check whether another actor has since replaced it - see ForgetSavedSystemCursors.
+            _lastAppliedCursorHandleBySlot[slot] = hCopy;
             message = null;
             return true;
         }
@@ -3772,11 +3835,27 @@ namespace MouseAutomation
             {
                 if (restore)
                 {
-                    try { TryApplySystemCursor(slotAndHandle.Key, slotAndHandle.Value, out _); } catch { /* best-effort */ }
+                    try
+                    {
+                        // Only restore if the slot's active cursor is still the one this
+                        // instance itself last installed - if another actor (another
+                        // process, another instance, or a ResetSystemCursors call) has
+                        // since replaced it, leave their cursor alone instead of
+                        // overwriting it with our stale saved original.
+                        if (_lastAppliedCursorHandleBySlot.TryGetValue(slotAndHandle.Key, out IntPtr lastApplied) &&
+                            LoadCursor(IntPtr.Zero, (int)slotAndHandle.Key) == lastApplied)
+                        {
+                            TryApplySystemCursor(slotAndHandle.Key, slotAndHandle.Value, out _);
+                        }
+                    }
+                    catch { /* best-effort */ }
                 }
+                // TryApplySystemCursor above (if it ran) copies slotAndHandle.Value rather
+                // than consuming it, so this instance still owns and must free it either way.
                 try { DestroyCursor(slotAndHandle.Value); } catch { /* best-effort */ }
             }
             _originalCursorHandlesBySlot.Clear();
+            _lastAppliedCursorHandleBySlot.Clear();
         }
 
         private static bool TrySendMouseButton(MouseButton button, bool isDown, out string message)
@@ -3784,6 +3863,38 @@ namespace MouseAutomation
             if (!TryGetButtonFlags(button, isDown, out uint flags, out int data, out message))
                 return false;
             return TrySendMouseEvent(flags, data, out message);
+        }
+
+        // Shared by SmoothMoveTo and every caller that preflights a custom step count/
+        // delay (DragAndDrop, RubberBandSelect) before doing anything else - validating
+        // here, before any native call, is what keeps an invalid steps/delayMilliseconds
+        // pair from causing a real move/press/key-down to fire before the rejection.
+        private static bool ValidateStepsAndDelay(int steps, int delayMilliseconds, out string message)
+        {
+            if (steps < 1)
+            {
+                message = "steps must be at least 1.";
+                return false;
+            }
+            if (delayMilliseconds < 0)
+            {
+                message = "delayMilliseconds must be zero or positive.";
+                return false;
+            }
+            if (steps > MaxMovementSteps)
+            {
+                message = $"steps must be at most {MaxMovementSteps} - a large step count can block the automation thread for a long time issuing move events even with delayMilliseconds = 0.";
+                return false;
+            }
+            // long arithmetic: steps/delayMilliseconds are each only bounded below, so
+            // their product could otherwise overflow int before this check saw it.
+            if ((long)steps * delayMilliseconds > MaxHeldOrMovementMilliseconds)
+            {
+                message = $"steps * delayMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds total) - bad wiring should not block the automation thread indefinitely.";
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -3929,6 +4040,19 @@ namespace MouseAutomation
         // this component performs itself and have no legitimate reason to run long.
         private const int MaxWaitTimeoutMilliseconds = 30 * 60 * 1000; // 30 minutes
         private const int MaxHeldOrMovementMilliseconds = 60 * 1000; // 60 seconds
+
+        // A zero delayMilliseconds makes steps * delayMilliseconds zero regardless of
+        // steps, so that product check alone can't bound a huge step count - this is an
+        // independent cap on the count itself, far beyond any real smooth-movement use
+        // case (dozens of steps), so bad wiring can't issue billions of native move
+        // calls back-to-back even with no per-step delay.
+        private const int MaxMovementSteps = 100_000;
+
+        // Same reasoning as MaxMovementSteps, for ClickWithRetry: a zero
+        // retryDelayMilliseconds makes the (attempts - 1) * delay product zero
+        // regardless of attempt count, so this bounds the attempt count itself - well
+        // beyond any real retry-loop use case (single digits to low tens).
+        private const int MaxRetryAttempts = 1000;
 
         private const int XBUTTON1 = 0x0001;
         private const int XBUTTON2 = 0x0002;

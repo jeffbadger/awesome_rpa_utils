@@ -222,7 +222,11 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
   until `ResetSystemCursors` is called — always restore them (ideally in a `Finally` block).
   Disposing this component also restores each individual slot it touched (to what was there
   immediately before, not necessarily the Windows default) as a backstop, but that should not
-  be relied on as the primary cleanup path.
+  be relied on as the primary cleanup path. That backstop restore also checks, right before
+  restoring, whether the slot's active cursor is still the one this instance itself last
+  installed — the same narrowing (not eliminating) protection `ClipCursor` has, described
+  below. If this instance can't capture a slot's original cursor in the first place, the
+  replacement itself now fails rather than proceeding without one to restore later.
 - **`ClipCursor`/`ReleaseCursorClip`** now restore the exact clip (or lack of one) that was in
   effect immediately before `ClipCursor` was called, rather than always clearing to "no clip".
   `ReleaseCursorClip` (and `Dispose` as a backstop) also check, right before restoring, whether
@@ -237,7 +241,9 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
   system cursor slots replaced via `SetCursor`/`ReplaceSystemCursor`/`SetCursorFromFile`. This
   is a safety net, not a substitute for calling `MouseUp`/`UnblockUserInput`/`ShowCursor`/
   `ReleaseCursorClip`/`ResetSystemCursors` yourself - some of it (thread-affine state disposed
-  from a different thread) cannot be recovered at all this way.
+  from a different thread) cannot be recovered at all this way. A button whose release fails
+  during `Dispose` stays tracked as held rather than being forgotten, so a later `Dispose` call
+  (this component doesn't guard against being disposed more than once) will retry it.
 - **Blocking waits/holds/movements are bounded, not cancellable**: Pega Robot Studio
   automations execute steps sequentially on one thread, so there is no mechanism for a
   separate step to interrupt a call already blocked in this component. `WaitForPixelColor`/
@@ -246,6 +252,14 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
   `MoveMouseBezier`/`FlashCursorHighlight`/`SmoothMoveTo`'s durations are capped at 60 seconds
   total (these are synthetic actions this component performs itself, with no legitimate reason
   to run long). A value exceeding its cap returns `false` with a message rather than blocking.
+  `SmoothMoveTo`/`DragAndDrop`/`RubberBandSelect`'s `steps` and `ClickWithRetry`'s `maxAttempts`
+  are additionally capped on their own (100,000 and 1,000 respectively) — a zero delay makes
+  the total-duration product zero regardless of count, so a huge count needs its own bound to
+  stay blocked from running effectively unbounded. `BezierDragAndDrop`'s `durationMs` is
+  checked before the drag starts (not just inside the `MoveMouseBezier` call it makes), and
+  `DragAndDrop`/`RubberBandSelect`'s `steps`/`stepDelayMilliseconds` are checked before any
+  move or button/key press — an invalid value is rejected before it can cause a real,
+  unintended input event at the start point.
 - **Invalid numeric/enum input is rejected, not silently coerced**: negative delays/durations/
   attempts/notch counts, an out-of-range fraction (including `NaN`/infinity), and undefined
   `ModifierKeys` bits all return `false` with a message instead of being clamped to a nearby

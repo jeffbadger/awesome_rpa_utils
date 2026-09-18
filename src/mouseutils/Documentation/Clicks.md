@@ -161,6 +161,14 @@ a short delay before giving up for real.
 mouse.ClickWithRetry(x: 640, y: 480, MouseButton.Left, maxAttempts: 3, retryDelayMilliseconds: 500, out string message);
 ```
 
+`maxAttempts` must be at least 1 (and at most 1,000 on its own), and
+`(maxAttempts - 1) * retryDelayMilliseconds` (the total time spent sleeping
+between attempts) is capped at 60 seconds. The 1,000 cap on `maxAttempts`
+alone exists for the same reason `SmoothMoveTo`'s `steps` has its own cap:
+`retryDelayMilliseconds: 0` makes that product zero regardless of attempt
+count, so a huge attempt count would otherwise still cost real, unbounded
+time even with no delay between attempts.
+
 ## `TripleClick(MouseButton button)`
 
 **Scenario:** Replacing the entire contents of a multi-line memo field in a

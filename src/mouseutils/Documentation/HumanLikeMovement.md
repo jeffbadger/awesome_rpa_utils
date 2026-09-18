@@ -69,3 +69,9 @@ middleware flags.
 ```csharp
 mouse.BezierDragAndDrop(startX: 220, startY: 300, endX: 620, endY: 300, out _, durationMs: 700);
 ```
+
+Unlike `BezierClickAt`/`BezierDoubleClickAt`, this method checks `durationMs`'s
+bounds itself before moving to the start point and pressing the button down,
+rather than only relying on the `MoveMouseBezier` call it makes internally -
+an invalid value fails before any real input, not after an unintended press
+at the start point.

@@ -219,5 +219,74 @@ namespace MouseAutomation.Tests
 
             Assert.Equal(0, callCount);
         }
+
+        // Regression test: Dispose used to clear _buttonsDown unconditionally, even when
+        // the release it attempted failed - discarding the only record that the button
+        // was still held. A second Dispose call (this class isn't guarded against being
+        // disposed twice) must still retry a release that failed the first time.
+        [Fact]
+        public void Dispose_ReleaseFailure_RetriesOnSecondDispose()
+        {
+            MouseUtils.SendInputOverride = inputs => (uint)inputs.Length;
+            Assert.True(_mouse.MouseDown(MouseButton.Left, out _));
+
+            int callCount = 0;
+            MouseUtils.SendInputOverride = inputs => { callCount++; return 0u; }; // release fails
+            _mouse.Dispose();
+            Assert.Equal(1, callCount);
+
+            MouseUtils.SendInputOverride = inputs => { callCount++; return (uint)inputs.Length; }; // release succeeds
+            _mouse.Dispose();
+            Assert.Equal(2, callCount);
+        }
+
+        // --- Preflight validation happens before any native call - an invalid steps/
+        // delay or duration must never cause a real move/press to fire before the
+        // rejection (see MouseUtils.cs, ValidateStepsAndDelay and its callers). ---
+
+        [Fact]
+        public void DragAndDrop_InvalidSteps_ReturnsFalseWithoutSendingAnyInput()
+        {
+            int sendInputCalls = 0;
+            int setCursorPosCalls = 0;
+            MouseUtils.SendInputOverride = inputs => { sendInputCalls++; return (uint)inputs.Length; };
+            MouseUtils.SetCursorPosOverride = (x, y) => { setCursorPosCalls++; return true; };
+
+            bool ok = _mouse.DragAndDrop(0, 0, 10, 10, steps: 0, stepDelayMilliseconds: 10, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+            Assert.Equal(0, sendInputCalls);
+            Assert.Equal(0, setCursorPosCalls);
+        }
+
+        [Fact]
+        public void RubberBandSelect_InvalidSteps_ReturnsFalseWithoutPressingModifiers()
+        {
+            int sendInputCalls = 0;
+            MouseUtils.SendInputOverride = inputs => { sendInputCalls++; return (uint)inputs.Length; };
+
+            bool ok = _mouse.RubberBandSelect(0, 0, 10, 10, ModifierKeys.Control, steps: 0, stepDelayMilliseconds: 10, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+            Assert.Equal(0, sendInputCalls);
+        }
+
+        [Fact]
+        public void BezierDragAndDrop_DurationAboveMax_ReturnsFalseWithoutAnyInput()
+        {
+            int sendInputCalls = 0;
+            int setCursorPosCalls = 0;
+            MouseUtils.SendInputOverride = inputs => { sendInputCalls++; return (uint)inputs.Length; };
+            MouseUtils.SetCursorPosOverride = (x, y) => { setCursorPosCalls++; return true; };
+
+            bool ok = _mouse.BezierDragAndDrop(0, 0, 10, 10, out string message, durationMs: 60_001);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+            Assert.Equal(0, sendInputCalls);
+            Assert.Equal(0, setCursorPosCalls);
+        }
     }
 }

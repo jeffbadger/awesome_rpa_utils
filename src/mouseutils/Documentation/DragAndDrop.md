@@ -30,6 +30,11 @@ mouse.DragAndDrop(
     out _); // slower glide for a laggy RDP session
 ```
 
+`steps`/`stepDelayMilliseconds` follow the same bounds as `SmoothMoveTo` (see
+[Position](Position.md)), and are validated before the drag ever presses the
+button down — an invalid value fails without moving to the start point or
+performing an unintended press there.
+
 ## `RubberBandSelect(int startX, int startY, int endX, int endY, ModifierKeys modifiers)`
 
 **Scenario:** In a file-manager grid, the automation has already rubber-band
@@ -51,6 +56,9 @@ laggy remote desktop session, matching the pattern used for the plain
 ```csharp
 mouse.RubberBandSelect(400, 250, 650, 400, ModifierKeys.Control, steps: 80, stepDelayMilliseconds: 25, out _);
 ```
+
+Same `steps`/`stepDelayMilliseconds` bounds as the `DragAndDrop` overload above,
+checked before this method presses any modifier key down.
 
 ## `DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds)`
 

@@ -43,6 +43,16 @@ finally
 }
 ```
 
+If this instance can't capture the slot's current cursor before replacing
+it (a `LoadCursor`/`CopyIcon` failure - rare, but possible under GDI resource
+exhaustion), the replacement itself now fails rather than proceeding with
+nothing recorded to restore later. Disposing the component without calling
+`ResetSystemCursors` restores each slot it touched as a backstop, but that
+restore only actually applies if the slot's active cursor still matches what
+this instance itself last installed there - the same narrowing (not
+eliminating) ownership check `ClipCursor`/`ReleaseCursorClip` use, described
+further down.
+
 ## `SetCursorFromFile(SystemCursorType slotToReplace, string filePath)`
 
 **Scenario:** Branding an attended-automation session with the company's custom

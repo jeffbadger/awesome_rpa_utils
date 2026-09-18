@@ -167,6 +167,18 @@ namespace MouseAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        // Regression test: steps * delayMilliseconds is zero whenever delayMilliseconds
+        // is zero, regardless of how large steps is, so that product check alone can't
+        // catch an oversized step count - there's an independent cap on steps itself.
+        [Fact]
+        public void SmoothMoveTo_StepsAboveMax_WithZeroDelay_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.SmoothMoveTo(0, 0, steps: 100_001, delayMilliseconds: 0, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         [Theory]
         [InlineData(0)]
         [InlineData(-1)]
@@ -213,6 +225,18 @@ namespace MouseAutomation.Tests
         public void BezierDragAndDrop_DurationBelowOne_ReturnsFalseWithMessage(int durationMs)
         {
             bool ok = _mouse.BezierDragAndDrop(0, 0, 10, 10, out string message, durationMs);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // BezierDragAndDrop now preflights the upper bound itself rather than relying on
+        // MoveMouseBezier to catch it - see FaultInjectionTests for the regression test
+        // that verifies no native input is sent before the rejection.
+        [Fact]
+        public void BezierDragAndDrop_DurationAboveMax_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.BezierDragAndDrop(0, 0, 10, 10, out string message, durationMs: 60_001);
 
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
@@ -267,6 +291,27 @@ namespace MouseAutomation.Tests
         public void ClickWithRetry_NegativeRetryDelay_ReturnsFalseWithMessage()
         {
             bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, 3, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // Regression test: retryDelayMilliseconds = 0 makes (maxAttempts - 1) * delay
+        // zero regardless of maxAttempts, so that product check alone can't catch an
+        // oversized attempt count - there's an independent cap on maxAttempts itself.
+        [Fact]
+        public void ClickWithRetry_MaxAttemptsAboveMax_WithZeroDelay_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, maxAttempts: 1001, retryDelayMilliseconds: 0, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickWithRetry_AttemptsDelayProductTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, maxAttempts: 2, retryDelayMilliseconds: int.MaxValue, out string message);
 
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
