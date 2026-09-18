@@ -60,8 +60,11 @@ alongside this.)*
    helpers `SetFileDialogPath`, `SelectFileDialogFileType`, and `SubmitFileDialog`. Found
    and fixed while doing so: `GetControlText` returned an empty string for an edit box or
    drop-down in another process (it now reads with `WM_GETTEXT`), and a zero dialog
-   handle enumerated every top-level window instead of returning no controls. All are
-   additive with unique names, so the
+   handle enumerated every top-level window instead of returning no controls. Because
+   `WM_GETTEXT` can read a masked password box's real contents, `ListDialogControls` does
+   not read password edit boxes (`DialogControlInfo.Text` is empty and the new
+   `IsPassword` is true); an explicit `GetControlText` on that handle still returns the
+   text. All are additive with unique names, so the
    [Signature Uniqueness Standard](../coding-standards/signature-uniqueness-standard.md)
    is unaffected.
 

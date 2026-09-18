@@ -85,6 +85,10 @@ where the method is documented to throw.
 - `GetControlText` on an edit box or drop-down **in another process** (assert the
   real text - it was previously always empty; run the target dialog in a child
   process, since a same-process dialog would not catch the regression)
+- `ListDialogControls` on a dialog with `PasswordChar`/`UseSystemPasswordChar` text
+  boxes **in another process** (assert the password boxes come back with empty `Text`
+  and `IsPassword` true, an ordinary box keeps its text, `ToString()` never contains the
+  password; `GetControlText` on the password handle still returns the real text)
 - `SetControlText` (a text box and a drop-down's edit box; read it back with
   `GetControlText`; a read-only or length-limited control → `false` + message; the
   text is never in the message; `null` text → `false`)

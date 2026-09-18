@@ -234,6 +234,60 @@ namespace DialogAutomation.Tests
             Assert.Equal(expected, DialogUtils.IsComboBoxClass(className));
         }
 
+        // ------------------------------------------------------------------
+        // Password boxes: recognized so ListDialogControls never reads them
+        // ------------------------------------------------------------------
+
+        [Theory]
+        [InlineData("Edit", true)]
+        [InlineData("edit", true)]
+        [InlineData("WindowsForms10.EDIT.app.0.141b42a_r14_ad1", true)]
+        [InlineData("WindowsForms10.Edit.app.0.2360855_r3_ad1", true)]
+        [InlineData("ComboBox", false)]
+        [InlineData("Button", false)]
+        [InlineData("Static", false)]
+        [InlineData("RichEdit20W", false)]
+        [InlineData("", false)]
+        [InlineData(null, false)]
+        public void IsEditClass_MatchesNativeAndWinFormsEditBoxes(string className, bool expected)
+        {
+            Assert.Equal(expected, DialogUtils.IsEditClass(className));
+        }
+
+        [Theory]
+        [InlineData("Edit", 0x50010020, true)]                                   // ES_PASSWORD set
+        [InlineData("Edit", 0x50010000, false)]                                  // an ordinary edit box
+        [InlineData("WindowsForms10.EDIT.app.0.141b42a_r14_ad1", 0x560100E0, true)]   // a WinForms TextBox with PasswordChar
+        [InlineData("WindowsForms10.EDIT.app.0.141b42a_r14_ad1", 0x560100C0, false)]  // ...and one without
+        // 0x20 is not "password" on other controls - it is a different style bit for each.
+        [InlineData("Button", 0x50010020, false)]
+        [InlineData("ComboBox", 0x50010020, false)]                              // CBS_OWNERDRAWVARIABLE
+        [InlineData("Static", 0x50010020, false)]
+        [InlineData(null, 0x50010020, false)]
+        public void IsPasswordEdit_NeedsBothTheEditClassAndTheEsPasswordStyle(string className, int style, bool expected)
+        {
+            Assert.Equal(expected, DialogUtils.IsPasswordEdit(className, style));
+        }
+
+        [Fact]
+        public void DialogControlInfo_ToString_ShowsThePasswordMarkerNeverTheText()
+        {
+            var info = new DialogUtils.DialogControlInfo { Id = 1001, ClassName = "Edit", Text = "hunter2", IsPassword = true, Enabled = true };
+
+            string text = info.ToString();
+
+            Assert.Contains("(password)", text);
+            Assert.DoesNotContain("hunter2", text);
+        }
+
+        [Fact]
+        public void DialogControlInfo_ToString_ShowsAnOrdinaryControlsText()
+        {
+            var info = new DialogUtils.DialogControlInfo { Id = 1, ClassName = "Button", Text = "&Save", Enabled = false };
+
+            Assert.Equal("[1] Button: \"&Save\" (disabled)", info.ToString());
+        }
+
         [Fact]
         public void ControlCheckState_ValuesMatchWin32BstConstants()
         {

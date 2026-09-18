@@ -36,6 +36,12 @@ It works on the editable part of a drop-down too. A Font dialog's size box accep
 never includes the text that was being set, so a password typed into a login dialog
 does not end up in a log.
 
+Reading is the other direction: `ListDialogControls` does not read password boxes.
+Their `Text` is empty and `IsPassword` is `true`, so dumping a dialog's controls to a
+log never includes a password. Typing into a password box works normally
+(`SetControlText` verifies the write by reading it back internally and never reports
+the text).
+
 If the text does not stick - the box is read-only, length-limited, or reformats what
 it is given - `SetControlText` returns `false` and says so.
 
@@ -48,6 +54,9 @@ does not read another process's edit box; it now asks the control directly.
 ```csharp
 string current = dialog.GetControlText(hostBox.Handle);
 ```
+
+Called on a password box's handle it returns the real contents (the mask is only
+drawn), because you asked for that control specifically. Do not log the result.
 
 ## Check a box, or select a radio button
 

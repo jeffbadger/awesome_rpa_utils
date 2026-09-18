@@ -24,9 +24,13 @@ against it — run this once against a target dialog and inspect the output.
 ```csharp
 foreach (var control in dialog.ListDialogControls(hWnd))
 {
-    Console.WriteLine($"Id={control.Id}, Class={control.ClassName}, Text=\"{control.Text}\"");
+    Console.WriteLine(control);   // [1001] Edit: "C:\file.txt"   or   [1002] Edit: (password)
 }
 ```
+
+Password boxes are listed without their text: `Text` is empty and `IsPassword` is
+`true`, so this dump is safe to keep in a log. `DialogControlInfo.ToString()` prints
+`(password)` in place of a value.
 
 ## Highlight a control to confirm which one it is
 

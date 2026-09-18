@@ -937,8 +937,19 @@ namespace DialogAutomation
             /// <summary>The control's ID (<c>GetDlgCtrlID</c>), as used by <see cref="FindButtonById"/>.</summary>
             public int Id { get; set; }
 
-            /// <summary>The control's visible text (button label, static text, edit field contents, etc.).</summary>
+            /// <summary>
+            /// The control's visible text (button label, static text, edit field contents, etc.).
+            /// Always empty for a password edit box (see <see cref="IsPassword"/>) - its contents
+            /// are deliberately not read, so listing a dialog's controls into a log cannot leak them.
+            /// </summary>
             public string Text { get; set; }
+
+            /// <summary>
+            /// <c>true</c> if the control is a password edit box (<c>ES_PASSWORD</c>), whose text is
+            /// therefore left out of <see cref="Text"/>. Only standard Win32/WinForms password boxes
+            /// can be recognized; a custom-drawn or browser-rendered password field is not.
+            /// </summary>
+            public bool IsPassword { get; set; }
 
             /// <summary>The control's window class name (e.g. <c>Button</c>, <c>Static</c>, <c>Edit</c>).</summary>
             public string ClassName { get; set; }
@@ -947,7 +958,7 @@ namespace DialogAutomation
             public bool Enabled { get; set; }
 
             /// <inheritdoc />
-            public override string ToString() => $"[{Id}] {ClassName}: \"{Text}\"{(Enabled ? "" : " (disabled)")}";
+            public override string ToString() => $"[{Id}] {ClassName}: {(IsPassword ? "(password)" : "\"" + Text + "\"")}{(Enabled ? "" : " (disabled)")}";
         }
 
         /// <summary>
@@ -957,19 +968,31 @@ namespace DialogAutomation
         /// then <see cref="HighlightControl"/> a handle from the results to confirm which
         /// control on screen it corresponds to.
         /// </summary>
+        /// <remarks>
+        /// The text of a password edit box (<c>ES_PASSWORD</c>) is not read: its
+        /// <see cref="DialogControlInfo.Text"/> is empty and <see cref="DialogControlInfo.IsPassword"/>
+        /// is <c>true</c>. Windows hands a password box's real contents to another process that
+        /// asks for them, and a control list is exactly the kind of thing that ends up in a log.
+        /// <see cref="GetControlText"/> on a specific handle still returns the real contents, as an
+        /// explicit request.
+        /// </remarks>
         [Category("Dialog - Discover & Highlight")]
-        [Description("Lists every control on a dialog with its control ID, text, and window class name.")]
+        [Description("Lists every control on a dialog with its control ID, text, and window class name. Password boxes are listed without their text.")]
         public List<DialogControlInfo> ListDialogControls(IntPtr hDialog)
         {
             var controls = new List<DialogControlInfo>();
             foreach (var child in GetChildWindows(hDialog))
             {
+                string className = GetWindowClassName(child);
+                bool isPassword = IsPasswordEdit(className, GetWindowLong(child, GWL_STYLE));
                 controls.Add(new DialogControlInfo
                 {
                     Handle = child,
                     Id = GetDlgCtrlID(child),
-                    Text = GetControlText(child),
-                    ClassName = GetWindowClassName(child),
+                    // Not read at all for a password box, rather than read and then blanked.
+                    Text = isPassword ? string.Empty : GetControlText(child),
+                    IsPassword = isPassword,
+                    ClassName = className,
                     Enabled = IsWindowEnabled(child)
                 });
             }
@@ -1174,6 +1197,7 @@ namespace DialogAutomation
         private const int CBS_DROPDOWNLIST = 0x0003;
         private const int BS_TYPE_MASK = 0x000F;
         private const int BS_OWNERDRAW = 0x000B;
+        private const int ES_PASSWORD = 0x0020;
 
         // Control IDs in the common Open/Save dialogs.
         private const int FileNameEditIdOldStyle = 1152;   // edt1
@@ -1393,6 +1417,24 @@ namespace DialogAutomation
             return !string.IsNullOrEmpty(className)
                 && (className.Equals("Button", StringComparison.OrdinalIgnoreCase)
                     || className.IndexOf(".BUTTON.", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        // A native Edit, or a WinForms TextBox (WindowsForms10.EDIT.app...), which superclasses it.
+        internal static bool IsEditClass(string className)
+        {
+            return !string.IsNullOrEmpty(className)
+                && (className.Equals("Edit", StringComparison.OrdinalIgnoreCase)
+                    || className.IndexOf(".EDIT.", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        /// <summary>
+        /// Whether a control is a password edit box: an edit control with <c>ES_PASSWORD</c>
+        /// set. The style bit alone is not enough - <c>0x20</c> means something else for a
+        /// button or a combo box - so the class is checked first.
+        /// </summary>
+        internal static bool IsPasswordEdit(string className, int style)
+        {
+            return IsEditClass(className) && (style & ES_PASSWORD) != 0;
         }
 
         internal static bool IsComboBoxClass(string className)

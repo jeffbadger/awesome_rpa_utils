@@ -43,8 +43,11 @@ radio button), `Indeterminate`.
 ### `DialogControlInfo`
 Describes one control returned by `ListDialogControls`: `Handle` (`IntPtr`), `Id`
 (`int`, the control ID used by `FindButtonById`), `Text` (`string`), `ClassName`
-(`string`, the window class, e.g. `Button`/`Static`/`Edit`), and `Enabled` (`bool`,
-via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
+(`string`, the window class, e.g. `Button`/`Static`/`Edit`), `Enabled` (`bool`,
+via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`), and
+`IsPassword` (`bool`, true for an edit box with the password style; its `Text` is
+always empty because `ListDialogControls` never reads it, and `ToString()` prints
+`(password)` instead of a value).
 
 ## Methods
 
@@ -89,7 +92,7 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
 
 | Method | Signature | Description |
 |---|---|---|
-| `ListDialogControls` | `List<DialogControlInfo> ListDialogControls(IntPtr hDialog)` | Lists every control on a dialog (including nested controls) with its ID, text, and window class name. |
+| `ListDialogControls` | `List<DialogControlInfo> ListDialogControls(IntPtr hDialog)` | Lists every control on a dialog (including nested controls) with its ID, text, and window class name. Password edit boxes are listed without their text (`IsPassword` is true). |
 | `HighlightControl` | `bool HighlightControl(IntPtr hControl, Color color, int flashes = 3, int flashMs = 200, int lineWidth = 3)` | Flashes an inverting rectangle of the requested color around a control (e.g. a handle from `ListDialogControls`). Blocks the calling thread for ~`flashes`×2×`flashMs` (~1.2 s by default). Returns True on success; never throws. |
 
 ### Wait-for-Dialog Polling
@@ -186,6 +189,12 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
   earlier versions therefore read every such control as empty. `FindDialog`/`WaitForDialog`
   still match titles with the non-blocking `GetWindowText`, so scanning the desktop can never
   stall on an unresponsive application.
+- **Password boxes are not read by `ListDialogControls`.** Because `GetControlText` can now read
+  another process's edit boxes, it can also read a masked password box's real contents (the mask
+  is only drawn, not stored). So `ListDialogControls` skips reading any edit box with the
+  password style: its `Text` is empty and `IsPassword` is true, so a routine control dump or log
+  line never carries a password. Calling `GetControlText` on that specific handle is an explicit
+  request and still returns the real text - do not log the result.
 - **A zero dialog handle now means "no controls"**, not "every window". `ListDialogControls`,
   `GetDialogText`, and `FindButtonByText` on `IntPtr.Zero` used to walk every top-level window
   on the desktop (Win32's `EnumChildWindows(NULL)` behavior); they now return empty.
