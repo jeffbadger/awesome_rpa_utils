@@ -147,6 +147,9 @@ namespace WinEventAutomation
                 WinEventInterop.PostThreadMessage(_hookThreadId, WinEventInterop.WM_NULL, IntPtr.Zero, IntPtr.Zero);
         }
 
+        /// <summary>Whether the WinEvent hook is currently installed on the hook thread (for tests).</summary>
+        internal bool IsHookInstalled => Volatile.Read(ref _hook) != IntPtr.Zero;
+
         /// <summary>Adds an event to the bounded ring buffer (drops oldest when full).</summary>
         public void AddToRing(WinEventData e)
         {
@@ -171,6 +174,13 @@ namespace WinEventAutomation
 
         private void PumpLoop()
         {
+            // A thread has no message queue until it first calls a USER function such as
+            // PeekMessage/GetMessage, and PostThreadMessage to a thread with no queue fails.
+            // RequestHook/Dispose post to this thread as soon as StartThread returns, so create
+            // the queue *before* publishing the thread id and signalling started; otherwise an
+            // early Start's wake-up is lost and the hook is never installed (measured: most
+            // back-to-back Initialize+Start sequences lost it).
+            WinEventInterop.PeekMessage(out _, IntPtr.Zero, WinEventInterop.WM_USER, WinEventInterop.WM_USER, WinEventInterop.PM_NOREMOVE);
             _hookThreadId = WinEventInterop.GetCurrentThreadId();
             _threadStarted.Set();
             while (!_disposed)
