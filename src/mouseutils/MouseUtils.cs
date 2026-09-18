@@ -133,8 +133,11 @@ namespace MouseAutomation
         /// <summary>The managed thread ID that called <see cref="BlockUserInput"/>, since only that thread can unblock it.</summary>
         private int _inputBlockedThreadId;
 
-        /// <summary>The cursor clip rectangle in effect immediately before this instance's last <see cref="ClipCursor"/> call.</summary>
+        /// <summary>The cursor clip rectangle to restore on <see cref="ReleaseCursorClip"/>/Dispose - see <see cref="ClipCursor"/> for how/when this is (re)captured.</summary>
         private RECT? _previousClipRect;
+
+        /// <summary>The clip rectangle this instance itself most recently applied via <see cref="ClipCursor"/>, used to detect whether another actor has changed the clip since - see <see cref="ClipCursor"/>.</summary>
+        private RECT? _lastAppliedClipRect;
 
         /// <summary>
         /// The cursor originally in each system cursor slot this instance has replaced,
@@ -221,6 +224,7 @@ namespace MouseAutomation
                     }
                     catch { /* best-effort */ }
                     _previousClipRect = null;
+                    _lastAppliedClipRect = null;
                 }
 
                 ForgetSavedSystemCursors(restore: true);
@@ -1856,6 +1860,11 @@ namespace MouseAutomation
         /// always pair with <see cref="ReleaseCursorClip"/> (ideally in a Finally block);
         /// disposing this component also restores the clip that was in effect before this
         /// call as a backstop, but that should not be relied on as the primary cleanup path.
+        /// Calling this again before releasing (re-clipping) does not lose track of the
+        /// true original clip - but if another actor changes the clip in between two calls
+        /// from this instance, that intervening change is treated as the new state to hand
+        /// back on release, rather than being silently overwritten by this instance's own
+        /// older, now-stale record.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Confines the cursor to the given screen rectangle until ReleaseCursorClip is called. Returns True on success; never throws.")]
@@ -1875,13 +1884,26 @@ namespace MouseAutomation
                 // so this uniformly captures "no clip" too - so ReleaseCursorClip/Dispose
                 // can restore it precisely instead of always clearing to "no clip",
                 // which could stomp a clip another app (or another instance of this
-                // component) legitimately owns. Only the FIRST call captures this -
-                // if _previousClipRect is already set, this instance is already clipped
-                // and re-clipping (calling ClipCursor again without releasing first)
-                // must not overwrite the real original with this instance's own current
-                // clip, or releasing later would restore to the wrong rectangle.
-                if (_previousClipRect == null && GetClipCursor(out RECT previous))
-                    _previousClipRect = previous;
+                // component) legitimately owns.
+                //
+                // Only re-capture when the current clip is NOT what this instance itself
+                // last applied - two different reasons that can be true:
+                //  - First call ever (_lastAppliedClipRect is null): always capture.
+                //  - Re-clipping without releasing first, and nothing else touched the
+                //    clip in between: current == _lastAppliedClipRect, so this is still
+                //    this instance's own prior clip, not the real original - skip, so a
+                //    second ClipCursor call can't clobber the true original with its own
+                //    intermediate state.
+                //  - Re-clipping, but another actor changed the clip in between: current
+                //    != _lastAppliedClipRect, so whatever they set is the new state this
+                //    instance should hand control back to on release - capture it, so
+                //    this instance's eventual release doesn't overwrite their change with
+                //    a now-stale rectangle from before this instance ever ran.
+                if (GetClipCursor(out RECT current) &&
+                    (_lastAppliedClipRect == null || !current.Equals(_lastAppliedClipRect.Value)))
+                {
+                    _previousClipRect = current;
+                }
 
                 RECT rc = new RECT { Left = left, Top = top, Right = right, Bottom = bottom };
                 if (!ClipCursorRect(ref rc))
@@ -1889,6 +1911,7 @@ namespace MouseAutomation
                     message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor failed.").Message;
                     return false;
                 }
+                _lastAppliedClipRect = rc;
                 message = null;
                 return true;
 
@@ -1937,6 +1960,7 @@ namespace MouseAutomation
                     return false;
                 }
                 _previousClipRect = null;
+                _lastAppliedClipRect = null;
                 message = null;
                 return true;
 
