@@ -207,6 +207,17 @@ namespace MouseAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void BezierDragAndDrop_DurationBelowOne_ReturnsFalseWithMessage(int durationMs)
+        {
+            bool ok = _mouse.BezierDragAndDrop(0, 0, 10, 10, out string message, durationMs);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         [Fact]
         public void ScrollUp_NegativeNotches_ReturnsFalseWithMessage()
         {
