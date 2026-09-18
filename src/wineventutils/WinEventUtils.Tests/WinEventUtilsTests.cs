@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using WinEventAutomation;
@@ -1226,7 +1229,7 @@ namespace WinEventAutomation.Tests
                 bool ok = utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData e, out _);
                 Assert.True(ok);
                 Assert.NotNull(e);
-                Assert.Equal("notepad", e.ProcessName, ignoreCase: true);
+                AssertProcessName("notepad", e.ProcessName);
                 Assert.NotEqual(IntPtr.Zero, e.Hwnd);
             }
             finally
@@ -1248,14 +1251,27 @@ namespace WinEventAutomation.Tests
                 return;
             try
             {
-                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\"}", 10000, out WinEventData created, out _));
+                Assert.True(utils.WaitForWindowCreated("{\"process\":\"notepad\",\"class\":\"Notepad\"}", 10000, out WinEventData created, out _));
                 Assert.NotNull(created);
                 Thread.Sleep(300); // let the window finish coming up
-                bool ok = utils.WaitForWindowDestroyed("{\"process\":\"notepad\"}", 10000, out WinEventData destroyed, out _);
-                Kill(proc); // close the window → DESTROY event
+                // WaitForWindowDestroyed blocks this thread, so the window has to be closed from
+                // another one once the wait is registered — closing it afterwards, as this test
+                // used to, could only ever end in a timeout.
+                IntPtr createdHwnd = created.Hwnd;
+                var closer = new Thread(() =>
+                {
+                    WaitForRegisteredWaiter(utils);
+                    PostMessage(createdHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                });
+                closer.Start();
+                // Filter on Notepad's window class as well: with a process-only filter the wait was
+                // observed returning the destroy event of a different window than the one closed.
+                bool ok = utils.WaitForWindowDestroyed("{\"process\":\"notepad\",\"class\":\"Notepad\"}", 10000, out WinEventData destroyed, out _);
+                closer.Join();
                 Assert.True(ok);
                 Assert.NotNull(destroyed);
-                Assert.Equal("notepad", destroyed.ProcessName, ignoreCase: true);
+                AssertProcessName("notepad", destroyed.ProcessName);
+                Assert.Equal(createdHwnd, destroyed.Hwnd);
                 Assert.NotNull(destroyed.Title); // enrichment happened before death
             }
             finally
@@ -1282,7 +1298,7 @@ namespace WinEventAutomation.Tests
                 bool ok = utils.GetNextEvent("subA", 10000, out WinEventData e, out _);
                 Assert.True(ok);
                 Assert.NotNull(e);
-                Assert.Equal("notepad", e.ProcessName, ignoreCase: true);
+                AssertProcessName("notepad", e.ProcessName);
                 Assert.True(utils.HasEvents("subB", out int countB, out _));
                 Assert.Equal(0, countB);
             }
@@ -1438,12 +1454,47 @@ namespace WinEventAutomation.Tests
             };
         }
 
-        private static Process StartNotepad()
+        // WinEventData.ProcessName is the image file name as the OS reports it ("Notepad.exe" on
+        // Windows 11), while filters match case-insensitively and ignore a trailing ".exe".
+        // Compare names the same way the filters do.
+        private static void AssertProcessName(string expected, string actual)
+        {
+            Assert.NotNull(actual);
+            if (actual.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                actual = actual.Substring(0, actual.Length - ".exe".Length);
+            Assert.Equal(expected, actual, ignoreCase: true);
+        }
+
+        // Blocks until a WaitForX call on utils has registered its waiter, so a window closed
+        // afterwards cannot be destroyed before the wait is listening. The registry is not
+        // public, so it is read by reflection; if that ever stops working, fall back to a
+        // fixed delay rather than failing.
+        private static void WaitForRegisteredWaiter(WinEventUtils utils)
+        {
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            object registry = typeof(WinEventUtils).GetField("_waiters", flags)?.GetValue(utils);
+            var pending = registry?.GetType().GetField("_waiters", flags)?.GetValue(registry) as System.Collections.ICollection;
+            if (pending == null)
+            {
+                Thread.Sleep(500);
+                return;
+            }
+            SpinWait.SpinUntil(() => pending.Count > 0, 5000);
+        }
+
+        private static NotepadInstance StartNotepad()
         {
             try
             {
+                // Baseline includes hidden windows: a pre-existing window that merely becomes visible
+                // after the launch is still not ours to close.
+                var baseline = EnumNotepadWindows(visibleOnly: false);
+                if (baseline == null)
+                    return null; // cannot tell which windows are not ours, so do not launch
+                var existing = new HashSet<IntPtr>(baseline);
                 string path = Environment.GetFolderPath(Environment.SpecialFolder.System) + "\\notepad.exe";
-                return Process.Start(new ProcessStartInfo(path) { UseShellExecute = false });
+                var launcher = Process.Start(new ProcessStartInfo(path) { UseShellExecute = false });
+                return launcher == null ? null : new NotepadInstance(launcher, existing);
             }
             catch
             {
@@ -1451,16 +1502,90 @@ namespace WinEventAutomation.Tests
             }
         }
 
-        private static void Kill(Process proc)
+        private static void Kill(NotepadInstance notepad)
         {
-            try
+            notepad?.Close();
+        }
+
+        // Returns null if the enumeration itself fails, so a failure is never mistaken for
+        // "no Notepad windows" (which would make every existing window look new).
+        private static List<IntPtr> EnumNotepadWindows(bool visibleOnly = true)
+        {
+            var found = new List<IntPtr>();
+            var className = new StringBuilder(64);
+            bool completed = EnumWindows((hwnd, _) =>
             {
-                if (proc != null && !proc.HasExited)
-                    proc.Kill();
-            }
-            catch
+                if ((!visibleOnly || IsWindowVisible(hwnd)) && GetClassName(hwnd, className, className.Capacity) > 0 &&
+                    string.Equals(className.ToString(), "Notepad", StringComparison.Ordinal))
+                    found.Add(hwnd);
+                return true;
+            }, IntPtr.Zero);
+            return completed ? found : null;
+        }
+
+        /// <summary>
+        /// A notepad.exe launch. On Windows 11 the Store Notepad may hand the launch off to an
+        /// already-running instance (the launcher then exits) and open the new window there, so
+        /// the launched process is not the process that owns the window and killing it would leave
+        /// the window — and its later WindowDestroyed event — behind. Close() instead closes the
+        /// Notepad windows that appeared since the launch, and waits for them to go so their
+        /// destroy events cannot leak into the next test. Windows that already existed (e.g. the
+        /// user's own) are left alone.
+        /// </summary>
+        private sealed class NotepadInstance : IDisposable
+        {
+            private readonly Process _launcher;
+            private readonly HashSet<IntPtr> _existing;
+            private bool _closed;
+
+            public NotepadInstance(Process launcher, HashSet<IntPtr> existing)
             {
+                _launcher = launcher;
+                _existing = existing;
             }
+
+            public void Close()
+            {
+                if (_closed)
+                    return;
+                _closed = true;
+                try
+                {
+                    long deadline = Environment.TickCount64 + 3000;
+                    var closing = new HashSet<IntPtr>();
+                    while (Environment.TickCount64 < deadline)
+                    {
+                        var visible = EnumNotepadWindows();
+                        if (visible == null)
+                            break; // cannot tell new windows from existing ones: close nothing
+                        foreach (var hwnd in visible)
+                        {
+                            if (!_existing.Contains(hwnd) && closing.Add(hwnd))
+                                PostMessage(hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                        }
+                        if (closing.Count == 0 || !closing.Any(IsWindow))
+                            break;
+                        Thread.Sleep(50);
+                    }
+                    // Let the hide/destroy events of the closed windows drain (including a window
+                    // the test itself already closed), or they would show up in the next test's
+                    // subscription.
+                    Thread.Sleep(300);
+                    // Classic (pre-Store) Notepad, or a launcher that never showed a window: the
+                    // launched process is the app itself, so make sure it does not outlive the test.
+                    if (!_launcher.HasExited)
+                        _launcher.Kill();
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    _launcher.Dispose();
+                }
+            }
+
+            public void Dispose() => Close();
         }
 
         private sealed class FailingEnumWinEventUtils : WinEventUtils
@@ -1475,6 +1600,20 @@ namespace WinEventAutomation.Tests
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
 
         private const int WM_CLOSE = 0x0010;
         private const int WM_CANCELMODE = 0x001F;
