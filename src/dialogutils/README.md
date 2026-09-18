@@ -3,8 +3,9 @@
 A Pega Robot Studio-ready component (`DialogUtils`) that finds and dismisses
 native dialogs (message boxes, common dialogs) by button text or control ID,
 via `BM_CLICK` — no cursor movement required, and it works even if the
-dialog is behind other windows — and fills them in: text boxes, check boxes,
-radio buttons, drop-downs, and Open/Save As file dialogs.
+dialog is behind other windows. It also fills dialogs in (text boxes, check boxes,
+radio buttons, drop-downs, and Open/Save As file dialogs); those were verified with
+the dialog in front, not behind other windows.
 
 - Target framework: `net10.0-windows`
 - Namespace: `DialogAutomation`

@@ -269,6 +269,21 @@ namespace DialogAutomation.Tests
             Assert.Equal(expected, DialogUtils.IsPasswordEdit(className, style));
         }
 
+        [Theory]
+        [InlineData("Edit", 0x50010800, true)]                                          // ES_READONLY set
+        [InlineData("Edit", 0x50010000, false)]
+        [InlineData("WindowsForms10.EDIT.app.0.141b42a_r14_ad1", 0x56010900, true)]     // a WinForms TextBox with ReadOnly
+        [InlineData("WindowsForms10.EDIT.app.0.141b42a_r14_ad1", 0x560100C0, false)]
+        // 0x800 is a different style bit on other controls (e.g. BS_* / SS_* / CBS_HASSTRINGS is 0x200).
+        [InlineData("Button", 0x50010800, false)]
+        [InlineData("ComboBox", 0x50010800, false)]
+        [InlineData("Static", 0x50010800, false)]
+        [InlineData(null, 0x50010800, false)]
+        public void IsReadOnlyEdit_NeedsBothTheEditClassAndTheEsReadonlyStyle(string className, int style, bool expected)
+        {
+            Assert.Equal(expected, DialogUtils.IsReadOnlyEdit(className, style));
+        }
+
         [Fact]
         public void DialogControlInfo_ToString_ShowsThePasswordMarkerNeverTheText()
         {

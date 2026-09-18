@@ -42,7 +42,8 @@ log never includes a password. Typing into a password box works normally
 (`SetControlText` verifies the write by reading it back internally and never reports
 the text).
 
-If the text does not stick - the box is read-only, length-limited, or reformats what
+A read-only text box is refused up front and left unchanged (`WM_SETTEXT` would otherwise
+write straight past the read-only style). If the text does not stick - the box is length-limited, or reformats what
 it is given - `SetControlText` returns `false` and says so.
 
 ### Reading text back

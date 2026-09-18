@@ -151,7 +151,7 @@ Pega Robot Studio-ready component that provides an instance-local, typed, named 
 
 ## DialogUtils
 
-Pega Robot Studio-ready component that finds native dialogs (message boxes, common dialogs), dismisses them by button text or control ID via `BM_CLICK` — no cursor movement required, and it works even if the dialog is behind other windows — and fills them in: text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs.
+Pega Robot Studio-ready component that finds native dialogs (message boxes, common dialogs), dismisses them by button text or control ID via `BM_CLICK` — no cursor movement required, and it works even if the dialog is behind other windows. It also fills dialogs in (text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs); those were verified with the dialog in front, not behind other windows.
 
 **Namespace:** `DialogAutomation` | **Assembly:** `DialogAutomation`
 

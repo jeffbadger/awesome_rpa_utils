@@ -48,9 +48,10 @@ namespace DialogAutomation
     /// <summary>
     /// Pega Robot Studio-ready component that finds native dialogs (message boxes, common
     /// dialogs), dismisses them by button text or control ID via <c>BM_CLICK</c> - no cursor
-    /// movement required, and it works even if the dialog is behind other windows - and
-    /// fills them in: text boxes, check boxes, radio buttons, drop-down lists, and the
-    /// Open/Save file dialogs.
+    /// movement required, and it works even if the dialog is behind other windows. It also
+    /// fills dialogs in (text boxes, check boxes, radio buttons, drop-down lists, and the
+    /// Open/Save file dialogs); those fill methods send window messages too, but have only
+    /// been verified with the dialog in front.
     /// </summary>
     [Description("Finds native dialogs, dismisses them by button text/control ID, and fills them " +
                  "in (text, check boxes, radio buttons, drop-down lists, Open/Save file dialogs). " +
@@ -417,7 +418,7 @@ namespace DialogAutomation
         /// edit box or drop-down list (their text lives in the control, not in the window),
         /// so an edit field always read back as empty. The message is sent with a timeout
         /// that gives up immediately on a hung application. At most 1,048,576 characters
-        /// are read. Returns an empty string for an invalid handle or an unresponsive control.
+        /// are read. Returns an empty string for an invalid handle; for a control that does not answer the text request it falls back to the non-blocking window caption, which may be empty or stale.
         /// </remarks>
         [Category("Dialog - Read Text")]
         [Description("Gets any control's text (buttons, labels, edit fields, drop-down lists, or a dialog's title bar), including in another process.")]
@@ -502,6 +503,14 @@ namespace DialogAutomation
                     return false;
                 }
 
+                // WM_SETTEXT is a programmatic write: it goes straight past ES_READONLY, which
+                // only stops the keyboard. Refuse here so a read-only box is never changed.
+                if (IsReadOnlyEdit(GetWindowClassName(hControl), GetWindowLong(hControl, GWL_STYLE)))
+                {
+                    message = "The text box is read-only, so its text was not changed.";
+                    return false;
+                }
+
                 if (SendMessageTimeoutString(hControl, WM_SETTEXT, IntPtr.Zero, text, SMTO_ABORTIFHUNG, TEXT_MESSAGE_TIMEOUT_MS, out IntPtr setResult) == IntPtr.Zero
                     || setResult == IntPtr.Zero)
                 {
@@ -557,7 +566,7 @@ namespace DialogAutomation
         /// <param name="hControl">The check box or radio button.</param>
         /// <param name="isChecked"><c>true</c> to check it (or select the radio button); <c>false</c> to uncheck it.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it failed.</param>
-        /// <returns><c>true</c> if the control is in the requested state afterwards (including when it already was, in which case nothing is clicked); <c>false</c> if the handle is not a check box or radio button, it is disabled, a radio button was asked to be unchecked, or clicking did not leave it in the requested state. Never throws.</returns>
+        /// <returns><c>true</c> if the control is in the requested state afterwards (including when it already was, in which case nothing is clicked); <c>false</c> if the handle is not a check box or radio button, a click is needed and it is disabled, a radio button was asked to be unchecked, or clicking did not leave it in the requested state. Never throws.</returns>
         /// <remarks>
         /// <para>
         /// This clicks (<c>BM_CLICK</c>) rather than setting the state directly, so the
@@ -725,8 +734,13 @@ namespace DialogAutomation
                 if (parent != IntPtr.Zero)
                 {
                     uint controlId = (uint)(GetDlgCtrlID(hCombo) & 0xFFFF);
-                    TrySend(parent, WM_COMMAND, (IntPtr)(((long)CBN_SELCHANGE << 16) | controlId), hCombo, out _);
-                    TrySend(parent, WM_COMMAND, (IntPtr)(((long)CBN_SELENDOK << 16) | controlId), hCombo, out _);
+                    bool changeSent = TrySend(parent, WM_COMMAND, (IntPtr)(((long)CBN_SELCHANGE << 16) | controlId), hCombo, out _);
+                    bool endOkSent = TrySend(parent, WM_COMMAND, (IntPtr)(((long)CBN_SELENDOK << 16) | controlId), hCombo, out _);
+                    if (!changeSent || !endOkSent)
+                    {
+                        message = "The item was selected, but the dialog did not receive the selection notification (it may be hung), so it may not have reacted to the change.";
+                        return false;
+                    }
                 }
 
                 if (!TrySend(hCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero, out IntPtr afterResult) || afterResult.ToInt64() != index)
@@ -900,7 +914,7 @@ namespace DialogAutomation
                 }
                 if (!ClickButton(hConfirm))
                 {
-                    message = "The path was entered, but the Open/Save button stayed disabled, so it was not clicked (the dialog may not accept that name).";
+                    message = "The path was entered, but the Open/Save button was not enabled (the dialog may not accept that name), so the click may have been ignored.";
                     return false;
                 }
 
@@ -1198,6 +1212,7 @@ namespace DialogAutomation
         private const int BS_TYPE_MASK = 0x000F;
         private const int BS_OWNERDRAW = 0x000B;
         private const int ES_PASSWORD = 0x0020;
+        private const int ES_READONLY = 0x0800;
 
         // Control IDs in the common Open/Save dialogs.
         private const int FileNameEditIdOldStyle = 1152;   // edt1
@@ -1432,6 +1447,9 @@ namespace DialogAutomation
         /// set. The style bit alone is not enough - <c>0x20</c> means something else for a
         /// button or a combo box - so the class is checked first.
         /// </summary>
+        internal static bool IsReadOnlyEdit(string className, int style)
+            => IsEditClass(className) && (style & ES_READONLY) != 0;
+
         internal static bool IsPasswordEdit(string className, int style)
         {
             return IsEditClass(className) && (style & ES_PASSWORD) != 0;
