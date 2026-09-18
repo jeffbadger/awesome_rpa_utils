@@ -28,6 +28,13 @@ A standard Windows system cursor slot (used with `SetCursor` / `ReplaceSystemCur
 `SizeNorthEastSouthWest`, `SizeWestEast`, `SizeNorthSouth`, `SizeAll`, `No`, `Hand`,
 `AppStarting`.
 
+### `CurrentCursorType`
+The cursor currently on screen, as reported by `GetCurrentCursorType`. The thirteen
+standard members have exactly the names of `SystemCursorType` (`Arrow`, `IBeam`, `Wait`,
+`Crosshair`, `UpArrow`, the four `Size*` resize cursors, `SizeAll`, `No`, `Hand`,
+`AppStarting`), plus `Hidden` (no cursor is showing) and `Unknown` (a non-standard cursor
+an application drew or loaded itself).
+
 ### `ModifierKeys` (Flags)
 Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `Alt`.
 
@@ -201,6 +208,7 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 | `WaitForPixelColor` | `bool WaitForPixelColor(int x, int y, int expectedColorRef, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen pixel until it matches the expected COLORREF or the timeout elapses (`timeoutMs` capped at 30 minutes). `message` is only set if `timeoutMs` was invalid or a Win32 failure aborted the poll early. |
 | `WaitForPixelChange` | `bool WaitForPixelChange(int x, int y, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen pixel until its color changes from its value at call time, or the timeout elapses (`timeoutMs` capped at 30 minutes). `message` is only set if `timeoutMs` was invalid or a Win32 failure aborted the poll early. |
 | `IsBusyCursorActive` | `bool IsBusyCursorActive(out string message)` | Returns `true` if the current system cursor is the Wait or AppStarting busy indicator. `message` is only set if the underlying query failed. |
+| `GetCurrentCursorType` | `bool GetCurrentCursorType(out CurrentCursorType cursorType, out string message)` | Reports which cursor is currently on screen — arrow, I-beam, hand, resize, busy, `Hidden`, or `Unknown` for a non-standard cursor. Generalizes `IsBusyCursorActive`. `message` is set only if `GetCursorInfo` failed. Never throws. |
 | `WaitForIdleCursor` | `bool WaitForIdleCursor(int timeoutMs, int pollIntervalMs, out string message)` | Waits until the busy cursor (Wait/AppStarting) clears, or the timeout elapses (`timeoutMs` capped at 30 minutes). `message` is only set if `timeoutMs` was invalid or a Win32 failure aborted the poll early. |
 
 ## Notes & Caveats
@@ -298,3 +306,13 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 - **`GetPixelColor`/`WaitForPixelColor`/`WaitForPixelChange`** require exact color matches;
   they don't do fuzzy/tolerance-based comparison, so anti-aliased or gradient pixels may need
   a slightly different sample point.
+- **`GetCurrentCursorType`** names a system cursor *slot*, so a slot given a different image
+  (by `SetCursor`, `ReplaceSystemCursor`, or a cursor scheme) is still reported by its own name
+  — a crosshair image installed into the arrow slot reports `Arrow`. Applications that draw or
+  load their own cursor images (many browsers and games do, even for shapes that look standard)
+  report `Unknown`, so treat a match as reliable but a mismatch as "not sure". `Hidden` means
+  the cursor is hidden over the window it is on: an application hiding its own cursor shows
+  up, but `MouseUtils.HideCursor` called from a different thread than the one owning the
+  window under the pointer does not (the Win32 hide counter is per-thread — see the
+  `HideCursor` note). It is a snapshot of the instant of the call; read it after the pointer
+  has stopped moving, since the cursor changes as the pointer crosses controls.

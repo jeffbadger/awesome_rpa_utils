@@ -78,6 +78,60 @@ namespace MouseAutomation
     }
 
     /// <summary>
+    /// The cursor currently on screen, as reported by <see cref="MouseUtils.GetCurrentCursorType"/>.
+    /// The thirteen standard members have exactly the names and numeric values of
+    /// <see cref="SystemCursorType"/> (so the two compare by name), plus two states that
+    /// have no system-cursor slot to report.
+    /// </summary>
+    public enum CurrentCursorType
+    {
+        /// <summary>A non-standard cursor: one an application drew or loaded itself, so it matches no system cursor slot.</summary>
+        Unknown = 0,
+
+        /// <summary>No cursor is showing (hidden, for example via <see cref="MouseUtils.HideCursor"/> or an application's own hide).</summary>
+        Hidden = 1,
+
+        /// <summary>Standard arrow (IDC_ARROW).</summary>
+        Arrow = 32512,
+
+        /// <summary>Text-selection I-beam (IDC_IBEAM).</summary>
+        IBeam = 32513,
+
+        /// <summary>Busy / wait indicator (IDC_WAIT).</summary>
+        Wait = 32514,
+
+        /// <summary>Precision crosshair (IDC_CROSS).</summary>
+        Crosshair = 32515,
+
+        /// <summary>Arrow pointing straight up (IDC_UPARROW).</summary>
+        UpArrow = 32516,
+
+        /// <summary>Diagonal resize, top-left / bottom-right (IDC_SIZENWSE).</summary>
+        SizeNorthWestSouthEast = 32642,
+
+        /// <summary>Diagonal resize, top-right / bottom-left (IDC_SIZENESW).</summary>
+        SizeNorthEastSouthWest = 32643,
+
+        /// <summary>Horizontal resize, left / right (IDC_SIZEWE).</summary>
+        SizeWestEast = 32644,
+
+        /// <summary>Vertical resize, up / down (IDC_SIZENS).</summary>
+        SizeNorthSouth = 32645,
+
+        /// <summary>Four-directional move arrows (IDC_SIZEALL).</summary>
+        SizeAll = 32646,
+
+        /// <summary>"Not allowed" circle-with-slash (IDC_NO).</summary>
+        No = 32648,
+
+        /// <summary>Pointing hand / link select (IDC_HAND).</summary>
+        Hand = 32649,
+
+        /// <summary>Arrow with small busy indicator - "working in background" (IDC_APPSTARTING).</summary>
+        AppStarting = 32650
+    }
+
+    /// <summary>
     /// Modifier keys that can be held during a click with
     /// <see cref="MouseUtils.ClickWithModifiers(MouseButton, ModifierKeys, out string)"/>. Combinable flags.
     /// </summary>
@@ -3641,6 +3695,87 @@ namespace MouseAutomation
                 message = NeverThrowsGuard.Failure("IsBusyCursorActive", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Reports which cursor is currently on screen - arrow, I-beam, hand, resize, busy,
+        /// and so on - for reacting to what the pointer is over (a hand over a link, an
+        /// I-beam over a text field) or confirming that a control is in the expected state.
+        /// Generalizes <see cref="IsBusyCursorActive"/>, which only answers the busy case.
+        /// </summary>
+        /// <param name="cursorType">
+        /// The cursor on screen: a standard cursor, <see cref="CurrentCursorType.Hidden"/> if none is showing, or
+        /// <see cref="CurrentCursorType.Unknown"/> for a non-standard one. <see cref="CurrentCursorType.Unknown"/> if this method returns <c>false</c>.
+        /// </param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if GetCursorInfo failed. Never throws.</returns>
+        /// <remarks>
+        /// <para>
+        /// The result names a system cursor <em>slot</em>. If a slot has been given a different
+        /// image (by <see cref="SetCursor"/>, <see cref="ReplaceSystemCursor"/>, or the user's
+        /// cursor scheme), the slot is still reported by its own name: a crosshair image
+        /// installed into the arrow slot reports <see cref="CurrentCursorType.Arrow"/>.
+        /// </para>
+        /// <para>
+        /// Applications that draw or load their own cursor images (many browsers and
+        /// games do, even for shapes that look standard) report
+        /// <see cref="CurrentCursorType.Unknown"/>, so treat a match as reliable but a mismatch
+        /// as "not sure". This is a snapshot of the instant of the call; the cursor changes as
+        /// the pointer moves, so read it after the move has settled. Like
+        /// <see cref="IsBusyCursorActive"/>, it is only a heuristic for application state.
+        /// </para>
+        /// </remarks>
+        [Category("Mouse - Verification")]
+        [Description("Reports which cursor is currently on screen (arrow, I-beam, hand, resize, busy, hidden, or unknown). Returns True on success; never throws.")]
+        public bool GetCurrentCursorType(out CurrentCursorType cursorType, out string message)
+        {
+            cursorType = CurrentCursorType.Unknown;
+            message = default;
+            try
+            {
+                CURSORINFO info = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
+                if (!GetCursorInfo(out info))
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "GetCursorInfo failed.").Message;
+                    return false;
+                }
+
+                // Loaded fresh each call rather than cached: a slot given a new image
+                // (SetCursor/ReplaceSystemCursor/a scheme change) hands back a new handle.
+                cursorType = ClassifyCursor(info.flags, info.hCursor, slot => LoadCursor(IntPtr.Zero, (int)slot));
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                cursorType = CurrentCursorType.Unknown;
+                message = NeverThrowsGuard.Failure("GetCurrentCursorType", ex);
+                return false;
+            }
+        }
+
+        // Windows can also report CURSOR_SUPPRESSED (touch input hides the pointer); both
+        // that and a cleared SHOWING bit mean nothing is drawn.
+        private const int CURSOR_SHOWING = 0x00000001;
+
+        private static readonly SystemCursorType[] StandardCursorSlots =
+            (SystemCursorType[])Enum.GetValues(typeof(SystemCursorType));
+
+        // The first slot whose shared handle equals the current one wins. Handles are
+        // per-slot, so a collision would need two slots to resolve to one cursor object.
+        internal static CurrentCursorType ClassifyCursor(int flags, IntPtr hCursor, Func<SystemCursorType, IntPtr> loadSystemCursor)
+        {
+            if ((flags & CURSOR_SHOWING) == 0 || hCursor == IntPtr.Zero)
+                return CurrentCursorType.Hidden;
+
+            foreach (SystemCursorType slot in StandardCursorSlots)
+            {
+                IntPtr candidate = loadSystemCursor(slot);
+                if (candidate != IntPtr.Zero && candidate == hCursor)
+                    return (CurrentCursorType)(int)slot;
+            }
+            return CurrentCursorType.Unknown;
         }
 
         /// <summary>

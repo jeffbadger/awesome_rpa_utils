@@ -27,7 +27,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [JsonUtils](#jsonutils) | `JsonAutomation` | 24 | 0 | 0 | Reads, updates, validates, and transforms JSON via real JSONPath. |
 | [KeyboardUtils](#keyboardutils) | `KeyboardAutomation` | 11 (12 rows) | 0 | 0 | Injects keyboard input via `SendInput` — key presses, combos, typed text — and queries key/modifier state. |
 | [LocalQueueUtils](#localqueueutils) | `LocalQueueAutomation` | 21 | 0 | 0 | A persistent, machine-local work queue with a lease/process/complete loop, for variable-count work without a Pega collection proxy. |
-| [MouseUtils](#mouseutils) | `MouseAutomation` | 91 (98 rows) | 0 | 0 | Moves, clicks, drags, and scrolls the mouse; controls cursor appearance, visibility, and confinement. |
+| [MouseUtils](#mouseutils) | `MouseAutomation` | 92 (99 rows) | 0 | 0 | Moves, clicks, drags, and scrolls the mouse; controls cursor appearance, visibility, and confinement. |
 | [OcrUtils](#ocrutils) | `OcrAutomation` | 11 | 0 | 0 | Recognizes text from the screen or an image file via `Windows.Media.Ocr`. |
 | [ScreenCaptureUtils](#screencaptureutils) | `ScreenCaptureAutomation` | 28 (34 rows) | 0 | 0 | Captures the screen/region/window to file or clipboard; compares against a baseline; annotates/redacts saved screenshots. |
 | [ServiceUtils](#serviceutils) | `ServiceAutomation` | 24 (25 rows) | 0 | 0 | Queries, starts, stops, restarts, pauses/resumes, and configures the startup type of Windows services. |
@@ -380,6 +380,7 @@ Pega Robot Studio-ready component that moves, clicks, drags, and scrolls the mou
 | `DragAndDrop` | `bool DragAndDrop(int startX, int startY, int endX, int endY, int steps, int stepDelayMilliseconds, out string message)` | Performs a left-button drag from start to end, moving smoothly in the given number of steps. Never throws. |
 | `DragAndHold` | `bool DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds, out string message)` | Drags from start to end, then holds the button down at the destination before releasing (for hover-to-expand drop targets). Never throws. |
 | `FlashCursorHighlight` | `bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting ring around the cursor for demos/recordings; erases itself exactly via XOR drawing. Never throws. |
+| `GetCurrentCursorType` | `bool GetCurrentCursorType(out CurrentCursorType cursorType, out string message)` | Reports which cursor is currently on screen (arrow, I-beam, hand, resize, busy, hidden, or unknown for a non-standard cursor). Never throws. |
 | `GetCursorClip` | `bool GetCursorClip(out int left, out int top, out int width, out int height, out string message)` | Gets the rectangle the cursor is currently confined to, as scalar outputs. Never throws. |
 | `GetCursorClipAsRectangle` | `bool GetCursorClipAsRectangle(out Rectangle clip, out string message)` | Gets the rectangle the cursor is currently confined to (full virtual screen when unclipped). Never throws. |
 | `GetDoubleClickTimeMs` | `int GetDoubleClickTimeMs()` | Gets the system double-click time in milliseconds. |
