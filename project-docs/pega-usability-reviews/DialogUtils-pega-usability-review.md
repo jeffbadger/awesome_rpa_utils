@@ -16,12 +16,12 @@ find-and-click workflows avoid proxies entirely.
 | `CanDismissDialog` | Chainable | Consumes the handle produced by `FindDialog` or `WaitForDialog` and returns a Boolean. |
 | `FindButtonByText`, `FindButtonById` | Chainable | A dialog handle produces a button/control handle that connects directly to `ClickButton`, `GetControlText`, or `HighlightControl`. Remaining ports are scalar. |
 | `ClickButton` | Chainable, ambiguous result | The handle is naturally produced. Its Boolean means “enabled when sent,” not “click succeeded,” and no message explains failure; the name/result can therefore overstate what Pega should branch on. |
-| `ClickDialogButtonById` | Chainable, awkward ID | Ports are technically scalar, but the method accepts `int` even though `DialogButton` exists. Add an overload accepting `DialogButton` so standard buttons are selectable rather than memorized/cast numeric IDs. Its return means “found,” while `wasEnabled` carries a different outcome. |
-| `ClickDialogButtonByText` | Chainable | Provides the most complete scalar workflow because it finds, clicks, verifies closure, retries, and returns a message. Numerous tuning ports may clutter the designer; a short default-settings entry point would improve the common case if optional parameters are not collapsed by Pega. |
+| `ClickDialogButtonById` | Chainable | Ports are technically scalar; the method accepts `int` rather than the repository-owned `DialogButton` enum, a deliberate decision (see Recommended changes) rather than a gap - a caller wanting a standard button casts from the enum. Its return means "found," while `wasEnabled` carries a different outcome. |
+| `ClickDialogButtonByText` | Chainable | Finds a button by text and sends a single click, returning whether it was found plus an `out bool wasEnabled`. Deliberately does not verify dialog closure or retry - see `WaitForDialogToClose` for that, called separately. |
 | `GetDialogText`, `GetControlText` | Chainable | Handle inputs come from local producers and results are strings. Empty text also represents invalid/no matching controls, so failure is not separately diagnosable. |
 | `ListDialogControls` | Significant proxy friction | Returns `List<DialogControlInfo>`; each item contains a handle and scalar properties. Pega needs both collection and object proxies before it can inspect or reuse a control. Add JSON or indexed scalar access for discovery workflows. |
-| `HighlightControl` | Chainable but awkward | Handle and timing inputs are chainable/scalar. `colorRef` uses non-obvious Win32 BGR integer ordering; add RGB-component or named-color inputs. The method blocks the automation thread during flashes. |
-| `WaitForDialog` | Chainable producer | Scalar criteria produce a handle. Its default is substring matching, while `FindDialog` defaults to exact matching; this inconsistency is easy to miss on a design surface. `false` does not distinguish timeout from invalid criteria. |
+| `HighlightControl` | Chainable | Handle and timing inputs are chainable/scalar; the color input is a `System.Drawing.Color`, not a raw Win32 BGR integer. The method still blocks the automation thread during flashes. |
+| `WaitForDialog` | Chainable producer | Scalar criteria produce a handle. `exactMatch` is a required parameter here and on `FindDialog` - no default on either, so there's no cross-method inconsistency to miss on a design surface. `false` does not distinguish timeout from invalid criteria. |
 | `WaitForDialogToClose` | Chainable | Consumes a recently produced dialog handle and returns a Boolean timeout outcome. A stale/invalid handle immediately looks like successful closure. |
 
 ## Recommended changes
@@ -34,24 +34,30 @@ find-and-click workflows avoid proxies entirely.
 3. **Decision: no change required.** `FindAllDialogs` can use Pega's standard
    ListLoop process, so additional collection-iteration documentation is not
    needed.
-4. **Decision: change required.** Remove the optional default from the
-   `exactMatch` parameter on both `FindDialog` and `WaitForDialog`, making the
-   caller choose explicitly. If Pega supplies no value for the non-nullable
-   Boolean port, treat its default value as `false`.
-5. **Decision: change required.** Standardize `ClickDialogButtonByText` on the
-   least shared observable behavior used by `ClickDialogButtonById`: return
-   whether the button was found and add an `out bool wasEnabled` result. Send a
-   single click, remove its automatic `WaitForDialogToClose`/retry behavior, and
-   remove the now-unused `maxAttempts` and `retryDelayMs` parameters. Keep
-   `WaitForDialogToClose` as a separate method for workflows that explicitly
-   want to verify that the original dialog handle disappeared.
-6. **Decision: change required.** Replace `HighlightControl`'s integer
-   `colorRef` parameter with a `System.Drawing.Color` parameter; convert the
-   color to Win32 `COLORREF` internally.
+4. **Done.** `exactMatch` is now a required parameter on both `FindDialog` and
+   `WaitForDialog` - no default on either, removing the inconsistency where
+   the two methods previously defaulted differently.
+5. **Done.** `ClickDialogButtonByText` now sends a single click and returns
+   whether the button was found plus an `out bool wasEnabled`, instead of
+   polling/retrying up to `maxAttempts` and verifying the dialog closed (those
+   parameters are gone). `WaitForDialogToClose` remains a separate method for
+   workflows that explicitly need to verify the original dialog handle closed.
+6. **Done.** `HighlightControl` takes a `System.Drawing.Color` parameter
+   instead of a raw Win32 BGR `colorRef` int, converting to `COLORREF`
+   internally.
+
+*(Items 4-6 were implemented in `7e19e59` shortly after this review was
+written, but this doc's status markers weren't updated at the time - caught
+during a later cross-repo audit of every component's Recommended-changes
+section for genuinely-outstanding items. The Method review table above was
+also stale in three places describing the pre-fix behavior; corrected
+alongside this.)*
 
 ## Verdict
 
 Routine dialog automation is Pega-friendly because handles are produced and
 consumed within the utility. `FindAllDialogs` and `ListDialogControls` require
-proxy work. The easiest usability win is exposing the existing `DialogButton`
-enum directly on the standard-button click method.
+proxy work. `ClickDialogButtonById` deliberately keeps its `int controlId`
+parameter rather than adding a `DialogButton`-typed overload (decision 1
+above) - callers needing a standard button already have the enum to cast
+from, and Pega's own int literal input covers the rest.
