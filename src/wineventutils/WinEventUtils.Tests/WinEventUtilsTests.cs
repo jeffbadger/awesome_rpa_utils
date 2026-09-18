@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -1254,12 +1255,12 @@ namespace WinEventAutomation.Tests
                 Assert.NotNull(created);
                 Thread.Sleep(300); // let the window finish coming up
                 // WaitForWindowDestroyed blocks this thread, so the window has to be closed from
-                // another one shortly after the wait is registered — closing it afterwards, as this
-                // test used to, could only ever end in a timeout.
+                // another one once the wait is registered — closing it afterwards, as this test
+                // used to, could only ever end in a timeout.
                 IntPtr createdHwnd = created.Hwnd;
                 var closer = new Thread(() =>
                 {
-                    Thread.Sleep(500);
+                    WaitForRegisteredWaiter(utils);
                     PostMessage(createdHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                 });
                 closer.Start();
@@ -1462,6 +1463,23 @@ namespace WinEventAutomation.Tests
             if (actual.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                 actual = actual.Substring(0, actual.Length - ".exe".Length);
             Assert.Equal(expected, actual, ignoreCase: true);
+        }
+
+        // Blocks until a WaitForX call on utils has registered its waiter, so a window closed
+        // afterwards cannot be destroyed before the wait is listening. The registry is not
+        // public, so it is read by reflection; if that ever stops working, fall back to a
+        // fixed delay rather than failing.
+        private static void WaitForRegisteredWaiter(WinEventUtils utils)
+        {
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            object registry = typeof(WinEventUtils).GetField("_waiters", flags)?.GetValue(utils);
+            var pending = registry?.GetType().GetField("_waiters", flags)?.GetValue(registry) as System.Collections.ICollection;
+            if (pending == null)
+            {
+                Thread.Sleep(500);
+                return;
+            }
+            SpinWait.SpinUntil(() => pending.Count > 0, 5000);
         }
 
         private static NotepadInstance StartNotepad()
