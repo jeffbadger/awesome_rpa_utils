@@ -283,7 +283,7 @@ namespace InterruptAutomation
         /// <summary>
         /// Turns a rule off or on without removing it, so a step that drives a dialog itself is not
         /// interrupted. Turning a rule on also clears a stop caused by dismissing too many popups, and
-        /// makes it look again at popups that are already open. Turning a rule off returns once any
+        /// makes it look again at popups that are already open, including ones it had given up on. Turning a rule off returns once any
         /// dismissal already under way has finished (a few seconds at most), so the rule cannot act
         /// after this returns.
         /// </summary>
@@ -389,8 +389,10 @@ namespace InterruptAutomation
         #region Lifecycle
 
         /// <summary>
-        /// Starts watching for popups on background threads. Returns immediately; the automation
-        /// carries on while popups matching a rule are dismissed.
+        /// Starts watching for popups on background threads and returns as soon as the window-event
+        /// hooks are installed (normally a few milliseconds; it waits at most 5 seconds for the
+        /// system to install them), then the automation carries on while popups matching a rule are
+        /// dismissed.
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it did not start.</param>
         /// <param name="sweepIntervalMs">How often, in milliseconds, to scan every window as a safety net for popups the window events missed (and ones already open now); 0 turns the scan off. 0 to 60000.</param>
@@ -403,7 +405,7 @@ namespace InterruptAutomation
         /// disposing the component stops it too.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
-        [Description("Starts watching for popups in the background and dismissing those that match a rule. Returns immediately. Returns True on success; never throws.")]
+        [Description("Starts watching for popups in the background and dismissing those that match a rule. Returns once the hooks are installed (milliseconds; at most 5 seconds). Returns True on success; never throws.")]
         public bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)
         {
             message = default;
@@ -448,22 +450,36 @@ namespace InterruptAutomation
                     _engine.MaxDismissalsPerMinute = maxDismissalsPerMinute;
                     _engine.ResetRuntime();
 
-                    if (!_hook.Start(_engine.Enqueue, _engine.EnqueueDestroyed,
-                            fault => _engine.RecordError(string.Empty, fault), out string hookMessage))
+                    // A hook failure is only queued here (it arrives on the hook thread); the worker
+                    // records it, so InterruptError is raised on the worker thread like every event.
+                    if (!_hook.Start(_engine.Enqueue, _engine.EnqueueDestroyed, _engine.EnqueueFault, out string hookMessage))
                     {
                         message = hookMessage ?? "Window events could not be started.";
                         return false;
                     }
 
+                    // From here the hook is running, so a failure to get the worker going must undo it:
+                    // Start either succeeds completely or leaves nothing behind.
                     var cts = new CancellationTokenSource();
-                    var worker = new Thread(() => WorkerLoop(cts))
+                    try
                     {
-                        IsBackground = true,
-                        Name = "InterruptUtils.Worker"
-                    };
-                    _cts = cts;
-                    _worker = worker;
-                    worker.Start();
+                        var worker = new Thread(() => WorkerLoop(cts))
+                        {
+                            IsBackground = true,
+                            Name = "InterruptUtils.Worker"
+                        };
+                        worker.Start();
+                        _cts = cts;
+                        _worker = worker;
+                    }
+                    catch
+                    {
+                        _cts = null;
+                        _worker = null;
+                        _hook.Stop();
+                        cts.Dispose();
+                        throw; // reported by the outer handler as the reason Start failed
+                    }
                 }
 
                 message = null;
@@ -871,12 +887,20 @@ namespace InterruptAutomation
             if (worker == null)
                 return;
 
-            _hook.Stop();
-            cts.Cancel();
-            _engine.Wake();
-            // If it does not end in time it is mid-click on a slow application and ends on its own
-            // once that returns, releasing the run itself.
-            ReleaseRun(cts, worker.Join(3000));
+            // Cancelling and joining the worker must happen even if unhooking throws: otherwise the
+            // handler would go on dismissing popups while the component reports it is stopped.
+            try
+            {
+                _hook.Stop();
+            }
+            finally
+            {
+                cts.Cancel();
+                _engine.Wake();
+                // If it does not end in time it is mid-click on a slow application and ends on its own
+                // once that returns, releasing the run itself.
+                ReleaseRun(cts, worker.Join(3000));
+            }
         }
 
         /// <summary>

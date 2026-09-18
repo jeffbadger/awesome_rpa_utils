@@ -15,7 +15,8 @@ if (!interrupt.Start(out string message))
 interrupt.Stop(out _);
 ```
 
-`Start` returns immediately. Popups matching a rule are dismissed on background
+`Start` returns as soon as the window-event hooks are installed (normally a few milliseconds; it
+waits at most 5 seconds for the system to install them). Popups matching a rule are dismissed on background
 threads from then on. `Stop` unhooks the window events and ends both threads; rules,
 counts and the log are kept, so `Start` can resume later. `Stop` succeeds even if it
 was not running, and disposing the component stops it too.

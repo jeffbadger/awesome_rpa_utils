@@ -46,6 +46,9 @@ namespace InterruptAutomation
         /// <summary>When the rule recently dismissed popups (milliseconds on the engine clock); guarded by the engine's lock.</summary>
         internal readonly Queue<long> RecentDismissals = new Queue<long>();
 
+        /// <summary>Bumped each time the rule is switched on, so windows it had given up on are tried again; guarded by the engine's lock.</summary>
+        internal int RetryToken;
+
         public bool NeedsMessage => !string.IsNullOrEmpty(MessageContains);
 
         /// <summary>

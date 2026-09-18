@@ -193,6 +193,7 @@ namespace InterruptAutomation.Tests
         private Action<string> _onFault;
 
         public bool FailToStart;
+        public bool ThrowOnStop;
         public int StartCalls;
         public int StopCalls;
 
@@ -214,9 +215,12 @@ namespace InterruptAutomation.Tests
         public void Stop()
         {
             StopCalls++;
+            bool fail = ThrowOnStop;
             _onWindow = null;
             _onDestroyed = null;
             _onFault = null;
+            if (fail)
+                throw new InvalidOperationException("fake unhook failure");
         }
 
         public void Fire(IntPtr hwnd) => _onWindow?.Invoke(hwnd);

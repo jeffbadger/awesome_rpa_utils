@@ -11,8 +11,7 @@ namespace InterruptAutomation
     /// is created, shown, or comes to the front, and of each window that is destroyed. The
     /// callback does almost nothing (a class check and a hand-off) because a stalled pump
     /// stalls every WinEvent delivered to it; the clicking happens on the worker thread. A
-    /// fresh thread is created for each <see cref="Start"/> and ended by <see cref="Stop"/>,
-    /// so nothing is shared between runs.
+    /// fresh thread is created for each <see cref="Start"/> and ended by <see cref="Stop"/>.
     /// </summary>
     internal sealed class PopupHookThread : IPopupHookSource
     {
@@ -25,63 +24,111 @@ namespace InterruptAutomation
             NativeMethods.EVENT_SYSTEM_FOREGROUND
         };
 
+        private const int StartTimeoutMs = 5000;
+        private const int EndTimeoutMs = 2000;
+
+        /// <summary>
+        /// Everything one run of the hook thread owns. The thread's closure keeps it, and so the
+        /// callback delegate it holds, alive until the thread has unhooked and exited, however
+        /// long that takes: USER32 may call the delegate at any moment while a hook is installed,
+        /// so it must never be collectable before then, even if <see cref="Stop"/> gave up waiting.
+        /// </summary>
+        private sealed class HookRun
+        {
+            private readonly Action<IntPtr> _onWindow;
+            private readonly Action<IntPtr> _onDestroyed;
+            private int _threadId;
+
+            public readonly ManualResetEventSlim Ready = new ManualResetEventSlim(false);
+            public readonly NativeMethods.WinEventProc Callback;
+            public readonly Action<string> OnFault;
+            public Thread Thread;
+
+            /// <summary>Set when the run is no longer wanted; the thread ends at its next check (or on WM_QUIT).</summary>
+            public volatile bool Abandon;
+
+            /// <summary>Why the hooks could not be installed, if they could not; read once <see cref="Ready"/> is set.</summary>
+            public volatile string StartError;
+
+            public HookRun(Action<IntPtr> onWindow, Action<IntPtr> onDestroyed, Action<string> onFault)
+            {
+                _onWindow = onWindow;
+                _onDestroyed = onDestroyed;
+                OnFault = onFault;
+                Callback = OnWinEvent;
+            }
+
+            public uint ThreadId
+            {
+                get => (uint)Volatile.Read(ref _threadId);
+                set => Volatile.Write(ref _threadId, (int)value);
+            }
+
+            private void OnWinEvent(IntPtr hHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint idEventThread, uint dwmsEventTime)
+            {
+                try
+                {
+                    if (idObject != NativeMethods.OBJID_WINDOW || idChild != 0 || hwnd == IntPtr.Zero)
+                        return;
+
+                    if (eventType == NativeMethods.EVENT_OBJECT_DESTROY)
+                    {
+                        // Every destroyed window is reported (the worker ignores handles it does not
+                        // track): whether it was top-level cannot be asked of a window being destroyed.
+                        _onDestroyed?.Invoke(hwnd);
+                        return;
+                    }
+
+                    // Only top-level windows are popups; controls inside them raise the same events.
+                    if (NativeMethods.GetAncestor(hwnd, NativeMethods.GA_ROOT) != hwnd)
+                        return;
+                    _onWindow?.Invoke(hwnd);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    // The callback must never throw into the message pump.
+                    Debug.WriteLine("InterruptUtils: WinEvent callback failed: " + ex.Message);
+                }
+            }
+        }
+
         private readonly object _lock = new object();
-        private Thread _thread;
-        private uint _threadId;
-        private Action<IntPtr> _onWindow;
-        private Action<IntPtr> _onDestroyed;
-        private Action<string> _onFault;
-        private NativeMethods.WinEventProc _callback; // kept alive for as long as the hooks are installed
+        private HookRun _run;
 
         public bool Start(Action<IntPtr> onWindow, Action<IntPtr> onWindowDestroyed, Action<string> onFault, out string message)
         {
             message = null;
             lock (_lock)
             {
-                if (_thread != null)
+                if (_run != null)
                 {
                     message = "The hook is already running.";
                     return false;
                 }
 
-                string startError = null;
-                uint threadId = 0;
-                // Not disposed: the hook thread may still touch it after Start has returned (the
-                // start timeout below), and a ManualResetEventSlim that never waits on its handle
-                // holds no unmanaged resource that needs disposing.
-                var ready = new ManualResetEventSlim(false);
-
-                _onWindow = onWindow;
-                _onDestroyed = onWindowDestroyed;
-                _onFault = onFault;
-                _callback = OnWinEvent;
-                var thread = new Thread(() => Run(ready, id => threadId = id, error => startError = error))
+                var run = new HookRun(onWindow, onWindowDestroyed, onFault);
+                run.Thread = new Thread(() => Run(run))
                 {
                     IsBackground = true,
                     Name = "InterruptUtils.WinEventHook"
                 };
-                thread.Start();
+                run.Thread.Start();
 
-                if (!ready.Wait(5000))
+                if (!run.Ready.Wait(StartTimeoutMs))
                 {
                     message = "The WinEvent hook thread did not start in time.";
-                    // Best effort: it may still come up, so ask it to end once it does.
-                    _thread = thread;
-                    _threadId = threadId;
-                    StopCore();
+                    End(run); // it may still come up: it is told to end, and does so at its next check
                     return false;
                 }
 
-                if (startError != null)
+                if (run.StartError != null)
                 {
-                    message = startError;
-                    thread.Join(2000);
-                    ClearCallbacks();
+                    message = run.StartError;
+                    run.Thread.Join(EndTimeoutMs); // it is already on its way out
                     return false;
                 }
 
-                _thread = thread;
-                _threadId = threadId;
+                _run = run;
                 return true;
             }
         }
@@ -89,58 +136,59 @@ namespace InterruptAutomation
         public void Stop()
         {
             lock (_lock)
-                StopCore();
+            {
+                HookRun run = _run;
+                _run = null;
+                if (run != null)
+                    End(run);
+            }
         }
 
-        private void StopCore()
+        /// <summary>
+        /// Asks the run's thread to end and waits a bounded time for it. Nothing is torn down here:
+        /// if the thread is slow to end (or has not yet got as far as installing its hooks) it ends
+        /// itself, and until it has, the run object keeps its callback delegate alive.
+        /// </summary>
+        private static void End(HookRun run)
         {
-            Thread thread = _thread;
-            uint threadId = _threadId;
-            _thread = null;
-            _threadId = 0;
-            if (thread == null)
-                return;
-
+            // Flag first, then read the thread id: the thread publishes its id and then reads the
+            // flag, so at least one side sees the other and the thread cannot be missed.
+            run.Abandon = true;
+            uint threadId = run.ThreadId;
             if (threadId != 0)
                 NativeMethods.PostThreadMessage(threadId, NativeMethods.WM_QUIT, UIntPtr.Zero, IntPtr.Zero);
-            thread.Join(2000);
-            ClearCallbacks();
+            run.Thread.Join(EndTimeoutMs);
         }
 
-        private void ClearCallbacks()
-        {
-            _onWindow = null;
-            _onDestroyed = null;
-            _onFault = null;
-            _callback = null;
-        }
-
-        private void Run(ManualResetEventSlim ready, Action<uint> publishThreadId, Action<string> publishError)
+        private static void Run(HookRun run)
         {
             var hooks = new IntPtr[HookedEvents.Length];
             bool signaled = false;
-            Action<string> onFault = _onFault;
             try
             {
                 // Create this thread's message queue before anyone can post to it: a thread that
                 // has not yet called a USER function has no queue, and a WM_QUIT posted to it
                 // would be lost.
                 NativeMethods.PeekMessage(out _, IntPtr.Zero, NativeMethods.WM_USER, NativeMethods.WM_USER, NativeMethods.PM_NOREMOVE);
-                publishThreadId(NativeMethods.GetCurrentThreadId());
+                run.ThreadId = NativeMethods.GetCurrentThreadId();
+                if (run.Abandon)
+                    return; // stopped before it got going
 
                 for (int i = 0; i < HookedEvents.Length; i++)
                 {
-                    hooks[i] = NativeMethods.SetWinEventHook(HookedEvents[i], HookedEvents[i], IntPtr.Zero, _callback, 0, 0,
+                    hooks[i] = NativeMethods.SetWinEventHook(HookedEvents[i], HookedEvents[i], IntPtr.Zero, run.Callback, 0, 0,
                         NativeMethods.WINEVENT_OUTOFCONTEXT | NativeMethods.WINEVENT_SKIPOWNPROCESS);
                     if (hooks[i] == IntPtr.Zero)
                     {
-                        publishError("SetWinEventHook failed (Win32 error " + Marshal.GetLastWin32Error() + "). "
-                            + "Window events are not available in this session.");
+                        run.StartError = "SetWinEventHook failed (Win32 error " + Marshal.GetLastWin32Error() + "). "
+                            + "Window events are not available in this session.";
                         return;
                     }
+                    if (run.Abandon)
+                        return;
                 }
 
-                ready.Set();
+                run.Ready.Set();
                 signaled = true;
 
                 int result;
@@ -155,7 +203,7 @@ namespace InterruptAutomation
                 if (result < 0)
                 {
                     int error = Marshal.GetLastWin32Error();
-                    Report(onFault, "The window event pump failed (Win32 error " + error + "); popups are no longer "
+                    Report(run.OnFault, "The window event pump failed (Win32 error " + error + "); popups are no longer "
                         + "noticed through window events (the periodic scan, if on, still runs).");
                 }
             }
@@ -163,9 +211,9 @@ namespace InterruptAutomation
             {
                 string text = NeverThrowsGuard.Failure("Window event hook", ex);
                 if (signaled)
-                    Report(onFault, text);
+                    Report(run.OnFault, text);
                 else
-                    publishError(text);
+                    run.StartError = text;
             }
             finally
             {
@@ -175,12 +223,10 @@ namespace InterruptAutomation
                         NativeMethods.UnhookWinEvent(hook);
                 }
                 // Every early exit still has to release Start, which is waiting for this signal;
-                // once it has been given it is never given again.
+                // once it has been given it is never given again. (The event is not disposed: it
+                // never waits on an OS handle, so it holds nothing that needs releasing.)
                 if (!signaled)
-                {
-                    try { ready.Set(); }
-                    catch (ObjectDisposedException) { }
-                }
+                    run.Ready.Set();
             }
         }
 
@@ -193,33 +239,6 @@ namespace InterruptAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 Debug.WriteLine("InterruptUtils: fault callback failed: " + ex.Message);
-            }
-        }
-
-        private void OnWinEvent(IntPtr hHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint idEventThread, uint dwmsEventTime)
-        {
-            try
-            {
-                if (idObject != NativeMethods.OBJID_WINDOW || idChild != 0 || hwnd == IntPtr.Zero)
-                    return;
-
-                if (eventType == NativeMethods.EVENT_OBJECT_DESTROY)
-                {
-                    // Every destroyed window is reported (the worker ignores handles it does not
-                    // track): whether it was top-level cannot be asked of a window being destroyed.
-                    _onDestroyed?.Invoke(hwnd);
-                    return;
-                }
-
-                // Only top-level windows are popups; controls inside them raise the same events.
-                if (NativeMethods.GetAncestor(hwnd, NativeMethods.GA_ROOT) != hwnd)
-                    return;
-                _onWindow?.Invoke(hwnd);
-            }
-            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-            {
-                // The callback must never throw into the message pump.
-                Debug.WriteLine("InterruptUtils: WinEvent callback failed: " + ex.Message);
             }
         }
     }

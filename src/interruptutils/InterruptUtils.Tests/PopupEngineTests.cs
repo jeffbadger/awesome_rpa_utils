@@ -804,6 +804,59 @@ namespace InterruptAutomation.Tests
             Assert.True(w.Alive);
         }
 
+        [Fact]
+        public void SwitchingARuleBackOn_RetriesAPopupItHadGivenUpOn()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("r", title: "Alert");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            w.IgnoreClicks = true;
+            h.Appear(w);
+            Assert.Single(h.Of(PopupRecordKind.DismissFailed));
+            Assert.Equal(1, w.Clicks);
+
+            w.IgnoreClicks = false; // whatever was wrong has been fixed
+            Assert.True(h.Engine.SetRuleEnabled("r", true));
+            h.Pump(500);
+
+            Assert.False(w.Alive);
+            Assert.Single(h.Of(PopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void APopupThatFailed_IsNotRetriedJustBecauseAnUnrelatedRuleChanged()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("r", title: "Alert");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            w.IgnoreClicks = true;
+            h.Appear(w);
+            Assert.Equal(1, w.Clicks);
+
+            h.AddRule("unrelated", title: "Something else");
+            h.Pump(500);
+            h.Pump(1000);
+
+            Assert.Equal(1, w.Clicks);
+            Assert.Single(h.Of(PopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void AHookFault_IsRecordedOnTheNextPass_NotWhereItWasReported()
+        {
+            var h = new Harness();
+
+            h.Engine.EnqueueFault("the event pump failed");
+            Assert.Empty(h.Records); // queued, not delivered where it was reported
+
+            h.Pump(0);
+
+            var error = Assert.Single(h.Of(PopupRecordKind.Error));
+            Assert.Equal("the event pump failed", error.Detail);
+        }
+
         // ------------------------------------------------------------------ window identity
 
         [Fact]

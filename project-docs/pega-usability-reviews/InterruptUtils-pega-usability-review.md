@@ -28,7 +28,7 @@ later step learn what happened.
   watch; event arguments are repository-owned classes with read-only scalar properties.
   The args class is named `InterruptPopupEventArgs` because `PopupEventArgs` collides
   with a `System.Windows.Forms` type.
-- **Lifecycle is explicit and forgiving.** `Start` returns immediately; `Stop` succeeds
+- **Lifecycle is explicit and forgiving.** `Start` returns once the hooks are installed (milliseconds, at most 5 seconds); `Stop` succeeds
   when not running; disposal while running is safe; `Start` after disposal is refused with
   a message. Rules, counts and the log survive `Stop`.
 - **A step that drives a dialog itself can opt out** with `Pause`/`Resume` or

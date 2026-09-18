@@ -85,14 +85,14 @@ Rules are tried in the order added and the first match wins. See
 | `AddWatchOnlyRule` | `bool AddWatchOnlyRule(string ruleName, string titleContains, string messageContains, string processName, out string message, string className = null)` | Only reports a matching popup (event and log); never touches it. |
 | `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule and its dismissal count. |
 | `ClearRules` | `bool ClearRules(out string message)` | Removes every rule. The log is kept. |
-| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on without removing it. Turning it on also clears a runaway stop and makes it look again at popups already open; turning it off returns once any dismissal already under way has finished. |
+| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on without removing it. Turning it on also clears a runaway stop, makes it look again at popups already open, and retries popups it had given up on; turning it off returns once any dismissal already under way has finished. |
 | `ListRulesJson` | `bool ListRulesJson(out string rulesJson, out string message)` | Lists the rules with their state, whether each has stopped itself, and its dismissal count, as JSON. |
 
 ### Lifecycle
 
 | Method | Signature | Description |
 |---|---|---|
-| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads and returns immediately. |
+| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads; returns once the window-event hooks are installed (milliseconds, at most 5 s). |
 | `Stop` | `bool Stop(out string message)` | Stops watching. Rules, counts and the log are kept. Succeeds when not running. |
 | `IsRunning` | `bool IsRunning()` | Whether watching is running. |
 | `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch. Returns once any dismissal already under way has finished. |
@@ -114,7 +114,8 @@ Rules are tried in the order added and the first match wins. See
 - **Nothing runs on the automation's thread.** A hook thread receives window
   events and does almost nothing (a class check and a hand-off), because a stalled
   event pump stalls every event delivered to it. A separate worker thread does the
-  reading, clicking and event-raising. `Start` returns at once.
+  reading, clicking and event-raising. `Start` returns as soon as the hooks are installed (a few
+  milliseconds; at most 5 seconds), not after any popup has been handled.
 - **A periodic scan backs up the events.** Every `sweepIntervalMs` (default 1 s) the
   worker also checks every visible top-level window. That finds popups that were
   already open when you called `Start`, popups whose applications do not raise

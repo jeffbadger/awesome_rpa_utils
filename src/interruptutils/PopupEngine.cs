@@ -67,6 +67,7 @@ namespace InterruptAutomation
             public bool Failed;
             public bool Reported;
             public PopupRule Rule;   // set once a rule has matched
+            public int RetryToken;   // the rule's RetryToken when this window failed; a change means "try again"
 
             public bool Unresolved => Rule != null && Rule.Action != PopupAction.WatchOnly;
 
@@ -98,6 +99,7 @@ namespace InterruptAutomation
         private int _queued;
         private readonly ConcurrentQueue<IntPtr> _destroyed = new ConcurrentQueue<IntPtr>();
         private int _destroyedQueued;
+        private readonly ConcurrentQueue<string> _faults = new ConcurrentQueue<string>();
         private readonly AutoResetEvent _wake = new AutoResetEvent(false);
 
         // Held by the worker for the duration of one click/close and its verification, so that
@@ -213,6 +215,7 @@ namespace InterruptAutomation
                 {
                     rule.Tripped = false;
                     rule.RecentDismissals.Clear();
+                    rule.RetryToken++; // popups this rule had given up on are tried again
                 }
                 Interlocked.Increment(ref _rulesVersion);
             }
@@ -292,7 +295,7 @@ namespace InterruptAutomation
                 return; // the periodic scan will find anything dropped here
             Interlocked.Increment(ref _queued);
             _queue.Enqueue(hwnd);
-            _wake.Set();
+            Wake(); // safe if the engine has just been disposed: a late hook callback must not throw
         }
 
         /// <summary>
@@ -310,6 +313,19 @@ namespace InterruptAutomation
             // No wake-up: a destroy is only acted on at the next pass, and a new window that
             // reuses the handle wakes the worker itself. (Every control of every application
             // reports its destruction here, so waking on each would keep the worker busy.)
+        }
+
+        /// <summary>
+        /// Reports a failure of the window-event hook, from the hook thread. It is only queued: the
+        /// worker records it on its next pass, so the <c>InterruptError</c> event is raised on the
+        /// worker thread like every other event, never inside the event pump.
+        /// </summary>
+        internal void EnqueueFault(string text)
+        {
+            if (string.IsNullOrEmpty(text) || _faults.Count >= 64)
+                return;
+            _faults.Enqueue(text);
+            Wake();
         }
 
         /// <summary>Wakes a worker that is waiting in <see cref="WaitForWork"/>.</summary>
@@ -335,6 +351,8 @@ namespace InterruptAutomation
         internal long Pump(long now)
         {
             _processNames.Clear();
+            while (_faults.TryDequeue(out string fault))
+                RecordError(string.Empty, fault);
             DrainDestroyed();
             DrainQueue(now);
             ApplyRuleChanges(now);
@@ -406,7 +424,20 @@ namespace InterruptAutomation
                     state.Attempts = 0;
                     state.NextDue = now;
                 }
-                else if (state.NextDue == long.MaxValue && !state.Failed)
+                else if (state.Failed)
+                {
+                    // Given up on: only tried again if its rule has been switched back on since.
+                    int token;
+                    lock (_lock)
+                        token = state.Rule == null ? 0 : state.Rule.RetryToken;
+                    if (state.Rule != null && token != state.RetryToken)
+                    {
+                        state.Failed = false;
+                        state.Attempts = 0;
+                        state.NextDue = now;
+                    }
+                }
+                else if (state.NextDue == long.MaxValue)
                 {
                     state.NextDue = now;
                 }
@@ -653,6 +684,8 @@ namespace InterruptAutomation
         private void Fail(WinState state, PopupRule rule, PopupWindowInfo info, string text, string processName, string detail)
         {
             state.Failed = true;
+            lock (_lock)
+                state.RetryToken = rule.RetryToken;
             state.NextDue = long.MaxValue;
             Record(PopupRecordKind.DismissFailed, rule.Name, info.Title, text, processName, info.ProcessId, string.Empty, state.Attempts, detail);
         }
@@ -735,6 +768,9 @@ namespace InterruptAutomation
         /// <summary>Forgets every tracked window and queued report. Only call while no worker is pumping.</summary>
         internal void ResetRuntime()
         {
+            while (_faults.TryDequeue(out _))
+            {
+            }
             while (_destroyed.TryDequeue(out _))
                 Interlocked.Decrement(ref _destroyedQueued);
             while (_queue.TryDequeue(out _))

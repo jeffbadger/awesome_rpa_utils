@@ -288,8 +288,8 @@ Watches for known popups on its own background threads and dismisses them while 
 | `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch; returns once any dismissal already under way has finished. |
 | `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule and its dismissal count. |
 | `Resume` | `bool Resume(out string message)` | Lets the handler dismiss popups again after `Pause`. |
-| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on; turning it on also clears a runaway stop and re-checks popups already open, and turning it off returns once any dismissal already under way has finished. |
-| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads and returns immediately. |
+| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on; turning it on also clears a runaway stop, re-checks popups already open and retries ones it had given up on, and turning it off returns once any dismissal already under way has finished. |
+| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads; returns once the window-event hooks are installed (milliseconds, at most 5 s). |
 | `Stop` | `bool Stop(out string message)` | Stops watching. Rules, counts and the log are kept. |
 
 ### Events

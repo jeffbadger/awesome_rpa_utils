@@ -627,17 +627,22 @@ namespace InterruptAutomation.Tests
         }
 
         [Fact]
-        public void APumpFailureReportedByTheHook_IsRaisedAndLoggedAsAnError()
+        public void APumpFailureReportedByTheHook_IsRaisedAndLoggedAsAnError_OnTheWorkerThread()
         {
             using var rig = new Rig();
             var raised = new ManualResetEventSlim(false);
             InterruptErrorEventArgs args = null;
-            rig.Utils.InterruptError += (s, e) => { args = e; raised.Set(); };
+            string handlerThread = null;
+            rig.Utils.InterruptError += (s, e) => { args = e; handlerThread = Thread.CurrentThread.Name; raised.Set(); };
             rig.StartOk();
 
-            rig.Hook.FireFault("the event pump failed");
+            // Fired from a thread standing in for the hook thread: the event must not run there.
+            var hookThread = new Thread(() => rig.Hook.FireFault("the event pump failed")) { Name = "fake hook thread" };
+            hookThread.Start();
+            hookThread.Join();
 
             Assert.True(raised.Wait(5000));
+            Assert.Equal("InterruptUtils.Worker", handlerThread);
             Assert.Equal("the event pump failed", args.Message);
             Assert.True(rig.Utils.GetLastEventJson(out string json, out _));
             using var doc = JsonDocument.Parse(json);
@@ -673,6 +678,41 @@ namespace InterruptAutomation.Tests
                 held.Dispose();
                 rig.Dispose();
             }
+        }
+
+        [Fact]
+        public void StopWhenUnhookingThrows_StillEndsTheWorker_SoTheHandlerIsReallyStopped()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddDismissRuleByText("r", "Alert", "", "", "Yes", out _));
+            rig.StartOk();
+            rig.Hook.ThrowOnStop = true;
+
+            Assert.False(rig.Utils.Stop(out string message));
+            Assert.Contains("fake unhook failure", message);
+            Assert.False(rig.Utils.IsRunning());
+
+            // The worker really ended: a new run starts at once (it would be "still shutting down" otherwise)
+            // and no popup was handled in between.
+            rig.Hook.ThrowOnStop = false;
+            var during = rig.Probe.AddMessageBox("Alert", "", YesNo);
+            Thread.Sleep(300);
+            Assert.True(during.Alive);
+            Assert.True(rig.Utils.Start(out string startMessage, sweepIntervalMs: 0), startMessage);
+            var after = rig.Probe.AddMessageBox("Alert", "", YesNo);
+            rig.Hook.Fire(after.Handle);
+            Assert.True(WaitFor(() => !after.Alive));
+        }
+
+        [Fact]
+        public void DisposeWhenUnhookingThrows_DoesNotThrow()
+        {
+            var rig = new Rig();
+            rig.StartOk();
+            rig.Hook.ThrowOnStop = true;
+
+            Assert.Null(Record.Exception(() => rig.Utils.Dispose()));
+            Assert.False(rig.Utils.IsRunning());
         }
 
         [Fact]
