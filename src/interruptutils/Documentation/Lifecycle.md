@@ -55,12 +55,14 @@ finally
 }
 ```
 
-While paused, popups are noticed but not touched. When you `Resume`, any popup that
+`Pause` returns once any dismissal already under way has finished (a few seconds at most, against
+a slow application), so nothing the handler does can land after it returns. While paused, popups
+are noticed but not touched. When you `Resume`, any popup that
 appeared meanwhile and is *still open* is then dealt with, so a genuine interruption that
 arrived during the step is not lost.
 
 To exclude one kind of popup for a longer stretch instead, switch just that rule off with
-`SetRuleEnabled`.
+`SetRuleEnabled`, which likewise returns only once the rule can no longer act.
 
 Popups owned by the automation's own process are never touched, so a dialog your own
 process shows needs neither.

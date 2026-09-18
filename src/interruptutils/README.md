@@ -66,8 +66,8 @@ information without an event.
 
 ## Methods
 
-Every method returns `bool` (success) with an `out string message` explaining
-why on failure, and never throws.
+Every method except `IsRunning` returns `bool` (success) with an `out string message`
+explaining why on failure; `IsRunning` returns just the `bool`. None of them throws.
 
 ### Rules
 
@@ -85,7 +85,7 @@ Rules are tried in the order added and the first match wins. See
 | `AddWatchOnlyRule` | `bool AddWatchOnlyRule(string ruleName, string titleContains, string messageContains, string processName, out string message, string className = null)` | Only reports a matching popup (event and log); never touches it. |
 | `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule and its dismissal count. |
 | `ClearRules` | `bool ClearRules(out string message)` | Removes every rule. The log is kept. |
-| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on without removing it. Turning it on also clears a runaway stop. |
+| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on without removing it. Turning it on also clears a runaway stop and makes it look again at popups already open; turning it off returns once any dismissal already under way has finished. |
 | `ListRulesJson` | `bool ListRulesJson(out string rulesJson, out string message)` | Lists the rules with their state, whether each has stopped itself, and its dismissal count, as JSON. |
 
 ### Lifecycle
@@ -95,7 +95,7 @@ Rules are tried in the order added and the first match wins. See
 | `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads and returns immediately. |
 | `Stop` | `bool Stop(out string message)` | Stops watching. Rules, counts and the log are kept. Succeeds when not running. |
 | `IsRunning` | `bool IsRunning()` | Whether watching is running. |
-| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch. |
+| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch. Returns once any dismissal already under way has finished. |
 | `Resume` | `bool Resume(out string message)` | Lets the handler dismiss popups again. Popups that appeared meanwhile and are still open are then dealt with. |
 
 ### Results
@@ -133,7 +133,15 @@ Rules are tried in the order added and the first match wins. See
   [DialogUtils](../dialogutils/README.md) - use `Pause`/`Resume` or `SetRuleEnabled`.
 - **A popup that keeps coming back cannot loop forever.** A rule that has dismissed
   `maxDismissalsPerMinute` popups in the last minute stops itself and raises
-  `InterruptError`; `SetRuleEnabled(rule, true)` turns it back on.
+  `InterruptError`; `SetRuleEnabled(rule, true)` turns it back on. While stopped it still claims
+  its popup (so a later rule does not act on it) and the popup stays counted by
+  `HasUnresolvedPopup`.
+- **Pause and switching a rule off are a hard stop.** They wait for a dismissal that is
+  already under way, so nothing the handler does can land after they return. That can take
+  a few seconds against a slow application.
+- **Rules can change while watching.** A rule you add or switch on takes effect on popups
+  that are already open, even with the periodic scan off. Removing a rule forgets what it
+  had decided about any popup it had matched.
 - **A rule is a decision.** Clicking Yes or No on a "Save changes?" popup changes what
   happens to your data. Write the rule for a popup you have decided how to answer;
   there is no "default button" guessing.

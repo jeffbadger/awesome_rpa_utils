@@ -55,11 +55,17 @@ namespace InterruptAutomation
         IReadOnlyList<IntPtr> EnumerateTopLevelWindows();
     }
 
-    /// <summary>Delivers the handle of every top-level window that appears, as a background thread sees it.</summary>
+    /// <summary>Delivers the handle of every top-level window that appears or is destroyed, as a background thread sees it.</summary>
     internal interface IPopupHookSource
     {
-        /// <summary>Starts delivering window handles to <paramref name="onWindow"/> (called on a hook thread; it must return quickly).</summary>
-        bool Start(Action<IntPtr> onWindow, out string message);
+        /// <summary>
+        /// Starts delivering window handles (all three callbacks run on a hook thread and must return quickly).
+        /// </summary>
+        /// <param name="onWindow">A top-level window was created, shown, or came to the front.</param>
+        /// <param name="onWindowDestroyed">A window was destroyed; its handle may be given to a new window.</param>
+        /// <param name="onFault">The event pump failed after it had started, with a description.</param>
+        /// <param name="message"><c>null</c> on success; otherwise why it could not start.</param>
+        bool Start(Action<IntPtr> onWindow, Action<IntPtr> onWindowDestroyed, Action<string> onFault, out string message);
 
         /// <summary>Stops delivering; safe to call when not started.</summary>
         void Stop();

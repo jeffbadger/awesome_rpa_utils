@@ -285,10 +285,10 @@ Watches for known popups on its own background threads and dismisses them while 
 | `HasUnresolvedPopup` | `bool HasUnresolvedPopup(out bool hasUnresolvedPopup, out string message)` | Whether a popup a dismiss rule matched is still open (being retried, or given up on). |
 | `IsRunning` | `bool IsRunning()` | Whether watching is running. |
 | `ListRulesJson` | `bool ListRulesJson(out string rulesJson, out string message)` | Lists the rules with their state, whether each has stopped itself, and its dismissal count, as JSON. |
-| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch. |
+| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch; returns once any dismissal already under way has finished. |
 | `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule and its dismissal count. |
 | `Resume` | `bool Resume(out string message)` | Lets the handler dismiss popups again after `Pause`. |
-| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on; turning it on also clears a runaway stop. |
+| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on; turning it on also clears a runaway stop and re-checks popups already open, and turning it off returns once any dismissal already under way has finished. |
 | `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads and returns immediately. |
 | `Stop` | `bool Stop(out string message)` | Stops watching. Rules, counts and the log are kept. |
 

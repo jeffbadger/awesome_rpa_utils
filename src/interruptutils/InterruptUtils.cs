@@ -36,6 +36,7 @@ namespace InterruptAutomation
         private Thread _worker;
         private CancellationTokenSource _cts;
         private Thread _lingeringWorker;
+        private CancellationTokenSource _lingeringCts;
         private bool _disposed;
 
         /// <summary>
@@ -111,15 +112,18 @@ namespace InterruptAutomation
             message = default;
             try
             {
-                if (string.IsNullOrWhiteSpace(buttonText))
+                // Strip the access-key marker before deciding whether anything is left: "&" alone
+                // would otherwise pass as text and then match no button.
+                string label = PopupRule.StripMnemonic((buttonText ?? string.Empty).Trim()).Trim();
+                if (label.Length == 0)
                 {
-                    message = "buttonText may not be empty.";
+                    message = "buttonText may not be empty (an access-key marker on its own does not count).";
                     return false;
                 }
                 return AddRule(new PopupRule
                 {
                     Action = PopupAction.ClickButtonText,
-                    ButtonText = PopupRule.StripMnemonic(buttonText.Trim()),
+                    ButtonText = label,
                     ExactButtonText = exactButtonText
                 }, ruleName, titleContains, messageContains, processName, className, out message);
             }
@@ -278,7 +282,10 @@ namespace InterruptAutomation
 
         /// <summary>
         /// Turns a rule off or on without removing it, so a step that drives a dialog itself is not
-        /// interrupted. Turning a rule on also clears a stop caused by dismissing too many popups.
+        /// interrupted. Turning a rule on also clears a stop caused by dismissing too many popups, and
+        /// makes it look again at popups that are already open. Turning a rule off returns once any
+        /// dismissal already under way has finished (a few seconds at most), so the rule cannot act
+        /// after this returns.
         /// </summary>
         /// <param name="ruleName">The rule to change.</param>
         /// <param name="enabled"><c>true</c> to turn the rule on; <c>false</c> to turn it off.</param>
@@ -358,14 +365,21 @@ namespace InterruptAutomation
         {
             if (IsDisposed(out message))
                 return false;
-            message = PopupRule.ValidateCommon(ruleName, titleContains, messageContains, processName);
+
+            // Normalize first, then validate what will actually be stored: a process name of
+            // ".exe" trims to nothing, and a rule left with no criterion would match every dialog.
+            string name = (ruleName ?? string.Empty).Trim();
+            string title = (titleContains ?? string.Empty).Trim();
+            string messageCriterion = (messageContains ?? string.Empty).Trim();
+            string process = PopupRule.TrimExe(processName);
+            message = PopupRule.ValidateCommon(name, title, messageCriterion, process);
             if (message != null)
                 return false;
 
-            rule.Name = ruleName.Trim();
-            rule.TitleContains = (titleContains ?? string.Empty).Trim();
-            rule.MessageContains = (messageContains ?? string.Empty).Trim();
-            rule.ProcessName = PopupRule.TrimExe(processName);
+            rule.Name = name;
+            rule.TitleContains = title;
+            rule.MessageContains = messageCriterion;
+            rule.ProcessName = process;
             rule.ClassName = string.IsNullOrWhiteSpace(className) ? PopupRule.DialogClass : className.Trim();
             return _engine.AddRule(rule, out message);
         }
@@ -428,21 +442,21 @@ namespace InterruptAutomation
                         message = "The previous run is still shutting down; try again shortly.";
                         return false;
                     }
-                    _lingeringWorker = null;
 
                     _engine.SweepIntervalMs = sweepIntervalMs;
                     _engine.MaxAttempts = maxAttempts;
                     _engine.MaxDismissalsPerMinute = maxDismissalsPerMinute;
                     _engine.ResetRuntime();
 
-                    if (!_hook.Start(_engine.Enqueue, out string hookMessage))
+                    if (!_hook.Start(_engine.Enqueue, _engine.EnqueueDestroyed,
+                            fault => _engine.RecordError(string.Empty, fault), out string hookMessage))
                     {
                         message = hookMessage ?? "Window events could not be started.";
                         return false;
                     }
 
                     var cts = new CancellationTokenSource();
-                    var worker = new Thread(() => WorkerLoop(cts.Token))
+                    var worker = new Thread(() => WorkerLoop(cts))
                     {
                         IsBackground = true,
                         Name = "InterruptUtils.Worker"
@@ -496,7 +510,9 @@ namespace InterruptAutomation
         /// <summary>
         /// Stops the handler from touching popups until <see cref="Resume"/>, without stopping the
         /// watch. Use it around a step that drives a dialog itself. Popups that appear meanwhile and
-        /// are still open when it resumes are then dealt with.
+        /// are still open when it resumes are then dealt with. Returns once any dismissal already under
+        /// way has finished (a few seconds at most, against a slow application), so nothing the handler
+        /// does can land after this returns.
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the component is disposed. Never throws.</returns>
@@ -510,6 +526,7 @@ namespace InterruptAutomation
                 if (IsDisposed(out message))
                     return false;
                 _engine.Paused = true;
+                _engine.WaitForIdle(); // a dismissal already under way finishes before this returns
                 message = null;
                 return true;
             }
@@ -736,23 +753,33 @@ namespace InterruptAutomation
 
         #region Worker
 
-        private void WorkerLoop(CancellationToken token)
+        private void WorkerLoop(CancellationTokenSource cts)
         {
-            while (!token.IsCancellationRequested)
+            try
             {
-                long next;
-                try
+                CancellationToken token = cts.Token;
+                while (!token.IsCancellationRequested)
                 {
-                    next = _engine.Pump(Environment.TickCount64);
-                }
-                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-                {
-                    _engine.RecordError(string.Empty, NeverThrowsGuard.Failure("Popup handling", ex));
-                    next = Environment.TickCount64 + 500; // do not spin on a repeating failure
-                }
+                    long next;
+                    try
+                    {
+                        next = _engine.Pump(Environment.TickCount64);
+                    }
+                    catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                    {
+                        _engine.RecordError(string.Empty, NeverThrowsGuard.Failure("Popup handling", ex));
+                        next = Environment.TickCount64 + 500; // do not spin on a repeating failure
+                    }
 
-                long wait = next == long.MaxValue ? 500 : next - Environment.TickCount64;
-                _engine.WaitForWork((int)Math.Min(Math.Max(wait, 0), 500));
+                    long wait = next == long.MaxValue ? 500 : next - Environment.TickCount64;
+                    _engine.WaitForWork((int)Math.Min(Math.Max(wait, 0), 500));
+                }
+            }
+            finally
+            {
+                // If Stop gave up waiting for this worker (it was in the middle of a click on a
+                // slow application), the run's resources are released here, once it has finished.
+                ReleaseRun(cts, workerHasEnded: true);
             }
         }
 
@@ -833,6 +860,13 @@ namespace InterruptAutomation
                 cts = _cts;
                 _worker = null;
                 _cts = null;
+                if (worker != null)
+                {
+                    // Recorded before the join, so a worker that ends first can still find its
+                    // run to release; whichever of the two finishes last does the cleaning up.
+                    _lingeringWorker = worker;
+                    _lingeringCts = cts;
+                }
             }
             if (worker == null)
                 return;
@@ -840,15 +874,27 @@ namespace InterruptAutomation
             _hook.Stop();
             cts.Cancel();
             _engine.Wake();
-            if (worker.Join(3000))
+            // If it does not end in time it is mid-click on a slow application and ends on its own
+            // once that returns, releasing the run itself.
+            ReleaseRun(cts, worker.Join(3000));
+        }
+
+        /// <summary>
+        /// Releases a finished run's cancellation source, and the engine too once the component has
+        /// been disposed. Called both by the thread that stopped the run (after joining the worker)
+        /// and by the worker as it exits; only the first call that finds the run finished acts.
+        /// </summary>
+        private void ReleaseRun(CancellationTokenSource cts, bool workerHasEnded)
+        {
+            lock (_lifeLock)
             {
+                if (!workerHasEnded || !ReferenceEquals(_lingeringCts, cts))
+                    return;
+                _lingeringCts = null;
+                _lingeringWorker = null;
                 cts.Dispose();
-            }
-            else
-            {
-                // Mid-click on a slow application; it ends on its own once that returns.
-                lock (_lifeLock)
-                    _lingeringWorker = worker;
+                if (_disposed)
+                    _engine.Dispose();
             }
         }
 
@@ -864,11 +910,13 @@ namespace InterruptAutomation
                 try
                 {
                     StopCore();
-                    Thread lingering;
+                    // A worker that outlived Stop releases the engine itself when it finishes
+                    // (ReleaseRun sees _disposed); otherwise there is nothing left using it.
                     lock (_lifeLock)
-                        lingering = _lingeringWorker;
-                    if (lingering == null || !lingering.IsAlive)
-                        _engine.Dispose();
+                    {
+                        if (_lingeringCts == null)
+                            _engine.Dispose();
+                    }
                 }
                 catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
                 {

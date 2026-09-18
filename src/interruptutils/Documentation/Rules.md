@@ -2,7 +2,8 @@
 
 A rule says how to recognize one known popup and what to do about it. Add rules
 before (or after) `Start`; they can be added, removed and switched on and off while
-watching.
+watching. A rule added (or switched on) while a popup is already open applies to that popup too,
+even with the periodic scan off.
 
 ## Match a popup
 

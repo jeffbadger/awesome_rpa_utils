@@ -20,6 +20,7 @@ namespace InterruptAutomation
         internal const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
         internal const uint EVENT_SYSTEM_DIALOGSTART = 0x0010;
         internal const uint EVENT_OBJECT_CREATE = 0x8000;
+        internal const uint EVENT_OBJECT_DESTROY = 0x8001;
         internal const uint EVENT_OBJECT_SHOW = 0x8002;
         internal const uint WINEVENT_OUTOFCONTEXT = 0x0000;
         internal const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
@@ -92,14 +93,14 @@ namespace InterruptAutomation
         [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
         internal static extern IntPtr SendMessageTimeoutText(IntPtr hWnd, uint Msg, IntPtr wParam, StringBuilder lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         internal static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventProc lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
 
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool UnhookWinEvent(IntPtr hWinEventHook);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         internal static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
 
         [DllImport("user32.dll")]

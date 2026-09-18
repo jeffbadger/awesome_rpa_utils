@@ -51,7 +51,7 @@ later step learn what happened.
 4. **Decision: no attempt at WinUI/UWP or custom-drawn popups.** They have no native
    buttons; a click rule reports that clearly and points at `KeyboardUtils` or
    `UIAutomationUtils`. A close rule is offered for button-less windows.
-5. **Decision: `Pause` defers rather than discards.** A popup that appears while paused and
+5. **Decision: `Pause` defers rather than discards, and is a hard stop.** `Pause` (and switching a rule off, or removing one) waits for a dismissal already under way, and the handler re-checks under the same lock before starting one, so nothing lands after the call returns. A popup that appears while paused and
    is still open at `Resume` is then handled, so a genuine interruption during the paused
    step is not lost.
 

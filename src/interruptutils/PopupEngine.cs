@@ -96,7 +96,22 @@ namespace InterruptAutomation
 
         private readonly ConcurrentQueue<IntPtr> _queue = new ConcurrentQueue<IntPtr>();
         private int _queued;
+        private readonly ConcurrentQueue<IntPtr> _destroyed = new ConcurrentQueue<IntPtr>();
+        private int _destroyedQueued;
         private readonly AutoResetEvent _wake = new AutoResetEvent(false);
+
+        // Held by the worker for the duration of one click/close and its verification, so that
+        // Pause, SetRuleEnabled(false), RemoveRule and ClearRules can wait for an action that is
+        // already under way instead of returning while it is still about to land.
+        private readonly object _actionLock = new object();
+
+        // Bumped whenever the rules change; the worker then looks again at windows it had parked.
+        private int _rulesVersion;
+        private int _seenRulesVersion;
+
+        // Process names looked up during the current pass only, so a reused process id can never
+        // be resolved to a stale name from an earlier pass.
+        private readonly Dictionary<uint, string> _processNames = new Dictionary<uint, string>();
 
         // Worker-thread state.
         private readonly Dictionary<IntPtr, WinState> _windows = new Dictionary<IntPtr, WinState>();
@@ -148,7 +163,9 @@ namespace InterruptAutomation
                 _rules.Add(rule);
                 _counts[rule.Name] = 0;
                 _ruleSnapshot = _rules.ToArray();
+                Interlocked.Increment(ref _rulesVersion);
             }
+            Wake();
             message = null;
             return true;
         }
@@ -163,8 +180,11 @@ namespace InterruptAutomation
                 _counts.Remove(_rules[index].Name);
                 _rules.RemoveAt(index);
                 _ruleSnapshot = _rules.ToArray();
-                return true;
+                Interlocked.Increment(ref _rulesVersion);
             }
+            WaitForIdle();
+            Wake();
+            return true;
         }
 
         internal void ClearRules()
@@ -174,7 +194,10 @@ namespace InterruptAutomation
                 _rules.Clear();
                 _counts.Clear();
                 _ruleSnapshot = new PopupRule[0];
+                Interlocked.Increment(ref _rulesVersion);
             }
+            WaitForIdle();
+            Wake();
         }
 
         /// <summary>Enables or disables a rule. Enabling also clears a runaway trip and the record of recent dismissals.</summary>
@@ -191,9 +214,27 @@ namespace InterruptAutomation
                     rule.Tripped = false;
                     rule.RecentDismissals.Clear();
                 }
-                return true;
+                Interlocked.Increment(ref _rulesVersion);
+            }
+            if (!enabled)
+                WaitForIdle();
+            Wake();
+            return true;
+        }
+
+        /// <summary>
+        /// Returns once any click or close the worker is in the middle of has finished. The worker
+        /// re-checks <see cref="Paused"/> and the rule's state under the same lock before it starts
+        /// one, so after this returns nothing that was switched off beforehand can still land.
+        /// </summary>
+        internal void WaitForIdle()
+        {
+            lock (_actionLock)
+            {
             }
         }
+
+        private bool IsRegistered(PopupRule rule) => Array.IndexOf(SnapshotRules(), rule) >= 0;
 
         internal PopupRule[] SnapshotRules()
         {
@@ -254,6 +295,23 @@ namespace InterruptAutomation
             _wake.Set();
         }
 
+        /// <summary>
+        /// Reports that a window was destroyed, so the state kept for its handle is dropped and a
+        /// later window that is given the same handle is treated as new. Safe from any thread.
+        /// </summary>
+        internal void EnqueueDestroyed(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero)
+                return;
+            if (Volatile.Read(ref _destroyedQueued) >= MaxQueuedWindows)
+                return; // the worker's own IsWindow checks are the fallback
+            Interlocked.Increment(ref _destroyedQueued);
+            _destroyed.Enqueue(hwnd);
+            // No wake-up: a destroy is only acted on at the next pass, and a new window that
+            // reuses the handle wakes the worker itself. (Every control of every application
+            // reports its destruction here, so waking on each would keep the worker busy.)
+        }
+
         /// <summary>Wakes a worker that is waiting in <see cref="WaitForWork"/>.</summary>
         internal void Wake()
         {
@@ -276,7 +334,10 @@ namespace InterruptAutomation
         /// </summary>
         internal long Pump(long now)
         {
+            _processNames.Clear();
+            DrainDestroyed();
             DrainQueue(now);
+            ApplyRuleChanges(now);
 
             if (SweepIntervalMs > 0 && (!_swept || now - _lastSweep >= SweepIntervalMs))
             {
@@ -308,6 +369,58 @@ namespace InterruptAutomation
             if (SweepIntervalMs > 0)
                 next = Math.Min(next, _lastSweep + SweepIntervalMs);
             return next;
+        }
+
+        private void DrainDestroyed()
+        {
+            // Before the new-window queue: a handle can be destroyed and handed to a new window, and
+            // the new window's report is behind the destroy in time, so it is picked up after.
+            while (_destroyed.TryDequeue(out IntPtr hwnd))
+            {
+                Interlocked.Decrement(ref _destroyedQueued);
+                _windows.Remove(hwnd);
+            }
+        }
+
+        /// <summary>
+        /// When the rules have changed, looks again at windows that had been parked, so a rule added
+        /// (or switched on) while a popup is already open takes effect even with the scan off, and
+        /// forgets what a removed rule had decided about a window.
+        /// </summary>
+        private void ApplyRuleChanges(long now)
+        {
+            int version = Volatile.Read(ref _rulesVersion);
+            if (version == _seenRulesVersion)
+                return;
+            _seenRulesVersion = version;
+
+            PopupRule[] rules = SnapshotRules();
+            foreach (var state in _windows.Values)
+            {
+                if (state.Rule != null && Array.IndexOf(rules, state.Rule) < 0)
+                {
+                    // The rule that had matched this window is gone: start over with what is defined now.
+                    state.Rule = null;
+                    state.Failed = false;
+                    state.Reported = false;
+                    state.Attempts = 0;
+                    state.NextDue = now;
+                }
+                else if (state.NextDue == long.MaxValue && !state.Failed)
+                {
+                    state.NextDue = now;
+                }
+            }
+        }
+
+        private string ProcessNameOf(uint processId)
+        {
+            if (!_processNames.TryGetValue(processId, out string name))
+            {
+                name = _probe.GetProcessName(processId) ?? string.Empty;
+                _processNames[processId] = name;
+            }
+            return name;
         }
 
         private void DrainQueue(long now)
@@ -394,12 +507,11 @@ namespace InterruptAutomation
 
             PopupRule rule = null;
             string text = null;
-            string processName = null;
             foreach (var candidate in SnapshotRules())
             {
-                if (!candidate.Enabled || candidate.Tripped)
+                if (!candidate.Enabled)
                     continue;
-                if (!candidate.MatchesWindow(info, () => processName ?? (processName = _probe.GetProcessName(info.ProcessId) ?? string.Empty)))
+                if (!candidate.MatchesWindow(info, () => ProcessNameOf(info.ProcessId)))
                     continue;
                 if (candidate.NeedsMessage)
                 {
@@ -413,15 +525,24 @@ namespace InterruptAutomation
 
             if (rule == null)
             {
+                state.Rule = null; // nothing matches it now (for instance its rule was switched off)
                 if (!Retry(state, now))
                     state.NextDue = long.MaxValue;
                 return;
             }
 
             state.Rule = rule;
+            if (rule.Tripped)
+            {
+                // The rule stopped itself for dismissing too many popups: the popup stays open,
+                // and stays counted as unresolved, until the rule is switched back on.
+                state.NextDue = long.MaxValue;
+                return;
+            }
+
             // Read what the popup says now: after a click it is gone.
             text = text ?? _probe.GetMessageText(state.Handle) ?? string.Empty;
-            processName = processName ?? _probe.GetProcessName(info.ProcessId) ?? string.Empty;
+            string processName = ProcessNameOf(info.ProcessId);
 
             if (rule.Action == PopupAction.WatchOnly)
             {
@@ -476,18 +597,36 @@ namespace InterruptAutomation
                 label = button.Text;
             }
 
-            state.Attempts++;
-            if (button != null)
-                _probe.ClickButton(button, EnabledWaitMs);
-            else
-                _probe.CloseWindow(state.Handle);
+            bool closed;
+            lock (_actionLock)
+            {
+                // Pause, SetRuleEnabled(false), RemoveRule and ClearRules wait on this lock, so what
+                // was switched off before they returned cannot start here, and what is under way
+                // has finished by the time they return. Checked again here because it can have
+                // changed since Evaluate chose the rule.
+                if (Paused || !rule.Enabled || !IsRegistered(rule))
+                {
+                    state.NextDue = now + PausedRecheckMs;
+                    return;
+                }
 
-            if (WaitClosed(state.Handle))
+                state.Attempts++;
+                if (button != null)
+                    _probe.ClickButton(button, EnabledWaitMs);
+                else
+                    _probe.CloseWindow(state.Handle);
+                closed = WaitClosed(state.Handle);
+            }
+
+            if (closed)
             {
                 lock (_lock)
                 {
                     rule.RecentDismissals.Enqueue(now);
-                    _counts[rule.Name] = (_counts.TryGetValue(rule.Name, out int c) ? c : 0) + 1;
+                    // Only credit a rule that is still defined: it may have been removed (or
+                    // replaced by another of the same name) while the click was in flight.
+                    if (_rules.Contains(rule))
+                        _counts[rule.Name] = (_counts.TryGetValue(rule.Name, out int c) ? c : 0) + 1;
                     _total++;
                 }
                 _windows.Remove(state.Handle);
@@ -596,6 +735,8 @@ namespace InterruptAutomation
         /// <summary>Forgets every tracked window and queued report. Only call while no worker is pumping.</summary>
         internal void ResetRuntime()
         {
+            while (_destroyed.TryDequeue(out _))
+                Interlocked.Decrement(ref _destroyedQueued);
             while (_queue.TryDequeue(out _))
                 Interlocked.Decrement(ref _queued);
             _windows.Clear();

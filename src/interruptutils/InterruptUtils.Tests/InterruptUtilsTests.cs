@@ -437,6 +437,264 @@ namespace InterruptAutomation.Tests
             Assert.True(WaitFor(() => !w2.Alive));
         }
 
+        // ------------------------------------------------------------------ rule validation
+
+        [Theory]
+        [InlineData(".exe")]
+        [InlineData(" .EXE ")]
+        [InlineData("   ")]
+        public void ProcessNameThatTrimsToNothing_DoesNotCountAsACriterion(string processName)
+        {
+            using var rig = new Rig();
+
+            Assert.False(rig.Utils.AddCloseWindowRule("r", "", "", processName, out string m1));
+            Assert.Contains("at least one", m1);
+            Assert.False(rig.Utils.AddDismissRuleByText("r", "", "", processName, "Yes", out _));
+            Assert.False(rig.Utils.AddDismissRuleById("r", "", "", processName, InterruptButton.Ok, out _));
+            Assert.False(rig.Utils.AddWatchOnlyRule("r", "", "", processName, out _));
+            Assert.True(rig.Utils.ListRulesJson(out string json, out _));
+            Assert.Equal("[]", json);
+        }
+
+        [Fact]
+        public void ProcessName_WithExe_IsStoredWithoutIt()
+        {
+            using var rig = new Rig();
+
+            Assert.True(rig.Utils.AddWatchOnlyRule("r", "", "", "ClaimsApp.EXE", out _));
+
+            Assert.True(rig.Utils.ListRulesJson(out string json, out _));
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("ClaimsApp", doc.RootElement[0].GetProperty("processName").GetString());
+        }
+
+        [Theory]
+        [InlineData("&")]
+        [InlineData(" & ")]
+        [InlineData("")]
+        public void ButtonText_ThatIsEmptyOnceTheAccessKeyMarkerIsGone_IsRefused(string buttonText)
+        {
+            using var rig = new Rig();
+
+            Assert.False(rig.Utils.AddDismissRuleByText("r", "t", "", "", buttonText, out string message));
+
+            Assert.Contains("buttonText", message);
+        }
+
+        [Fact]
+        public void ButtonText_OfAnEscapedAmpersand_IsAcceptedAsALiteralAmpersand()
+        {
+            using var rig = new Rig();
+
+            Assert.True(rig.Utils.AddDismissRuleByText("r", "t", "", "", "&&", out _));
+
+            Assert.True(rig.Utils.ListRulesJson(out string json, out _));
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("&", doc.RootElement[0].GetProperty("button").GetString());
+        }
+
+        // ------------------------------------------------------------------ Pause / SetRuleEnabled wait for an action under way
+
+        /// <summary>Runs a call on its own thread so a test can check whether it has returned yet.</summary>
+        private sealed class BackgroundCall
+        {
+            private readonly Thread _thread;
+
+            public BackgroundCall(Func<bool> call)
+            {
+                _thread = new Thread(() => Result = call()) { IsBackground = true };
+                _thread.Start();
+            }
+
+            public bool Result { get; private set; }
+
+            /// <summary>Whether the call has returned within the time.</summary>
+            public bool Finishes(int timeoutMs) => _thread.Join(timeoutMs);
+        }
+
+        private sealed class HeldClick : IDisposable
+        {
+            public readonly ManualResetEventSlim Entered = new ManualResetEventSlim(false);
+            public readonly ManualResetEventSlim Gate = new ManualResetEventSlim(false);
+
+            public HeldClick(FakeProbe probe)
+            {
+                probe.ClickGate = Gate;
+                probe.ClickEntered = () => Entered.Set();
+            }
+
+            public void Dispose()
+            {
+                Gate.Set();
+            }
+        }
+
+        [Fact]
+        public void Pause_WaitsForAClickAlreadyInFlight_ThenNothingFurtherIsClicked()
+        {
+            using var rig = new Rig();
+            using var held = new HeldClick(rig.Probe);
+            Assert.True(rig.Utils.AddDismissRuleByText("r", "Alert", "", "", "Yes", out _));
+            rig.StartOk();
+            var first = rig.Probe.AddMessageBox("Alert", "", YesNo);
+            rig.Hook.Fire(first.Handle);
+            Assert.True(held.Entered.Wait(5000), "the click never started");
+
+            var pausing = new BackgroundCall(() => rig.Utils.Pause(out _));
+            Assert.False(pausing.Finishes(400), "Pause returned while a click was still in flight");
+            held.Gate.Set();
+            Assert.True(pausing.Finishes(5000), "Pause did not return once the click finished");
+            Assert.True(pausing.Result);
+            Assert.False(first.Alive); // the click that was already under way completed
+
+            var second = rig.Probe.AddMessageBox("Alert", "", YesNo);
+            rig.Hook.Fire(second.Handle);
+            Thread.Sleep(600);
+            Assert.True(second.Alive);
+            Assert.Equal(0, second.Clicks);
+        }
+
+        [Fact]
+        public void SetRuleEnabledFalse_WaitsForAClickAlreadyInFlight()
+        {
+            using var rig = new Rig();
+            using var held = new HeldClick(rig.Probe);
+            Assert.True(rig.Utils.AddDismissRuleByText("r", "Alert", "", "", "Yes", out _));
+            rig.StartOk();
+            var w = rig.Probe.AddMessageBox("Alert", "", YesNo);
+            rig.Hook.Fire(w.Handle);
+            Assert.True(held.Entered.Wait(5000));
+
+            var disabling = new BackgroundCall(() => rig.Utils.SetRuleEnabled("r", false, out _));
+            Assert.False(disabling.Finishes(400), "SetRuleEnabled(false) returned while a click was still in flight");
+            held.Gate.Set();
+            Assert.True(disabling.Finishes(5000));
+            Assert.True(disabling.Result);
+        }
+
+        [Fact]
+        public void RemoveRule_WaitsForAClickAlreadyInFlight()
+        {
+            using var rig = new Rig();
+            using var held = new HeldClick(rig.Probe);
+            Assert.True(rig.Utils.AddDismissRuleByText("r", "Alert", "", "", "Yes", out _));
+            rig.StartOk();
+            var w = rig.Probe.AddMessageBox("Alert", "", YesNo);
+            rig.Hook.Fire(w.Handle);
+            Assert.True(held.Entered.Wait(5000));
+
+            var removing = new BackgroundCall(() => rig.Utils.RemoveRule("r", out _));
+            Assert.False(removing.Finishes(400));
+            held.Gate.Set();
+            Assert.True(removing.Finishes(5000));
+        }
+
+        // ------------------------------------------------------------------ rules that change while watching (real worker)
+
+        [Fact]
+        public void RuleAddedWhileWatching_AppliesToAPopupThatIsAlreadyOpen_EvenWithTheScanOff()
+        {
+            using var rig = new Rig();
+            rig.StartOk(sweepMs: 0);
+            var w = rig.Probe.AddMessageBox("Alert", "", YesNo);
+            rig.Hook.Fire(w.Handle);
+            Thread.Sleep(400); // the worker looks at it, finds no rule, and parks it
+            Assert.True(w.Alive);
+
+            Assert.True(rig.Utils.AddDismissRuleByText("late", "Alert", "", "", "Yes", out _));
+
+            Assert.True(WaitFor(() => !w.Alive));
+        }
+
+        // ------------------------------------------------------------------ hook events
+
+        [Fact]
+        public void ADestroyNotification_LetsTheSameHandleBeReportedAsANewWindow()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddWatchOnlyRule("w", "Alert", "", "", out _));
+            int detected = 0;
+            rig.Utils.PopupDetected += (s, e) => Interlocked.Increment(ref detected);
+            rig.StartOk();
+            var w = rig.Probe.AddMessageBox("Alert", "", YesNo);
+
+            rig.Hook.Fire(w.Handle);
+            Assert.True(WaitFor(() => Volatile.Read(ref detected) == 1));
+
+            rig.Hook.FireDestroyed(w.Handle);
+            rig.Hook.Fire(w.Handle); // a new window that was given the same handle
+            Assert.True(WaitFor(() => Volatile.Read(ref detected) == 2));
+        }
+
+        [Fact]
+        public void APumpFailureReportedByTheHook_IsRaisedAndLoggedAsAnError()
+        {
+            using var rig = new Rig();
+            var raised = new ManualResetEventSlim(false);
+            InterruptErrorEventArgs args = null;
+            rig.Utils.InterruptError += (s, e) => { args = e; raised.Set(); };
+            rig.StartOk();
+
+            rig.Hook.FireFault("the event pump failed");
+
+            Assert.True(raised.Wait(5000));
+            Assert.Equal("the event pump failed", args.Message);
+            Assert.True(rig.Utils.GetLastEventJson(out string json, out _));
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("Error", doc.RootElement.GetProperty("kind").GetString());
+        }
+
+        // ------------------------------------------------------------------ a worker that outlives Stop
+
+        [Fact]
+        public void StopWhileAClickIsInFlight_ReleasesTheRunOnceTheWorkerFinishes_SoStartWorksAgain()
+        {
+            var rig = new Rig();
+            var held = new HeldClick(rig.Probe);
+            try
+            {
+                Assert.True(rig.Utils.AddDismissRuleByText("r", "Alert", "", "", "Yes", out _));
+                rig.StartOk();
+                var w = rig.Probe.AddMessageBox("Alert", "", YesNo);
+                rig.Hook.Fire(w.Handle);
+                Assert.True(held.Entered.Wait(5000));
+
+                Assert.True(rig.Utils.Stop(out _));      // gives up waiting on the worker after a few seconds
+                Assert.False(rig.Utils.IsRunning());
+                Assert.False(rig.Utils.Start(out string busy));
+                Assert.Contains("still shutting down", busy);
+
+                held.Gate.Set();                          // the click finishes; the worker exits and cleans up
+                Assert.True(WaitFor(() => rig.Utils.Start(out _)), "Start never became possible again");
+                Assert.True(rig.Utils.Stop(out _));
+            }
+            finally
+            {
+                held.Dispose();
+                rig.Dispose();
+            }
+        }
+
+        [Fact]
+        public void DisposeWhileAClickIsInFlight_DoesNotThrow_AndTheWorkerEndsAfterwards()
+        {
+            var rig = new Rig();
+            var held = new HeldClick(rig.Probe);
+            Assert.True(rig.Utils.AddDismissRuleByText("r", "Alert", "", "", "Yes", out _));
+            rig.StartOk();
+            var w = rig.Probe.AddMessageBox("Alert", "", YesNo);
+            rig.Hook.Fire(w.Handle);
+            Assert.True(held.Entered.Wait(5000));
+
+            var ex = Record.Exception(() => rig.Utils.Dispose());
+            Assert.Null(ex);
+
+            held.Gate.Set(); // the abandoned worker now finishes and releases the engine without throwing
+            Thread.Sleep(500);
+            Assert.False(rig.Utils.IsRunning());
+            held.Dispose();
+        }
+
         // ------------------------------------------------------------------ never throws
 
         [Fact]

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace InterruptAutomation.Tests
 {
@@ -131,13 +132,25 @@ namespace InterruptAutomation.Tests
             lock (_lock) return _windows.TryGetValue(hwnd, out var w) ? w.Message : string.Empty;
         }
 
+        /// <summary>Called when the engine asks for the buttons: after it has chosen a rule, before it clicks.</summary>
+        public Action GetButtonsEntered;
+
         public IReadOnlyList<PopupButton> GetButtons(IntPtr hwnd)
         {
+            GetButtonsEntered?.Invoke();
             lock (_lock) return _windows.TryGetValue(hwnd, out var w) ? w.Buttons.ToList() : new List<PopupButton>();
         }
 
+        /// <summary>Called as a click starts, before it is applied and outside the probe's lock (so it may call back into the engine).</summary>
+        public Action ClickEntered;
+
+        /// <summary>If set, a click waits here (bounded) before it is applied, to hold one "in flight".</summary>
+        public ManualResetEventSlim ClickGate;
+
         public bool ClickButton(PopupButton button, int waitForEnabledMs)
         {
+            ClickEntered?.Invoke();
+            ClickGate?.Wait(15000);
             lock (_lock)
             {
                 foreach (var w in _windows.Values)
@@ -176,12 +189,14 @@ namespace InterruptAutomation.Tests
     internal sealed class FakeHookSource : IPopupHookSource
     {
         private Action<IntPtr> _onWindow;
+        private Action<IntPtr> _onDestroyed;
+        private Action<string> _onFault;
 
         public bool FailToStart;
         public int StartCalls;
         public int StopCalls;
 
-        public bool Start(Action<IntPtr> onWindow, out string message)
+        public bool Start(Action<IntPtr> onWindow, Action<IntPtr> onWindowDestroyed, Action<string> onFault, out string message)
         {
             StartCalls++;
             if (FailToStart)
@@ -190,6 +205,8 @@ namespace InterruptAutomation.Tests
                 return false;
             }
             _onWindow = onWindow;
+            _onDestroyed = onWindowDestroyed;
+            _onFault = onFault;
             message = null;
             return true;
         }
@@ -198,8 +215,14 @@ namespace InterruptAutomation.Tests
         {
             StopCalls++;
             _onWindow = null;
+            _onDestroyed = null;
+            _onFault = null;
         }
 
         public void Fire(IntPtr hwnd) => _onWindow?.Invoke(hwnd);
+
+        public void FireDestroyed(IntPtr hwnd) => _onDestroyed?.Invoke(hwnd);
+
+        public void FireFault(string text) => _onFault?.Invoke(text);
     }
 }

@@ -638,6 +638,241 @@ namespace InterruptAutomation.Tests
             Assert.Equal(long.MaxValue, new Harness().Pump(0));
         }
 
+        // ------------------------------------------------------------------ rules that change while watching
+
+        private static void Settle(Harness h, long from = 100, long to = 3000)
+        {
+            for (long t = from; t <= to; t += 100)
+                h.Pump(t);
+        }
+
+        [Fact]
+        public void RuleAddedAfterAPopupIsAlreadyOpen_TakesEffect_EvenWithTheScanOff()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            h.Appear(w);
+            Settle(h);
+            Assert.True(w.Alive); // no rule yet: parked
+
+            h.AddRule("late", title: "Alert");
+            h.Pump(3100);
+
+            Assert.False(w.Alive);
+            Assert.Single(h.Of(PopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void RuleSwitchedBackOn_ReconsidersAPopupLeftOpen_EvenWithTheScanOff()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            h.AddRule("r", title: "Alert");
+            Assert.True(h.Engine.SetRuleEnabled("r", false));
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            h.Appear(w);
+            Settle(h);
+            Assert.True(w.Alive);
+
+            Assert.True(h.Engine.SetRuleEnabled("r", true));
+            h.Pump(3100);
+
+            Assert.False(w.Alive);
+        }
+
+        [Fact]
+        public void RemovingTheRuleThatFailed_ForgetsTheFailure_SoAReplacementCanDismissIt()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("r", title: "Alert");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            w.IgnoreClicks = true;
+            h.Appear(w);
+            Assert.Equal(1, h.Engine.UnresolvedCount);
+
+            Assert.True(h.Engine.RemoveRule("r"));
+            h.Pump(500);
+            Assert.Equal(0, h.Engine.UnresolvedCount); // nothing claims it any more
+
+            w.IgnoreClicks = false;
+            h.AddRule("replacement", title: "Alert");
+            h.Pump(1000);
+
+            Assert.False(w.Alive);
+            Assert.Equal("replacement", h.Of(PopupRecordKind.Dismissed).Single().RuleName);
+        }
+
+        [Fact]
+        public void ClearingTheRules_ForgetsWhatWasUnresolved()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("r", title: "Alert");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            w.IgnoreClicks = true;
+            h.Appear(w);
+            Assert.Equal(1, h.Engine.UnresolvedCount);
+
+            h.Engine.ClearRules();
+            h.Pump(500);
+
+            Assert.Equal(0, h.Engine.UnresolvedCount);
+        }
+
+        [Fact]
+        public void TrippedRule_KeepsItsPopupCountedAsUnresolved_UntilItIsSwitchedOff()
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 1;
+            h.AddRule("nag", title: "Nag");
+            h.Now = 1000;
+            h.Appear(h.Probe.AddMessageBox("Nag", "", YesNo));
+            var stuck = h.Probe.AddMessageBox("Nag", "", YesNo);
+            h.Now = 2000;
+            h.Appear(stuck);
+            Assert.True(stuck.Alive);
+            Assert.Equal(1, h.Engine.UnresolvedCount);
+
+            h.Pump(3000);
+            Assert.Equal(1, h.Engine.UnresolvedCount); // re-looked-at, still stopped: still unresolved
+
+            Assert.True(h.Engine.SetRuleEnabled("nag", false));
+            h.Pump(4000);
+            Assert.Equal(0, h.Engine.UnresolvedCount);
+        }
+
+        [Fact]
+        public void RemovingARuleWhileItsClickIsInFlight_DoesNotRecreateItsCount()
+        {
+            var h = new Harness();
+            h.AddRule("r", title: "Alert");
+            h.Probe.ClickEntered = () => h.Engine.RemoveRule("r"); // removed after it was chosen, before the click lands
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+
+            h.Appear(w);
+
+            Assert.False(w.Alive);
+            Assert.False(h.Engine.TryGetCount("r", out _));
+            Assert.Equal(1, h.Engine.TotalDismissals);
+        }
+
+        [Fact]
+        public void PausedAfterTheRuleWasChosen_ButBeforeTheClick_NothingIsClicked()
+        {
+            var h = new Harness();
+            h.AddRule("r", title: "Alert");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            // Evaluate has chosen the rule and is asking for the buttons; a Pause lands right then.
+            h.Probe.GetButtonsEntered = () => h.Engine.Paused = true;
+
+            h.Appear(w);
+
+            Assert.Equal(0, w.Clicks);
+            Assert.True(w.Alive);
+
+            h.Probe.GetButtonsEntered = null;
+            h.Engine.Paused = false;
+            h.Pump(1000);
+            Assert.False(w.Alive); // and it is dealt with once resumed
+        }
+
+        [Fact]
+        public void RuleSwitchedOffAfterItWasChosen_ButBeforeTheClick_NothingIsClicked()
+        {
+            var h = new Harness();
+            h.AddRule("r", title: "Alert");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            h.Probe.GetButtonsEntered = () => h.Engine.SetRuleEnabled("r", false);
+
+            h.Appear(w);
+
+            Assert.Equal(0, w.Clicks);
+            Assert.True(w.Alive);
+        }
+
+        [Fact]
+        public void RuleRemovedAfterItWasChosen_ButBeforeTheClick_NothingIsClicked()
+        {
+            var h = new Harness();
+            h.AddRule("r", title: "Alert");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            h.Probe.GetButtonsEntered = () => h.Engine.RemoveRule("r");
+
+            h.Appear(w);
+
+            Assert.Equal(0, w.Clicks);
+            Assert.True(w.Alive);
+        }
+
+        // ------------------------------------------------------------------ window identity
+
+        [Fact]
+        public void HandleGivenToANewWindow_AfterADestroyNotification_IsReportedAgain()
+        {
+            var h = new Harness();
+            h.AddRule("watch", title: "Alert", action: PopupAction.WatchOnly);
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            h.Appear(w);
+            Assert.Single(h.Of(PopupRecordKind.Detected));
+
+            // The window is destroyed and the same handle is handed to a new window of the same process.
+            h.Engine.EnqueueDestroyed(w.Handle);
+            h.Engine.Enqueue(w.Handle);
+            h.Pump(500);
+
+            Assert.Equal(2, h.Of(PopupRecordKind.Detected).Count());
+        }
+
+        [Fact]
+        public void WithoutADestroyNotification_ALiveHandleIsTheSameWindow_AndIsReportedOnce()
+        {
+            var h = new Harness();
+            h.AddRule("watch", title: "Alert", action: PopupAction.WatchOnly);
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            h.Appear(w);
+
+            h.Engine.Enqueue(w.Handle);
+            h.Pump(500);
+
+            Assert.Single(h.Of(PopupRecordKind.Detected));
+        }
+
+        [Fact]
+        public void HandleGivenToANewWindow_AfterAFailure_IsTriedAgain()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("r", title: "Alert");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            w.IgnoreClicks = true;
+            h.Appear(w);
+            Assert.Single(h.Of(PopupRecordKind.DismissFailed));
+
+            w.IgnoreClicks = false; // a different window, same handle and process
+            h.Engine.EnqueueDestroyed(w.Handle);
+            h.Engine.Enqueue(w.Handle);
+            h.Pump(500);
+
+            Assert.False(w.Alive);
+            Assert.Single(h.Of(PopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void ProcessName_IsResolvedAgainOnEachPass_SoAReusedProcessIdIsNotMisattributed()
+        {
+            var h = new Harness();
+            h.AddRule("r", process: "app1");
+            var w = h.Probe.AddMessageBox("Alert", "", YesNo);
+            h.Probe.SetProcessName(4242, "otherapp");
+            h.Appear(w);
+            Assert.True(w.Alive); // first pass: not app1
+
+            h.Probe.SetProcessName(4242, "app1"); // the id now belongs to a different process
+            h.Pump(150);
+
+            Assert.False(w.Alive);
+        }
+
         // ------------------------------------------------------------------ helpers
 
         [Theory]

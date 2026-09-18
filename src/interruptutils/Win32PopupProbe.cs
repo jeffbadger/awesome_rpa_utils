@@ -14,10 +14,6 @@ namespace InterruptAutomation
     internal sealed class Win32PopupProbe : IPopupProbe
     {
         private const int MaxTextChars = 4096;
-        private const int ProcessNameCacheLimit = 256;
-
-        private readonly object _cacheLock = new object();
-        private readonly Dictionary<uint, string> _processNames = new Dictionary<uint, string>();
 
         public uint CurrentProcessId { get; } = (uint)Process.GetCurrentProcess().Id;
 
@@ -36,44 +32,32 @@ namespace InterruptAutomation
             };
         }
 
+        /// <summary>
+        /// The name of the process with this ID. Deliberately not cached here: process IDs are reused,
+        /// and a name resolved for an earlier process must never be attributed to a new one. The engine
+        /// remembers names only for the duration of one pass.
+        /// </summary>
         public string GetProcessName(uint processId)
         {
             if (processId == 0)
                 return string.Empty;
-            lock (_cacheLock)
-            {
-                if (_processNames.TryGetValue(processId, out string cached))
-                    return cached;
-            }
-
-            string name = string.Empty;
             try
             {
                 using (var process = Process.GetProcessById((int)processId))
-                    name = process.ProcessName;
+                    return process.ProcessName;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 // The process ended, or is not one we may inspect.
+                return string.Empty;
             }
-
-            lock (_cacheLock)
-            {
-                // Process IDs are reused, so a name is only trusted briefly: keep the cache small
-                // and let it be dropped wholesale rather than tracking ages.
-                if (_processNames.Count >= ProcessNameCacheLimit)
-                    _processNames.Clear();
-                if (name.Length > 0)
-                    _processNames[processId] = name;
-            }
-            return name;
         }
 
         public string GetMessageText(IntPtr hwnd)
         {
             foreach (var child in ChildrenOf(hwnd))
             {
-                if (!string.Equals(ClassNameOf(child), "Static", StringComparison.OrdinalIgnoreCase))
+                if (!IsStaticClass(ClassNameOf(child)))
                     continue;
                 string text = ReadText(child);
                 if (!string.IsNullOrEmpty(text))
@@ -131,6 +115,15 @@ namespace InterruptAutomation
                 return true;
             }, IntPtr.Zero);
             return windows;
+        }
+
+        // A native Static, or a WinForms label (WindowsForms10.STATIC.app...), which superclasses it
+        // and answers the same messages.
+        internal static bool IsStaticClass(string className)
+        {
+            return !string.IsNullOrEmpty(className)
+                && (className.Equals("Static", StringComparison.OrdinalIgnoreCase)
+                    || className.IndexOf(".STATIC.", StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         // A native Button, or a WinForms button-family control (WindowsForms10.BUTTON.app...),
