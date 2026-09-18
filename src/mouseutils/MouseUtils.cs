@@ -3098,7 +3098,7 @@ namespace MouseAutomation
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
         /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="durationMs"/> is below 1 or a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Movement")]
         [Description("Performs a left-button drag along a randomized Bezier curve instead of a straight line - the human-like counterpart to DragAndDrop. Returns True on success; never throws.")]
         public bool BezierDragAndDrop(int startX, int startY, int endX, int endY, out string message, int durationMs = 500)
@@ -3106,6 +3106,12 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (durationMs < 1)
+                {
+                    message = "durationMs must be at least 1.";
+                    return false;
+                }
+
                 if (!MoveTo(startX, startY, out message)) return false;
                 Thread.Sleep(50);
                 if (!MouseDown(MouseButton.Left, out message)) return false;
