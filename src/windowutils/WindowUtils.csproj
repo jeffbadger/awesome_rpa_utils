@@ -13,6 +13,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Lets WindowUtils.Tests cover the internal regex-filter, display-state, and JSON helpers without a live desktop -->
+    <InternalsVisibleTo Include="WindowUtils.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
     <Compile Remove="WindowUtils.Tests/**/*.cs" />
   </ItemGroup>
