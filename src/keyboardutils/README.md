@@ -74,6 +74,10 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
 | `IsKeyDown` | `bool IsKeyDown(VirtualKey key)` | Returns `true` while the given key is currently held down. |
 | `IsModifierDown` | `bool IsModifierDown(ModifierKeys modifier)` | Returns `true` if every modifier flag set in the argument is currently held down. |
 | `GetActiveModifiers` | `ModifierKeys GetActiveModifiers()` | Returns the combination of Ctrl/Shift/Alt/Win currently held, as flags. |
+| `IsCapsLockOn` | `bool IsCapsLockOn()` | Returns `true` while Caps Lock is on (its toggle state, not whether the key is being pressed). |
+| `IsNumLockOn` | `bool IsNumLockOn()` | Returns `true` while Num Lock is on. With it off, the numeric keypad acts as navigation keys. |
+| `IsScrollLockOn` | `bool IsScrollLockOn()` | Returns `true` while Scroll Lock is on (in Excel, arrow keys then scroll the view instead of moving the selection). |
+| `GetKeyboardLayout` | `bool GetKeyboardLayout(out string layoutName, out string layoutId, out string languageTag, out string message, IntPtr hWnd = default)` | Gets the keyboard layout the foreground window (or the window given by `hWnd`) is using: a name such as `US`, a layout ID such as `00000409`, and a language tag such as `en-US`. Never throws. |
 
 ## Notes & Caveats
 
@@ -81,8 +85,10 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
   throwing — `SendInput`/clipboard failures (locked desktop, UAC/secure desktop, UIPI
   blocking a higher-integrity target) and invalid arguments (e.g. a null `text`) are both
   reported this way, with `message` set to a human-readable reason whenever the method
-  returns `false`. Only the State Query & Modifiers methods (never able to fail) are plain
-  `bool`/enum returns with no `message` parameter.
+  returns `false`. Only the State Query & Modifiers methods that can never fail
+  (`IsKeyDown`, `IsModifierDown`, `GetActiveModifiers`, and the lock-key queries) are plain
+  `bool`/enum returns with no `message` parameter; `GetKeyboardLayout` can fail, so it follows
+  the `bool` + `message` pattern.
 - **`PressKeyWithModifiers`/`PressKeyCombo`** inject their entire sequence as a single
   `SendInput` batch, so real user input cannot interleave mid-sequence. If injection
   fails partway through a batch, they send a best-effort release batch for every
@@ -117,3 +123,23 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
   physical key state via `GetAsyncKeyState` — they do not distinguish real user input from
   this component's own injected input. `IsModifierDown(ModifierKeys.None)` returns `false`
   (no modifier is "held" when none is requested).
+- **`IsCapsLockOn`/`IsNumLockOn`/`IsScrollLockOn`** read a lock key's *toggle* state (on or
+  off), which is separate from `IsKeyDown` (whether the key is being pressed right now). The
+  state is system-wide and reflects injected presses too, so `PressKey(VirtualKey.CapsLock)`
+  flips it. Check it before key-by-key typing: Caps Lock inverts the case of letters typed with
+  `PressKey`, Num Lock off turns `Numpad` keys into navigation keys, and Scroll Lock on makes
+  arrow keys scroll rather than move the selection in Excel. `TypeText` sends characters
+  directly and is unaffected by Caps Lock. Like the other State Query methods these are plain
+  `bool` returns that cannot fail.
+- **`GetKeyboardLayout`** reads the layout of the *window's thread*, and the foreground window
+  by default, because Windows tracks the layout per window thread: it can differ from one
+  window to the next and from the layout shown as the machine default. It matters because a
+  key press names a physical key, so which character it types depends on the layout (the same
+  key differs between US and German, and on US-International a quote is a dead key that
+  combines with the next letter). The language alone cannot tell US from US-International (both
+  are `en-US`), so `layoutId` (`00000409` vs `00020409`) is reported too; `layoutName` is the
+  name Windows records for it, and is an empty string where Windows has none. It returns
+  `false` with a `message` when there is no foreground window (a locked workstation, for
+  example) or `hWnd` is not a valid window. `layoutId` is derived from the window's input locale
+  identifier; a per-user layout substitution configured in the registry (a legacy feature) is
+  not applied. `TypeText` sends characters directly and is not affected by the layout.

@@ -897,6 +897,141 @@ namespace KeyboardAutomation
             return result;
         }
 
+        /// <summary>
+        /// Returns <c>true</c> while Caps Lock is on (its toggle state, not whether the key
+        /// is being pressed right now). Caps Lock inverts the case of every letter typed with
+        /// <see cref="PressKey"/>, so check it before key-by-key typing; <see cref="TypeText(string, out string)"/>
+        /// sends characters directly and is not affected.
+        /// </summary>
+        [Category("Keyboard - State Query")]
+        [Description("Returns True while Caps Lock is on.")]
+        public bool IsCapsLockOn()
+        {
+            return IsToggled(GetKeyState((int)VirtualKey.CapsLock));
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> while Num Lock is on (its toggle state, not whether the key is
+        /// being pressed right now). With Num Lock off, the numeric keypad's digit keys act as
+        /// navigation keys (Home, End, arrows), so <see cref="PressKey"/> with a
+        /// <c>Numpad</c> key does not type a digit.
+        /// </summary>
+        [Category("Keyboard - State Query")]
+        [Description("Returns True while Num Lock is on.")]
+        public bool IsNumLockOn()
+        {
+            return IsToggled(GetKeyState((int)VirtualKey.NumLock));
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> while Scroll Lock is on (its toggle state, not whether the key
+        /// is being pressed right now). Some applications, notably Excel, then scroll the
+        /// view instead of moving the selection when an arrow key is pressed.
+        /// </summary>
+        [Category("Keyboard - State Query")]
+        [Description("Returns True while Scroll Lock is on.")]
+        public bool IsScrollLockOn()
+        {
+            return IsToggled(GetKeyState((int)VirtualKey.ScrollLock));
+        }
+
+        /// <summary>
+        /// Whether a <c>GetKeyState</c> result has its toggle bit (the low-order bit) set -
+        /// the pure logic behind the lock-key queries, separated so it can be unit-tested
+        /// without touching real keyboard state.
+        /// </summary>
+        internal static bool IsToggled(short keyState)
+        {
+            return (keyState & 0x0001) != 0;
+        }
+
+        /// <summary>
+        /// Gets the keyboard layout a window is using - the foreground window by default,
+        /// which is where typed input will go. Layouts are per window thread, so this can differ
+        /// from the layout Windows shows as the machine's default, and from one window to the next.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A key press names a physical key, so which character it types depends on the layout:
+        /// the same key produces different characters on US and German layouts, and on
+        /// US-International a quote is a dead key that combines with the next letter. Check the
+        /// layout before <see cref="PressKey"/>-style typing; <see cref="TypeText(string, out string)"/> sends
+        /// characters directly and is not affected. The language alone does not tell US from
+        /// US-International (both are <c>en-US</c>), which is why <paramref name="layoutId"/>
+        /// is reported as well.
+        /// </para>
+        /// <para>
+        /// <paramref name="layoutId"/> is derived from the window's input locale identifier. A
+        /// per-user layout substitution configured in the registry (a legacy Windows feature)
+        /// is not applied, so verify it on a machine image that uses one.
+        /// </para>
+        /// </remarks>
+        /// <param name="layoutName">
+        /// The name Windows records for the layout, such as <c>US</c>, <c>United Kingdom</c>, or
+        /// <c>United States-International</c>; an empty string if it has none, or <c>null</c> if this method returns <c>false</c>.
+        /// </param>
+        /// <param name="layoutId">
+        /// The keyboard layout identifier as 8 hex digits, such as <c>00000409</c> (US),
+        /// <c>00020409</c> (US-International), or <c>00000407</c> (German); an empty string if it
+        /// could not be determined, or <c>null</c> if this method returns <c>false</c>.
+        /// </param>
+        /// <param name="languageTag">
+        /// The layout's language, such as <c>en-US</c> or <c>de-DE</c>; an empty string if .NET
+        /// does not know the language, or <c>null</c> if this method returns <c>false</c>.
+        /// </param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <param name="hWnd">The window whose layout to read; leave as zero (the default) for the foreground window.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if there is no foreground window (for example on a locked workstation) or <paramref name="hWnd"/> is not a valid window. Never throws.</returns>
+        [Category("Keyboard - State Query")]
+        [Description("Gets the keyboard layout (name, layout ID, language) the foreground window or a given window is using. Returns True on success; never throws.")]
+        public bool GetKeyboardLayout(out string layoutName, out string layoutId, out string languageTag, out string message, IntPtr hWnd = default)
+        {
+            layoutName = null;
+            layoutId = null;
+            languageTag = null;
+            message = default;
+            try
+            {
+                IntPtr target = hWnd != IntPtr.Zero ? hWnd : GetForegroundWindowNative();
+                if (target == IntPtr.Zero)
+                {
+                    message = "There is no foreground window (the workstation may be locked or showing a secure desktop).";
+                    return false;
+                }
+
+                uint threadId = GetWindowThreadProcessId(target, out _);
+                if (threadId == 0)
+                {
+                    message = "Invalid or nonexistent window handle.";
+                    return false;
+                }
+
+                IntPtr hkl = GetKeyboardLayoutNative(threadId);
+                if (hkl == IntPtr.Zero)
+                {
+                    message = "GetKeyboardLayout returned no layout for the window's thread.";
+                    return false;
+                }
+
+                long value = hkl.ToInt64();
+                string klid = KeyboardLayoutLookup.DeriveLayoutId(value);
+                layoutId = klid ?? string.Empty;
+                layoutName = KeyboardLayoutLookup.ReadLayoutText(klid);
+                languageTag = KeyboardLayoutLookup.LanguageTag((int)(value & 0xFFFF));
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                layoutName = null;
+                layoutId = null;
+                languageTag = null;
+                message = NeverThrowsGuard.Failure("GetKeyboardLayout", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Win32 Interop
@@ -913,6 +1048,18 @@ namespace KeyboardAutomation
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
+
+        [DllImport("user32.dll")]
+        private static extern short GetKeyState(int nVirtKey);
+
+        [DllImport("user32.dll", EntryPoint = "GetKeyboardLayout")]
+        private static extern IntPtr GetKeyboardLayoutNative(uint idThread);
+
+        [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
+        private static extern IntPtr GetForegroundWindowNative();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
         private const uint CF_TEXT = 1;
         private const uint CF_UNICODETEXT = 13;

@@ -25,7 +25,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [EventLogUtils](#eventlogutils) | `EventLogAutomation` | 20 | 0 | 0 | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries. |
 | [FileWatchUtils](#filewatchutils) | `FileWatchAutomation` | 28 | 0 | 5 | Waits for file existence/deletion/change/stability/unlock, watches for filesystem events, and atomically moves/replaces/claims files. |
 | [JsonUtils](#jsonutils) | `JsonAutomation` | 24 | 0 | 0 | Reads, updates, validates, and transforms JSON via real JSONPath. |
-| [KeyboardUtils](#keyboardutils) | `KeyboardAutomation` | 11 (12 rows) | 0 | 0 | Injects keyboard input via `SendInput` — key presses, combos, typed text — and queries key/modifier state. |
+| [KeyboardUtils](#keyboardutils) | `KeyboardAutomation` | 15 (16 rows) | 0 | 0 | Injects keyboard input via `SendInput` — key presses, combos, typed text — and queries key/modifier state. |
 | [LocalQueueUtils](#localqueueutils) | `LocalQueueAutomation` | 21 | 0 | 0 | A persistent, machine-local work queue with a lease/process/complete loop, for variable-count work without a Pega collection proxy. |
 | [MouseUtils](#mouseutils) | `MouseAutomation` | 92 (99 rows) | 0 | 0 | Moves, clicks, drags, and scrolls the mouse; controls cursor appearance, visibility, and confinement. |
 | [OcrUtils](#ocrutils) | `OcrAutomation` | 11 | 0 | 0 | Recognizes text from the screen or an image file via `Windows.Media.Ocr`. |
@@ -300,9 +300,13 @@ Pega Robot Studio-ready component that injects keyboard input (key presses, comb
 | Method | Signature | Description |
 |---|---|---|
 | `GetActiveModifiers` | `ModifierKeys GetActiveModifiers()` | Returns the combination of Ctrl/Shift/Alt/Win currently held, as flags. |
+| `GetKeyboardLayout` | `bool GetKeyboardLayout(out string layoutName, out string layoutId, out string languageTag, out string message, IntPtr hWnd = default)` | Gets the keyboard layout the foreground window (or the window given by hWnd) is using: a name such as US, a layout ID such as 00000409, and a language tag such as en-US. Never throws. |
 | `HoldKey` | `bool HoldKey(VirtualKey key, int holdMilliseconds, out string message)` | Holds a key down for the given duration, then releases it. Never throws. |
+| `IsCapsLockOn` | `bool IsCapsLockOn()` | Returns `true` while Caps Lock is on (its toggle state, not whether the key is being pressed). |
 | `IsKeyDown` | `bool IsKeyDown(VirtualKey key)` | Returns `true` while the given key is currently held down. |
 | `IsModifierDown` | `bool IsModifierDown(ModifierKeys modifier)` | Returns `true` if every modifier flag set in the argument is currently held down; `false` for `ModifierKeys.None`. |
+| `IsNumLockOn` | `bool IsNumLockOn()` | Returns `true` while Num Lock is on. |
+| `IsScrollLockOn` | `bool IsScrollLockOn()` | Returns `true` while Scroll Lock is on. |
 | `KeyDown` | `bool KeyDown(VirtualKey key, out string message)` | Presses and holds a key down. Pair with `KeyUp`. Never throws. |
 | `KeyUp` | `bool KeyUp(VirtualKey key, out string message)` | Releases a key previously pressed with `KeyDown`. Never throws. |
 | `PasteText` | `bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)` | Saves the clipboard, sets it to `text`, sends Ctrl+V, then restores the original clipboard. Destroys non-text clipboard content permanently. Never throws. |
