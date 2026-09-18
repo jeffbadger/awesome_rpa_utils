@@ -23,6 +23,8 @@ find-and-click workflows avoid proxies entirely.
 | `HighlightControl` | Chainable | Handle and timing inputs are chainable/scalar; the color input is a `System.Drawing.Color`, not a raw Win32 BGR integer. The method still blocks the automation thread during flashes. |
 | `WaitForDialog` | Chainable producer | Scalar criteria produce a handle. `exactMatch` is a required parameter here and on `FindDialog` - no default on either, so there's no cross-method inconsistency to miss on a design surface. `false` does not distinguish timeout from invalid criteria. |
 | `WaitForDialogToClose` | Chainable | Consumes a recently produced dialog handle and returns a Boolean timeout outcome. A stale/invalid handle immediately looks like successful closure. |
+| `SetControlText`, `TryGetControlCheckState`, `SetControlChecked`, `SelectComboItem` | Chainable | Control handle plus scalar text/bool/enum inputs, and a `bool` + `message` result. `ControlCheckState` is a repository-owned enum so no framework type is needed. Each confirms by reading the control back, so a `true` means the control is in the requested state, and `SetControlText` never puts the text in a failure message (a password is not echoed). Handles come from `ListDialogControls`/`FindButtonById`, the same producers as the click methods. |
+| `SetFileDialogPath`, `SelectFileDialogFileType`, `SubmitFileDialog` | Chainable | A dialog handle from `WaitForDialog`/`FindDialog` plus scalar inputs; no control handles to look up, which matters because the File name box has no stable control ID across dialogs. `SubmitFileDialog` is the one-call form (type, click Open/Save, wait for close) and reports a dialog left open behind an overwrite or file-not-found box as `false` with a message. |
 
 ## Recommended changes
 
@@ -52,6 +54,16 @@ during a later cross-repo audit of every component's Recommended-changes
 section for genuinely-outstanding items. The Method review table above was
 also stale in three places describing the pre-fix behavior; corrected
 alongside this.)*
+
+7. **Done.** Added the ability to fill a dialog in, not only dismiss it: `SetControlText`,
+   `TryGetControlCheckState`/`SetControlChecked`, `SelectComboItem`, and the Open/Save As
+   helpers `SetFileDialogPath`, `SelectFileDialogFileType`, and `SubmitFileDialog`. Found
+   and fixed while doing so: `GetControlText` returned an empty string for an edit box or
+   drop-down in another process (it now reads with `WM_GETTEXT`), and a zero dialog
+   handle enumerated every top-level window instead of returning no controls. All are
+   additive with unique names, so the
+   [Signature Uniqueness Standard](../coding-standards/signature-uniqueness-standard.md)
+   is unaffected.
 
 ## Verdict
 

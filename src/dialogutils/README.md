@@ -3,7 +3,8 @@
 A Pega Robot Studio-ready component (`DialogUtils`) that finds and dismisses
 native dialogs (message boxes, common dialogs) by button text or control ID,
 via `BM_CLICK` — no cursor movement required, and it works even if the
-dialog is behind other windows.
+dialog is behind other windows — and fills them in: text boxes, check boxes,
+radio buttons, drop-downs, and Open/Save As file dialogs.
 
 - Target framework: `net10.0-windows`
 - Namespace: `DialogAutomation`
@@ -24,6 +25,11 @@ this repo.
 A standard Windows MessageBox button, identified by its well-known control
 ID, for use with `ClickDialogButtonById` (cast to `int`, e.g. `(int)DialogButton.Yes`):
 `Ok`, `Cancel`, `Abort`, `Retry`, `Ignore`, `Yes`, `No`.
+
+### `ControlCheckState`
+The state of a check box or radio button, as reported by `TryGetControlCheckState`
+(values are the Win32 `BST_*` constants): `Unchecked`, `Checked` (also the selected
+radio button), `Indeterminate`.
 
 ## Constructors
 
@@ -60,7 +66,24 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
 | Method | Signature | Description |
 |---|---|---|
 | `GetDialogText` | `string GetDialogText(IntPtr hDialog)` | Gets a dialog's message body (the first `Static`-class child control with non-empty text — skips icon controls, which have no text). |
-| `GetControlText` | `string GetControlText(IntPtr hControl)` | Gets any control's text (buttons, labels, edit fields, title bars). |
+| `GetControlText` | `string GetControlText(IntPtr hControl)` | Gets any control's text (buttons, labels, edit fields, drop-downs, title bars), including controls in another process. |
+
+### Set Values
+
+| Method | Signature | Description |
+|---|---|---|
+| `SetControlText` | `bool SetControlText(IntPtr hControl, string text, out string message)` | Sets a control's text (a text box, or the editable part of a drop-down) with `WM_SETTEXT` and reads it back to confirm. The text is never included in a failure message. Never throws. |
+| `TryGetControlCheckState` | `bool TryGetControlCheckState(IntPtr hControl, out ControlCheckState state, out string message)` | Reports whether a check box or radio button is checked. Never throws. |
+| `SetControlChecked` | `bool SetControlChecked(IntPtr hControl, bool isChecked, out string message)` | Checks/unchecks a check box or selects a radio button, clicking only if needed, and confirms the result. Never throws. |
+| `SelectComboItem` | `bool SelectComboItem(IntPtr hCombo, string itemText, out string message, bool exactMatch = true)` | Selects a drop-down item by its text (exact, or first containing) and notifies the dialog. When nothing matches, the message lists the items. Never throws. |
+
+### File Dialogs
+
+| Method | Signature | Description |
+|---|---|---|
+| `SetFileDialogPath` | `bool SetFileDialogPath(IntPtr hDialog, string path, out string message)` | Types a path into an Open/Save As dialog's File name box without confirming it. Never throws. |
+| `SelectFileDialogFileType` | `bool SelectFileDialogFileType(IntPtr hDialog, string fileTypeText, out string message, bool exactMatch = true)` | Chooses an entry in the dialog's file-type list (for example `CSV (*.csv)`, or `*.csv` with `exactMatch: false`). Never throws. |
+| `SubmitFileDialog` | `bool SubmitFileDialog(IntPtr hDialog, string path, out string message, int closeTimeoutMs = 5000)` | Types the path, clicks Open/Save, and waits for the dialog to close. `false` with a message if it stays open (an overwrite confirmation or a file-not-found box). Never throws. |
 
 ### Discover & Highlight
 
@@ -157,3 +180,44 @@ via `IsWindowEnabled` — a disabled `Button` silently ignores `BM_CLICK`).
   (or use `WaitForDialog`) rather than caching a handle across a long-running step.
 - **`GetDialogText`** skips `Static`-class children with empty text (such as an icon control on a MessageBox with `MessageBoxIcon.Warning`/`Error`/etc.) and returns the first one with actual text, so it correctly finds the message body regardless of whether — or where — an icon control appears among the dialog's children.
 - **`HighlightControl`** draws with `R2_NOTXORPEN`, the same erase-exactly XOR technique as [MouseUtils](../mouseutils/MouseUtils.cs)'s `FlashCursorHighlight` — if the control repaints while the rectangle is visible, the second XOR pass may not fully erase it, and the apparent color varies with what's underneath. It blocks the calling thread for roughly `flashes` × 2 × `flashMs` (~1.2 s with the defaults), and under DPI virtualization (a process that isn't DPI-aware on a scaled display) the rectangle can be drawn offset from the control.
+- **`GetControlText` now reads edit boxes and drop-downs in other applications.** It asks the
+  control directly (`WM_GETTEXT`, with a timeout that gives up at once on a hung application)
+  because `GetWindowText` deliberately returns an empty string for another process's edit box;
+  earlier versions therefore read every such control as empty. `FindDialog`/`WaitForDialog`
+  still match titles with the non-blocking `GetWindowText`, so scanning the desktop can never
+  stall on an unresponsive application.
+- **A zero dialog handle now means "no controls"**, not "every window". `ListDialogControls`,
+  `GetDialogText`, and `FindButtonByText` on `IntPtr.Zero` used to walk every top-level window
+  on the desktop (Win32's `EnumChildWindows(NULL)` behavior); they now return empty.
+- **Set-value methods confirm by reading back.** `SetControlText` returns `false` if the control
+  did not keep the text (read-only, length-limited, reformatting), and `SetControlChecked`/
+  `SelectComboItem` verify the resulting state. A `true` means the control is in the requested
+  state, not merely that a message was sent. `SetControlText` never puts the text in a failure
+  message, so a password typed into a login dialog is not echoed into a log.
+- **`SetControlChecked` clicks; it does not set the state directly.** The click runs the
+  application's own handling so it finds out (setting the state directly changes the box on
+  screen without telling the app). It only clicks when a change is needed, a radio button
+  cannot be unchecked (select another in its group), and a three-state box may take two clicks.
+  Applications that draw their own check boxes and radio buttons - WinForms does - have no
+  Win32 state, so these methods refuse them with a message pointing at
+  [UIAutomationUtils](../uiautomationutils/README.md) (`IsToggled`/`Toggle`).
+- **`SelectComboItem` tells the dialog the selection changed** by sending `CBN_SELCHANGE` and
+  then `CBN_SELENDOK` to the parent. Both matter: ordinary dialogs and WinForms react to the
+  first, but the Open/Save dialogs act only on the second and ignore a lone `CBN_SELCHANGE`
+  (the file-type filter would stay as it was).
+- **The message boxes Windows shows over Open/Save dialogs have buttons with control ID 0.**
+  The overwrite confirmation and the file-not-found error are DirectUI-laid-out, so
+  `ClickDialogButtonById(...)` cannot find their Yes/No/OK; use `ClickDialogButtonByText`. Their
+  message text is also drawn by DirectUI, so `GetDialogText` reads it as empty. Their titles and
+  button text are in the operating system's language.
+- **`SetFileDialogPath`/`SelectFileDialogFileType`/`SubmitFileDialog` find the File name box and
+  file-type list structurally**, not by control ID: some dialogs give them fixed IDs and others
+  bury them in a DirectUI host with ID 0, and every Open/Save dialog also contains an Explorer
+  address bar and search box (edit boxes too) that are skipped. They refuse a dialog with no
+  folder view, so pointing one at (say) a Font dialog fails instead of typing into its
+  font-name box. Verified against the .NET Open and Save dialogs (Windows 11); an unusual
+  dialog can be driven by handle with `ListDialogControls` + `SetControlText`/`SelectComboItem`.
+- **`SubmitFileDialog`'s `true` means the dialog closed after Open/Save was clicked** - not that
+  the file exists or was written, and a dialog closed with Cancel would look the same. It
+  returns `false` with a message when the dialog stays open (usually an overwrite confirmation
+  or a file-not-found box; answer it, then continue).

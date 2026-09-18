@@ -37,3 +37,18 @@ it on screen to confirm you've got the right one before scripting against it.
 var controls = dialog.ListDialogControls(hWnd);
 dialog.HighlightControl(controls[2].Handle, System.Drawing.Color.Red);
 ```
+
+## Read an edit box or drop-down in another application
+
+`GetControlText` reads a text box's or drop-down's current text even when the dialog
+belongs to another application - for example, to confirm what a file dialog's File name
+box holds before confirming it, or which entry a drop-down currently shows:
+
+```csharp
+string typed = dialog.GetControlText(fileNameEditHandle);
+string fileType = dialog.GetControlText(fileTypeComboHandle);   // e.g. "CSV (*.csv)"
+```
+
+Earlier versions returned an empty string for these, because `GetWindowText` deliberately
+does not read another process's edit box. To fill such a control in, see
+[Set Values](SetValues.md); for Open/Save dialogs, [File Dialogs](FileDialogs.md).

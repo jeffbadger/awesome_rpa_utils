@@ -31,13 +31,30 @@ namespace DialogAutomation
     }
 
     /// <summary>
-    /// Pega Robot Studio-ready component that finds and dismisses native dialogs
-    /// (message boxes, common dialogs) by button text or control ID, via <c>BM_CLICK</c>
-    /// — no cursor movement required, and it works even if the dialog is behind other
-    /// windows.
+    /// The state of a check box or radio button, as reported by
+    /// <see cref="DialogUtils.TryGetControlCheckState"/>. The numeric values are the
+    /// Windows <c>BST_*</c> constants.
     /// </summary>
-    [Description("Finds and dismisses native dialogs by button text/control ID. Drag " +
-                 "this component onto a Pega Robot Studio automation to use its methods.")]
+    public enum ControlCheckState
+    {
+        /// <summary>Not checked (BST_UNCHECKED, 0).</summary>
+        Unchecked = 0,
+        /// <summary>Checked, or the selected radio button (BST_CHECKED, 1).</summary>
+        Checked = 1,
+        /// <summary>The third state of a three-state check box (BST_INDETERMINATE, 2).</summary>
+        Indeterminate = 2
+    }
+
+    /// <summary>
+    /// Pega Robot Studio-ready component that finds native dialogs (message boxes, common
+    /// dialogs), dismisses them by button text or control ID via <c>BM_CLICK</c> - no cursor
+    /// movement required, and it works even if the dialog is behind other windows - and
+    /// fills them in: text boxes, check boxes, radio buttons, drop-down lists, and the
+    /// Open/Save file dialogs.
+    /// </summary>
+    [Description("Finds native dialogs, dismisses them by button text/control ID, and fills them " +
+                 "in (text, check boxes, radio buttons, drop-down lists, Open/Save file dialogs). " +
+                 "Drag this component onto a Pega Robot Studio automation to use its methods.")]
     public class DialogUtils : Component
     {
         /// <summary>
@@ -390,17 +407,517 @@ namespace DialogAutomation
             return string.Empty;
         }
 
-        /// <summary>Gets any control's text via <c>GetWindowText</c> (buttons, static labels, edit fields, and the dialog's own title bar).</summary>
+        /// <summary>
+        /// Gets any control's text (buttons, static labels, edit fields, drop-down lists,
+        /// and the dialog's own title bar), including controls in another process.
+        /// </summary>
+        /// <remarks>
+        /// Reads with <c>WM_GETTEXT</c> rather than <c>GetWindowText</c>: for a control in
+        /// another process, <c>GetWindowText</c> deliberately returns an empty string for an
+        /// edit box or drop-down list (their text lives in the control, not in the window),
+        /// so an edit field always read back as empty. The message is sent with a timeout
+        /// that gives up immediately on a hung application. At most 1,048,576 characters
+        /// are read. Returns an empty string for an invalid handle or an unresponsive control.
+        /// </remarks>
         [Category("Dialog - Read Text")]
-        [Description("Gets any control's text (buttons, labels, edit fields, or a dialog's title bar).")]
+        [Description("Gets any control's text (buttons, labels, edit fields, drop-down lists, or a dialog's title bar), including in another process.")]
         public string GetControlText(IntPtr hControl)
         {
-            int length = GetWindowTextLength(hControl);
-            // Use a minimum buffer so a title that grows between the length query and
-            // the read isn't silently truncated.
+            return ReadControlText(hControl);
+        }
+
+        /// <summary>
+        /// The text of a control via <c>WM_GETTEXT</c>, falling back to
+        /// <c>GetWindowText</c> if the control does not answer in time.
+        /// </summary>
+        private static string ReadControlText(IntPtr hControl)
+        {
+            if (SendMessageTimeout(hControl, WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero, SMTO_ABORTIFHUNG, TEXT_MESSAGE_TIMEOUT_MS, out IntPtr lengthResult) == IntPtr.Zero)
+                return GetWindowTextNonBlocking(hControl);
+
+            int length = (int)Math.Min(Math.Max(lengthResult.ToInt64(), 0L), MaxReadTextChars);
+            // A minimum buffer so text that grows between the length query and the read
+            // isn't silently truncated.
             var sb = new StringBuilder(Math.Max(length, 256) + 1);
-            GetWindowText(hControl, sb, sb.Capacity);
+            if (SendMessageTimeoutText(hControl, WM_GETTEXT, (IntPtr)sb.Capacity, sb, SMTO_ABORTIFHUNG, TEXT_MESSAGE_TIMEOUT_MS, out _) == IntPtr.Zero)
+                return GetWindowTextNonBlocking(hControl);
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// A window's caption via <c>GetWindowText</c>, which never sends a message to the
+        /// owning application and so can never block on it. Right for matching top-level
+        /// window titles across every process on the desktop; it cannot read an edit box in
+        /// another process (see <see cref="GetControlText"/>).
+        /// </summary>
+        private static string GetWindowTextNonBlocking(IntPtr hWnd)
+        {
+            int length = GetWindowTextLength(hWnd);
+            var sb = new StringBuilder(Math.Max(length, 256) + 1);
+            GetWindowText(hWnd, sb, sb.Capacity);
+            return sb.ToString();
+        }
+
+        #endregion
+
+        #region Set Values
+
+        /// <summary>
+        /// Sets a control's text with <c>WM_SETTEXT</c> - a text box, or the editable part of a
+        /// drop-down list - and reads it back to confirm it took.
+        /// </summary>
+        /// <param name="hControl">The control to set, from <see cref="ListDialogControls"/>, <see cref="FindButtonById"/>, or another lookup.</param>
+        /// <param name="text">The new text; an empty string clears the control. May not be <c>null</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it failed. The text itself is never included, so a password is not echoed into a log.</param>
+        /// <returns><c>true</c> if the control's text equals <paramref name="text"/> afterwards; <c>false</c> if <paramref name="text"/> is <c>null</c>, the handle is not a window, the control did not answer, or it did not keep the text (read-only, length-limited, or reformatting its input). Never throws.</returns>
+        /// <remarks>
+        /// <para>
+        /// This writes the control's text directly, as if it had been typed and committed, but
+        /// most applications only notice the change when the dialog is confirmed - they read the
+        /// box then - and a few validate as you type and will not see it. Confirm with the
+        /// dialog's OK button (<see cref="ClickDialogButtonById"/>), or use
+        /// <see cref="SubmitFileDialog"/> for an Open/Save dialog.
+        /// </para>
+        /// <para>
+        /// The handle must be the control that holds the text. For a drop-down list with an edit
+        /// box, the <c>ComboBox</c> handle works; a <c>ComboBoxEx32</c> is best addressed by its
+        /// inner <c>Edit</c>.
+        /// </para>
+        /// </remarks>
+        [Category("Dialog - Set Values")]
+        [Description("Sets a control's text (a text box or the editable part of a drop-down) and confirms it took. Returns True on success; never throws.")]
+        public bool SetControlText(IntPtr hControl, string text, out string message)
+        {
+            message = default;
+            try
+            {
+                if (text == null)
+                {
+                    message = "text may not be null (use an empty string to clear the control).";
+                    return false;
+                }
+                if (!IsWindowNative(hControl))
+                {
+                    message = "Invalid or nonexistent control handle.";
+                    return false;
+                }
+
+                if (SendMessageTimeoutString(hControl, WM_SETTEXT, IntPtr.Zero, text, SMTO_ABORTIFHUNG, TEXT_MESSAGE_TIMEOUT_MS, out IntPtr setResult) == IntPtr.Zero
+                    || setResult == IntPtr.Zero)
+                {
+                    message = "The control did not accept the text (it may be hung, or not a text control).";
+                    return false;
+                }
+
+                if (!string.Equals(ReadControlText(hControl), text, StringComparison.Ordinal))
+                {
+                    message = "The control's text was not the requested text after setting it - it may be read-only, length-limited, or reformat what it is given.";
+                    return false;
+                }
+
+                message = null;
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SetControlText", ex);
+                return false;
+            }
+        }
+
+        /// <summary>Reports whether a check box or radio button is checked.</summary>
+        /// <param name="hControl">The check box or radio button.</param>
+        /// <param name="state">Unchecked, Checked (also the selected radio button), or Indeterminate; <see cref="ControlCheckState.Unchecked"/> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the handle is not a window, is not a check box or radio button (a push button, group box, or a control of another kind), or does not answer. Never throws.</returns>
+        [Category("Dialog - Set Values")]
+        [Description("Reports whether a check box or radio button is checked. Returns True on success; never throws.")]
+        public bool TryGetControlCheckState(IntPtr hControl, out ControlCheckState state, out string message)
+        {
+            state = ControlCheckState.Unchecked;
+            message = default;
+            try
+            {
+                if (!TryGetCheckableKind(hControl, out _, out message))
+                    return false;
+                return TryReadCheckState(hControl, out state, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                state = ControlCheckState.Unchecked;
+                message = NeverThrowsGuard.Failure("TryGetControlCheckState", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Checks or unchecks a check box, or selects a radio button, by clicking it only if it
+        /// is not already in the requested state - then confirms the state it ended in.
+        /// </summary>
+        /// <param name="hControl">The check box or radio button.</param>
+        /// <param name="isChecked"><c>true</c> to check it (or select the radio button); <c>false</c> to uncheck it.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it failed.</param>
+        /// <returns><c>true</c> if the control is in the requested state afterwards (including when it already was, in which case nothing is clicked); <c>false</c> if the handle is not a check box or radio button, it is disabled, a radio button was asked to be unchecked, or clicking did not leave it in the requested state. Never throws.</returns>
+        /// <remarks>
+        /// <para>
+        /// This clicks (<c>BM_CLICK</c>) rather than setting the state directly, so the
+        /// application's own click handling runs and it finds out - setting the state directly
+        /// changes the box on screen without telling the application, which then acts as if
+        /// nothing changed. Idempotent: it is safe to call whether or not the control is
+        /// already in the requested state.
+        /// </para>
+        /// <para>
+        /// A radio button can only be unchecked by selecting another button in its group, so
+        /// <paramref name="isChecked"/> = <c>false</c> on one that is currently selected fails
+        /// with a message saying so. A three-state check box is clicked up to twice to reach the
+        /// checked or unchecked state.
+        /// </para>
+        /// </remarks>
+        [Category("Dialog - Set Values")]
+        [Description("Checks/unchecks a check box or selects a radio button (only clicking if needed) and confirms the result. Returns True on success; never throws.")]
+        public bool SetControlChecked(IntPtr hControl, bool isChecked, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!TryGetCheckableKind(hControl, out CheckableKind kind, out message))
+                    return false;
+                if (!TryReadCheckState(hControl, out ControlCheckState current, out message))
+                    return false;
+
+                ControlCheckState wanted = isChecked ? ControlCheckState.Checked : ControlCheckState.Unchecked;
+                if (current == wanted)
+                {
+                    message = null;
+                    return true;
+                }
+
+                if (kind == CheckableKind.Radio && !isChecked)
+                {
+                    message = "A radio button can't be unchecked directly - select another button in its group instead.";
+                    return false;
+                }
+                if (!IsWindowEnabled(hControl))
+                {
+                    message = "The control is disabled, so it cannot be clicked.";
+                    return false;
+                }
+
+                // A three-state box cycles unchecked -> checked -> indeterminate, so it can
+                // need two clicks; nothing else needs more than one.
+                for (int attempt = 0; attempt < 3; attempt++)
+                {
+                    SendMessageTimeout(hControl, BM_CLICK, IntPtr.Zero, IntPtr.Zero, SMTO_ABORTIFHUNG, BM_CLICK_TIMEOUT_MS, out _);
+
+                    // BM_CLICK is delivered synchronously, but an application may update the
+                    // state a moment later; wait for it to change rather than click again.
+                    ControlCheckState after = current;
+                    int start = Environment.TickCount;
+                    while (unchecked(Environment.TickCount - start) < CheckStateSettleMs)
+                    {
+                        if (!TryReadCheckState(hControl, out after, out message))
+                            return false;
+                        if (after != current)
+                            break;
+                        Thread.Sleep(20);
+                    }
+
+                    if (after == wanted)
+                    {
+                        message = null;
+                        return true;
+                    }
+                    if (after == current)
+                        break; // the click did nothing - clicking again would not help
+                    current = after;
+                }
+
+                message = "Clicking the control did not leave it " + (isChecked ? "checked" : "unchecked") + " - it may ignore clicks or reset itself.";
+                return false;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SetControlChecked", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Selects an item in a drop-down list or combo box by its text, and tells the
+        /// application the selection changed.
+        /// </summary>
+        /// <param name="hCombo">The <c>ComboBox</c> (for a <c>ComboBoxEx32</c>, use its inner <c>ComboBox</c>).</param>
+        /// <param name="itemText">The item's text; may not be null or empty.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it failed. When no item matches, the message lists the items that are there.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), the item's text must equal <paramref name="itemText"/> (case-insensitive). If <c>false</c>, the first item whose text contains it (case-insensitive) is chosen.</param>
+        /// <returns><c>true</c> if the item is selected afterwards (including when it already was); <c>false</c> if the handle is not a combo box, no item matches, or the selection did not take. Never throws.</returns>
+        /// <remarks>
+        /// Setting a combo box's selection does not by itself tell the dialog it changed - a
+        /// person choosing an item does - so a dialog that reacts to the choice (for example,
+        /// an Open dialog re-filtering its file list) would otherwise carry on as if nothing
+        /// happened. After selecting, this sends the combo box's parent the two notifications a
+        /// person's choice produces: <c>CBN_SELCHANGE</c>, which ordinary dialogs and WinForms
+        /// react to, and <c>CBN_SELENDOK</c>, which the Open/Save dialogs act on (they ignore
+        /// <c>CBN_SELCHANGE</c> alone). Items are matched by the text the list stores; a list
+        /// that draws its own items without storing text cannot be matched.
+        /// </remarks>
+        [Category("Dialog - Set Values")]
+        [Description("Selects an item in a drop-down list by its text and notifies the dialog. Returns True on success; never throws.")]
+        public bool SelectComboItem(IntPtr hCombo, string itemText, out string message, bool exactMatch = true)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrEmpty(itemText))
+                {
+                    message = "itemText is required.";
+                    return false;
+                }
+                if (!IsWindowNative(hCombo))
+                {
+                    message = "Invalid or nonexistent control handle.";
+                    return false;
+                }
+                string className = GetWindowClassName(hCombo);
+                if (!IsComboBoxClass(className))
+                {
+                    message = className.Equals("ComboBoxEx32", StringComparison.OrdinalIgnoreCase)
+                        ? "This is a ComboBoxEx32; pass the ComboBox inside it (see ListDialogControls)."
+                        : "The control is a '" + className + "', not a combo box.";
+                    return false;
+                }
+
+                if (!TrySend(hCombo, CB_GETCOUNT, IntPtr.Zero, IntPtr.Zero, out IntPtr countResult) || countResult.ToInt64() < 0)
+                {
+                    message = "The combo box did not report its items (it may be hung).";
+                    return false;
+                }
+
+                int count = (int)countResult.ToInt64();
+                var items = new List<string>(count);
+                for (int i = 0; i < count; i++)
+                    items.Add(ReadComboItem(hCombo, i));
+
+                int index = FindItemIndex(items, itemText, exactMatch);
+                if (index < 0)
+                {
+                    message = "The combo box has no item " + (exactMatch ? "matching" : "containing") + " '" + itemText + "'. Items: " + DescribeItems(items) + ".";
+                    return false;
+                }
+
+                if (TrySend(hCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero, out IntPtr currentResult) && currentResult.ToInt64() == index)
+                {
+                    message = null;
+                    return true; // already selected - nothing to change or announce
+                }
+
+                if (!TrySend(hCombo, CB_SETCURSEL, (IntPtr)index, IntPtr.Zero, out IntPtr setResult) || setResult.ToInt64() != index)
+                {
+                    message = "The combo box did not select the item.";
+                    return false;
+                }
+
+                // Tell the parent, as a person choosing the item would: SELCHANGE (the one
+                // ordinary dialogs and WinForms react to) and then SELENDOK (the one the
+                // Open/Save dialogs act on - SELCHANGE alone leaves their file-type filter
+                // unchanged).
+                IntPtr parent = GetParent(hCombo);
+                if (parent != IntPtr.Zero)
+                {
+                    uint controlId = (uint)(GetDlgCtrlID(hCombo) & 0xFFFF);
+                    TrySend(parent, WM_COMMAND, (IntPtr)(((long)CBN_SELCHANGE << 16) | controlId), hCombo, out _);
+                    TrySend(parent, WM_COMMAND, (IntPtr)(((long)CBN_SELENDOK << 16) | controlId), hCombo, out _);
+                }
+
+                if (!TrySend(hCombo, CB_GETCURSEL, IntPtr.Zero, IntPtr.Zero, out IntPtr afterResult) || afterResult.ToInt64() != index)
+                {
+                    message = "The selection did not stay on the requested item.";
+                    return false;
+                }
+
+                message = null;
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SelectComboItem", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region File Dialogs
+
+        /// <summary>
+        /// Types a path into an Open or Save As dialog's "File name" box (<c>WM_SETTEXT</c>,
+        /// confirmed by reading it back), without confirming the dialog.
+        /// </summary>
+        /// <param name="hDialog">The Open/Save dialog, from <see cref="WaitForDialog"/> or <see cref="FindDialog"/>.</param>
+        /// <param name="path">The file name or full path. A full path also changes the dialog's folder. Quote each name and separate them with spaces to choose several files in a dialog that allows it. May not be null or empty.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it failed.</param>
+        /// <returns><c>true</c> if the File name box was found and now holds <paramref name="path"/>; <c>false</c> if the dialog has no recognizable File name box, or setting it failed. Never throws.</returns>
+        /// <remarks>
+        /// Finding the box is structural, not by control ID: it is a direct child with one ID in
+        /// some dialogs and buried inside a DirectUI host with no ID at all in others, and every
+        /// dialog also contains an Explorer address bar and search box that are edit boxes too.
+        /// The address bar and search box are skipped. If your dialog is not recognized, inspect
+        /// it with <see cref="ListDialogControls"/> and use <see cref="SetControlText"/> with the
+        /// right handle. To confirm, use <see cref="SubmitFileDialog"/>, or
+        /// <see cref="ClickDialogButtonById"/> with <c>(int)DialogButton.Ok</c> (the Open/Save
+        /// button is always control ID 1).
+        /// </remarks>
+        [Category("Dialog - File Dialogs")]
+        [Description("Types a path into an Open/Save dialog's File name box without confirming it. Returns True on success; never throws.")]
+        public bool SetFileDialogPath(IntPtr hDialog, string path, out string message)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrEmpty(path))
+                {
+                    message = "path is required.";
+                    return false;
+                }
+                if (!IsWindowNative(hDialog))
+                {
+                    message = "Invalid or nonexistent dialog handle.";
+                    return false;
+                }
+
+                ControlNode edit = FindFileNameControl(SnapshotControls(hDialog));
+                if (edit == null)
+                {
+                    message = "No File name box was found - this may not be an Open/Save dialog. Inspect it with ListDialogControls and use SetControlText with the right handle.";
+                    return false;
+                }
+
+                return SetControlText(edit.Handle, path, out message);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SetFileDialogPath", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Chooses an entry in an Open or Save As dialog's "Save as type" / "Files of type"
+        /// list (for example <c>CSV (*.csv)</c>), and tells the dialog.
+        /// </summary>
+        /// <param name="hDialog">The Open/Save dialog.</param>
+        /// <param name="fileTypeText">The entry's text, or part of it. May not be null or empty.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it failed. When no entry matches, the message lists the entries that are there.</param>
+        /// <param name="exactMatch">If <c>true</c> (default), the entry's text must equal <paramref name="fileTypeText"/> (case-insensitive). If <c>false</c>, the first entry containing it is chosen - so <c>*.csv</c> is enough.</param>
+        /// <returns><c>true</c> if the entry is selected afterwards; <c>false</c> if the dialog has no recognizable file-type list, or the selection failed. Never throws.</returns>
+        /// <remarks>
+        /// For a Save As dialog this matters: a name typed without an extension gets the
+        /// selected type's extension. Like <see cref="SetFileDialogPath"/>, the list is found
+        /// structurally; if it is not recognized, use <see cref="SelectComboItem"/> with a
+        /// handle from <see cref="ListDialogControls"/>.
+        /// </remarks>
+        [Category("Dialog - File Dialogs")]
+        [Description("Chooses an entry in an Open/Save dialog's file-type list (exact or substring match). Returns True on success; never throws.")]
+        public bool SelectFileDialogFileType(IntPtr hDialog, string fileTypeText, out string message, bool exactMatch = true)
+        {
+            message = default;
+            try
+            {
+                if (string.IsNullOrEmpty(fileTypeText))
+                {
+                    message = "fileTypeText is required.";
+                    return false;
+                }
+                if (!IsWindowNative(hDialog))
+                {
+                    message = "Invalid or nonexistent dialog handle.";
+                    return false;
+                }
+
+                ControlNode combo = FindFileTypeCombo(SnapshotControls(hDialog));
+                if (combo == null)
+                {
+                    message = "No file-type list was found - this may not be an Open/Save dialog, or it has none. Inspect it with ListDialogControls and use SelectComboItem with the right handle.";
+                    return false;
+                }
+
+                return SelectComboItem(combo.Handle, fileTypeText, out message, exactMatch);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SelectFileDialogFileType", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Fills in an Open or Save As dialog and confirms it in one call: types the path,
+        /// clicks the dialog's Open/Save button, and waits for the dialog to close.
+        /// </summary>
+        /// <param name="hDialog">The Open/Save dialog.</param>
+        /// <param name="path">The file name or full path; see <see cref="SetFileDialogPath"/>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it did not complete.</param>
+        /// <param name="closeTimeoutMs">How long to wait for the dialog to close after confirming, in milliseconds (default 5000). Must be zero or positive, and at most <c>300000</c> (5 minutes).</param>
+        /// <returns><c>true</c> if the path was entered, the button clicked, and the dialog closed within the timeout; <c>false</c> otherwise (check <paramref name="message"/>). Never throws.</returns>
+        /// <remarks>
+        /// <para>
+        /// A dialog that stays open is not necessarily a failure to click: Windows asks first
+        /// when a Save As would overwrite an existing file, and reports an error for an Open of
+        /// a file that does not exist, in both cases leaving the dialog open behind a second
+        /// message box. That is reported as a <c>false</c> return with a message saying so; find
+        /// the message box with <see cref="FindDialog"/> or <see cref="WaitForDialog"/> and answer
+        /// it with <see cref="ClickDialogButtonByText"/> (<c>"Yes"</c> to overwrite, <c>"OK"</c> to
+        /// dismiss an error). Use the button's text, not its ID: these boxes are laid out by
+        /// DirectUI and every button in them has control ID 0, so
+        /// <see cref="ClickDialogButtonById"/> cannot find them. The box's title and button text
+        /// are in the language of the operating system.
+        /// </para>
+        /// <para>
+        /// A closed dialog means it was confirmed, not that the file exists or was written:
+        /// closing on Cancel looks the same, and this clicks only Open/Save (control ID 1).
+        /// </para>
+        /// </remarks>
+        [Category("Dialog - File Dialogs")]
+        [Description("Types a path into an Open/Save dialog, clicks Open/Save, and waits for it to close. Returns True if it closed; never throws.")]
+        public bool SubmitFileDialog(IntPtr hDialog, string path, out string message, int closeTimeoutMs = 5000)
+        {
+            message = default;
+            try
+            {
+                if (closeTimeoutMs < 0 || closeTimeoutMs > MaxFileDialogCloseTimeoutMs)
+                {
+                    message = "closeTimeoutMs must be between 0 and " + MaxFileDialogCloseTimeoutMs + " (5 minutes).";
+                    return false;
+                }
+                if (!SetFileDialogPath(hDialog, path, out message))
+                    return false;
+
+                IntPtr hConfirm = GetDlgItem(hDialog, (int)DialogButton.Ok);
+                if (hConfirm == IntPtr.Zero)
+                {
+                    message = "The path was entered, but the dialog has no Open/Save button (control ID 1) to click.";
+                    return false;
+                }
+                if (!ClickButton(hConfirm))
+                {
+                    message = "The path was entered, but the Open/Save button stayed disabled, so it was not clicked (the dialog may not accept that name).";
+                    return false;
+                }
+
+                if (!WaitForDialogToClose(hDialog, closeTimeoutMs, 50))
+                {
+                    message = "The dialog was still open " + closeTimeoutMs + " ms after clicking Open/Save. It may have asked to confirm an overwrite, reported that the file or folder does not exist, or rejected the name - look for another dialog.";
+                    return false;
+                }
+
+                message = null;
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("SubmitFileDialog", ex);
+                return false;
+            }
         }
 
         #endregion
@@ -626,6 +1143,56 @@ namespace DialogAutomation
         private const uint BM_CLICK_TIMEOUT_MS = 2000;
         private const uint SMTO_ABORTIFHUNG = 0x0002;
 
+        private const uint WM_SETTEXT = 0x000C;
+        private const uint WM_GETTEXT = 0x000D;
+        private const uint WM_GETTEXTLENGTH = 0x000E;
+        private const uint WM_COMMAND = 0x0111;
+        private const uint BM_GETCHECK = 0x00F0;
+        private const uint CB_GETCOUNT = 0x0146;
+        private const uint CB_GETCURSEL = 0x0147;
+        private const uint CB_GETLBTEXT = 0x0148;
+        private const uint CB_GETLBTEXTLEN = 0x0149;
+        private const uint CB_SETCURSEL = 0x014E;
+        private const int CBN_SELCHANGE = 1;
+        private const int CBN_SELENDOK = 9;
+        private const int GWL_STYLE = -16;
+
+        /// <summary>How long a control gets to answer a text or state message before the call gives up.</summary>
+        private const uint TEXT_MESSAGE_TIMEOUT_MS = 1000;
+
+        /// <summary>The most characters <see cref="GetControlText"/> reads from one control.</summary>
+        private const int MaxReadTextChars = 1 << 20;
+
+        /// <summary>How long to wait for a click to change a check box's state before deciding it did nothing.</summary>
+        private const int CheckStateSettleMs = 300;
+
+        /// <summary>The most <see cref="SubmitFileDialog"/> will wait for the dialog to close (5 minutes).</summary>
+        private const int MaxFileDialogCloseTimeoutMs = 300000;
+
+        private const int WS_VISIBLE = 0x10000000;
+        private const int CBS_TYPE_MASK = 0x0003;
+        private const int CBS_DROPDOWNLIST = 0x0003;
+        private const int BS_TYPE_MASK = 0x000F;
+        private const int BS_OWNERDRAW = 0x000B;
+
+        // Control IDs in the common Open/Save dialogs.
+        private const int FileNameEditIdOldStyle = 1152;   // edt1
+        private const int FileNameEditIdOpen = 1148;       // cmb13's inner edit
+        private const int FileTypeComboId = 1136;          // cmb1
+        private const int FileListBoxId = 1120;            // lst1
+
+        [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr SendMessageTimeoutText(IntPtr hWnd, uint Msg, IntPtr wParam, StringBuilder lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+        [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr SendMessageTimeoutString(IntPtr hWnd, uint Msg, IntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetParent(IntPtr hWnd);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -747,7 +1314,9 @@ namespace DialogAutomation
                         continue;
                 }
 
-                if (TitleMatches(GetControlText(hWnd), titlePattern, exactMatch))
+                // Non-blocking on purpose: this visits every visible top-level window on the
+                // desktop, including ones whose application may be unresponsive.
+                if (TitleMatches(GetWindowTextNonBlocking(hWnd), titlePattern, exactMatch))
                     matches.Add(hWnd);
             }
             return matches;
@@ -763,6 +1332,13 @@ namespace DialogAutomation
         private static List<IntPtr> GetChildWindows(IntPtr hWndParent)
         {
             var children = new List<IntPtr>();
+
+            // EnumChildWindows(NULL, ...) is defined to enumerate every top-level window on
+            // the desktop. A null dialog handle must mean "no dialog, so no controls", never
+            // "every window of every application".
+            if (hWndParent == IntPtr.Zero)
+                return children;
+
             EnumChildWindows(hWndParent, (hWnd, lParam) =>
             {
                 children.Add(hWnd);
@@ -776,6 +1352,292 @@ namespace DialogAutomation
             var sb = new StringBuilder(256);
             GetClassName(hWnd, sb, sb.Capacity);
             return sb.ToString();
+        }
+
+        private static bool TrySend(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, out IntPtr result)
+        {
+            return SendMessageTimeout(hWnd, msg, wParam, lParam, SMTO_ABORTIFHUNG, TEXT_MESSAGE_TIMEOUT_MS, out result) != IntPtr.Zero;
+        }
+
+        // ---- check boxes and radio buttons ----
+
+        internal enum CheckableKind { None, CheckBox, ThreeState, Radio }
+
+        /// <summary>
+        /// What kind of check box or radio button a <c>Button</c>'s window style describes
+        /// (the low four bits, <c>BS_*</c>), or <see cref="CheckableKind.None"/> for a push
+        /// button, group box, or owner-drawn button.
+        /// </summary>
+        internal static CheckableKind ClassifyCheckable(int style)
+        {
+            switch (style & BS_TYPE_MASK)
+            {
+                case 2:  // BS_CHECKBOX
+                case 3:  // BS_AUTOCHECKBOX
+                    return CheckableKind.CheckBox;
+                case 5:  // BS_3STATE
+                case 6:  // BS_AUTO3STATE
+                    return CheckableKind.ThreeState;
+                case 4:  // BS_RADIOBUTTON
+                case 9:  // BS_AUTORADIOBUTTON
+                    return CheckableKind.Radio;
+                default:
+                    return CheckableKind.None;
+            }
+        }
+
+        // A native Button, or a WinForms button-family control (WindowsForms10.BUTTON.app...),
+        // which superclasses it and answers the same messages.
+        internal static bool IsButtonClass(string className)
+        {
+            return !string.IsNullOrEmpty(className)
+                && (className.Equals("Button", StringComparison.OrdinalIgnoreCase)
+                    || className.IndexOf(".BUTTON.", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        internal static bool IsComboBoxClass(string className)
+        {
+            return !string.IsNullOrEmpty(className)
+                && (className.Equals("ComboBox", StringComparison.OrdinalIgnoreCase)
+                    || className.IndexOf(".COMBOBOX.", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        private static bool TryGetCheckableKind(IntPtr hControl, out CheckableKind kind, out string message)
+        {
+            kind = CheckableKind.None;
+            message = null;
+            if (!IsWindowNative(hControl))
+            {
+                message = "Invalid or nonexistent control handle.";
+                return false;
+            }
+
+            string className = GetWindowClassName(hControl);
+            if (!IsButtonClass(className))
+            {
+                message = "The control is a '" + className + "', not a check box or radio button.";
+                return false;
+            }
+
+            int style = GetWindowLong(hControl, GWL_STYLE);
+            kind = ClassifyCheckable(style);
+            if (kind == CheckableKind.None)
+            {
+                message = (style & BS_TYPE_MASK) == BS_OWNERDRAW
+                    // WinForms draws its own buttons, check boxes, and radio buttons, so there
+                    // is no Win32 check state to read or click reliably.
+                    ? "The button is owner-drawn (drawn by the application itself, as WinForms does), so it does not report a check state through Win32 - use UIAutomationUtils (IsToggled/Toggle) for it."
+                    : "The button is not a check box or radio button (it is a push button or group box).";
+                return false;
+            }
+            return true;
+        }
+
+        private static bool TryReadCheckState(IntPtr hControl, out ControlCheckState state, out string message)
+        {
+            state = ControlCheckState.Unchecked;
+            message = null;
+            if (!TrySend(hControl, BM_GETCHECK, IntPtr.Zero, IntPtr.Zero, out IntPtr result))
+            {
+                message = "The control did not report its state (it may be hung).";
+                return false;
+            }
+
+            switch ((int)result.ToInt64())
+            {
+                case 1: state = ControlCheckState.Checked; break;
+                case 2: state = ControlCheckState.Indeterminate; break;
+                default: state = ControlCheckState.Unchecked; break;
+            }
+            return true;
+        }
+
+        // ---- combo boxes ----
+
+        private static string ReadComboItem(IntPtr hCombo, int index)
+        {
+            if (!TrySend(hCombo, CB_GETLBTEXTLEN, (IntPtr)index, IntPtr.Zero, out IntPtr lengthResult) || lengthResult.ToInt64() < 0)
+                return string.Empty;
+
+            var sb = new StringBuilder((int)Math.Min(lengthResult.ToInt64(), MaxReadTextChars) + 1);
+            if (SendMessageTimeoutText(hCombo, CB_GETLBTEXT, (IntPtr)index, sb, SMTO_ABORTIFHUNG, TEXT_MESSAGE_TIMEOUT_MS, out _) == IntPtr.Zero)
+                return string.Empty;
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// The index of the first item matching <paramref name="text"/> (case-insensitive:
+        /// equal when <paramref name="exactMatch"/>, otherwise containing it), or -1.
+        /// </summary>
+        internal static int FindItemIndex(IList<string> items, string text, bool exactMatch)
+        {
+            if (items == null || string.IsNullOrEmpty(text))
+                return -1;
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                string item = items[i] ?? string.Empty;
+                bool matches = exactMatch
+                    ? string.Equals(item, text, StringComparison.OrdinalIgnoreCase)
+                    : item.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0;
+                if (matches)
+                    return i;
+            }
+            return -1;
+        }
+
+        // A short list of what is there, for an error message: enough to spot a typo
+        // without dumping a 500-entry list into a log.
+        internal static string DescribeItems(IList<string> items)
+        {
+            const int Shown = 10;
+            if (items == null || items.Count == 0)
+                return "(none)";
+
+            var parts = new List<string>();
+            for (int i = 0; i < items.Count && i < Shown; i++)
+                parts.Add("'" + items[i] + "'");
+            string text = string.Join(", ", parts);
+            return items.Count > Shown ? text + ", ... (" + items.Count + " in all)" : text;
+        }
+
+        // ---- finding the File name box and file-type list in Open/Save dialogs ----
+
+        /// <summary>One control of a dialog, as seen in a snapshot of its control tree.</summary>
+        internal sealed class ControlNode
+        {
+            public ControlNode(IntPtr handle, IntPtr parent, int id, string className, int style)
+            {
+                Handle = handle;
+                Parent = parent;
+                Id = id;
+                ClassName = className ?? string.Empty;
+                Style = style;
+            }
+
+            public IntPtr Handle { get; }
+            public IntPtr Parent { get; }
+            public int Id { get; }
+            public string ClassName { get; }
+            public int Style { get; }
+            public bool IsVisible => (Style & WS_VISIBLE) != 0;
+            public bool Is(string className) => ClassName.Equals(className, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static List<ControlNode> SnapshotControls(IntPtr hDialog)
+        {
+            var nodes = new List<ControlNode>();
+            foreach (IntPtr child in GetChildWindows(hDialog))
+                nodes.Add(new ControlNode(child, GetParent(child), GetDlgCtrlID(child), GetWindowClassName(child), GetWindowLong(child, GWL_STYLE)));
+            return nodes;
+        }
+
+        // Every Open/Save dialog has an Explorer address bar and search box, whose edit
+        // boxes sit under a WorkerW window; they are never the File name box.
+        private static bool IsUnderExplorerBar(ControlNode node, IDictionary<IntPtr, ControlNode> byHandle)
+        {
+            for (IntPtr parent = node.Parent; parent != IntPtr.Zero && byHandle.TryGetValue(parent, out ControlNode ancestor); parent = ancestor.Parent)
+            {
+                if (ancestor.Is("WorkerW"))
+                    return true;
+            }
+            return false;
+        }
+
+        private static Dictionary<IntPtr, ControlNode> IndexByHandle(IEnumerable<ControlNode> nodes)
+        {
+            var byHandle = new Dictionary<IntPtr, ControlNode>();
+            foreach (ControlNode node in nodes)
+                byHandle[node.Handle] = node;
+            return byHandle;
+        }
+
+        /// <summary>
+        /// Whether a control tree is an Open/Save dialog: it contains the folder view
+        /// (<c>SHELLDLL_DefView</c>) every such dialog hosts, or the legacy file list box
+        /// (ID 1120). Without this, the finders below would take the first edit box in a
+        /// combo box in any dialog - a Font dialog's font-name box, say - for the File name box.
+        /// </summary>
+        internal static bool LooksLikeFileDialog(IReadOnlyList<ControlNode> nodes)
+        {
+            if (nodes == null)
+                return false;
+
+            foreach (ControlNode node in nodes)
+            {
+                if (node.Is("SHELLDLL_DefView") || (node.Id == FileListBoxId && node.Is("ListBox")))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// The File name edit box of an Open/Save dialog, or <c>null</c>. Older dialogs put it
+        /// at a fixed ID; newer ones put it in a combo box whose ID differs by dialog and is
+        /// sometimes zero, so the fallback is the first edit box inside a combo box that is not
+        /// part of the Explorer address bar or search box.
+        /// </summary>
+        internal static ControlNode FindFileNameControl(IReadOnlyList<ControlNode> nodes)
+        {
+            if (!LooksLikeFileDialog(nodes))
+                return null;
+
+            Dictionary<IntPtr, ControlNode> byHandle = IndexByHandle(nodes);
+            var edits = new List<ControlNode>();
+            foreach (ControlNode node in nodes)
+            {
+                if (node.Is("Edit") && node.IsVisible && !IsUnderExplorerBar(node, byHandle))
+                    edits.Add(node);
+            }
+
+            foreach (int id in new[] { FileNameEditIdOldStyle, FileNameEditIdOpen })
+            {
+                foreach (ControlNode edit in edits)
+                {
+                    if (edit.Id == id)
+                        return edit;
+                }
+            }
+
+            foreach (ControlNode edit in edits)
+            {
+                if (byHandle.TryGetValue(edit.Parent, out ControlNode parent) && parent.Is("ComboBox"))
+                    return edit;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// The "Save as type"/"Files of type" list of an Open/Save dialog, or <c>null</c>.
+        /// A fixed ID in some dialogs; otherwise the first drop-down list (as opposed to the
+        /// File name box's editable drop-down) outside the Explorer address bar.
+        /// </summary>
+        internal static ControlNode FindFileTypeCombo(IReadOnlyList<ControlNode> nodes)
+        {
+            if (!LooksLikeFileDialog(nodes))
+                return null;
+
+            Dictionary<IntPtr, ControlNode> byHandle = IndexByHandle(nodes);
+            var combos = new List<ControlNode>();
+            foreach (ControlNode node in nodes)
+            {
+                if (node.Is("ComboBox") && node.IsVisible && !IsUnderExplorerBar(node, byHandle))
+                    combos.Add(node);
+            }
+
+            foreach (ControlNode combo in combos)
+            {
+                if (combo.Id == FileTypeComboId)
+                    return combo;
+            }
+
+            foreach (ControlNode combo in combos)
+            {
+                bool insideComboBoxEx = byHandle.TryGetValue(combo.Parent, out ControlNode parent) && parent.Is("ComboBoxEx32");
+                if ((combo.Style & CBS_TYPE_MASK) == CBS_DROPDOWNLIST && !insideComboBoxEx)
+                    return combo;
+            }
+            return null;
         }
 
         /// <summary>

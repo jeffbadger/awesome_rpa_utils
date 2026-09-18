@@ -21,7 +21,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [ArchiveUtils](#archiveutils) | `ArchiveAutomation` | 18 | 0 | 0 | Creates, extracts, inspects, and validates ZIP archives, with zip-slip/zip-bomb protection and CRC-32 verification. |
 | [CommandLineUtils](#commandlineutils) | `CommandLineAutomation` | 7 | 0 | 0 | Runs external commands/processes and captures exit code, stdout, and stderr — including elevated and fire-and-forget launches. |
 | [DataContractUtils](#datacontractutils) | `DataContractAutomation` | 36 | 6 | 0 | A typed named-value contract defined at initialization, then sealed, with strict scalar getters/setters at runtime. |
-| [DialogUtils](#dialogutils) | `DialogAutomation` | 14 | 0 | 0 | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor. |
+| [DialogUtils](#dialogutils) | `DialogAutomation` | 21 | 0 | 0 | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, and fills them in: text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs. |
 | [EventLogUtils](#eventlogutils) | `EventLogAutomation` | 20 | 0 | 0 | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries. |
 | [FileWatchUtils](#filewatchutils) | `FileWatchAutomation` | 28 | 0 | 5 | Waits for file existence/deletion/change/stability/unlock, watches for filesystem events, and atomically moves/replaces/claims files. |
 | [JsonUtils](#jsonutils) | `JsonAutomation` | 24 | 0 | 0 | Reads, updates, validates, and transforms JSON via real JSONPath. |
@@ -151,7 +151,7 @@ Pega Robot Studio-ready component that provides an instance-local, typed, named 
 
 ## DialogUtils
 
-Pega Robot Studio-ready component that finds and dismisses native dialogs (message boxes, common dialogs) by button text or control ID, via `BM_CLICK` — no cursor movement required, and it works even if the dialog is behind other windows.
+Pega Robot Studio-ready component that finds native dialogs (message boxes, common dialogs), dismisses them by button text or control ID via `BM_CLICK` — no cursor movement required, and it works even if the dialog is behind other windows — and fills them in: text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs.
 
 **Namespace:** `DialogAutomation` | **Assembly:** `DialogAutomation`
 
@@ -167,10 +167,17 @@ Pega Robot Studio-ready component that finds and dismisses native dialogs (messa
 | `FindButtonById` | `bool FindButtonById(IntPtr hDialog, out IntPtr hButton, int controlId)` | Finds a control on a dialog by its control ID (`GetDlgItem`). Never throws. |
 | `FindButtonByText` | `bool FindButtonByText(IntPtr hDialog, out IntPtr hButton, string buttonText, bool exactMatch = true)` | Finds a button on a dialog by its visible text (case-insensitive). Never throws. |
 | `FindDialog` | `bool FindDialog(string titlePattern, out IntPtr hDialog, out bool canDismiss, bool exactMatch, int processId = 0)` | Finds a top-level dialog window by its title, and reports whether it has a native `Button` control that can be clicked. Never throws. |
-| `GetControlText` | `string GetControlText(IntPtr hControl)` | Gets any control's text via `GetWindowText` (buttons, static labels, edit fields, and the dialog's own title bar). |
+| `GetControlText` | `string GetControlText(IntPtr hControl)` | Gets any control's text (buttons, labels, edit fields, drop-downs, and title bars), including controls in another process. |
 | `GetDialogText` | `string GetDialogText(IntPtr hDialog)` | Gets a dialog's message body: the text of the first non-empty `Static` child control. |
 | `HighlightControl` | `bool HighlightControl(IntPtr hControl, System.Drawing.Color color, int flashes = 3, int flashMs = 200, int lineWidth = 3)` | Flashes an inverting rectangle around a control to visually confirm which on-screen control a handle corresponds to. Never throws. |
 | `ListDialogControls` | `List<DialogControlInfo> ListDialogControls(IntPtr hDialog)` | Lists every control on a dialog — including nested controls — with its ID, text, and window class. |
+| `SelectComboItem` | `bool SelectComboItem(IntPtr hCombo, string itemText, out string message, bool exactMatch = true)` | Selects a drop-down item by its text (exact, or first containing) and notifies the dialog. When nothing matches, the message lists the items. Never throws. |
+| `SelectFileDialogFileType` | `bool SelectFileDialogFileType(IntPtr hDialog, string fileTypeText, out string message, bool exactMatch = true)` | Chooses an entry in an Open/Save As dialog's file-type list (for example CSV (*.csv), or *.csv with exactMatch false). Never throws. |
+| `SetControlChecked` | `bool SetControlChecked(IntPtr hControl, bool isChecked, out string message)` | Checks/unchecks a check box or selects a radio button, clicking only if needed, and confirms the result. Never throws. |
+| `SetControlText` | `bool SetControlText(IntPtr hControl, string text, out string message)` | Sets a control's text (a text box, or the editable part of a drop-down) and reads it back to confirm. The text is never included in a failure message. Never throws. |
+| `SetFileDialogPath` | `bool SetFileDialogPath(IntPtr hDialog, string path, out string message)` | Types a path into an Open/Save As dialog's File name box without confirming it. Never throws. |
+| `SubmitFileDialog` | `bool SubmitFileDialog(IntPtr hDialog, string path, out string message, int closeTimeoutMs = 5000)` | Types the path, clicks Open/Save, and waits for the dialog to close; false with a message if it stays open (an overwrite confirmation or a file-not-found box). Never throws. |
+| `TryGetControlCheckState` | `bool TryGetControlCheckState(IntPtr hControl, out ControlCheckState state, out string message)` | Reports whether a check box or radio button is checked. Never throws. |
 | `WaitForDialog` | `bool WaitForDialog(string titlePattern, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, bool exactMatch, int processId = 0)` | Polls for a visible top-level dialog matching a title pattern until it appears or the timeout elapses. |
 | `WaitForDialogToClose` | `bool WaitForDialogToClose(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until a dialog handle is no longer valid (the dialog closed), or the timeout elapses. |
 
