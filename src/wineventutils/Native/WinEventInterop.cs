@@ -61,6 +61,8 @@ namespace WinEventAutomation.Native
         public const int WS_DISABLED = 0x08000000;
         public const uint WM_NULL = 0x0000;
         public const uint WM_QUIT = 0x0012;
+        public const uint WM_USER = 0x0400;
+        public const uint PM_NOREMOVE = 0x0000;
 
         // ---- Process access -----------------------------------------------------
 
@@ -82,6 +84,9 @@ namespace WinEventAutomation.Native
 
         [DllImport("user32.dll")]
         public static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+        [DllImport("user32.dll")]
+        public static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
 
         [DllImport("user32.dll")]
         public static extern bool TranslateMessage(ref MSG lpMsg);

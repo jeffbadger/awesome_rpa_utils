@@ -1189,6 +1189,27 @@ namespace WinEventAutomation.Tests
         // Windows-only integration tests (self-skip elsewhere)
         // ------------------------------------------------------------------
 
+        // Regression: the hook thread published its id and signalled "started" before it had a
+        // message queue, so the PostThreadMessage wake-up sent by an immediate RequestHook could
+        // fail and the hook was then never installed (most back-to-back Initialize+Start
+        // sequences lost it). No sleep between StartThread and RequestHook is the point.
+        [Fact]
+        public void Engine_installs_the_hook_when_requested_immediately_after_StartThread()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            for (int i = 0; i < 20; i++)
+            {
+                using var engine = new WinEventEngine((data, categories) => { });
+                engine.StartThread();
+                engine.RequestHook(true);
+
+                Assert.True(SpinWait.SpinUntil(() => engine.IsHookInstalled, 3000),
+                    "The hook was not installed on attempt " + (i + 1) + " of 20.");
+            }
+        }
+
         [Fact]
         public void WaitForWindowCreated_notepad_returns_event()
         {
