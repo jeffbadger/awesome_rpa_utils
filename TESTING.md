@@ -173,8 +173,8 @@ genuine timeout case (`false` with `message == null`).
 - `GetScreenWidth`/`GetScreenHeight` and remaining screen-info methods (sanity
   assert > 0)
 - `FlashCursorHighlight`, `MoveMouseBezier` (and `BezierClickAt`/
-  `BezierDoubleClickAt`/`BezierDragAndDrop` through it) (`flashes * flashMs`/
-  `durationMs` exceeding the 60-second cap → `false` + message)
+  `BezierDoubleClickAt`/`BezierDragAndDrop` through it) (`(2 * flashes - 1) *
+  flashMs`/`durationMs` exceeding the 60-second cap → `false` + message)
 - `WaitForPixelColor`/`WaitForPixelChange`/`WaitForIdleCursor` (negative
   `timeoutMs`, or one exceeding the 30-minute cap, → `false` + message
   instead of an immediate/unbounded poll)

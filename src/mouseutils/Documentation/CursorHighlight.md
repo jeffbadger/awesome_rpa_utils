@@ -37,6 +37,7 @@ foreach (var field in formFields)
 > exclusive fullscreen (DirectX) applications, and a window repaint while the
 > ring is visible can leave artifacts the erase pass can't clean up.
 
-`flashes * flashMs` (the total blocking duration) is capped at 60 seconds -
-exceeding it returns `false` with a message rather than blocking the
-automation thread for that long.
+The total blocking duration - `(2 * flashes - 1) * flashMs` (each flash
+sleeps once visible, plus once hidden except the last) - is capped at 60
+seconds - exceeding it returns `false` with a message rather than blocking
+the automation thread for that long.

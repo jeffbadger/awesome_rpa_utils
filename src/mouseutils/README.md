@@ -182,7 +182,7 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
 
 | Method | Signature | Description |
 |---|---|---|
-| `FlashCursorHighlight` | `bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting ring around the cursor for demos/recordings (`flashes * flashMs` capped at 60 seconds total). Erases itself exactly via XOR drawing. |
+| `FlashCursorHighlight` | `bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)` | Flashes an inverting ring around the cursor for demos/recordings (`(2 * flashes - 1) * flashMs` capped at 60 seconds total). Erases itself exactly via XOR drawing. |
 
 ### Human-like Movement
 
