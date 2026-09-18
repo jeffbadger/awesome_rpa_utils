@@ -790,11 +790,14 @@ namespace MouseAutomation
                 if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
 
                 bool upOk = TrySendInputs(upBatch.ToArray(), out message);
-                if (!upOk)
+                if (!upOk && !TrySendInputs(upBatch.ToArray(), out _))
                 {
-                    // Best-effort retry: a transient SendInput failure must not leave the
-                    // modifiers or button stuck down (mirrors RubberBandSelect's finally).
-                    TrySendInputs(upBatch.ToArray(), out _);
+                    // The whole-batch retry also failed - one bad event in the batch (e.g.
+                    // a transient per-event rejection) would otherwise strand every other
+                    // event in it. Fall back to releasing each one individually,
+                    // best-effort, so a single failure doesn't cost the rest.
+                    foreach (INPUT single in upBatch)
+                        TrySendInputs(new[] { single }, out _);
                 }
                 return upOk;
 
@@ -1064,8 +1067,11 @@ namespace MouseAutomation
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
         /// <remarks>
-        /// Modifier keys are released in a Finally block (best-effort), so a failed drag
-        /// never leaves Ctrl/Shift/Alt stuck down.
+        /// Modifier keys are always released in a <c>finally</c> block, so a failed drag
+        /// never leaves Ctrl/Shift/Alt stuck down. If that release itself fails, this
+        /// method reports it as a failure (via the same compound-result rule
+        /// <see cref="DragAndDrop(int, int, int, int, int, int, out string)"/> uses)
+        /// rather than silently discarding it.
         /// </remarks>
         [Category("Mouse - Drag")]
         [Description("Performs a left-button rubber-band drag while holding modifier keys, using a custom step count and delay. Returns True on success; never throws.")]
@@ -1083,6 +1089,7 @@ namespace MouseAutomation
 
                 bool dragOk;
                 string dragMessage = null;
+                string modifierCleanupMessage = null;
                 try
                 {
                     dragOk = DragAndDrop(startX, startY, endX, endY, steps, stepDelayMilliseconds, out dragMessage);
@@ -1093,13 +1100,14 @@ namespace MouseAutomation
                     if ((modifiers & ModifierKeys.Alt) != 0) upBatch.Add(MakeKeyInput(VK_MENU, true));
                     if ((modifiers & ModifierKeys.Shift) != 0) upBatch.Add(MakeKeyInput(VK_SHIFT, true));
                     if ((modifiers & ModifierKeys.Control) != 0) upBatch.Add(MakeKeyInput(VK_CONTROL, true));
-                    // Best-effort modifier release - don't let a cleanup failure mask the
-                    // primary drag outcome already captured above.
-                    if (upBatch.Count > 0) TrySendInputs(upBatch.ToArray(), out _);
+                    // Best-effort modifier release, but the result is no longer discarded -
+                    // a failed release must surface via CompleteCompoundOperation below
+                    // rather than silently leaving a modifier key stuck down.
+                    if (upBatch.Count > 0 && !TrySendInputs(upBatch.ToArray(), out modifierCleanupMessage) && modifierCleanupMessage == null)
+                        modifierCleanupMessage = "One or more modifier keys could not be released after the drag.";
                 }
 
-                message = dragMessage;
-                return dragOk;
+                return CompleteCompoundOperation(dragOk, dragMessage, modifierCleanupMessage, out message);
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -2336,7 +2344,7 @@ namespace MouseAutomation
         /// <param name="yFraction">Vertical position as a fraction of the client area's height, from 0.0 (top edge) to 1.0 (bottom edge).</param>
         /// <param name="button">The mouse button to click.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="xFraction"/>/<paramref name="yFraction"/> are outside [0.0, 1.0], <paramref name="button"/> is undefined, or GetClientRect/ClientToScreen/input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="xFraction"/>/<paramref name="yFraction"/> are outside [0.0, 1.0] or non-finite (<c>NaN</c>/infinity), <paramref name="button"/> is undefined, or GetClientRect/ClientToScreen/input injection failed. Never throws.</returns>
         [Category("Mouse - Window Targeting")]
         [Description("Clicks at a fractional position within a window's client area (e.g. 0.5, 0.9), resilient to minor resizes across machines. Returns True on success; never throws.")]
         public bool ClickAtRelativePosition(IntPtr hWnd, double xFraction, double yFraction, MouseButton button, out string message)
@@ -2344,6 +2352,19 @@ namespace MouseAutomation
             message = default;
             try
             {
+                // Every comparison against NaN evaluates to false in C#, so a NaN fraction
+                // would otherwise silently pass both range checks below - reject non-finite
+                // values explicitly rather than relying on the range comparisons alone.
+                if (double.IsNaN(xFraction) || double.IsInfinity(xFraction))
+                {
+                    message = "xFraction must be a finite number.";
+                    return false;
+                }
+                if (double.IsNaN(yFraction) || double.IsInfinity(yFraction))
+                {
+                    message = "yFraction must be a finite number.";
+                    return false;
+                }
                 if (xFraction < 0.0 || xFraction > 1.0)
                 {
                     message = "xFraction must be between 0.0 and 1.0.";
@@ -2407,7 +2428,7 @@ namespace MouseAutomation
         /// <param name="button">The mouse button to click.</param>
         /// <param name="expectedWindowHandle">The window handle expected to own the point (its top-level/root window).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click was refused or failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if the window under the point is not <paramref name="expectedWindowHandle"/> or one of its descendants (the misclick guard), <paramref name="button"/> is undefined, or a Win32 cursor call/input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="expectedWindowHandle"/> is <see cref="IntPtr.Zero"/>, the window under the point is not <paramref name="expectedWindowHandle"/> or one of its descendants (the misclick guard), <paramref name="button"/> is undefined, or a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Window Targeting")]
         [Description("Clicks only if the window under the point matches the expected window (or a descendant) - guards against misclicks from a shifted layout. Returns True on success; never throws.")]
         public bool SafeClickAt(int x, int y, MouseButton button, IntPtr expectedWindowHandle, out string message)
@@ -2415,6 +2436,16 @@ namespace MouseAutomation
             message = default;
             try
             {
+                // A zero expected handle must never authorize a click: without this check,
+                // a point over empty desktop (where GetWindowAtPoint also returns
+                // IntPtr.Zero) would make actual == expectedWindowHandle trivially true,
+                // defeating the entire point of this guard.
+                if (expectedWindowHandle == IntPtr.Zero)
+                {
+                    message = "expectedWindowHandle must not be IntPtr.Zero - pass the actual window handle to guard against.";
+                    return false;
+                }
+
                 IntPtr actual = GetWindowAtPoint(x, y);
                 if (actual != expectedWindowHandle && GetAncestor(actual, GA_ROOT) != expectedWindowHandle)
                 {
@@ -2510,7 +2541,9 @@ namespace MouseAutomation
         /// Note that a <c>false</c> return can also mean the awareness query itself
         /// failed - <c>GetDpiAwarenessContext</c> requires Windows 10 1607 or later,
         /// and on older systems this method reports false even for a DPI-aware process
-        /// (the missing entry point is caught, so the never-throws contract holds).
+        /// (the missing entry point, and any other recoverable failure querying it, is
+        /// caught rather than thrown - though this method has no message output to
+        /// report which case occurred).
         /// </remarks>
         [Category("Mouse - DPI")]
         [Description("Returns True if the process is DPI-aware (any level); false if DPI-unaware.")]
@@ -2521,10 +2554,15 @@ namespace MouseAutomation
             {
                 ctx = GetDpiAwarenessContext();
             }
-            catch (EntryPointNotFoundException)
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                // GetDpiAwarenessContext requires Windows 10 1607+; on older systems
-                // report DPI-unaware rather than throwing (never-throws contract).
+                // GetDpiAwarenessContext requires Windows 10 1607+, so EntryPointNotFoundException
+                // is the expected case on older systems - report DPI-unaware rather than
+                // throwing. Routed through the same NeverThrowsGuard policy every other
+                // method in this file uses (rather than a one-off catch of just that one
+                // exception type) so an unexpected recoverable failure here is handled
+                // consistently too, even though this method has no message output to
+                // report the reason through.
                 return false;
             }
             if (ctx == IntPtr.Zero)
