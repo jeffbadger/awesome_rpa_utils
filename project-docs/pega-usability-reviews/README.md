@@ -76,24 +76,43 @@ Each utility's detailed findings are in its own file in this folder.
 
 ## Completed review and remediation priority
 
-All twelve listed utility reviews are complete. Recommended implementation order:
+All twelve listed utility reviews are complete, and every item below has since
+been implemented, rejected with a documented reason, or deliberately deferred
+— see each item's own component doc for the final decision and status marker.
+This list is kept as a historical record of the original remediation order,
+not a live backlog.
 
-1. **WinEventUtils handle correctness:** replace the 32-bit `WinEventData.Hwnd`, expose
-   properties, and add flattened/JSON single-event methods.
-2. **CommandLineUtils scalar API:** flatten `CommandResult` and add scalar adapters
-   for environment variables, encoding, and shell allowlists.
-3. **KeyboardUtils combo adapter:** replace the required `VirtualKey[]` design-
-   surface path with fixed-arity scalar combo methods.
-4. **Primitive geometry outputs:** add integer coordinate overloads for MouseUtils,
-   WindowUtils, OcrUtils, and UIAutomationUtils.
-5. **Collection adapters:** add first-match, JSON, or count/index alternatives for
-   window, dialog, UIA, OCR-language, and service enumeration.
-6. **Clipboard and result semantics:** internalize ScreenCaptureUtils STA handling,
-   hide its throwing overload, and separate operation success from normal false
-   states/timeouts across utilities.
-7. **Designer-friendly enums:** expose `DialogButton` directly, wrap external
-   service status, verify modifier flags, and replace string policies/event names
-   where useful.
+1. **Done.** WinEventUtils handle correctness: replaced the 32-bit
+   `WinEventData.Hwnd`, exposed properties, kept single-event methods as
+   `WinEventData`, and added JSON adapters for multi-event output.
+2. **Done.** CommandLineUtils scalar API: flattened `CommandResult` and added
+   scalar adapters for environment variables, encoding, and shell allowlists.
+3. **Done.** KeyboardUtils combo adapter: `PressKeyCombo`'s existing `params
+   VirtualKey[]` was confirmed to already call like a fixed-arity scalar
+   method from Robot Studio, so no separate adapter method was needed.
+4. **Done.** Primitive geometry outputs: added integer coordinate overloads
+   for MouseUtils, WindowUtils, OcrUtils, and UIAutomationUtils.
+5. **Mostly done, one reconsidered.** Collection adapters: added first-match,
+   JSON, or count/index alternatives for window, UIA, OCR-language, and
+   service enumeration. Dialog enumeration (`FindAllDialogs`,
+   `ListDialogControls`) was revisited during DialogUtils' own review and
+   the proxy/loop shape was judged acceptable as-is - see that component's
+   review, decisions 2-3.
+6. **Done.** Clipboard and result semantics: internalized ScreenCaptureUtils
+   STA handling, removed its throwing overload entirely, and separated
+   operation success from normal false states/timeouts across utilities.
+7. **Mixed - see below.** Designer-friendly enums:
+   - **Done:** wrapped external service status (`ServiceStatus`) and added
+     repository-owned enum overloads for string event policies/names
+     (`WinEventName`, `WinEventOverflowPolicy`).
+   - **Rejected, documented.** Exposing `DialogButton` directly on
+     `ClickDialogButtonById` was reconsidered and explicitly declined in
+     [DialogUtils' own review](DialogUtils-pega-usability-review.md) -
+     callers needing a standard button already cast from the enum, and an
+     `int` parameter covers the rest without an extra overload.
+   - **Deferred, out of scope.** Verifying `ModifierKeys` flags-enum
+     selection on the actual Robot Studio design surface was left out of
+     scope for the KeyboardUtils pass - see that component's own review.
 
 The individual records are located in this folder as
 `<Utility>-pega-usability-review.md`.
