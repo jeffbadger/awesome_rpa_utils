@@ -16,6 +16,7 @@ for checking whether something already exists before writing it yourself.
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor, and fills them in: text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs. |
 | [eventlogutils](src/eventlogutils/README.md) | `EventLogAutomation` | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries via `EventLogReader`/`EventLog`. |
 | [filewatchutils](src/filewatchutils/README.md) | `FileWatchAutomation` | Coordinates with files produced by other applications: wait for existence/deletion/change/stability/unlock, watch for filesystem events, atomically move/replace/claim files, hash files, and read file metadata. |
+| [interruptutils](src/interruptutils/README.md) | `InterruptAutomation` | Watches for known popups on background threads and dismisses them while the automation is busy (for example during a long wait), by rules on title, message, and process. |
 | [jsonutils](src/jsonutils/README.md) | `JsonAutomation` | Reads, updates, validates, and transforms JSON via real JSONPath, replacing the native Json component's dot-notation-only path support. |
 | [keyboardutils](src/keyboardutils/README.md) | `KeyboardAutomation` | Injects keyboard input via `SendInput`: key presses, combos, typed text, and a clipboard-paste fallback; queries key/modifier state. |
 | [localqueueutils](src/localqueueutils/README.md) | `LocalQueueAutomation` | Persists variable-count local JSON, text, or file work and exposes a designer-friendly lease/process/complete loop without a Pega collection proxy. |
@@ -103,7 +104,7 @@ To build and create everything this repository produces, run from PowerShell:
 The command creates two self-contained archives — one per target framework,
 each holding the complete release:
 
-- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty project DLLs built
+- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-one project DLLs built
   for `net8.0-windows` plus three bundled archives:
   `AwesomeRpaUtils-SupportLibraries.zip` (the three NuGet runtime DLLs needed
   by ServiceUtils, packaged in the flavor matching the enclosing archive's
@@ -111,7 +112,7 @@ each holding the complete release:
   [REST code generator](tools/README.md)), and
   `AwesomeRpaUtils-Documentation.zip` (the documentation bundle described
   below).
-- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty DLLs built
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-one DLLs built
   for `net10.0-windows` with the same three bundled archives (the support
   DLLs in the newest flavor the packages ship, which the .NET 10 runtime
   loads; the .NET 8 runtime only loads the `net8.0` flavor).
@@ -194,6 +195,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [dialogutils/README.md](src/dialogutils/README.md) and [dialogutils/Documentation/](src/dialogutils/Documentation/README.md)
 - [eventlogutils/README.md](src/eventlogutils/README.md) and [eventlogutils/Documentation/](src/eventlogutils/Documentation/README.md)
 - [filewatchutils/README.md](src/filewatchutils/README.md) and [filewatchutils/Documentation/](src/filewatchutils/Documentation/README.md)
+- [interruptutils/README.md](src/interruptutils/README.md) and [interruptutils/Documentation/](src/interruptutils/Documentation/README.md)
 - [jsonutils/README.md](src/jsonutils/README.md) and [jsonutils/Documentation/](src/jsonutils/Documentation/README.md)
 - [keyboardutils/README.md](src/keyboardutils/README.md) and [keyboardutils/Documentation/](src/keyboardutils/Documentation/README.md)
 - [localqueueutils/README.md](src/localqueueutils/README.md) and [localqueueutils/Documentation/](src/localqueueutils/Documentation/README.md)
@@ -270,7 +272,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `WinEventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, and `JsonUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, and `InterruptUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -289,7 +291,9 @@ and
 and
 `dotnet test src/datacontractutils/DataContractUtils.Tests/DataContractUtils.Tests.csproj`,
 and
-`dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj` —
+`dotnet test src/jsonutils/JsonUtils.Tests/JsonUtils.Tests.csproj`,
+and
+`dotnet test src/interruptutils/InterruptUtils.Tests/InterruptUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
