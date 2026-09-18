@@ -77,6 +77,16 @@ mouse.SmoothMoveTo(960, 540, steps: 60, delayMilliseconds: 15, out _); // ~900 m
 mouse.LeftClick(out _);
 ```
 
+`steps` must be at least 1 (and at most 100,000 on its own - see below),
+`delayMilliseconds` zero or positive, and their product (the total glide
+duration) is capped at 60 seconds - values outside these bounds return
+`false` with a message rather than silently clamping to 1 (the previous
+behavior for `steps`) or blocking for an excessive duration. The 100,000
+cap on `steps` alone exists because `delayMilliseconds: 0` makes that
+product zero regardless of how large `steps` is, so the product check alone
+can't catch an oversized step count - even at zero delay, issuing millions
+of move events still takes real, unbounded time.
+
 ## `JiggleMouse(int pixels = 1)`
 
 **Scenario:** An unattended overnight batch job runs for six hours against a

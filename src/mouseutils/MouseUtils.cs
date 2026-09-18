@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -120,6 +121,38 @@ namespace MouseAutomation
         /// <summary>Tracks hide/show calls made through this component (Win32 ShowCursor uses a counter).</summary>
         private bool _cursorHidden;
 
+        /// <summary>The managed thread ID that called <see cref="HideCursor"/>, since Win32's display counter is per-thread.</summary>
+        private int _cursorHiddenThreadId;
+
+        /// <summary>Buttons currently held down via the public, explicitly stateful <see cref="MouseDown"/>/<see cref="MouseUp"/> pair.</summary>
+        private readonly HashSet<MouseButton> _buttonsDown = new HashSet<MouseButton>();
+
+        /// <summary>Whether this instance's <see cref="BlockUserInput"/> call is currently in effect.</summary>
+        private bool _inputBlockedByThisInstance;
+
+        /// <summary>The managed thread ID that called <see cref="BlockUserInput"/>, since only that thread can unblock it.</summary>
+        private int _inputBlockedThreadId;
+
+        /// <summary>The cursor clip rectangle to restore on <see cref="ReleaseCursorClip"/>/Dispose - see <see cref="ClipCursor"/> for how/when this is (re)captured.</summary>
+        private RECT? _previousClipRect;
+
+        /// <summary>The clip rectangle this instance itself most recently applied via <see cref="ClipCursor"/>, used to detect whether another actor has changed the clip since - see <see cref="ClipCursor"/>.</summary>
+        private RECT? _lastAppliedClipRect;
+
+        /// <summary>
+        /// The cursor originally in each system cursor slot this instance has replaced,
+        /// keyed by slot - see <see cref="TryApplySystemCursor"/> for how/when each entry
+        /// is captured.
+        /// </summary>
+        private readonly Dictionary<SystemCursorType, IntPtr> _originalCursorHandlesBySlot = new Dictionary<SystemCursorType, IntPtr>();
+
+        /// <summary>
+        /// The handle this instance itself most recently installed into each system
+        /// cursor slot, used to detect whether another actor has replaced it since -
+        /// see <see cref="TryApplySystemCursor"/>.
+        /// </summary>
+        private readonly Dictionary<SystemCursorType, IntPtr> _lastAppliedCursorHandleBySlot = new Dictionary<SystemCursorType, IntPtr>();
+
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
         /// </summary>
@@ -137,23 +170,89 @@ namespace MouseAutomation
         }
 
         /// <summary>
-        /// Releases the resources used by the component and detaches it from its container.
-        /// MouseUtils holds no unmanaged handles (<c>SetCursorPos</c> / <c>SendInput</c> /
-        /// <c>GetAsyncKeyState</c> are all stateless Win32 calls), so there is nothing extra
-        /// to release here - this override follows the standard component pattern and gives
-        /// you a cleanup hook (e.g. if you later add a global mouse hook or polling timer,
-        /// unhook/stop it below). Runs automatically when Pega Robot Studio tears down the
+        /// Releases the resources used by the component, best-effort cleans up every
+        /// piece of state this component can leave behind across calls, and detaches it
+        /// from its container. Runs automatically when Pega Robot Studio tears down the
         /// automation's design-surface components.
         /// </summary>
         /// <param name="disposing">
         /// True when called from the public Dispose() method during teardown;
         /// false when called from the finalizer.
         /// </param>
+        /// <remarks>
+        /// Cleans up: buttons left down via the public, explicitly stateful
+        /// <see cref="MouseDown"/>/<see cref="MouseUp"/> pair (every compound click/drag
+        /// method elsewhere in this class already guarantees its own release via a
+        /// <c>finally</c> block, so this only ever needs to cover a <see cref="MouseDown"/>
+        /// caller that never reached a matching <see cref="MouseUp"/>); a
+        /// <see cref="BlockUserInput"/> block and a <see cref="HideCursor"/> hide, each
+        /// only when disposing on the same thread that acquired them (Win32's
+        /// <c>BlockInput</c>/<c>ShowCursor</c> are both thread-affine - disposing on a
+        /// different thread cannot rebalance either one, and this is a real, documented
+        /// limitation rather than something this method can fully solve); a
+        /// <see cref="ClipCursor"/> confinement, restoring the exact rectangle that was
+        /// in effect before it; and every system cursor slot replaced via
+        /// <see cref="SetCursor"/>/<see cref="ReplaceSystemCursor"/>/<see cref="SetCursorFromFile"/>,
+        /// restoring each slot's own original rather than the broader
+        /// <see cref="ResetSystemCursors"/> reset (which could overwrite an unrelated
+        /// concurrent change by the user or another process). Every step here is
+        /// deliberately best-effort - there is no way to report a cleanup failure from
+        /// <c>Dispose</c>, so a failure to clean up one piece of state must never stop
+        /// the rest from being attempted.
+        /// </remarks>
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                // No managed or unmanaged resources to release.
+                foreach (MouseButton button in _buttonsDown.ToArray())
+                {
+                    // Only stop tracking a button once its release actually succeeds - a
+                    // transient failure here shouldn't discard the only record of it still
+                    // being held, since that record is what a second Dispose call (or, for
+                    // process-exit cleanup paths that retry, a later attempt) would need.
+                    try
+                    {
+                        if (TrySendMouseButton(button, false, out _))
+                            _buttonsDown.Remove(button);
+                    }
+                    catch { /* best-effort */ }
+                }
+
+                if (_inputBlockedByThisInstance && Environment.CurrentManagedThreadId == _inputBlockedThreadId)
+                {
+                    try { BlockInputNative(false); } catch { /* best-effort */ }
+                    _inputBlockedByThisInstance = false;
+                }
+
+                if (_cursorHidden && Environment.CurrentManagedThreadId == _cursorHiddenThreadId)
+                {
+                    try { ShowCursorNative(true); } catch { /* best-effort */ }
+                    _cursorHidden = false;
+                }
+
+                if (_previousClipRect is RECT previousClip)
+                {
+                    try
+                    {
+                        // Same ownership check as ReleaseCursorClip - only restore when we
+                        // can positively confirm the clip still matches what this instance
+                        // itself last applied. Fails closed: if GetClipCursor itself fails,
+                        // or the clip has since changed, skip the restore rather than
+                        // stomping state we can't verify is still ours.
+                        if (GetClipCursor(out RECT current) &&
+                            _lastAppliedClipRect is RECT lastApplied &&
+                            current.Equals(lastApplied))
+                        {
+                            RECT rc = previousClip;
+                            ClipCursorRect(ref rc);
+                        }
+                    }
+                    catch { /* best-effort */ }
+                    _previousClipRect = null;
+                    _lastAppliedClipRect = null;
+                }
+
+                ForgetSavedSystemCursors(restore: true);
             }
 
             // Base Component.Dispose detaches this component from its container's site.
@@ -358,10 +457,10 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <param name="steps">Number of intermediate move events; values below 1 are treated as 1.</param>
-        /// <param name="delayMilliseconds">Delay between steps in milliseconds; 0 moves without pausing.</param>
+        /// <param name="steps">Number of intermediate move events. Must be at least 1.</param>
+        /// <param name="delayMilliseconds">Delay between steps in milliseconds; 0 moves without pausing. Must be zero or positive.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="steps"/> is below 1, <paramref name="delayMilliseconds"/> is negative, their total blocking duration exceeds 60 seconds, or a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Position")]
         [Description("Smoothly moves the cursor to the target position using the given number of steps and delay between steps. Returns True on success; never throws.")]
         public bool SmoothMoveTo(int x, int y, int steps, int delayMilliseconds, out string message)
@@ -369,7 +468,8 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (steps < 1) steps = 1;
+                if (!ValidateStepsAndDelay(steps, delayMilliseconds, out message))
+                    return false;
 
                 if (!TryGetPoint(out POINT start, out message))
                     return false;
@@ -398,8 +498,8 @@ namespace MouseAutomation
         /// position unchanged but generating real mouse-move input.
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the nudge failed.</param>
-        /// <param name="pixels">Distance to nudge in each direction; values below 1 are treated as 1.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call failed. Never throws.</returns>
+        /// <param name="pixels">Distance to nudge in each direction. Must be at least 1.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="pixels"/> is below 1 or a Win32 cursor call failed. Never throws.</returns>
         /// <remarks>
         /// Intended to be called periodically (e.g. from a Robot Studio loop) during a
         /// long unattended run to reset idle timers and prevent the screen from locking
@@ -416,7 +516,11 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (pixels < 1) pixels = 1;
+                if (pixels < 1)
+                {
+                    message = "pixels must be at least 1.";
+                    return false;
+                }
                 if (!TryGetPoint(out POINT original, out message))
                     return false;
                 if (!MoveBy(pixels, 0, out message))
@@ -621,6 +725,17 @@ namespace MouseAutomation
         public bool RightClickAt(int x, int y, out string message) => ClickAt(x, y, MouseButton.Right, out message);
 
         /// <summary>
+        /// Middle-clicks at the given screen coordinates.
+        /// </summary>
+        /// <param name="x">Target X coordinate in screen pixels.</param>
+        /// <param name="y">Target Y coordinate in screen pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        [Category("Mouse - Click")]
+        [Description("Middle-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool MiddleClickAt(int x, int y, out string message) => ClickAt(x, y, MouseButton.Middle, out message);
+
+        /// <summary>
         /// Double left-clicks at the current cursor position.
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
@@ -639,6 +754,15 @@ namespace MouseAutomation
         public bool RightDoubleClick(out string message) => DoubleClick(MouseButton.Right, out message);
 
         /// <summary>
+        /// Double middle-clicks at the current cursor position.
+        /// </summary>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        [Category("Mouse - Click")]
+        [Description("Double middle-clicks at the current cursor position. Returns True on success; never throws.")]
+        public bool MiddleDoubleClick(out string message) => DoubleClick(MouseButton.Middle, out message);
+
+        /// <summary>
         /// Double left-clicks at the given screen coordinates.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
@@ -650,11 +774,41 @@ namespace MouseAutomation
         public bool LeftDoubleClickAt(int x, int y, out string message) => DoubleClickAt(x, y, MouseButton.Left, out message);
 
         /// <summary>
+        /// Double right-clicks at the given screen coordinates.
+        /// </summary>
+        /// <param name="x">Target X coordinate in screen pixels.</param>
+        /// <param name="y">Target Y coordinate in screen pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        [Category("Mouse - Click")]
+        [Description("Double right-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool RightDoubleClickAt(int x, int y, out string message) => DoubleClickAt(x, y, MouseButton.Right, out message);
+
+        /// <summary>
+        /// Double middle-clicks at the given screen coordinates.
+        /// </summary>
+        /// <param name="x">Target X coordinate in screen pixels.</param>
+        /// <param name="y">Target Y coordinate in screen pixels.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        [Category("Mouse - Click")]
+        [Description("Double middle-clicks at the given screen coordinates. Returns True on success; never throws.")]
+        public bool MiddleDoubleClickAt(int x, int y, out string message) => DoubleClickAt(x, y, MouseButton.Middle, out message);
+
+        /// <summary>
         /// Presses and holds the given mouse button. Pair with <see cref="MouseUp"/>.
         /// </summary>
         /// <param name="button">The mouse button to press.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the press failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection. Never throws.</returns>
+        /// <remarks>
+        /// This is the one method in this class that is intentionally stateful across
+        /// separate calls - the caller owns the matching <see cref="MouseUp"/>, unlike
+        /// every click/drag method elsewhere in this class, which always releases what it
+        /// presses before returning. Disposing this component sends a best-effort release
+        /// for any button still held via this method as a backstop, but that should not
+        /// be relied on as the primary cleanup path.
+        /// </remarks>
         [Category("Mouse - Click")]
         [Description("Presses and holds the given mouse button (pair with MouseUp). Returns True on success; never throws.")]
         public bool MouseDown(MouseButton button, out string message)
@@ -662,7 +816,10 @@ namespace MouseAutomation
             message = default;
             try
             {
-                return TrySendMouseButton(button, true, out message);
+                bool ok = TrySendMouseButton(button, true, out message);
+                if (ok)
+                    _buttonsDown.Add(button);
+                return ok;
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -685,7 +842,10 @@ namespace MouseAutomation
             message = default;
             try
             {
-                return TrySendMouseButton(button, false, out message);
+                bool ok = TrySendMouseButton(button, false, out message);
+                if (ok)
+                    _buttonsDown.Remove(button);
+                return ok;
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -699,9 +859,9 @@ namespace MouseAutomation
         /// Holds the given button down for the specified time, then releases it.
         /// </summary>
         /// <param name="button">The mouse button to hold.</param>
-        /// <param name="holdMilliseconds">How long to hold the button; values below 0 are treated as 0.</param>
+        /// <param name="holdMilliseconds">How long to hold the button. Must be zero or positive, and at most <c>60000</c> (60 seconds).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the hold failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, an out-of-range <paramref name="holdMilliseconds"/>, or a failed input injection. Never throws.</returns>
         [Category("Mouse - Click")]
         [Description("Holds the given button down for the specified time, then releases it. Returns True on success; never throws.")]
         public bool ClickAndHold(MouseButton button, int holdMilliseconds, out string message)
@@ -709,6 +869,17 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (holdMilliseconds < 0)
+                {
+                    message = "holdMilliseconds must be zero or positive.";
+                    return false;
+                }
+                if (holdMilliseconds > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"holdMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
+
                 if (!MouseDown(button, out message))
                     return false;
 
@@ -717,7 +888,7 @@ namespace MouseAutomation
                 string cleanupMessage = null;
                 try
                 {
-                    Thread.Sleep(Math.Max(0, holdMilliseconds));
+                    Thread.Sleep(holdMilliseconds);
                     primaryOk = true;
                 }
                 catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -750,7 +921,7 @@ namespace MouseAutomation
         /// <param name="button">The mouse button to click.</param>
         /// <param name="modifiers">Modifier keys to hold during the click; combinable flags.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the click failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection (locked desktop, UAC/secure desktop, or integrity level). Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, an undefined bit set in <paramref name="modifiers"/>, or a failed input injection (locked desktop, UAC/secure desktop, or integrity level). Never throws.</returns>
         /// <remarks>
         /// The click happens at the current cursor position - call <see cref="MoveTo"/> first
         /// to target it. Caveat: Alt+Click activates the menu bar in some classic Win32
@@ -763,6 +934,12 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if ((modifiers & ~AllDefinedModifierKeys) != 0)
+                {
+                    message = $"Undefined ModifierKeys bit(s) set: {modifiers}.";
+                    return false;
+                }
+
                 // Batch 1: press the modifiers and the button down, atomically.
                 List<INPUT> downBatch = new List<INPUT>();
 
@@ -879,10 +1056,10 @@ namespace MouseAutomation
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="button">The mouse button to click.</param>
-        /// <param name="maxAttempts">Maximum number of attempts; values below 1 are treated as 1.</param>
-        /// <param name="retryDelayMilliseconds">Delay between attempts in milliseconds.</param>
+        /// <param name="maxAttempts">Maximum number of attempts. Must be at least 1.</param>
+        /// <param name="retryDelayMilliseconds">Delay between attempts in milliseconds. Must be zero or positive.</param>
         /// <param name="message"><c>null</c> on success; otherwise the last attempt's failure reason.</param>
-        /// <returns><c>true</c> if any attempt succeeded; <c>false</c> if every attempt failed. Never throws.</returns>
+        /// <returns><c>true</c> if any attempt succeeded; <c>false</c> if <paramref name="maxAttempts"/> is below 1 or above 1000, <paramref name="retryDelayMilliseconds"/> is negative, their total blocking duration exceeds 60 seconds, or every attempt failed. Never throws.</returns>
         /// <remarks>
         /// Useful for unattended runs where a momentary UAC flicker or timing hiccup can
         /// cause a single click attempt to fail even though the desktop is otherwise usable.
@@ -894,7 +1071,33 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (maxAttempts < 1) maxAttempts = 1;
+                if (maxAttempts < 1)
+                {
+                    message = "maxAttempts must be at least 1.";
+                    return false;
+                }
+                if (retryDelayMilliseconds < 0)
+                {
+                    message = "retryDelayMilliseconds must be zero or positive.";
+                    return false;
+                }
+                // Independent cap on the attempt count itself - retryDelayMilliseconds = 0
+                // would otherwise make the product check below zero regardless of
+                // maxAttempts, letting a huge attempt count through even though each
+                // attempt still costs real time (a click is not free even at zero delay).
+                if (maxAttempts > MaxRetryAttempts)
+                {
+                    message = $"maxAttempts must be at most {MaxRetryAttempts} - bad wiring should not retry indefinitely even with retryDelayMilliseconds = 0.";
+                    return false;
+                }
+                // long arithmetic: maxAttempts/retryDelayMilliseconds could otherwise
+                // overflow int before this check saw it. Only (maxAttempts - 1) delays
+                // ever actually happen - there's no sleep after the final attempt.
+                if ((long)(maxAttempts - 1) * retryDelayMilliseconds > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"(maxAttempts - 1) * retryDelayMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds total) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
 
                 message = null;
                 for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -905,7 +1108,7 @@ namespace MouseAutomation
                         return true;
                     }
                     if (attempt < maxAttempts)
-                        Thread.Sleep(Math.Max(0, retryDelayMilliseconds));
+                        Thread.Sleep(retryDelayMilliseconds);
                 }
                 return false;
 
@@ -995,6 +1198,12 @@ namespace MouseAutomation
             message = default;
             try
             {
+                // Preflight before any native call - otherwise an invalid steps/delay
+                // pair would only be caught by SmoothMoveTo below, after MoveTo/MouseDown
+                // have already performed a real move and button press at the start point.
+                if (!ValidateStepsAndDelay(steps, stepDelayMilliseconds, out message))
+                    return false;
+
                 if (!MoveTo(startX, startY, out message)) return false;
                 Thread.Sleep(50);
                 if (!MouseDown(MouseButton.Left, out message)) return false;
@@ -1065,7 +1274,7 @@ namespace MouseAutomation
         /// <param name="steps">Number of intermediate move events during the drag.</param>
         /// <param name="stepDelayMilliseconds">Delay between drag steps in milliseconds.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if an undefined bit is set in <paramref name="modifiers"/>, or a Win32 cursor call or input injection failed. Never throws.</returns>
         /// <remarks>
         /// Modifier keys are always released in a <c>finally</c> block, so a failed drag
         /// never leaves Ctrl/Shift/Alt stuck down. If that release itself fails, this
@@ -1080,6 +1289,17 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if ((modifiers & ~AllDefinedModifierKeys) != 0)
+                {
+                    message = $"Undefined ModifierKeys bit(s) set: {modifiers}.";
+                    return false;
+                }
+                // Preflight before any native call - DragAndDrop below validates steps/
+                // stepDelayMilliseconds too, but only after this method has already sent
+                // the modifier-key-down batch, which is too late.
+                if (!ValidateStepsAndDelay(steps, stepDelayMilliseconds, out message))
+                    return false;
+
                 List<INPUT> downBatch = new List<INPUT>();
                 if ((modifiers & ModifierKeys.Control) != 0) downBatch.Add(MakeKeyInput(VK_CONTROL, false));
                 if ((modifiers & ModifierKeys.Shift) != 0) downBatch.Add(MakeKeyInput(VK_SHIFT, false));
@@ -1127,9 +1347,9 @@ namespace MouseAutomation
         /// <param name="startY">Drag start Y coordinate in screen pixels.</param>
         /// <param name="endX">Drag end X coordinate in screen pixels.</param>
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
-        /// <param name="holdMilliseconds">How long to hold the button at the destination before releasing; values below 0 are treated as 0.</param>
+        /// <param name="holdMilliseconds">How long to hold the button at the destination before releasing. Must be zero or positive, and at most <c>60000</c> (60 seconds).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="holdMilliseconds"/> is out of range or a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Drag")]
         [Description("Drags from start to end, then holds the button down at the destination before releasing (for hover-to-expand drop targets). Returns True on success; never throws.")]
         public bool DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds, out string message)
@@ -1137,6 +1357,17 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (holdMilliseconds < 0)
+                {
+                    message = "holdMilliseconds must be zero or positive.";
+                    return false;
+                }
+                if (holdMilliseconds > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"holdMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
+
                 if (!MoveTo(startX, startY, out message)) return false;
                 Thread.Sleep(50);
                 if (!MouseDown(MouseButton.Left, out message)) return false;
@@ -1149,7 +1380,7 @@ namespace MouseAutomation
                     Thread.Sleep(50);
                     primaryOk = SmoothMoveTo(endX, endY, 30, 10, out primaryMessage);
                     if (primaryOk)
-                        Thread.Sleep(Math.Max(0, holdMilliseconds));
+                        Thread.Sleep(holdMilliseconds);
                 }
                 finally
                 {
@@ -1205,12 +1436,20 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls up the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
+        /// <param name="notches">Number of notches. Must be zero or positive; the value is clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="notches"/> is negative or input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls up the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollUp(int notches, out string message) => Scroll(WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
+        public bool ScrollUp(int notches, out string message)
+        {
+            if (notches < 0)
+            {
+                message = "notches must be zero or positive.";
+                return false;
+            }
+            return Scroll(WHEEL_DELTA * ClampNotches(notches), out message);
+        }
 
         /// <summary>
         /// Scrolls down one wheel notch.
@@ -1224,12 +1463,20 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls down the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
+        /// <param name="notches">Number of notches. Must be zero or positive; the value is clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="notches"/> is negative or input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls down the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollDown(int notches, out string message) => Scroll(-WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
+        public bool ScrollDown(int notches, out string message)
+        {
+            if (notches < 0)
+            {
+                message = "notches must be zero or positive.";
+                return false;
+            }
+            return Scroll(-WHEEL_DELTA * ClampNotches(notches), out message);
+        }
 
         /// <summary>
         /// Scrolls horizontally at the current cursor position.
@@ -1266,12 +1513,20 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls right the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
+        /// <param name="notches">Number of notches. Must be zero or positive; the value is clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="notches"/> is negative or input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls right the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollRight(int notches, out string message) => ScrollHorizontal(WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
+        public bool ScrollRight(int notches, out string message)
+        {
+            if (notches < 0)
+            {
+                message = "notches must be zero or positive.";
+                return false;
+            }
+            return ScrollHorizontal(WHEEL_DELTA * ClampNotches(notches), out message);
+        }
 
         /// <summary>
         /// Scrolls left one wheel notch.
@@ -1285,35 +1540,125 @@ namespace MouseAutomation
         /// <summary>
         /// Scrolls left the given number of wheel notches.
         /// </summary>
-        /// <param name="notches">Number of notches; the absolute value is used, clamped so the delta cannot overflow.</param>
+        /// <param name="notches">Number of notches. Must be zero or positive; the value is clamped so the delta cannot overflow.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="notches"/> is negative or input injection failed. Never throws.</returns>
         [Category("Mouse - Wheel")]
         [Description("Scrolls left the given number of wheel notches. Returns True on success; never throws.")]
-        public bool ScrollLeft(int notches, out string message) => ScrollHorizontal(-WHEEL_DELTA * Math.Abs(ClampNotches(notches)), out message);
+        public bool ScrollLeft(int notches, out string message)
+        {
+            if (notches < 0)
+            {
+                message = "notches must be zero or positive.";
+                return false;
+            }
+            return ScrollHorizontal(-WHEEL_DELTA * ClampNotches(notches), out message);
+        }
 
         /// <summary>
-        /// Moves the cursor to the coordinates and scrolls horizontally there. Wheel
-        /// messages go to the window under the cursor, so this targets the control that
-        /// actually receives the scroll.
+        /// Moves the cursor to the coordinates, scrolls vertically there, then returns
+        /// the cursor to its original position - the vertical counterpart to
+        /// <see cref="ScrollHorizontalAt"/>. Wheel messages go to the window under the
+        /// cursor, so this targets the control that actually receives the scroll.
+        /// </summary>
+        /// <param name="x">Target X coordinate in screen pixels.</param>
+        /// <param name="y">Target Y coordinate in screen pixels.</param>
+        /// <param name="wheelDelta">Scroll amount; positive scrolls up, negative scrolls down. 120 = one wheel notch.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if the cursor could not be restored afterward, or a Win32 cursor call/input injection failed. Never throws.</returns>
+        [Category("Mouse - Wheel")]
+        [Description("Moves the cursor to the coordinates, scrolls vertically there, then restores the cursor's original position (positive = up, negative = down; 120 = one notch). Returns True on success; never throws.")]
+        public bool ScrollAt(int x, int y, int wheelDelta, out string message)
+        {
+            message = default;
+            try
+            {
+                if (!TryGetPoint(out POINT original, out message))
+                    return false;
+
+                bool moved;
+                bool scrolled = false;
+                string failureMessage = null;
+                bool restored = true;
+                try
+                {
+                    moved = MoveTo(x, y, out failureMessage);
+                    if (moved)
+                    {
+                        Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
+                        scrolled = Scroll(wheelDelta, out failureMessage);
+                    }
+                }
+                finally
+                {
+                    restored = SetCursorPos(original.X, original.Y);
+                }
+
+                if (!restored)
+                {
+                    message = "The cursor could not be restored to its original position after the scroll attempt.";
+                    return false;
+                }
+
+                message = scrolled ? null : failureMessage;
+                return scrolled;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("ScrollAt", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Moves the cursor to the coordinates, scrolls horizontally there, then
+        /// returns the cursor to its original position. Wheel messages go to the
+        /// window under the cursor, so this targets the control that actually
+        /// receives the scroll.
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
         /// <param name="wheelDelta">Scroll amount; positive scrolls right, negative scrolls left. 120 = one notch.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the scroll failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if the cursor could not be restored afterward, or a Win32 cursor call/input injection failed. Never throws.</returns>
         /// <remarks>Some applications invert or ignore horizontal wheel input.</remarks>
         [Category("Mouse - Wheel")]
-        [Description("Moves the cursor to the coordinates and scrolls horizontally there (positive = right, negative = left; 120 = one notch). Returns True on success; never throws.")]
+        [Description("Moves the cursor to the coordinates, scrolls horizontally there, then restores the cursor's original position (positive = right, negative = left; 120 = one notch). Returns True on success; never throws.")]
         public bool ScrollHorizontalAt(int x, int y, int wheelDelta, out string message)
         {
             message = default;
             try
             {
-                if (!MoveTo(x, y, out message))
+                if (!TryGetPoint(out POINT original, out message))
                     return false;
-                Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
-                return ScrollHorizontal(wheelDelta, out message);
+
+                bool moved;
+                bool scrolled = false;
+                string failureMessage = null;
+                bool restored = true;
+                try
+                {
+                    moved = MoveTo(x, y, out failureMessage);
+                    if (moved)
+                    {
+                        Thread.Sleep(50); // let hover state land on the target before the wheel event arrives
+                        scrolled = ScrollHorizontal(wheelDelta, out failureMessage);
+                    }
+                }
+                finally
+                {
+                    restored = SetCursorPos(original.X, original.Y);
+                }
+
+                if (!restored)
+                {
+                    message = "The cursor could not be restored to its original position after the scroll attempt.";
+                    return false;
+                }
+
+                message = scrolled ? null : failureMessage;
+                return scrolled;
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -1341,7 +1686,10 @@ namespace MouseAutomation
         /// the user signs out, or another process changes it. Applications that explicitly
         /// set their own cursor over their windows will override this for those windows.
         /// Always call <see cref="ResetSystemCursors"/> when your automation finishes
-        /// (ideally in a Finally block) so the user's cursors are restored.
+        /// (ideally in a Finally block) so the user's cursors are restored; disposing this
+        /// component also restores each slot it touched (to what was there immediately
+        /// before, not necessarily the Windows default) as a backstop, but that should not
+        /// be relied on as the primary cleanup path.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Changes the normal arrow cursor to the given system cursor (e.g. Wait while the automation runs). Call ResetSystemCursors afterwards. Returns True on success; never throws.")]
@@ -1462,6 +1810,11 @@ namespace MouseAutomation
                     message = new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETCURSORS) failed.").Message;
                     return false;
                 }
+                // Every cursor is already back to the configured Windows defaults, so this
+                // instance's own per-slot originals (see TryApplySystemCursor) are now
+                // stale - discard them rather than let Dispose re-apply an outdated saved
+                // cursor over this fresh reset, and free the owned handles.
+                ForgetSavedSystemCursors();
                 message = null;
                 return true;
 
@@ -1483,6 +1836,9 @@ namespace MouseAutomation
         /// <see cref="ShowCursor"/> call must be made on the same thread that hid the
         /// cursor (typically the automation's main thread). If another application hides
         /// the cursor independently, use <see cref="IsCursorVisible"/> only as an approximation.
+        /// Disposing this component on that same thread also attempts a rebalancing
+        /// <c>ShowCursor</c> call as a backstop, but that should not be relied on as the
+        /// primary cleanup path - disposing on a different thread cannot rebalance it at all.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Hides the cursor. Counterbalanced by ShowCursor.")]
@@ -1492,6 +1848,7 @@ namespace MouseAutomation
             {
                 ShowCursorNative(false);
                 _cursorHidden = true;
+                _cursorHiddenThreadId = Environment.CurrentManagedThreadId;
             }
         }
 
@@ -1538,7 +1895,14 @@ namespace MouseAutomation
         /// <remarks>
         /// Useful for demos/kiosks or to keep a script's clicks inside one monitor.
         /// The clip is released automatically by Windows when the session locks, but
-        /// always pair with <see cref="ReleaseCursorClip"/> (ideally in a Finally block).
+        /// always pair with <see cref="ReleaseCursorClip"/> (ideally in a Finally block);
+        /// disposing this component also restores the clip that was in effect before this
+        /// call as a backstop, but that should not be relied on as the primary cleanup path.
+        /// Calling this again before releasing (re-clipping) does not lose track of the
+        /// true original clip - but if another actor changes the clip in between two calls
+        /// from this instance, that intervening change is treated as the new state to hand
+        /// back on release, rather than being silently overwritten by this instance's own
+        /// older, now-stale record.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Confines the cursor to the given screen rectangle until ReleaseCursorClip is called. Returns True on success; never throws.")]
@@ -1553,12 +1917,39 @@ namespace MouseAutomation
                     return false;
                 }
 
+                // Save whatever clip was in effect before this call - GetClipCursor
+                // reports the full virtual screen when nothing is explicitly clipped,
+                // so this uniformly captures "no clip" too - so ReleaseCursorClip/Dispose
+                // can restore it precisely instead of always clearing to "no clip",
+                // which could stomp a clip another app (or another instance of this
+                // component) legitimately owns.
+                //
+                // Only re-capture when the current clip is NOT what this instance itself
+                // last applied - two different reasons that can be true:
+                //  - First call ever (_lastAppliedClipRect is null): always capture.
+                //  - Re-clipping without releasing first, and nothing else touched the
+                //    clip in between: current == _lastAppliedClipRect, so this is still
+                //    this instance's own prior clip, not the real original - skip, so a
+                //    second ClipCursor call can't clobber the true original with its own
+                //    intermediate state.
+                //  - Re-clipping, but another actor changed the clip in between: current
+                //    != _lastAppliedClipRect, so whatever they set is the new state this
+                //    instance should hand control back to on release - capture it, so
+                //    this instance's eventual release doesn't overwrite their change with
+                //    a now-stale rectangle from before this instance ever ran.
+                if (GetClipCursor(out RECT current) &&
+                    (_lastAppliedClipRect == null || !current.Equals(_lastAppliedClipRect.Value)))
+                {
+                    _previousClipRect = current;
+                }
+
                 RECT rc = new RECT { Left = left, Top = top, Right = right, Bottom = bottom };
                 if (!ClipCursorRect(ref rc))
                 {
                     message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor failed.").Message;
                     return false;
                 }
+                _lastAppliedClipRect = rc;
                 message = null;
                 return true;
 
@@ -1576,18 +1967,68 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the release failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the ClipCursor call failed. Never throws.</returns>
+        /// <remarks>
+        /// Restores whatever clip (or lack of one) was in effect immediately before this
+        /// instance's last <see cref="ClipCursor"/> call, rather than unconditionally
+        /// clearing to "no clip" - the latter would also clear a clip another app or
+        /// another instance of this component legitimately owns. Falls back to clearing
+        /// to "no clip" only when this instance never called <see cref="ClipCursor"/>. Also
+        /// checks, immediately before restoring, whether the active clip still matches
+        /// what this instance itself last applied - if another actor has changed it since
+        /// (another app, or another <see cref="ClipCursor"/> call on this or another
+        /// instance), this leaves their clip alone instead of overwriting it with a now-stale
+        /// rectangle. That check only covers the moment this method runs, though: it cannot
+        /// detect a change that happens between the check and the underlying Win32 call, nor
+        /// can it distinguish "restored to what was captured" from "another actor happened to
+        /// set the identical rectangle" - so this reduces, but does not eliminate, the window
+        /// for clobbering another actor's clip.
+        /// </remarks>
         [Category("Mouse - Cursor")]
-        [Description("Removes cursor confinement set by ClipCursor. Returns True on success; never throws.")]
+        [Description("Removes cursor confinement set by ClipCursor, restoring whatever clip was in effect before it. Returns True on success; never throws.")]
         public bool ReleaseCursorClip(out string message)
         {
             message = default;
             try
             {
-                if (!ClipCursorNull(IntPtr.Zero))
+                bool ok;
+                if (_previousClipRect is RECT previous)
                 {
-                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor(NULL) failed.").Message;
+                    // Mirror ClipCursor's own ownership check: only restore the saved
+                    // rectangle if the clip is still what this instance itself last
+                    // applied. If it isn't, another actor (another app, or another
+                    // ClipCursor call on this or another instance) has since taken over
+                    // the clip, and restoring our stale rectangle would stomp their
+                    // change instead of releasing something we actually own. Fails
+                    // closed: if the ownership query itself fails, skip the restore
+                    // rather than applying stale state we can't confirm is still ours.
+                    if (!GetClipCursor(out RECT current))
+                    {
+                        message = new Win32Exception(Marshal.GetLastWin32Error(), "GetClipCursor failed while checking clip ownership before release.").Message;
+                        return false;
+                    }
+
+                    if (_lastAppliedClipRect is RECT lastApplied && !current.Equals(lastApplied))
+                    {
+                        ok = true;
+                    }
+                    else
+                    {
+                        RECT rc = previous;
+                        ok = ClipCursorRect(ref rc);
+                    }
+                }
+                else
+                {
+                    ok = ClipCursorNull(IntPtr.Zero);
+                }
+
+                if (!ok)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor failed while releasing the clip.").Message;
                     return false;
                 }
+                _previousClipRect = null;
+                _lastAppliedClipRect = null;
                 message = null;
                 return true;
 
@@ -1871,6 +2312,9 @@ namespace MouseAutomation
         /// Rules of engagement:
         ///  - ALWAYS pair with <see cref="UnblockUserInput"/> in a Finally block. Only the
         ///    thread that blocked can unblock; a stranded block means no working input.
+        ///    Disposing this component on that same thread also attempts an unblock as a
+        ///    backstop, but that should not be relied on as the primary cleanup path -
+        ///    disposing on a different thread cannot rebalance it at all.
         ///  - Ctrl+Alt+Del always breaks the block (a Windows safety hatch).
         ///  - If this process exits while blocked, Windows releases the block with the thread.
         ///  - Requires an interactive desktop; fails on the secure desktop and against
@@ -1890,6 +2334,8 @@ namespace MouseAutomation
                     message = "BlockInput was refused - input is already blocked, or the desktop is secure/locked.";
                     return false;
                 }
+                _inputBlockedByThisInstance = true;
+                _inputBlockedThreadId = Environment.CurrentManagedThreadId;
                 message = null;
                 return true;
 
@@ -1913,6 +2359,15 @@ namespace MouseAutomation
             // BlockInput(false) returns False when nothing is blocked; that is not an
             // error for cleanup purposes, so the result is deliberately ignored.
             BlockInputNative(false);
+
+            // BlockInput's block is thread-affine - only the thread that set it can
+            // clear it - so calling this from a different thread leaves the real block
+            // untouched even though the native call above returns. Clearing the tracked
+            // state unconditionally would make Dispose's own backstop skip its cleanup
+            // attempt later (on the thread that actually could still fix it), leaving
+            // input blocked with no remaining way to recover it.
+            if (Environment.CurrentManagedThreadId == _inputBlockedThreadId)
+                _inputBlockedByThisInstance = false;
         }
 
         #endregion
@@ -2599,10 +3054,10 @@ namespace MouseAutomation
         /// twice erases it exactly (no permanent pixels left behind). All GDI objects
         /// and the DC are restored/released in a <c>finally</c> block.
         /// </summary>
-        /// <param name="radius">Ring radius in pixels (default 30).</param>
-        /// <param name="flashes">Number of on/off flashes (default 3).</param>
-        /// <param name="flashMs">Milliseconds each flash stays visible (default 200).</param>
-        /// <param name="ringWidth">Pen width in pixels (default 3).</param>
+        /// <param name="radius">Ring radius in pixels (default 30). Must be at least 1.</param>
+        /// <param name="flashes">Number of on/off flashes (default 3). Must be at least 1.</param>
+        /// <param name="flashMs">Milliseconds each flash stays visible (default 200). Must be at least 1.</param>
+        /// <param name="ringWidth">Pen width in pixels (default 3). Must be at least 1.</param>
         /// <param name="colorRef">
         /// RGB color for the ring as a 0xBBGGRR value (e.g. 0x0000FF = red).
         /// Because the ring uses XOR drawing, the visible color depends on what is
@@ -2616,6 +3071,7 @@ namespace MouseAutomation
         ///  - The XOR blend means the apparent color varies by background.
         /// </remarks>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the highlight failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="radius"/>/<paramref name="flashes"/>/<paramref name="flashMs"/>/<paramref name="ringWidth"/> is below 1, their total blocking duration exceeds 60 seconds, or a GDI/cursor call failed. Never throws.</returns>
         [Category("Mouse - Highlight")]
         [Description("Flashes an inverting ring around the cursor for demos/recordings. Erases itself exactly via XOR drawing. Returns True on success; never throws.")]
         public bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)
@@ -2623,10 +3079,41 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (radius < 1) radius = 1;
-                if (flashes < 1) flashes = 1;
-                if (flashMs < 1) flashMs = 1;
-                if (ringWidth < 1) ringWidth = 1;
+                if (radius < 1)
+                {
+                    message = "radius must be at least 1.";
+                    return false;
+                }
+                if (flashes < 1)
+                {
+                    message = "flashes must be at least 1.";
+                    return false;
+                }
+                if (flashMs < 1)
+                {
+                    message = "flashMs must be at least 1.";
+                    return false;
+                }
+                if (ringWidth < 1)
+                {
+                    message = "ringWidth must be at least 1.";
+                    return false;
+                }
+                // Each flash sleeps once while visible (flashMs) and, for every flash but
+                // the last, once more while hidden before the next one - (2*flashes - 1)
+                // sleeps of flashMs each, not flashes*flashMs (which would undercount the
+                // real blocking duration by nearly half for a large flash count). double
+                // arithmetic here, not long: flashes/flashMs are each already bounded
+                // below by 1 but not above, and even long could theoretically overflow if
+                // both were near int.MaxValue simultaneously - double's far larger range
+                // makes that impossible, and losing precision doesn't matter for a
+                // greater-than comparison against a small threshold.
+                double totalFlashMs = (2.0 * flashes - 1) * flashMs;
+                if (totalFlashMs > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"The total flash duration ((2 * flashes - 1) * flashMs) must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
 
                 if (!TryGetPhysicalPoint(out POINT pos, out message))
                     return false;
@@ -2712,7 +3199,7 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
+        /// <param name="durationMs">Total movement time in milliseconds (default 500). Must be at least 1, and at most <c>60000</c> (60 seconds).</param>
         /// <remarks>
         /// The curve, timing, and jitter vary on every call, so repeated movements to
         /// the same target do not look identical — useful for anti-detection and for
@@ -2720,6 +3207,7 @@ namespace MouseAutomation
         /// jitter on the final step), so the click lands precisely where intended.
         /// </remarks>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="durationMs"/> is out of range or a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Movement")]
         [Description("Moves the cursor to the target along a randomized Bezier curve with ease-in-out timing (human-like). Returns True on success; never throws.")]
         public bool MoveMouseBezier(int x, int y, out string message, int durationMs = 500)
@@ -2727,7 +3215,16 @@ namespace MouseAutomation
             message = default;
             try
             {
-                if (durationMs < 1) durationMs = 1;
+                if (durationMs < 1)
+                {
+                    message = "durationMs must be at least 1.";
+                    return false;
+                }
+                if (durationMs > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"durationMs must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
 
                 if (!TryGetPoint(out POINT start, out message))
                     return false;
@@ -2874,7 +3371,7 @@ namespace MouseAutomation
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
         /// <param name="durationMs">Total movement time in milliseconds (default 500).</param>
-        /// <returns><c>true</c> on success; <c>false</c> if a Win32 cursor call or input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="durationMs"/> is below 1 or above 60000, or a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Movement")]
         [Description("Performs a left-button drag along a randomized Bezier curve instead of a straight line - the human-like counterpart to DragAndDrop. Returns True on success; never throws.")]
         public bool BezierDragAndDrop(int startX, int startY, int endX, int endY, out string message, int durationMs = 500)
@@ -2882,6 +3379,20 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (durationMs < 1)
+                {
+                    message = "durationMs must be at least 1.";
+                    return false;
+                }
+                // Preflight the upper bound too - otherwise MoveMouseBezier below is the
+                // only thing that catches it, after MoveTo/MouseDown have already
+                // performed a real move and button press at the start point.
+                if (durationMs > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"durationMs must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
+
                 if (!MoveTo(startX, startY, out message)) return false;
                 Thread.Sleep(50);
                 if (!MouseDown(MouseButton.Left, out message)) return false;
@@ -2980,10 +3491,10 @@ namespace MouseAutomation
         /// <param name="x">X coordinate in screen pixels.</param>
         /// <param name="y">Y coordinate in screen pixels.</param>
         /// <param name="expectedColorRef">The color to wait for, as a 0x00BBGGRR COLORREF (see <see cref="GetPixelColor"/>).</param>
-        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds. Must be zero or positive, and at most <c>1800000</c> (30 minutes).</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="message"><c>null</c> if the poll completed (matched or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
-        /// <returns><c>true</c> if the pixel matched before the timeout; <c>false</c> if it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <param name="message"><c>null</c> if the poll completed (matched or genuinely timed out); otherwise a human-readable reason <paramref name="timeoutMs"/> was invalid, or a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the pixel matched before the timeout; <c>false</c> if <paramref name="timeoutMs"/> is negative or too large, it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("Mouse - Verification")]
         [Description("Polls a screen pixel until it matches the expected COLORREF or the timeout elapses. Returns True if it matched in time; never throws.")]
         public bool WaitForPixelColor(int x, int y, int expectedColorRef, int timeoutMs, int pollIntervalMs, out string message)
@@ -2991,6 +3502,16 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be zero or positive.";
+                    return false;
+                }
+                if (timeoutMs > MaxWaitTimeoutMilliseconds)
+                {
+                    message = $"timeoutMs must be at most {MaxWaitTimeoutMilliseconds} (30 minutes) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
                 if (pollIntervalMs < 1) pollIntervalMs = 1;
 
                 int start = Environment.TickCount;
@@ -3003,12 +3524,17 @@ namespace MouseAutomation
                         message = null;
                         return true;
                     }
-                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    int elapsed = unchecked(Environment.TickCount - start);
+                    if (elapsed >= timeoutMs)
                     {
                         message = null;
                         return false;
                     }
-                    Thread.Sleep(pollIntervalMs);
+                    // Clamp to the remaining time, not the raw poll interval - an
+                    // oversized pollIntervalMs (up to int.MaxValue, ~24.8 days) would
+                    // otherwise sleep straight through the 30-minute cap above before
+                    // ever re-checking the deadline, defeating the whole point of it.
+                    Thread.Sleep(Math.Min(pollIntervalMs, timeoutMs - elapsed));
                 }
 
             }
@@ -3025,10 +3551,10 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">X coordinate in screen pixels.</param>
         /// <param name="y">Y coordinate in screen pixels.</param>
-        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds. Must be zero or positive, and at most <c>1800000</c> (30 minutes).</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="message"><c>null</c> if the poll completed (changed or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
-        /// <returns><c>true</c> if the pixel changed before the timeout; <c>false</c> if it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <param name="message"><c>null</c> if the poll completed (changed or genuinely timed out); otherwise a human-readable reason <paramref name="timeoutMs"/> was invalid, or a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the pixel changed before the timeout; <c>false</c> if <paramref name="timeoutMs"/> is negative or too large, it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("Mouse - Verification")]
         [Description("Polls a screen pixel until its color changes from its value at call time, or the timeout elapses. Returns True if it changed in time; never throws.")]
         public bool WaitForPixelChange(int x, int y, int timeoutMs, int pollIntervalMs, out string message)
@@ -3036,6 +3562,16 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be zero or positive.";
+                    return false;
+                }
+                if (timeoutMs > MaxWaitTimeoutMilliseconds)
+                {
+                    message = $"timeoutMs must be at most {MaxWaitTimeoutMilliseconds} (30 minutes) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
                 if (pollIntervalMs < 1) pollIntervalMs = 1;
 
                 if (!GetPixelColor(x, y, out int baseline, out message))
@@ -3051,12 +3587,15 @@ namespace MouseAutomation
                         message = null;
                         return true;
                     }
-                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    int elapsed = unchecked(Environment.TickCount - start);
+                    if (elapsed >= timeoutMs)
                     {
                         message = null;
                         return false;
                     }
-                    Thread.Sleep(pollIntervalMs);
+                    // Clamp to the remaining time, not the raw poll interval - see
+                    // WaitForPixelColor for why.
+                    Thread.Sleep(Math.Min(pollIntervalMs, timeoutMs - elapsed));
                 }
 
             }
@@ -3108,10 +3647,10 @@ namespace MouseAutomation
         /// Waits until the system busy cursor (Wait/AppStarting) is no longer showing,
         /// or the timeout elapses.
         /// </summary>
-        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds. Must be zero or positive, and at most <c>1800000</c> (30 minutes).</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="message"><c>null</c> if the poll completed (idle or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
-        /// <returns><c>true</c> if the cursor became idle before the timeout; <c>false</c> if it timed out still busy, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <param name="message"><c>null</c> if the poll completed (idle or genuinely timed out); otherwise a human-readable reason <paramref name="timeoutMs"/> was invalid, or a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the cursor became idle before the timeout; <c>false</c> if <paramref name="timeoutMs"/> is negative or too large, it timed out still busy, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         /// <inheritdoc cref="IsBusyCursorActive" select="remarks"/>
         [Category("Mouse - Verification")]
         [Description("Waits until the busy cursor (Wait/AppStarting) clears, or the timeout elapses. Returns True if it became idle in time; never throws.")]
@@ -3120,6 +3659,16 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be zero or positive.";
+                    return false;
+                }
+                if (timeoutMs > MaxWaitTimeoutMilliseconds)
+                {
+                    message = $"timeoutMs must be at most {MaxWaitTimeoutMilliseconds} (30 minutes) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
                 if (pollIntervalMs < 1) pollIntervalMs = 1;
 
                 int start = Environment.TickCount;
@@ -3131,12 +3680,15 @@ namespace MouseAutomation
                             return false; // aborted due to a Win32 failure
                         return true; // not busy - idle
                     }
-                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    int elapsed = unchecked(Environment.TickCount - start);
+                    if (elapsed >= timeoutMs)
                     {
                         message = null;
                         return false;
                     }
-                    Thread.Sleep(pollIntervalMs);
+                    // Clamp to the remaining time, not the raw poll interval - see
+                    // WaitForPixelColor for why.
+                    Thread.Sleep(Math.Min(pollIntervalMs, timeoutMs - elapsed));
                 }
 
             }
@@ -3203,11 +3755,50 @@ namespace MouseAutomation
         /// following the ownership rules of SetSystemCursor (which destroys the handle
         /// it is given - hence the copy; the caller keeps ownership of hSource).
         /// </summary>
-        private static bool TryApplySystemCursor(SystemCursorType slot, IntPtr hSource, out string message)
+        /// <remarks>
+        /// Also remembers, the first time this instance ever *successfully* replaces a
+        /// given slot, what cursor was active there beforehand (via <c>LoadCursor</c>,
+        /// which returns the currently-active cursor for a slot, not a fixed default) -
+        /// not on every call, so replacing the same slot twice does not overwrite the
+        /// real original with this instance's own prior replacement. The capture is
+        /// deferred until the replacement actually succeeds (see below) - committing it
+        /// unconditionally would make this instance believe it owns (and
+        /// <see cref="Dispose(bool)"/> would later restore) a slot it never actually
+        /// changed, potentially overwriting a later, unrelated, legitimate change to
+        /// that same slot. <see cref="Dispose(bool)"/> restores only these specific
+        /// saved slots, rather than the wider, instance-agnostic
+        /// <see cref="ResetSystemCursors"/> reset, which reloads every configured cursor
+        /// and can overwrite a concurrent change by the user or another process.
+        /// </remarks>
+        private bool TryApplySystemCursor(SystemCursorType slot, IntPtr hSource, out string message)
         {
+            bool isFirstTouch = !_originalCursorHandlesBySlot.ContainsKey(slot);
+            IntPtr pendingOriginalCopy = IntPtr.Zero;
+            if (isFirstTouch)
+            {
+                // If we can't capture the original, fail before ever touching the slot -
+                // proceeding anyway would replace the cursor but leave it untracked (not
+                // in _originalCursorHandlesBySlot), silently breaking Dispose's documented
+                // guarantee to restore every slot this instance actually changed.
+                IntPtr hCurrent = LoadCursor(IntPtr.Zero, (int)slot);
+                if (hCurrent == IntPtr.Zero)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "LoadCursor failed while capturing the original cursor for slot " + slot + ".").Message;
+                    return false;
+                }
+                pendingOriginalCopy = CopyIcon(hCurrent);
+                if (pendingOriginalCopy == IntPtr.Zero)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "CopyIcon failed while capturing the original cursor for slot " + slot + ".").Message;
+                    return false;
+                }
+            }
+
             IntPtr hCopy = CopyIcon(hSource); // CopyCursor is a macro for CopyIcon
             if (hCopy == IntPtr.Zero)
             {
+                if (pendingOriginalCopy != IntPtr.Zero)
+                    DestroyCursor(pendingOriginalCopy);
                 message = new Win32Exception(Marshal.GetLastWin32Error(), "CopyIcon/CopyCursor of the cursor failed.").Message;
                 return false;
             }
@@ -3216,12 +3807,55 @@ namespace MouseAutomation
             {
                 int err = Marshal.GetLastWin32Error();
                 DestroyCursor(hCopy);
+                if (pendingOriginalCopy != IntPtr.Zero)
+                    DestroyCursor(pendingOriginalCopy);
                 message = new Win32Exception(err, "SetSystemCursor failed for slot " + slot + ".").Message;
                 return false;
             }
-            // hCopy is now owned by the system - do not destroy it.
+            // hCopy is now owned by the system - do not destroy it. The replacement
+            // succeeded, so this is when (and only when) ownership of the slot's
+            // original cursor is actually committed.
+            if (pendingOriginalCopy != IntPtr.Zero)
+                _originalCursorHandlesBySlot[slot] = pendingOriginalCopy;
+            // Track what this instance itself just installed, so a later restore can
+            // check whether another actor has since replaced it - see ForgetSavedSystemCursors.
+            _lastAppliedCursorHandleBySlot[slot] = hCopy;
             message = null;
             return true;
+        }
+
+        /// <summary>
+        /// Frees this instance's saved per-slot original system cursors (see
+        /// <see cref="TryApplySystemCursor"/>), optionally restoring each one to its
+        /// slot first.
+        /// </summary>
+        private void ForgetSavedSystemCursors(bool restore = false)
+        {
+            foreach (var slotAndHandle in _originalCursorHandlesBySlot.ToArray())
+            {
+                if (restore)
+                {
+                    try
+                    {
+                        // Only restore if the slot's active cursor is still the one this
+                        // instance itself last installed - if another actor (another
+                        // process, another instance, or a ResetSystemCursors call) has
+                        // since replaced it, leave their cursor alone instead of
+                        // overwriting it with our stale saved original.
+                        if (_lastAppliedCursorHandleBySlot.TryGetValue(slotAndHandle.Key, out IntPtr lastApplied) &&
+                            LoadCursor(IntPtr.Zero, (int)slotAndHandle.Key) == lastApplied)
+                        {
+                            TryApplySystemCursor(slotAndHandle.Key, slotAndHandle.Value, out _);
+                        }
+                    }
+                    catch { /* best-effort */ }
+                }
+                // TryApplySystemCursor above (if it ran) copies slotAndHandle.Value rather
+                // than consuming it, so this instance still owns and must free it either way.
+                try { DestroyCursor(slotAndHandle.Value); } catch { /* best-effort */ }
+            }
+            _originalCursorHandlesBySlot.Clear();
+            _lastAppliedCursorHandleBySlot.Clear();
         }
 
         private static bool TrySendMouseButton(MouseButton button, bool isDown, out string message)
@@ -3229,6 +3863,38 @@ namespace MouseAutomation
             if (!TryGetButtonFlags(button, isDown, out uint flags, out int data, out message))
                 return false;
             return TrySendMouseEvent(flags, data, out message);
+        }
+
+        // Shared by SmoothMoveTo and every caller that preflights a custom step count/
+        // delay (DragAndDrop, RubberBandSelect) before doing anything else - validating
+        // here, before any native call, is what keeps an invalid steps/delayMilliseconds
+        // pair from causing a real move/press/key-down to fire before the rejection.
+        private static bool ValidateStepsAndDelay(int steps, int delayMilliseconds, out string message)
+        {
+            if (steps < 1)
+            {
+                message = "steps must be at least 1.";
+                return false;
+            }
+            if (delayMilliseconds < 0)
+            {
+                message = "delayMilliseconds must be zero or positive.";
+                return false;
+            }
+            if (steps > MaxMovementSteps)
+            {
+                message = $"steps must be at most {MaxMovementSteps} - a large step count can block the automation thread for a long time issuing move events even with delayMilliseconds = 0.";
+                return false;
+            }
+            // long arithmetic: steps/delayMilliseconds are each only bounded below, so
+            // their product could otherwise overflow int before this check saw it.
+            if ((long)steps * delayMilliseconds > MaxHeldOrMovementMilliseconds)
+            {
+                message = $"steps * delayMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds total) - bad wiring should not block the automation thread indefinitely.";
+                return false;
+            }
+            message = null;
+            return true;
         }
 
         /// <summary>
@@ -3360,6 +4026,34 @@ namespace MouseAutomation
         // Largest |notches| whose WHEEL_DELTA product cannot overflow int.
         private const int MAX_WHEEL_NOTCHES = int.MaxValue / WHEEL_DELTA;
 
+        private const ModifierKeys AllDefinedModifierKeys = ModifierKeys.Control | ModifierKeys.Shift | ModifierKeys.Alt;
+
+        // Bounds on caller-supplied blocking durations, so bad Pega wiring (e.g. a
+        // units mistake - milliseconds where seconds were meant) cannot block the
+        // automation thread indefinitely. This is bounding, not cancellation: Pega
+        // Robot Studio automations execute steps sequentially on one thread, so there
+        // is no mechanism for a separate step to interrupt a call already blocked in
+        // one of these methods. Two tiers, not one, since the methods they apply to
+        // are semantically different: WaitFor* methods poll for a genuine external
+        // event (a slow report rendering, an application finishing work) that can
+        // legitimately take minutes; holds/movements/highlights are synthetic actions
+        // this component performs itself and have no legitimate reason to run long.
+        private const int MaxWaitTimeoutMilliseconds = 30 * 60 * 1000; // 30 minutes
+        private const int MaxHeldOrMovementMilliseconds = 60 * 1000; // 60 seconds
+
+        // A zero delayMilliseconds makes steps * delayMilliseconds zero regardless of
+        // steps, so that product check alone can't bound a huge step count - this is an
+        // independent cap on the count itself, far beyond any real smooth-movement use
+        // case (dozens of steps), so bad wiring can't issue billions of native move
+        // calls back-to-back even with no per-step delay.
+        private const int MaxMovementSteps = 100_000;
+
+        // Same reasoning as MaxMovementSteps, for ClickWithRetry: a zero
+        // retryDelayMilliseconds makes the (attempts - 1) * delay product zero
+        // regardless of attempt count, so this bounds the attempt count itself - well
+        // beyond any real retry-loop use case (single digits to low tens).
+        private const int MaxRetryAttempts = 1000;
+
         private const int XBUTTON1 = 0x0001;
         private const int XBUTTON2 = 0x0002;
 
@@ -3442,18 +4136,44 @@ namespace MouseAutomation
 
         #region P/Invoke - Cursor Position
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool SetCursorPos(int X, int Y);
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetCursorPos")]
+        private static extern bool SetCursorPosNative(int X, int Y);
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool GetCursorPos(out POINT lpPoint);
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetCursorPos")]
+        private static extern bool GetCursorPosNative(out POINT lpPoint);
+
+        /// <summary>Test-only fault-injection seam for <see cref="SetCursorPosNative"/>. Null uses the real Win32 call.</summary>
+        internal static Func<int, int, bool> SetCursorPosOverride;
+
+        /// <summary>Test-only fault-injection seam for <see cref="GetCursorPosNative"/>. Null uses the real Win32 call.</summary>
+        internal static GetCursorPosDelegate GetCursorPosOverride;
+
+        internal delegate bool GetCursorPosDelegate(out POINT p);
+
+        private static bool SetCursorPos(int x, int y) =>
+            SetCursorPosOverride != null ? SetCursorPosOverride(x, y) : SetCursorPosNative(x, y);
+
+        private static bool GetCursorPos(out POINT p) =>
+            GetCursorPosOverride != null ? GetCursorPosOverride(out p) : GetCursorPosNative(out p);
 
         #endregion
 
         #region P/Invoke - Input Injection
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "SendInput")]
+        private static extern uint SendInputNative(uint nInputs, INPUT[] pInputs, int cbSize);
+
+        /// <summary>
+        /// Test-only fault-injection seam for <see cref="SendInputNative"/>. Null uses the
+        /// real Win32 call. Takes only the input array (not the redundant count/struct-size
+        /// parameters) and returns the simulated "events actually sent" count - return
+        /// fewer than the array's length to simulate a partial/total injection failure, or
+        /// throw to simulate a recoverable exception at this boundary.
+        /// </summary>
+        internal static Func<INPUT[], uint> SendInputOverride;
+
+        private static uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize) =>
+            SendInputOverride != null ? SendInputOverride(pInputs) : SendInputNative(nInputs, pInputs, cbSize);
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
@@ -3603,8 +4323,10 @@ namespace MouseAutomation
 
         #region Structures
 
+        // internal (not private): referenced by the internal fault-injection delegate
+        // types below, which MouseUtils.Tests needs to see via InternalsVisibleTo.
         [StructLayout(LayoutKind.Sequential)]
-        private struct POINT
+        internal struct POINT
         {
             public int X;
             public int Y;
@@ -3628,8 +4350,10 @@ namespace MouseAutomation
             public POINT ptScreenPos;
         }
 
+        // internal (not private): referenced by the internal SendInputOverride
+        // fault-injection seam, which MouseUtils.Tests needs to see via InternalsVisibleTo.
         [StructLayout(LayoutKind.Sequential)]
-        private struct INPUT
+        internal struct INPUT
         {
             public uint type;
             public INPUTUNION U;
@@ -3637,8 +4361,9 @@ namespace MouseAutomation
 
         // The union must include all input types so Marshal.SizeOf(INPUT) matches
         // what Windows expects (40 bytes on x64); otherwise SendInput fails.
+        // internal (not private): nested inside the internal INPUT struct above.
         [StructLayout(LayoutKind.Explicit)]
-        private struct INPUTUNION
+        internal struct INPUTUNION
         {
             [FieldOffset(0)] public MOUSEINPUT mi;
             [FieldOffset(0)] public KEYBDINPUT ki;
@@ -3646,7 +4371,7 @@ namespace MouseAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct MOUSEINPUT
+        internal struct MOUSEINPUT
         {
             public int dx;
             public int dy;
@@ -3657,7 +4382,7 @@ namespace MouseAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct KEYBDINPUT
+        internal struct KEYBDINPUT
         {
             public ushort wVk;
             public ushort wScan;
@@ -3667,7 +4392,7 @@ namespace MouseAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct HARDWAREINPUT
+        internal struct HARDWAREINPUT
         {
             public uint uMsg;
             public ushort wParamL;

@@ -43,6 +43,16 @@ finally
 }
 ```
 
+If this instance can't capture the slot's current cursor before replacing
+it (a `LoadCursor`/`CopyIcon` failure - rare, but possible under GDI resource
+exhaustion), the replacement itself now fails rather than proceeding with
+nothing recorded to restore later. Disposing the component without calling
+`ResetSystemCursors` restores each slot it touched as a backstop, but that
+restore only actually applies if the slot's active cursor still matches what
+this instance itself last installed there - the same narrowing (not
+eliminating) ownership check `ClipCursor`/`ReleaseCursorClip` use, described
+further down.
+
 ## `SetCursorFromFile(SystemCursorType slotToReplace, string filePath)`
 
 **Scenario:** Branding an attended-automation session with the company's custom
@@ -81,6 +91,11 @@ finally
     mouse.ResetSystemCursors(out _);
 }
 ```
+
+Disposing the component also restores each individual slot it touched (to
+whatever was there immediately before, not necessarily the Windows default)
+as a backstop, but that should not be relied on instead of calling
+`ResetSystemCursors` yourself.
 
 ## `HideCursor()` / `ShowCursor()` / `IsCursorVisible()`
 
@@ -123,6 +138,18 @@ above finishes, so the operator regains normal control.
 ```csharp
 mouse.ReleaseCursorClip(out _);
 ```
+
+This restores the exact clip (or lack of one) that was in effect immediately
+before the matching `ClipCursor` call, rather than always clearing to "no
+clip". It also checks, right before restoring, whether the active clip still
+matches what this instance itself last applied - if another app or another
+`ClipCursor` call has since taken over the clip, this leaves that newer clip
+alone instead of overwriting it with a now-stale rectangle. That check is not
+a hard guarantee: it only covers the instant this method runs, so a change
+that happens in the brief window between the check and the underlying Win32
+call can still be overwritten. Disposing the component also restores that
+same saved clip, with the same check, as a backstop if `ReleaseCursorClip`
+was never called.
 
 ## `GetCursorClipAsRectangle()`
 

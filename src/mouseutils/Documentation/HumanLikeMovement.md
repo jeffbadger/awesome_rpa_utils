@@ -34,6 +34,11 @@ mouse.LeftClick(out _);
 > so the final click still lands precisely on the intended target regardless of
 > how the path wandered to get there.
 
+`durationMs` is capped at 60 seconds (this applies to `BezierClickAt`,
+`BezierDoubleClickAt`, and `BezierDragAndDrop` below too, since they all
+move via `MoveMouseBezier`) - a longer value returns `false` with a message
+rather than blocking the automation thread for that long.
+
 ## `BezierClickAt(int x, int y, MouseButton button, out string message, int durationMs = 500)`
 
 **Scenario:** The same bot-detection-sensitive web app from above needs a
@@ -64,3 +69,9 @@ middleware flags.
 ```csharp
 mouse.BezierDragAndDrop(startX: 220, startY: 300, endX: 620, endY: 300, out _, durationMs: 700);
 ```
+
+Unlike `BezierClickAt`/`BezierDoubleClickAt`, this method checks `durationMs`'s
+bounds itself before moving to the start point and pressing the button down,
+rather than only relying on the `MoveMouseBezier` call it makes internally -
+an invalid value fails before any real input, not after an unintended press
+at the start point.

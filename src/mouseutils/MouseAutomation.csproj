@@ -12,6 +12,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Lets MouseUtils.Tests inject faults at the native-call seams for coverage that
+         doesn't need a live desktop -->
+    <InternalsVisibleTo Include="MouseUtils.Tests" />
+  </ItemGroup>
+
   <!-- The test project lives in a subfolder; keep its sources out of the component DLL. -->
   <ItemGroup>
     <Compile Remove="MouseUtils.Tests/**/*.cs" />

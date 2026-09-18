@@ -7,8 +7,12 @@ back to guessing with fixed `Thread.Sleep` calls.
 None of these methods throw. `GetPixelColor` returns `bool` (success) with an
 `out int color` and `out string message`. The other four keep their original
 `bool` meaning (matched/idle vs. not) and add an `out string message` that is
-only set if a Win32 failure aborted the poll early — check whether `message`
-is non-null to tell "genuinely timed out" apart from "aborted by an error".
+only set if `timeoutMs` was invalid or a Win32 failure aborted the poll early
+— check whether `message` is non-null to tell "genuinely timed out" apart
+from "aborted by an error". `timeoutMs` must be zero or positive, and is
+capped at 30 minutes - a genuine external wait can legitimately take that
+long, but bad wiring (e.g. a units mistake) still shouldn't block the
+automation thread indefinitely.
 
 ## `GetPixelColor(int x, int y)`
 

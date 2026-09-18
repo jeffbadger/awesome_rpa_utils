@@ -142,5 +142,306 @@ namespace MouseAutomation.Tests
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        // --- Validation tightening: reject invalid numeric input instead of silently
+        // coercing it. Every check below returns before any native call, so these are
+        // safe to test the same way as every other guard test in this file. ---
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void SmoothMoveTo_StepsBelowOne_ReturnsFalseWithMessage(int steps)
+        {
+            bool ok = _mouse.SmoothMoveTo(0, 0, steps, 5, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void SmoothMoveTo_NegativeDelay_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.SmoothMoveTo(0, 0, 25, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // Regression test: steps * delayMilliseconds is zero whenever delayMilliseconds
+        // is zero, regardless of how large steps is, so that product check alone can't
+        // catch an oversized step count - there's an independent cap on steps itself.
+        [Fact]
+        public void SmoothMoveTo_StepsAboveMax_WithZeroDelay_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.SmoothMoveTo(0, 0, steps: 100_001, delayMilliseconds: 0, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void JiggleMouse_PixelsBelowOne_ReturnsFalseWithMessage(int pixels)
+        {
+            bool ok = _mouse.JiggleMouse(out string message, pixels);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickAndHold_NegativeHoldMilliseconds_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickAndHold(MouseButton.Left, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void DragAndHold_NegativeHoldMilliseconds_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.DragAndHold(0, 0, 10, 10, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void MoveMouseBezier_DurationBelowOne_ReturnsFalseWithMessage(int durationMs)
+        {
+            bool ok = _mouse.MoveMouseBezier(0, 0, out string message, durationMs);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void BezierDragAndDrop_DurationBelowOne_ReturnsFalseWithMessage(int durationMs)
+        {
+            bool ok = _mouse.BezierDragAndDrop(0, 0, 10, 10, out string message, durationMs);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // BezierDragAndDrop now preflights the upper bound itself rather than relying on
+        // MoveMouseBezier to catch it - see FaultInjectionTests for the regression test
+        // that verifies no native input is sent before the rejection.
+        [Fact]
+        public void BezierDragAndDrop_DurationAboveMax_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.BezierDragAndDrop(0, 0, 10, 10, out string message, durationMs: 60_001);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ScrollUp_NegativeNotches_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ScrollUp(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ScrollDown_NegativeNotches_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ScrollDown(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ScrollRight_NegativeNotches_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ScrollRight(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ScrollLeft_NegativeNotches_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ScrollLeft(-1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickWithRetry_MaxAttemptsBelowOne_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, 0, 10, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickWithRetry_NegativeRetryDelay_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, 3, -1, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // Regression test: retryDelayMilliseconds = 0 makes (maxAttempts - 1) * delay
+        // zero regardless of maxAttempts, so that product check alone can't catch an
+        // oversized attempt count - there's an independent cap on maxAttempts itself.
+        [Fact]
+        public void ClickWithRetry_MaxAttemptsAboveMax_WithZeroDelay_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, maxAttempts: 1001, retryDelayMilliseconds: 0, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickWithRetry_AttemptsDelayProductTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithRetry(0, 0, MouseButton.Left, maxAttempts: 2, retryDelayMilliseconds: int.MaxValue, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0, 3, 200, 3)]  // radius
+        [InlineData(30, 0, 200, 3)] // flashes
+        [InlineData(30, 3, 0, 3)]   // flashMs
+        [InlineData(30, 3, 200, 0)] // ringWidth
+        public void FlashCursorHighlight_ParameterBelowOne_ReturnsFalseWithMessage(int radius, int flashes, int flashMs, int ringWidth)
+        {
+            bool ok = _mouse.FlashCursorHighlight(out string message, radius, flashes, flashMs, ringWidth);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickWithModifiers_UndefinedModifierBits_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickWithModifiers(MouseButton.Left, (ModifierKeys)0x8, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void RubberBandSelect_UndefinedModifierBits_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.RubberBandSelect(0, 0, 10, 10, (ModifierKeys)0x8, 30, 10, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- Bounded (not cancellable) waits: bad Pega wiring (e.g. a units mistake)
+        // must not be able to block the automation thread indefinitely. Every check
+        // below returns before any native call. ---
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(1_800_001)]
+        public void WaitForPixelColor_TimeoutOutOfRange_ReturnsFalseWithMessage(int timeoutMs)
+        {
+            bool ok = _mouse.WaitForPixelColor(0, 0, 0, timeoutMs, 50, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(1_800_001)]
+        public void WaitForPixelChange_TimeoutOutOfRange_ReturnsFalseWithMessage(int timeoutMs)
+        {
+            bool ok = _mouse.WaitForPixelChange(0, 0, timeoutMs, 50, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(1_800_001)]
+        public void WaitForIdleCursor_TimeoutOutOfRange_ReturnsFalseWithMessage(int timeoutMs)
+        {
+            bool ok = _mouse.WaitForIdleCursor(timeoutMs, 50, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickAndHold_HoldMillisecondsTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickAndHold(MouseButton.Left, 60_001, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void DragAndHold_HoldMillisecondsTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.DragAndHold(0, 0, 10, 10, 60_001, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void MoveMouseBezier_DurationTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.MoveMouseBezier(0, 0, out string message, 60_001);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void FlashCursorHighlight_TotalDurationTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.FlashCursorHighlight(out string message, flashes: 1000, flashMs: 1000);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // Regression test: the total blocking duration is (2*flashes - 1) * flashMs -
+        // each flash sleeps once visible, and all but the last sleep again while hidden -
+        // not flashes * flashMs. flashes: 500, flashMs: 100 gives flashes*flashMs =
+        // 50,000 (previously wrongly accepted, under the 60-second cap) but the real
+        // duration is (2*500-1)*100 = 99,900ms, well over it.
+        [Fact]
+        public void FlashCursorHighlight_TotalDurationAccountsForHiddenGaps_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.FlashCursorHighlight(out string message, flashes: 500, flashMs: 100);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void SmoothMoveTo_TotalDurationTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.SmoothMoveTo(0, 0, 1000, 1000, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
     }
 }

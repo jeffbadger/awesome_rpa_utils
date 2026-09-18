@@ -80,3 +80,107 @@ repository's convention of breaking changes over compatibility shims:
 The plain (un-suffixed) name in each pair now belongs to the scalar
 overload - the one most usable directly from a Pega Robot Studio flow -
 per the naming convention documented in the component `README.md`.
+
+## Addendum: correctness/robustness remediation (closing out REVIEW.md/REMEDIATION_PLAN.md)
+
+Everything above concerns API *shape* (is a port usable from a Pega design
+surface); this addendum covers a separate remediation pass on API
+*correctness and robustness*, done to close out `src/mouseutils/REVIEW.md`
+and `REMEDIATION_PLAN.md` - two files unique to this component, left over
+from an earlier, separate review done outside this repo's normal process
+(a `codex/never-throws-standard` branch, merged as PR #37, plus one
+follow-up commit). A background review cross-checked every finding in both
+files against the current code rather than trusting old "Resolved" labels,
+confirming several genuinely-fixed items alongside a real, verified punch
+list. That work shipped as five sequential PRs, summarized here; both
+source files are deleted as of this addendum, fully superseded by this
+document.
+
+**PR 1 - confirmed bugs + guard consistency:**
+- `SafeClickAt`: `expectedWindowHandle == IntPtr.Zero` is now rejected
+  outright. Previously, a point over empty desktop (where the
+  window-under-the-point lookup also returns zero) made
+  `actual == expectedWindowHandle` trivially true, authorizing a click on
+  nothing - defeating the entire point of this method.
+- `ClickAtRelativePosition`: now rejects `NaN`/infinity explicitly. Every
+  comparison against `NaN` is `false` in C#, so the existing `[0.0, 1.0]`
+  range check alone silently let a `NaN` fraction through into the position
+  math.
+- `RubberBandSelect`: its modifier-key release result is no longer
+  discarded (`out _`); it now routes through the same
+  `CompleteCompoundOperation` helper `DragAndDrop`/`DragAndHold` already
+  use, so a failed release surfaces instead of vanishing.
+- `ClickWithModifiers`: falls back to releasing each up-event individually
+  when the whole-batch release fails twice, instead of only ever retrying
+  the identical batch.
+- `IsProcessDpiAware`: now uses the same `NeverThrowsGuard.IsRecoverable`
+  policy every other method in the file uses, instead of a one-off
+  `catch (EntryPointNotFoundException)`.
+- **Decision, no change:** `NeverThrowsGuard.IsRecoverable`'s blanket
+  "anything except OutOfMemoryException/StackOverflowException/
+  AccessViolationException" policy stays as-is. This matches the same
+  pattern already used in `SessionUtils`, `FileWatchUtils`, and every other
+  reviewed component's own `NeverThrowsGuard`. `REMEDIATION_PLAN.md`'s ask
+  for a narrow, project-specific exception allowlist reads as the more
+  literal interpretation of `project-docs/coding-standards/never-throws-standard.md`,
+  but every already-shipped component converged on the simpler
+  blanket-exclude pattern instead; narrowing this one component alone would
+  make it the outlier rather than fix anything.
+
+**PR 2 - validation tightening + missing convenience wrappers:** rejects
+invalid numeric/enum input instead of silently coercing it across
+`SmoothMoveTo`, `JiggleMouse`, `ClickAndHold`, `DragAndHold`,
+`MoveMouseBezier`, `ScrollUp`/`ScrollDown`/`ScrollRight`/`ScrollLeft`,
+`ClickWithRetry`, `FlashCursorHighlight`, `ClickWithModifiers`, and
+`RubberBandSelect` - each previously clamped or `Math.Abs`'d an invalid
+value rather than rejecting it, which could hide a caller-side bug behind a
+plausible-looking result. Also added `MiddleClickAt`, `MiddleDoubleClick`,
+`MiddleDoubleClickAt`, `RightDoubleClickAt` (filling gaps in the Left/
+Right/Middle × Click/ClickAt/DoubleClick/DoubleClickAt matrix) and a
+vertical `ScrollAt` paralleling `ScrollHorizontalAt`, which now also
+restores the operator's cursor position afterward like `ClickAndRestore`
+already does.
+
+**PR 3 - `Dispose` cleanup:** `REVIEW.md`'s one "High" finding.
+`Dispose` previously did nothing despite this class acquiring several
+kinds of state across calls. Now best-effort cleans up: buttons held via
+the public, explicitly stateful `MouseDown`/`MouseUp` pair (every compound
+click/drag method already guarantees its own release, so this only covers
+a `MouseDown` caller that never reached `MouseUp`); a `BlockUserInput`
+block and a `HideCursor` hide, each only when disposing on the same
+thread that acquired them (both are thread-affine Win32 APIs - a real,
+honest, documented limitation, not something `Dispose` can fully solve);
+a `ClipCursor` confinement, restored to the exact prior state (`ClipCursor`
+now saves what was in effect before it runs, fixing "clears a clip another
+app owns" as a side effect); and system cursor slots replaced via
+`SetCursor`/`ReplaceSystemCursor`/`SetCursorFromFile`, restoring only the
+specific slots this instance touched rather than the broader
+`ResetSystemCursors()` reset the plan explicitly warned against.
+
+**PR 4 - bounded (not cancellable) waits:** a design decision, not just a
+code change. Pega Robot Studio automations execute steps sequentially on
+one thread, so there is no mechanism for a separate step to interrupt a
+call already blocked inside this component - `REVIEW.md`'s framing of this
+as "cancellable" isn't achievable in that execution model. Implemented
+bounding instead: `WaitForPixelColor`/`WaitForPixelChange`/
+`WaitForIdleCursor`'s `timeoutMs` capped at 30 minutes (a genuine external
+wait can legitimately take that long); `ClickAndHold`/`DragAndHold`/
+`MoveMouseBezier`/`FlashCursorHighlight`/`SmoothMoveTo`'s durations capped
+at 60 seconds total (synthetic actions this component performs itself,
+with no legitimate reason to run long).
+
+**PR 5 - fault-injection test seams:** added an `InternalsVisibleTo`-based
+seam (`SendInputOverride`/`GetCursorPosOverride`/`SetCursorPosOverride`),
+following the same pattern already used elsewhere in this repo (e.g.
+FileWatchUtils), plus 9 new tests exercising exactly the scenarios
+`REMEDIATION_PLAN.md`'s testing goal asked for: a fault-injected exception
+converting to `false` + message; compound operations still releasing what
+they acquired when the release step itself fails; `ClickAndRestore` never
+reporting success after a simulated restore failure; the PR 1 fixes to
+`ClickWithModifiers`/`RubberBandSelect`; and `MouseDown`/`Dispose`
+interaction.
+
+Not covered by this pass: fault-injection-based automated tests for the
+cursor-hide/clip/system-cursor-restore paths in `Dispose` (these call real
+Win32 state-changing APIs the fault-injection seam doesn't reach), and full
+Windows/Pega-host verification - both remain manual per `TESTING.md`.
