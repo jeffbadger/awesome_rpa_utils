@@ -4,6 +4,10 @@ A collection of Pega Robot Studio-ready .NET components for Windows desktop
 automation. Each component is a self-contained `.csproj` that drops onto a
 Robot Studio design surface, with its own README and per-method usage docs.
 
+See [CrossReference.md](CrossReference.md) for a single searchable index of
+every Property, Method, and Event exposed by every component below — useful
+for checking whether something already exists before writing it yourself.
+
 | Component | Assembly | Description |
 |---|---|---|
 | [archiveutils](src/archiveutils/README.md) | `ArchiveAutomation` | Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection and independent CRC-32 verification built in. |
