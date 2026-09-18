@@ -25,6 +25,10 @@ alternatives for the common case.
 | `WaitForWindowToClose`, `WaitForWindowActive` | Chainable | Handle input is natural and result is Boolean. `false` means timeout; out of scope for this pass. |
 | `GetChildWindows` | Chainable input; proxy friction, documented | Parent handles are produced naturally, but the `List<IntPtr>` result requires a proxy and loop - the docs now say so and point to `FindChildWindow` for the common single-match case. |
 | `FindChildWindow` | Chainable | This is the Pega-friendly alternative to enumerating children: parent handle plus scalar filters produces another chainable handle. |
+| `IsWindowEnabled`, `TryGetWindowEnabled` | Chainable; Try-style variant | Handle input, Boolean result. `false` while a modal dialog blocks the window, so it doubles as a modal-blocked check; `TryGetWindowEnabled` separates a stale handle from a disabled window. |
+| `TryGetWindowState`, `IsWindowMinimized`, `IsWindowMaximized` | Chainable | Read-side counterpart to `SetWindowState`, using a repository-owned `WindowDisplayState` enum so no framework type is needed. `TryGetWindowState` reports an invalid handle; the Boolean forms are Decision-step friendly. |
+| `TryFindWindowByRegex`, `TryFindChildWindowByRegex` | Chainable producers | Scalar pattern inputs, `IntPtr` output that feeds the next step. `message` is `null` for a clean not-found and set only when the search could not run, matching `WaitForWindow`. Each match is capped at one second so a bad pattern cannot stall the thread. |
+| `EnumerateWindowsJson` | Proxy-free enumeration | One JSON string instead of the `List<IntPtr>` collection proxy and loop `GetTopLevelWindows` needs; readable straight into a log or `JsonUtils`. |
 
 ## Recommended changes
 
@@ -50,11 +54,18 @@ alternatives for the common case.
    `FindFirstWindowByProcessId`/`FindChildWindow`) for the common
    single-result case, in `README.md` and the relevant `Documentation/*.md`
    pages.
+7. **Done.** Added window display state (`TryGetWindowState`,
+   `IsWindowMinimized`, `IsWindowMaximized`), enabled state for detecting a
+   modal-blocked window (`IsWindowEnabled`, `TryGetWindowEnabled`), regex lookup
+   (`TryFindWindowByRegex`, `TryFindChildWindowByRegex`), and a proxy-free
+   `EnumerateWindowsJson`. All are additive with unique names, so the
+   [Signature Uniqueness Standard](../coding-standards/signature-uniqueness-standard.md)
+   is unaffected.
 
 ## Verdict
 
 No individual handle-consuming method needed a scalar handle replacement -
-handles remain well supported by local producers and stay opaque. All six
+handles remain well supported by local producers and stay opaque. All seven
 recommended changes are implemented additively: every original overload
 remains for backward compatibility, `GetWindowBounds` and `WaitForWindow`
 each gained a friction-reducing/disambiguating overload, the three

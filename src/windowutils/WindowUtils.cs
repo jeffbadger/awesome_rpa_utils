@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace WindowAutomation
@@ -23,6 +24,22 @@ namespace WindowAutomation
         Minimized = 6,
         /// <summary>Restores a minimized/maximized window to its previous size and position (SW_RESTORE, 9).</summary>
         Restore = 9
+    }
+
+    /// <summary>
+    /// A window's current display state, as reported by
+    /// <see cref="WindowUtils.TryGetWindowState"/> - the read-side counterpart to
+    /// <see cref="ShowWindowCommand"/>. Visibility is a separate question; see
+    /// <see cref="WindowUtils.IsWindowVisible"/>.
+    /// </summary>
+    public enum WindowDisplayState
+    {
+        /// <summary>The window is neither minimized nor maximized.</summary>
+        Normal = 0,
+        /// <summary>The window is minimized (iconic), including one minimized from a maximized state.</summary>
+        Minimized = 1,
+        /// <summary>The window is maximized and not currently minimized.</summary>
+        Maximized = 2
     }
 
     /// <summary>
@@ -183,6 +200,152 @@ namespace WindowAutomation
         public IntPtr GetForegroundWindow()
         {
             return GetForegroundWindowNative();
+        }
+
+        /// <summary>
+        /// Finds the first top-level window whose title and/or window-class name matches a
+        /// regular expression - for titles that embed a changing value ("Invoice 4471 -
+        /// Notepad") and class names with a per-run suffix (WinForms' auto-generated
+        /// <c>WindowsForms10.Window.8.app.0.141b42a_r14_ad1</c>).
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A pattern matches if it is found anywhere in the text (<c>Regex.IsMatch</c>), so
+        /// anchor it with <c>^</c>/<c>$</c> for a whole-string match. When both patterns are
+        /// given, a window must match both. Like <see cref="FindWindowByTitle"/>, this
+        /// matches hidden windows too, and returns the first match in enumeration
+        /// top-to-bottom z-order; use <see cref="EnumerateWindowsJson"/> with
+        /// <c>visibleOnly</c> if a hidden window could match ahead of the one wanted.
+        /// </para>
+        /// <para>
+        /// Each match is capped at one second, so a pathological pattern fails with a message
+        /// instead of stalling the automation thread.
+        /// </para>
+        /// </remarks>
+        /// <param name="titlePattern">Regular expression for the window title; null or empty to not filter on title.</param>
+        /// <param name="classNamePattern">Regular expression for the window-class name; null or empty to not filter on class.</param>
+        /// <param name="hWnd">The matching window's handle, or <see cref="IntPtr.Zero"/> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if the search ran (a match was found, or none matched); otherwise a human-readable reason it could not run - no pattern given, an invalid pattern, or a pattern that took too long.</param>
+        /// <param name="ignoreCase"><c>true</c> (default) for case-insensitive matching; <c>false</c> for case-sensitive.</param>
+        /// <returns><c>true</c> if a window matched; <c>false</c> if none did (<paramref name="message"/> is <c>null</c>) or the search could not run (<paramref name="message"/> is set). Never throws.</returns>
+        [Category("Window - Enumeration & Lookup")]
+        [Description("Finds the first top-level window whose title and/or class name matches a regular expression. Returns True if found; never throws.")]
+        public bool TryFindWindowByRegex(string titlePattern, string classNamePattern, out IntPtr hWnd, out string message, bool ignoreCase = true)
+        {
+            hWnd = IntPtr.Zero;
+            message = default;
+            try
+            {
+                if (!TryBuildRegexFilters(titlePattern, classNamePattern, ignoreCase, out Regex titleRegex, out Regex classRegex, out message))
+                    return false;
+
+                hWnd = FindFirstMatching(GetTopLevelWindows(), titleRegex, classRegex, GetWindowTitle, GetWindowClassName);
+                message = null;
+                return hWnd != IntPtr.Zero;
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                hWnd = IntPtr.Zero;
+                message = RegexTimeoutMessage;
+                return false;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                hWnd = IntPtr.Zero;
+                message = NeverThrowsGuard.Failure("TryFindWindowByRegex", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Lists top-level windows as a JSON array - one object per window with its handle,
+        /// title, class name, owning process ID, visibility, enabled state, display state, and
+        /// bounds - for diagnostics ("what is actually on screen?") and for automations that
+        /// would otherwise need a collection proxy and loop to walk
+        /// <see cref="GetTopLevelWindows"/>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Each object has the properties <c>Handle</c> (number), <c>Title</c>,
+        /// <c>ClassName</c>, <c>ProcessId</c>, <c>IsVisible</c>, <c>IsEnabled</c>,
+        /// <c>State</c> (<c>"Normal"</c>, <c>"Minimized"</c>, or <c>"Maximized"</c>),
+        /// <c>Left</c>, <c>Top</c>, <c>Width</c>, and <c>Height</c>. Windows are listed in
+        /// enumeration order, topmost first. A window that closes during enumeration is
+        /// left out. A minimized window reports bounds of about -32000, as
+        /// <see cref="GetWindowBounds"/> does.
+        /// </para>
+        /// <para>
+        /// "Visible" here is the Win32 visible flag, so cloaked UWP windows on other virtual
+        /// desktops still count as visible, as they do for <see cref="IsWindowVisible"/>.
+        /// </para>
+        /// </remarks>
+        /// <param name="json">A JSON array of window objects (<c>[]</c> if none match), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the enumeration failed.</param>
+        /// <param name="visibleOnly"><c>true</c> (default) to list only visible windows; <c>false</c> to include hidden ones too (typically hundreds of them).</param>
+        /// <param name="processId">Only list windows owned by this process ID; <c>0</c> (default) for all processes.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="processId"/> is negative or the enumeration failed. Never throws.</returns>
+        [Category("Window - Enumeration & Lookup")]
+        [Description("Lists top-level windows as a JSON array of handle/title/class/process/state/bounds objects. Returns True on success; never throws.")]
+        public bool EnumerateWindowsJson(out string json, out string message, bool visibleOnly = true, int processId = 0)
+        {
+            json = default;
+            message = default;
+            try
+            {
+                if (processId < 0)
+                {
+                    message = "processId must be zero (all processes) or a positive process ID.";
+                    return false;
+                }
+
+                var windows = new List<WindowInfoData>();
+                foreach (var hWnd in GetTopLevelWindows())
+                {
+                    if (visibleOnly && !IsWindowVisibleNative(hWnd))
+                        continue;
+                    if (processId != 0 && GetWindowProcessId(hWnd) != processId)
+                        continue;
+
+                    // A window can close between EnumWindows and here - skip it rather than
+                    // report a half-empty entry for a handle that no longer exists.
+                    if (!IsWindowNative(hWnd))
+                        continue;
+
+                    windows.Add(CaptureWindowInfo(hWnd));
+                }
+
+                json = WindowJson.Serialize(windows);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                json = null;
+                message = NeverThrowsGuard.Failure("EnumerateWindowsJson", ex);
+                return false;
+            }
+        }
+
+        private WindowInfoData CaptureWindowInfo(IntPtr hWnd)
+        {
+            // Bounds are best-effort: a window that vanishes between the IsWindow check and
+            // here just reports zeros rather than failing the whole enumeration.
+            GetWindowRect(hWnd, out RECT rect);
+            return new WindowInfoData
+            {
+                Handle = hWnd.ToInt64(),
+                Title = GetWindowTitle(hWnd),
+                ClassName = GetWindowClassName(hWnd),
+                ProcessId = GetWindowProcessId(hWnd),
+                IsVisible = IsWindowVisibleNative(hWnd),
+                IsEnabled = IsWindowEnabledNative(hWnd),
+                State = ToDisplayState(IsIconicNative(hWnd), IsZoomedNative(hWnd)),
+                Left = rect.Left,
+                Top = rect.Top,
+                Width = rect.Right - rect.Left,
+                Height = rect.Bottom - rect.Top
+            };
         }
 
         #endregion
@@ -492,6 +655,138 @@ namespace WindowAutomation
         }
 
         /// <summary>
+        /// Returns <c>true</c> if the window accepts mouse and keyboard input - the way to
+        /// notice that a modal dialog is blocking it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Windows disables an owner window while one of its modal dialogs is open, so a
+        /// main window that reports <c>false</c> here while its dialog is up is
+        /// "modal-blocked": clicks and keystrokes sent to it are silently ignored until the
+        /// dialog is dismissed. Pair with <see cref="WaitForWindow"/> or a dialog utility to
+        /// find and dismiss the blocker. A window an application disabled for its own
+        /// reasons (a busy state, a wizard step) reads the same, so treat <c>false</c> as
+        /// "not accepting input", not proof that a dialog is open.
+        /// </para>
+        /// <para>
+        /// Returns <c>false</c> for an invalid handle; use <see cref="TryGetWindowEnabled"/>
+        /// to tell that apart from a genuinely disabled window.
+        /// </para>
+        /// </remarks>
+        [Category("Window - State & Geometry")]
+        [Description("Returns True if the window accepts input (False while a modal dialog blocks it).")]
+        public bool IsWindowEnabled(IntPtr hWnd)
+        {
+            return IsWindowEnabledNative(hWnd);
+        }
+
+        /// <summary>
+        /// Same as <see cref="IsWindowEnabled"/>, but distinguishes an invalid/nonexistent
+        /// window handle from a genuinely disabled window via the return value, instead of
+        /// collapsing both to <c>false</c>.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to check.</param>
+        /// <param name="enabled"><c>true</c> if the window accepts input; <c>false</c> if it is disabled, or if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if <paramref name="hWnd"/> is a valid, currently-existing window (whether or not it is enabled); <c>false</c> otherwise. Never throws.</returns>
+        [Category("Window - State & Geometry")]
+        [Description("Returns whether a window accepts input, distinguishing an invalid handle from a disabled window. Returns True on success; never throws.")]
+        public bool TryGetWindowEnabled(IntPtr hWnd, out bool enabled, out string message)
+        {
+            enabled = default;
+            message = default;
+            try
+            {
+                if (!IsWindowNative(hWnd))
+                {
+                    message = "Invalid or nonexistent window handle.";
+                    return false;
+                }
+                enabled = IsWindowEnabledNative(hWnd);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("TryGetWindowEnabled", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets whether a window is normal, minimized, or maximized - the read-side
+        /// counterpart to <see cref="SetWindowState"/>.
+        /// </summary>
+        /// <remarks>
+        /// A window minimized from a maximized state still carries the maximized flag, but
+        /// is reported as <see cref="WindowDisplayState.Minimized"/> - what a person looking
+        /// at the screen would say. Visibility is independent; a hidden window still reports
+        /// its normal/minimized/maximized state.
+        /// </remarks>
+        /// <param name="hWnd">Handle of the window to check.</param>
+        /// <param name="state">The window's display state, or <see cref="WindowDisplayState.Normal"/> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <returns><c>true</c> if <paramref name="hWnd"/> is a valid, currently-existing window; <c>false</c> otherwise. Never throws.</returns>
+        [Category("Window - State & Geometry")]
+        [Description("Gets whether a window is normal, minimized, or maximized. Returns True on success; never throws.")]
+        public bool TryGetWindowState(IntPtr hWnd, out WindowDisplayState state, out string message)
+        {
+            state = default;
+            message = default;
+            try
+            {
+                if (!IsWindowNative(hWnd))
+                {
+                    message = "Invalid or nonexistent window handle.";
+                    return false;
+                }
+                state = ToDisplayState(IsIconicNative(hWnd), IsZoomedNative(hWnd));
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("TryGetWindowState", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if the window is minimized (including one minimized from a
+        /// maximized state). Returns <c>false</c> for an invalid handle; use
+        /// <see cref="TryGetWindowState"/> to tell that apart.
+        /// </summary>
+        [Category("Window - State & Geometry")]
+        [Description("Returns True if the window is minimized.")]
+        public bool IsWindowMinimized(IntPtr hWnd)
+        {
+            return IsIconicNative(hWnd);
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if the window is maximized and not currently minimized (so
+        /// this and <see cref="IsWindowMinimized"/> are never both <c>true</c>). Returns
+        /// <c>false</c> for an invalid handle; use <see cref="TryGetWindowState"/> to tell
+        /// that apart.
+        /// </summary>
+        [Category("Window - State & Geometry")]
+        [Description("Returns True if the window is maximized (and not minimized).")]
+        public bool IsWindowMaximized(IntPtr hWnd)
+        {
+            return ToDisplayState(IsIconicNative(hWnd), IsZoomedNative(hWnd)) == WindowDisplayState.Maximized;
+        }
+
+        internal static WindowDisplayState ToDisplayState(bool isIconic, bool isZoomed)
+        {
+            // Minimized wins: IsZoomed stays true for a window minimized from maximized.
+            if (isIconic)
+                return WindowDisplayState.Minimized;
+            return isZoomed ? WindowDisplayState.Maximized : WindowDisplayState.Normal;
+        }
+
+        /// <summary>
         /// Applies a show/hide/minimize/maximize/restore state to a window.
         /// </summary>
         /// <remarks>
@@ -776,6 +1071,132 @@ namespace WindowAutomation
                 : value.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        /// <summary>
+        /// Finds the first descendant window of <paramref name="hWndParent"/> whose title
+        /// and/or window-class name matches a regular expression - the child-control
+        /// counterpart to <see cref="TryFindWindowByRegex"/>, and the way to reach a WinForms
+        /// control whose class name carries a per-run suffix.
+        /// </summary>
+        /// <remarks>
+        /// Pattern semantics, the one-second per-match cap, and the <paramref name="message"/>
+        /// contract are the same as for <see cref="TryFindWindowByRegex"/>. Descendants are
+        /// searched recursively, in the order <see cref="GetChildWindows"/> returns them.
+        /// </remarks>
+        /// <param name="hWndParent">Handle of the parent window whose descendants are searched; must be a valid window.</param>
+        /// <param name="titlePattern">Regular expression for the control's text; null or empty to not filter on it.</param>
+        /// <param name="classNamePattern">Regular expression for the control's window-class name; null or empty to not filter on it.</param>
+        /// <param name="hWnd">The matching window's handle, or <see cref="IntPtr.Zero"/> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> if the search ran (a match was found, or none matched); otherwise a human-readable reason it could not run - an invalid parent handle, no pattern given, an invalid pattern, or a pattern that took too long.</param>
+        /// <param name="ignoreCase"><c>true</c> (default) for case-insensitive matching; <c>false</c> for case-sensitive.</param>
+        /// <returns><c>true</c> if a descendant matched; <c>false</c> if none did (<paramref name="message"/> is <c>null</c>) or the search could not run (<paramref name="message"/> is set). Never throws.</returns>
+        [Category("Window - Child Windows")]
+        [Description("Finds the first child window whose title and/or class name matches a regular expression. Returns True if found; never throws.")]
+        public bool TryFindChildWindowByRegex(IntPtr hWndParent, string titlePattern, string classNamePattern, out IntPtr hWnd, out string message, bool ignoreCase = true)
+        {
+            hWnd = IntPtr.Zero;
+            message = default;
+            try
+            {
+                // EnumChildWindows(NULL) walks every top-level window, and a stale parent
+                // would otherwise read as a clean "no match" - reject both up front.
+                if (!IsWindowNative(hWndParent))
+                {
+                    message = "Invalid or nonexistent parent window handle.";
+                    return false;
+                }
+                if (!TryBuildRegexFilters(titlePattern, classNamePattern, ignoreCase, out Regex titleRegex, out Regex classRegex, out message))
+                    return false;
+
+                hWnd = FindFirstMatching(GetChildWindows(hWndParent), titleRegex, classRegex, GetWindowTitle, GetWindowClassName);
+                message = null;
+                return hWnd != IntPtr.Zero;
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                hWnd = IntPtr.Zero;
+                message = RegexTimeoutMessage;
+                return false;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                hWnd = IntPtr.Zero;
+                message = NeverThrowsGuard.Failure("TryFindChildWindowByRegex", ex);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Regex Filtering
+
+        // Caps each individual match so catastrophic backtracking in a caller-supplied
+        // pattern surfaces as a message instead of stalling the automation thread.
+        internal static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(1);
+
+        private const string RegexTimeoutMessage =
+            "A window title or class name took longer than 1 second to match the pattern - simplify the regular expression (nested quantifiers such as (a+)+ are the usual cause).";
+
+        internal static bool TryBuildRegexFilters(string titlePattern, string classNamePattern, bool ignoreCase,
+            out Regex titleRegex, out Regex classRegex, out string message)
+        {
+            titleRegex = null;
+            classRegex = null;
+            message = null;
+
+            // With neither pattern there is nothing to filter on, and matching "any window"
+            // would just return whichever one happens to enumerate first.
+            if (string.IsNullOrEmpty(titlePattern) && string.IsNullOrEmpty(classNamePattern))
+            {
+                message = "At least one of titlePattern or classNamePattern is required.";
+                return false;
+            }
+
+            RegexOptions options = RegexOptions.CultureInvariant | (ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None);
+            if (!TryBuildRegex(titlePattern, options, "titlePattern", out titleRegex, out message))
+                return false;
+            if (!TryBuildRegex(classNamePattern, options, "classNamePattern", out classRegex, out message))
+            {
+                titleRegex = null;
+                return false;
+            }
+            return true;
+        }
+
+        private static bool TryBuildRegex(string pattern, RegexOptions options, string parameterName, out Regex regex, out string message)
+        {
+            regex = null;
+            message = null;
+            if (string.IsNullOrEmpty(pattern))
+                return true;
+
+            try
+            {
+                regex = new Regex(pattern, options, RegexMatchTimeout);
+                return true;
+            }
+            catch (ArgumentException ex)
+            {
+                message = $"{parameterName} is not a valid regular expression: {ex.Message}";
+                return false;
+            }
+        }
+
+        // A null regex means "don't filter on this axis". Title/class text is fetched only
+        // for the axes that are actually filtered, so a class-only search never reads titles.
+        internal static IntPtr FindFirstMatching(IEnumerable<IntPtr> windows, Regex titleRegex, Regex classRegex,
+            Func<IntPtr, string> getTitle, Func<IntPtr, string> getClassName)
+        {
+            foreach (IntPtr window in windows)
+            {
+                if (titleRegex != null && !titleRegex.IsMatch(getTitle(window)))
+                    continue;
+                if (classRegex != null && !classRegex.IsMatch(getClassName(window)))
+                    continue;
+                return window;
+            }
+            return IntPtr.Zero;
+        }
+
         #endregion
 
         #region Win32 Interop
@@ -836,6 +1257,18 @@ namespace WindowAutomation
         [DllImport("user32.dll", EntryPoint = "IsWindow")]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool IsWindowNative(IntPtr hWnd);
+
+        [DllImport("user32.dll", EntryPoint = "IsWindowEnabled")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowEnabledNative(IntPtr hWnd);
+
+        [DllImport("user32.dll", EntryPoint = "IsIconic")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsIconicNative(IntPtr hWnd);
+
+        [DllImport("user32.dll", EntryPoint = "IsZoomed")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsZoomedNative(IntPtr hWnd);
 
         [DllImport("user32.dll", EntryPoint = "IsHungAppWindow")]
         [return: MarshalAs(UnmanagedType.Bool)]

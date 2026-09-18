@@ -36,7 +36,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [TerminalUtils](#terminalutils) | `TerminalAutomation` | 11 | 0 | 0 | Reads a console app's live screen buffer and injects keystrokes into it, for terminal UIs normal UI automation can't see. |
 | [UIAutomationUtils](#uiautomationutils) | `UIAutomation` | 53 (55 rows) | 0 | 0 | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation. |
 | [ValueStoreUtils](#valuestoreutils) | `ValueStoreAutomation` | 49 | 1 | 0 | A freeform key/value bag with forgiving typed conversion and dot-notation access into JSON-shaped values. |
-| [WindowUtils](#windowutils) | `WindowAutomation` | 29 | 0 | 0 | Enumerates, locates, moves/resizes, activates, and closes windows via Win32 window APIs. |
+| [WindowUtils](#windowutils) | `WindowAutomation` | 37 | 0 | 0 | Enumerates, locates, moves/resizes, activates, and closes windows via Win32 window APIs. |
 | [WinEventUtils](#wineventutils) | `WinEventAutomation` | 29 (32 rows) | 0 | 0 | Watches Windows UI events via `SetWinEventHook` and delivers them instantly — synchronous waits or background subscriptions. |
 
 *"Methods" counts distinct method names; "rows" (where different) includes
@@ -794,6 +794,7 @@ Enumerates, locates, moves/resizes, activates, and closes windows using the Win3
 |---|---|---|
 | `ActivateWindow` | `bool ActivateWindow(IntPtr hWnd, out string message)` | Brings a window to the foreground and gives it input focus. Returns True on success; never throws. |
 | `CloseWindow` | `bool CloseWindow(IntPtr hWnd, out string message)` | Asks a window to close by posting `WM_CLOSE` to it. Returns True on success; never throws. |
+| `EnumerateWindowsJson` | `bool EnumerateWindowsJson(out string json, out string message, bool visibleOnly = true, int processId = 0)` | Lists top-level windows as a JSON array of handle/title/class/process/visibility/enabled/state/bounds objects, with no collection proxy needed. Never throws. |
 | `FindChildWindow` | `IntPtr FindChildWindow(IntPtr hWndParent, string title, string className, bool exactMatch = true)` | Finds a child window matching the given title and/or class name (exact and case-sensitive by default; exactMatch: false switches to case-insensitive substring). |
 | `FindFirstWindowByProcessId` | `IntPtr FindFirstWindowByProcessId(int processId)` | Finds the first top-level window owned by the given process ID, for the common single-window case. |
 | `FindWindowByClass` | `IntPtr FindWindowByClass(string className)` | Finds the first top-level window of the given window class. |
@@ -807,6 +808,9 @@ Enumerates, locates, moves/resizes, activates, and closes windows using the Win3
 | `GetWindowClassName` | `string GetWindowClassName(IntPtr hWnd)` | Gets a window's window-class name (empty string for an invalid handle too). |
 | `GetWindowProcessId` | `int GetWindowProcessId(IntPtr hWnd)` | Gets the process ID that owns a window (0 for an invalid handle too). |
 | `GetWindowTitle` | `string GetWindowTitle(IntPtr hWnd)` | Gets a window's title text (empty string for both an invalid handle and a legitimately titleless window). |
+| `IsWindowEnabled` | `bool IsWindowEnabled(IntPtr hWnd)` | Returns true if the window accepts input; false while a modal dialog blocks it (or for an invalid handle). |
+| `IsWindowMaximized` | `bool IsWindowMaximized(IntPtr hWnd)` | Returns true if the window is maximized and not minimized. |
+| `IsWindowMinimized` | `bool IsWindowMinimized(IntPtr hWnd)` | Returns true if the window is minimized (including one minimized from a maximized state). |
 | `IsWindowResponding` | `bool IsWindowResponding(IntPtr hWnd)` | Returns true if the window is responding to messages (inverse of `IsHungAppWindow`). |
 | `IsWindowVisible` | `bool IsWindowVisible(IntPtr hWnd)` | Returns true if the window is visible. |
 | `MoveWindow` | `bool MoveWindow(IntPtr hWnd, int left, int top, out string message)` | Moves a window without changing its size. Returns True on success; never throws. |
@@ -814,8 +818,12 @@ Enumerates, locates, moves/resizes, activates, and closes windows using the Win3
 | `SetAlwaysOnTop` | `bool SetAlwaysOnTop(IntPtr hWnd, bool alwaysOnTop, out string message)` | Makes a window always-on-top (or removes that state). Returns True on success; never throws. |
 | `SetWindowBounds` | `bool SetWindowBounds(IntPtr hWnd, int left, int top, int width, int height, out string message)` | Moves and/or resizes a window to the given rectangle. Returns True on success; never throws. |
 | `SetWindowState` | `void SetWindowState(IntPtr hWnd, ShowWindowCommand command)` | Applies a show/hide/minimize/maximize/restore state to a window. |
+| `TryFindChildWindowByRegex` | `bool TryFindChildWindowByRegex(IntPtr hWndParent, string titlePattern, string classNamePattern, out IntPtr hWnd, out string message, bool ignoreCase = true)` | Finds the first descendant window whose text and/or class name matches a regular expression. Returns True if found; never throws. |
+| `TryFindWindowByRegex` | `bool TryFindWindowByRegex(string titlePattern, string classNamePattern, out IntPtr hWnd, out string message, bool ignoreCase = true)` | Finds the first top-level window whose title and/or class name matches a regular expression. Returns True if found; never throws. |
 | `TryGetWindowClassName` | `bool TryGetWindowClassName(IntPtr hWnd, out string className, out string message)` | Same as `GetWindowClassName`, but returns False for an invalid/nonexistent handle instead of collapsing it to an empty string. |
+| `TryGetWindowEnabled` | `bool TryGetWindowEnabled(IntPtr hWnd, out bool enabled, out string message)` | Same as IsWindowEnabled, but returns False for an invalid/nonexistent handle instead of collapsing it to disabled. Never throws. |
 | `TryGetWindowProcessId` | `bool TryGetWindowProcessId(IntPtr hWnd, out int processId, out string message)` | Same as `GetWindowProcessId`, but returns False for an invalid/nonexistent handle instead of collapsing it to 0. |
+| `TryGetWindowState` | `bool TryGetWindowState(IntPtr hWnd, out WindowDisplayState state, out string message)` | Gets whether a window is normal, minimized, or maximized. Returns True on success; never throws. |
 | `TryGetWindowTitle` | `bool TryGetWindowTitle(IntPtr hWnd, out string title, out string message)` | Same as `GetWindowTitle`, but returns False for an invalid/nonexistent handle instead of collapsing it to an empty string. |
 | `WaitForWindow` | `bool WaitForWindow(string title, int timeoutMs, int pollIntervalMs, out IntPtr hWnd, out string message)` | Same as `WaitForWindowSimple`, plus a message output distinguishing a genuine timeout from an invalid title. |
 | `WaitForWindowActive` | `bool WaitForWindowActive(IntPtr hWnd, int timeoutMs, int pollIntervalMs)` | Polls until the given window becomes the foreground window, or the timeout elapses. |

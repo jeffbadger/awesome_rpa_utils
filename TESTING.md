@@ -233,6 +233,27 @@ condition.
   within-timeout and a timeout-exceeded case)
 - `GetChildWindows`, `FindChildWindow` (both exact and `exactMatch: false`
   substring matching; null/empty filters skip that axis)
+- `TryGetWindowState`, `IsWindowMinimized`, `IsWindowMaximized` (drive the
+  harness window through `SetWindowState` Minimized/Maximized/Restore and assert
+  each; minimize it *from* maximized and assert it reports `Minimized` only;
+  invalid handle → `false` + message from `TryGetWindowState`)
+- `IsWindowEnabled`, `TryGetWindowEnabled` (have the harness open a modal
+  dialog: the owner reads disabled while it is open and enabled again after it
+  closes; a closed handle → `false` + message from `TryGetWindowEnabled`)
+- `TryFindWindowByRegex`, `TryFindChildWindowByRegex` (title-only, class-only,
+  and both patterns; a WinForms class name with a per-run suffix matched by its
+  stable prefix; not found → `false` with a **null** `message`, versus no
+  pattern / invalid pattern / stale parent handle → `false` with a non-null
+  `message`; `ignoreCase: false` misses a differently-cased title)
+- `EnumerateWindowsJson` (the harness window appears with the expected `Title`,
+  `ClassName`, `ProcessId`, `IsEnabled`, `State`, and sane bounds; `processId`
+  narrows to one process; an unknown process ID → `[]`; a negative one →
+  `false` + message)
+
+The regex-filter, display-state, and JSON-shape logic behind the four items
+above is also covered by `WindowUtils.Tests` without a live desktop (see
+`InternalsVisibleTo` in `WindowUtils.csproj`); the harness pass is for the live
+Win32 behavior those tests cannot reach.
 
 ### OcrUtils (needs Setup: a fixed test image file with known text, plus a screen region showing known text — e.g. the harness's own label)
 
