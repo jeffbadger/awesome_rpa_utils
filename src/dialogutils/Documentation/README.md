@@ -6,6 +6,8 @@ organized by the same categories used in the source code and the top-level
 
 - [Find & Click](FindAndClick.md) — locating a dialog and invoking its buttons
 - [Read Text](ReadText.md) — reading a dialog's message and control text
+- [Set Values](SetValues.md) — typing into text boxes, check boxes/radio buttons, drop-downs
+- [File Dialogs](FileDialogs.md) — driving Open/Save As dialogs
 - [Wait for Dialog](WaitForDialog.md) — polling for a dialog to appear/close
 
 All examples assume a `DialogUtils` instance named `dialog`, as it would

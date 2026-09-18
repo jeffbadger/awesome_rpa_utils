@@ -82,6 +82,40 @@ where the method is documented to throw.
   cases; use a delayed-launch step in Setup to hit the "found before timeout"
   branch; new `exactMatch` — a dialog titled "Confirm changes" should match
   `"Confirm"` with `exactMatch: false` but not `exactMatch: true`)
+- `GetControlText` on an edit box or drop-down **in another process** (assert the
+  real text - it was previously always empty; run the target dialog in a child
+  process, since a same-process dialog would not catch the regression)
+- `ListDialogControls` on a dialog with `PasswordChar`/`UseSystemPasswordChar` text
+  boxes **in another process** (assert the password boxes come back with empty `Text`
+  and `IsPassword` true, an ordinary box keeps its text, `ToString()` never contains the
+  password; `GetControlText` on the password handle still returns the real text)
+- `SetControlText` (a text box and a drop-down's edit box; read it back with
+  `GetControlText`; a read-only or length-limited control → `false` + message; the
+  text is never in the message; `null` text → `false`)
+- `TryGetControlCheckState`, `SetControlChecked` (native check boxes such as a Font
+  dialog's Strikeout/Underline: check, uncheck, idempotent repeat; native radio
+  buttons such as Page Setup's Portrait/Landscape: select one, assert the other
+  clears, unchecking a selected one → `false` with a radio-button message; a push
+  button or non-button → `false`; a WinForms (owner-drawn) check box → `false` with a
+  message naming UIAutomationUtils; assert the application received the change on
+  confirming the dialog)
+- `SelectComboItem` (a Font dialog's style and size lists, and a WinForms `ComboBox`:
+  assert the app's selection changed **and** that a change event fired once - the
+  notification is what makes an app react; no match → `false` with a message listing
+  the items; a button handle → `false`; already-selected → `true`, no event)
+- `SetFileDialogPath`, `SelectFileDialogFileType`, `SubmitFileDialog` (run a real
+  Open and Save As dialog in a **child process** and assert what the dialog returns:
+  the chosen path, and `FilterIndex` after `SelectFileDialogFileType` - a change that
+  did not reach the dialog leaves it unchanged; a Save As with no extension gets the
+  chosen type's extension; overwrite an existing file → `false` (still open), then
+  answer the confirmation with `ClickDialogButtonByText` and assert the dialog
+  closes; Open a missing file → `false`, dismiss the error box, Cancel; a Font dialog
+  → `false` and its font-name box untouched)
+
+The classification, matching, and structural-finder logic behind the six items above
+is also covered by `DialogUtils.Tests` without a desktop, against control trees
+captured from real Windows Open, Save As, and Font dialogs; the interactive pass is
+for what those trees cannot show - how the live dialogs respond.
 
 ### KeyboardUtils (needs Setup: harness with a focused text field)
 
