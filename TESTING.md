@@ -107,6 +107,15 @@ exception` condition.
 - `IsKeyDown`, `IsModifierDown`, `GetActiveModifiers` (state query — hold a key
   via `KeyDown` in the same test, then assert; `IsModifierDown(ModifierKeys.None)`
   must return `false`; still plain `bool`/enum returns with no `message` parameter)
+- `IsCapsLockOn`, `IsNumLockOn`, `IsScrollLockOn` (toggle each lock key with
+  `PressKey`, assert the reported state flips and flips back, and restore it;
+  read it from a worker thread as well as the UI thread; compare with
+  `Console.CapsLock`/`Console.NumberLock`)
+- `GetKeyboardLayout` (activate each installed layout on the harness window and
+  assert `layoutId` equals `GetKeyboardLayoutName` for that window, with the
+  matching `layoutName` and `languageTag`; also US-International/Dvorak, which
+  use the `0xF...` form of input locale identifier; the default reads the
+  foreground window; an invalid `hWnd` → `false` + message, outputs `null`)
 
 ### MouseUtils (Setup: run the test harness — it provides a click target with a button-detail label, a scrollable multi-select list, and a drag target)
 

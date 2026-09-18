@@ -23,6 +23,8 @@ script is needed.
 | `IsKeyDown` | Direct | Enum input and Boolean result are easy to branch on. |
 | `IsModifierDown` | Direct, verify flags | Provides a Boolean alternative to consuming the flags returned by `GetActiveModifiers`. Combined input flags depend on designer support. |
 | `GetActiveModifiers` | Direct enum output | No object proxy is required, but branching on combined flags may be less convenient than calling `IsModifierDown` for each required flag. |
+| `IsCapsLockOn`, `IsNumLockOn`, `IsScrollLockOn` | Direct | No ports beyond the Boolean result, and they cannot fail. They read a lock key's toggle state, which is separate from `IsKeyDown` (whether the key is pressed), and make Caps Lock inverting typed case, Num Lock turning keypad digits into navigation, and Scroll Lock changing arrow-key behavior in Excel checkable before key-by-key typing. |
+| `GetKeyboardLayout` | Direct, scalar outputs | Optional `IntPtr hWnd` (zero means the foreground window, so it needs no wiring in the common case) and three scalar string outputs (`layoutName`, `layoutId`, `languageTag`) plus `message`, so no object proxy is required. `layoutId` is what distinguishes US from US-International, which the language tag cannot. |
 
 ## Coverage concerns
 
@@ -49,6 +51,13 @@ enum expansion or a raw-key-code adapter.
 5. **Done.** Flagged `PasteText`'s destructive clipboard behavior in its
    designer-visible `[Description]` attribute, the [README](../../src/keyboardutils/README.md) method
    table, and [Documentation/ClipboardPaste.md](../../src/keyboardutils/Documentation/ClipboardPaste.md).
+
+6. **Done.** Added lock-key toggle state (`IsCapsLockOn`, `IsNumLockOn`,
+   `IsScrollLockOn`) and the target window's keyboard layout (`GetKeyboardLayout`),
+   both of which change what key-by-key typing produces. Both are additive with
+   unique names, so the
+   [Signature Uniqueness Standard](../coding-standards/signature-uniqueness-standard.md)
+   is unaffected.
 
 ## Verdict
 
