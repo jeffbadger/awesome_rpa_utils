@@ -1468,7 +1468,9 @@ namespace WinEventAutomation.Tests
         {
             try
             {
-                var existing = new HashSet<IntPtr>(EnumNotepadWindows());
+                // Baseline includes hidden windows: a pre-existing window that merely becomes visible
+                // after the launch is still not ours to close.
+                var existing = new HashSet<IntPtr>(EnumNotepadWindows(visibleOnly: false));
                 string path = Environment.GetFolderPath(Environment.SpecialFolder.System) + "\\notepad.exe";
                 var launcher = Process.Start(new ProcessStartInfo(path) { UseShellExecute = false });
                 return launcher == null ? null : new NotepadInstance(launcher, existing);
@@ -1484,13 +1486,13 @@ namespace WinEventAutomation.Tests
             notepad?.Close();
         }
 
-        private static List<IntPtr> EnumNotepadWindows()
+        private static List<IntPtr> EnumNotepadWindows(bool visibleOnly = true)
         {
             var found = new List<IntPtr>();
             var className = new StringBuilder(64);
             EnumWindows((hwnd, _) =>
             {
-                if (IsWindowVisible(hwnd) && GetClassName(hwnd, className, className.Capacity) > 0 &&
+                if ((!visibleOnly || IsWindowVisible(hwnd)) && GetClassName(hwnd, className, className.Capacity) > 0 &&
                     string.Equals(className.ToString(), "Notepad", StringComparison.Ordinal))
                     found.Add(hwnd);
                 return true;
