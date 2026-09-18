@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -120,6 +121,28 @@ namespace MouseAutomation
         /// <summary>Tracks hide/show calls made through this component (Win32 ShowCursor uses a counter).</summary>
         private bool _cursorHidden;
 
+        /// <summary>The managed thread ID that called <see cref="HideCursor"/>, since Win32's display counter is per-thread.</summary>
+        private int _cursorHiddenThreadId;
+
+        /// <summary>Buttons currently held down via the public, explicitly stateful <see cref="MouseDown"/>/<see cref="MouseUp"/> pair.</summary>
+        private readonly HashSet<MouseButton> _buttonsDown = new HashSet<MouseButton>();
+
+        /// <summary>Whether this instance's <see cref="BlockUserInput"/> call is currently in effect.</summary>
+        private bool _inputBlockedByThisInstance;
+
+        /// <summary>The managed thread ID that called <see cref="BlockUserInput"/>, since only that thread can unblock it.</summary>
+        private int _inputBlockedThreadId;
+
+        /// <summary>The cursor clip rectangle in effect immediately before this instance's last <see cref="ClipCursor"/> call.</summary>
+        private RECT? _previousClipRect;
+
+        /// <summary>
+        /// The cursor originally in each system cursor slot this instance has replaced,
+        /// keyed by slot - see <see cref="TryApplySystemCursor"/> for how/when each entry
+        /// is captured.
+        /// </summary>
+        private readonly Dictionary<SystemCursorType, IntPtr> _originalCursorHandlesBySlot = new Dictionary<SystemCursorType, IntPtr>();
+
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
         /// </summary>
@@ -137,23 +160,70 @@ namespace MouseAutomation
         }
 
         /// <summary>
-        /// Releases the resources used by the component and detaches it from its container.
-        /// MouseUtils holds no unmanaged handles (<c>SetCursorPos</c> / <c>SendInput</c> /
-        /// <c>GetAsyncKeyState</c> are all stateless Win32 calls), so there is nothing extra
-        /// to release here - this override follows the standard component pattern and gives
-        /// you a cleanup hook (e.g. if you later add a global mouse hook or polling timer,
-        /// unhook/stop it below). Runs automatically when Pega Robot Studio tears down the
+        /// Releases the resources used by the component, best-effort cleans up every
+        /// piece of state this component can leave behind across calls, and detaches it
+        /// from its container. Runs automatically when Pega Robot Studio tears down the
         /// automation's design-surface components.
         /// </summary>
         /// <param name="disposing">
         /// True when called from the public Dispose() method during teardown;
         /// false when called from the finalizer.
         /// </param>
+        /// <remarks>
+        /// Cleans up: buttons left down via the public, explicitly stateful
+        /// <see cref="MouseDown"/>/<see cref="MouseUp"/> pair (every compound click/drag
+        /// method elsewhere in this class already guarantees its own release via a
+        /// <c>finally</c> block, so this only ever needs to cover a <see cref="MouseDown"/>
+        /// caller that never reached a matching <see cref="MouseUp"/>); a
+        /// <see cref="BlockUserInput"/> block and a <see cref="HideCursor"/> hide, each
+        /// only when disposing on the same thread that acquired them (Win32's
+        /// <c>BlockInput</c>/<c>ShowCursor</c> are both thread-affine - disposing on a
+        /// different thread cannot rebalance either one, and this is a real, documented
+        /// limitation rather than something this method can fully solve); a
+        /// <see cref="ClipCursor"/> confinement, restoring the exact rectangle that was
+        /// in effect before it; and every system cursor slot replaced via
+        /// <see cref="SetCursor"/>/<see cref="ReplaceSystemCursor"/>/<see cref="SetCursorFromFile"/>,
+        /// restoring each slot's own original rather than the broader
+        /// <see cref="ResetSystemCursors"/> reset (which could overwrite an unrelated
+        /// concurrent change by the user or another process). Every step here is
+        /// deliberately best-effort - there is no way to report a cleanup failure from
+        /// <c>Dispose</c>, so a failure to clean up one piece of state must never stop
+        /// the rest from being attempted.
+        /// </remarks>
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                // No managed or unmanaged resources to release.
+                foreach (MouseButton button in _buttonsDown.ToArray())
+                {
+                    try { TrySendMouseButton(button, false, out _); } catch { /* best-effort */ }
+                }
+                _buttonsDown.Clear();
+
+                if (_inputBlockedByThisInstance && Environment.CurrentManagedThreadId == _inputBlockedThreadId)
+                {
+                    try { BlockInputNative(false); } catch { /* best-effort */ }
+                    _inputBlockedByThisInstance = false;
+                }
+
+                if (_cursorHidden && Environment.CurrentManagedThreadId == _cursorHiddenThreadId)
+                {
+                    try { ShowCursorNative(true); } catch { /* best-effort */ }
+                    _cursorHidden = false;
+                }
+
+                if (_previousClipRect is RECT previousClip)
+                {
+                    try
+                    {
+                        RECT rc = previousClip;
+                        ClipCursorRect(ref rc);
+                    }
+                    catch { /* best-effort */ }
+                    _previousClipRect = null;
+                }
+
+                ForgetSavedSystemCursors(restore: true);
             }
 
             // Base Component.Dispose detaches this component from its container's site.
@@ -710,6 +780,14 @@ namespace MouseAutomation
         /// <param name="button">The mouse button to press.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the press failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/> or a failed input injection. Never throws.</returns>
+        /// <remarks>
+        /// This is the one method in this class that is intentionally stateful across
+        /// separate calls - the caller owns the matching <see cref="MouseUp"/>, unlike
+        /// every click/drag method elsewhere in this class, which always releases what it
+        /// presses before returning. Disposing this component sends a best-effort release
+        /// for any button still held via this method as a backstop, but that should not
+        /// be relied on as the primary cleanup path.
+        /// </remarks>
         [Category("Mouse - Click")]
         [Description("Presses and holds the given mouse button (pair with MouseUp). Returns True on success; never throws.")]
         public bool MouseDown(MouseButton button, out string message)
@@ -717,7 +795,10 @@ namespace MouseAutomation
             message = default;
             try
             {
-                return TrySendMouseButton(button, true, out message);
+                bool ok = TrySendMouseButton(button, true, out message);
+                if (ok)
+                    _buttonsDown.Add(button);
+                return ok;
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -740,7 +821,10 @@ namespace MouseAutomation
             message = default;
             try
             {
-                return TrySendMouseButton(button, false, out message);
+                bool ok = TrySendMouseButton(button, false, out message);
+                if (ok)
+                    _buttonsDown.Remove(button);
+                return ok;
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -1543,7 +1627,10 @@ namespace MouseAutomation
         /// the user signs out, or another process changes it. Applications that explicitly
         /// set their own cursor over their windows will override this for those windows.
         /// Always call <see cref="ResetSystemCursors"/> when your automation finishes
-        /// (ideally in a Finally block) so the user's cursors are restored.
+        /// (ideally in a Finally block) so the user's cursors are restored; disposing this
+        /// component also restores each slot it touched (to what was there immediately
+        /// before, not necessarily the Windows default) as a backstop, but that should not
+        /// be relied on as the primary cleanup path.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Changes the normal arrow cursor to the given system cursor (e.g. Wait while the automation runs). Call ResetSystemCursors afterwards. Returns True on success; never throws.")]
@@ -1664,6 +1751,11 @@ namespace MouseAutomation
                     message = new Win32Exception(Marshal.GetLastWin32Error(), "SystemParametersInfo(SPI_SETCURSORS) failed.").Message;
                     return false;
                 }
+                // Every cursor is already back to the configured Windows defaults, so this
+                // instance's own per-slot originals (see TryApplySystemCursor) are now
+                // stale - discard them rather than let Dispose re-apply an outdated saved
+                // cursor over this fresh reset, and free the owned handles.
+                ForgetSavedSystemCursors();
                 message = null;
                 return true;
 
@@ -1685,6 +1777,9 @@ namespace MouseAutomation
         /// <see cref="ShowCursor"/> call must be made on the same thread that hid the
         /// cursor (typically the automation's main thread). If another application hides
         /// the cursor independently, use <see cref="IsCursorVisible"/> only as an approximation.
+        /// Disposing this component on that same thread also attempts a rebalancing
+        /// <c>ShowCursor</c> call as a backstop, but that should not be relied on as the
+        /// primary cleanup path - disposing on a different thread cannot rebalance it at all.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Hides the cursor. Counterbalanced by ShowCursor.")]
@@ -1694,6 +1789,7 @@ namespace MouseAutomation
             {
                 ShowCursorNative(false);
                 _cursorHidden = true;
+                _cursorHiddenThreadId = Environment.CurrentManagedThreadId;
             }
         }
 
@@ -1740,7 +1836,9 @@ namespace MouseAutomation
         /// <remarks>
         /// Useful for demos/kiosks or to keep a script's clicks inside one monitor.
         /// The clip is released automatically by Windows when the session locks, but
-        /// always pair with <see cref="ReleaseCursorClip"/> (ideally in a Finally block).
+        /// always pair with <see cref="ReleaseCursorClip"/> (ideally in a Finally block);
+        /// disposing this component also restores the clip that was in effect before this
+        /// call as a backstop, but that should not be relied on as the primary cleanup path.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Confines the cursor to the given screen rectangle until ReleaseCursorClip is called. Returns True on success; never throws.")]
@@ -1754,6 +1852,15 @@ namespace MouseAutomation
                     message = "Clip rectangle must be non-empty: right > left and bottom > top.";
                     return false;
                 }
+
+                // Save whatever clip was in effect before this call - GetClipCursor
+                // reports the full virtual screen when nothing is explicitly clipped,
+                // so this uniformly captures "no clip" too - so ReleaseCursorClip/Dispose
+                // can restore it precisely instead of always clearing to "no clip",
+                // which could stomp a clip another app (or another instance of this
+                // component) legitimately owns.
+                if (GetClipCursor(out RECT previous))
+                    _previousClipRect = previous;
 
                 RECT rc = new RECT { Left = left, Top = top, Right = right, Bottom = bottom };
                 if (!ClipCursorRect(ref rc))
@@ -1778,18 +1885,37 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the release failed.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the ClipCursor call failed. Never throws.</returns>
+        /// <remarks>
+        /// Restores whatever clip (or lack of one) was in effect immediately before this
+        /// instance's last <see cref="ClipCursor"/> call, rather than unconditionally
+        /// clearing to "no clip" - the latter would also clear a clip another app or
+        /// another instance of this component legitimately owns. Falls back to clearing
+        /// to "no clip" only when this instance never called <see cref="ClipCursor"/>.
+        /// </remarks>
         [Category("Mouse - Cursor")]
-        [Description("Removes cursor confinement set by ClipCursor. Returns True on success; never throws.")]
+        [Description("Removes cursor confinement set by ClipCursor, restoring whatever clip was in effect before it. Returns True on success; never throws.")]
         public bool ReleaseCursorClip(out string message)
         {
             message = default;
             try
             {
-                if (!ClipCursorNull(IntPtr.Zero))
+                bool ok;
+                if (_previousClipRect is RECT previous)
                 {
-                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor(NULL) failed.").Message;
+                    RECT rc = previous;
+                    ok = ClipCursorRect(ref rc);
+                }
+                else
+                {
+                    ok = ClipCursorNull(IntPtr.Zero);
+                }
+
+                if (!ok)
+                {
+                    message = new Win32Exception(Marshal.GetLastWin32Error(), "ClipCursor failed while releasing the clip.").Message;
                     return false;
                 }
+                _previousClipRect = null;
                 message = null;
                 return true;
 
@@ -2073,6 +2199,9 @@ namespace MouseAutomation
         /// Rules of engagement:
         ///  - ALWAYS pair with <see cref="UnblockUserInput"/> in a Finally block. Only the
         ///    thread that blocked can unblock; a stranded block means no working input.
+        ///    Disposing this component on that same thread also attempts an unblock as a
+        ///    backstop, but that should not be relied on as the primary cleanup path -
+        ///    disposing on a different thread cannot rebalance it at all.
         ///  - Ctrl+Alt+Del always breaks the block (a Windows safety hatch).
         ///  - If this process exits while blocked, Windows releases the block with the thread.
         ///  - Requires an interactive desktop; fails on the secure desktop and against
@@ -2092,6 +2221,8 @@ namespace MouseAutomation
                     message = "BlockInput was refused - input is already blocked, or the desktop is secure/locked.";
                     return false;
                 }
+                _inputBlockedByThisInstance = true;
+                _inputBlockedThreadId = Environment.CurrentManagedThreadId;
                 message = null;
                 return true;
 
@@ -2115,6 +2246,7 @@ namespace MouseAutomation
             // BlockInput(false) returns False when nothing is blocked; that is not an
             // error for cleanup purposes, so the result is deliberately ignored.
             BlockInputNative(false);
+            _inputBlockedByThisInstance = false;
         }
 
         #endregion
@@ -3427,8 +3559,29 @@ namespace MouseAutomation
         /// following the ownership rules of SetSystemCursor (which destroys the handle
         /// it is given - hence the copy; the caller keeps ownership of hSource).
         /// </summary>
-        private static bool TryApplySystemCursor(SystemCursorType slot, IntPtr hSource, out string message)
+        /// <remarks>
+        /// Also remembers, the first time this instance ever touches a given slot, what
+        /// cursor was active there beforehand (via <c>LoadCursor</c>, which returns the
+        /// currently-active cursor for a slot, not a fixed default) - not on every call,
+        /// so replacing the same slot twice does not overwrite the real original with
+        /// this instance's own prior replacement. <see cref="Dispose(bool)"/> restores
+        /// only these specific saved slots, rather than the wider, instance-agnostic
+        /// <see cref="ResetSystemCursors"/> reset, which reloads every configured cursor
+        /// and can overwrite a concurrent change by the user or another process.
+        /// </remarks>
+        private bool TryApplySystemCursor(SystemCursorType slot, IntPtr hSource, out string message)
         {
+            if (!_originalCursorHandlesBySlot.ContainsKey(slot))
+            {
+                IntPtr hCurrent = LoadCursor(IntPtr.Zero, (int)slot);
+                if (hCurrent != IntPtr.Zero)
+                {
+                    IntPtr hCurrentCopy = CopyIcon(hCurrent);
+                    if (hCurrentCopy != IntPtr.Zero)
+                        _originalCursorHandlesBySlot[slot] = hCurrentCopy;
+                }
+            }
+
             IntPtr hCopy = CopyIcon(hSource); // CopyCursor is a macro for CopyIcon
             if (hCopy == IntPtr.Zero)
             {
@@ -3446,6 +3599,24 @@ namespace MouseAutomation
             // hCopy is now owned by the system - do not destroy it.
             message = null;
             return true;
+        }
+
+        /// <summary>
+        /// Frees this instance's saved per-slot original system cursors (see
+        /// <see cref="TryApplySystemCursor"/>), optionally restoring each one to its
+        /// slot first.
+        /// </summary>
+        private void ForgetSavedSystemCursors(bool restore = false)
+        {
+            foreach (var slotAndHandle in _originalCursorHandlesBySlot.ToArray())
+            {
+                if (restore)
+                {
+                    try { TryApplySystemCursor(slotAndHandle.Key, slotAndHandle.Value, out _); } catch { /* best-effort */ }
+                }
+                try { DestroyCursor(slotAndHandle.Value); } catch { /* best-effort */ }
+            }
+            _originalCursorHandlesBySlot.Clear();
         }
 
         private static bool TrySendMouseButton(MouseButton button, bool isDown, out string message)
