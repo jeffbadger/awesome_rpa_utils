@@ -88,6 +88,48 @@ namespace MouseAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        // --- ClickAtRelativePosition: non-finite fraction: false + message, never an exception ---
+        // Regression test: every comparison against NaN is false in C#, so the
+        // [0.0, 1.0] range check above previously let NaN sail straight through.
+
+        [Theory]
+        [InlineData(double.NaN, 0.5)]
+        [InlineData(double.PositiveInfinity, 0.5)]
+        [InlineData(double.NegativeInfinity, 0.5)]
+        public void ClickAtRelativePosition_NonFiniteXFraction_ReturnsFalseWithMessage(double xFraction, double yFraction)
+        {
+            bool ok = _mouse.ClickAtRelativePosition(IntPtr.Zero, xFraction, yFraction, MouseButton.Left, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(0.5, double.NaN)]
+        [InlineData(0.5, double.PositiveInfinity)]
+        [InlineData(0.5, double.NegativeInfinity)]
+        public void ClickAtRelativePosition_NonFiniteYFraction_ReturnsFalseWithMessage(double xFraction, double yFraction)
+        {
+            bool ok = _mouse.ClickAtRelativePosition(IntPtr.Zero, xFraction, yFraction, MouseButton.Left, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        // --- SafeClickAt: zero expected handle must never authorize a click ---
+        // Regression test: without this guard, a point over empty desktop (where
+        // GetWindowAtPoint also returns IntPtr.Zero) would make actual ==
+        // expectedWindowHandle trivially true, defeating the misclick guard entirely.
+
+        [Fact]
+        public void SafeClickAt_ZeroExpectedWindowHandle_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.SafeClickAt(0, 0, MouseButton.Left, IntPtr.Zero, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         // --- SetDoubleClickTimeMs: out-of-range value: false + message, never an exception ---
 
         [Theory]
