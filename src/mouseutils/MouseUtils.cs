@@ -3912,18 +3912,44 @@ namespace MouseAutomation
 
         #region P/Invoke - Cursor Position
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool SetCursorPos(int X, int Y);
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetCursorPos")]
+        private static extern bool SetCursorPosNative(int X, int Y);
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool GetCursorPos(out POINT lpPoint);
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetCursorPos")]
+        private static extern bool GetCursorPosNative(out POINT lpPoint);
+
+        /// <summary>Test-only fault-injection seam for <see cref="SetCursorPosNative"/>. Null uses the real Win32 call.</summary>
+        internal static Func<int, int, bool> SetCursorPosOverride;
+
+        /// <summary>Test-only fault-injection seam for <see cref="GetCursorPosNative"/>. Null uses the real Win32 call.</summary>
+        internal static GetCursorPosDelegate GetCursorPosOverride;
+
+        internal delegate bool GetCursorPosDelegate(out POINT p);
+
+        private static bool SetCursorPos(int x, int y) =>
+            SetCursorPosOverride != null ? SetCursorPosOverride(x, y) : SetCursorPosNative(x, y);
+
+        private static bool GetCursorPos(out POINT p) =>
+            GetCursorPosOverride != null ? GetCursorPosOverride(out p) : GetCursorPosNative(out p);
 
         #endregion
 
         #region P/Invoke - Input Injection
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "SendInput")]
+        private static extern uint SendInputNative(uint nInputs, INPUT[] pInputs, int cbSize);
+
+        /// <summary>
+        /// Test-only fault-injection seam for <see cref="SendInputNative"/>. Null uses the
+        /// real Win32 call. Takes only the input array (not the redundant count/struct-size
+        /// parameters) and returns the simulated "events actually sent" count - return
+        /// fewer than the array's length to simulate a partial/total injection failure, or
+        /// throw to simulate a recoverable exception at this boundary.
+        /// </summary>
+        internal static Func<INPUT[], uint> SendInputOverride;
+
+        private static uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize) =>
+            SendInputOverride != null ? SendInputOverride(pInputs) : SendInputNative(nInputs, pInputs, cbSize);
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
@@ -4073,8 +4099,10 @@ namespace MouseAutomation
 
         #region Structures
 
+        // internal (not private): referenced by the internal fault-injection delegate
+        // types below, which MouseUtils.Tests needs to see via InternalsVisibleTo.
         [StructLayout(LayoutKind.Sequential)]
-        private struct POINT
+        internal struct POINT
         {
             public int X;
             public int Y;
@@ -4098,8 +4126,10 @@ namespace MouseAutomation
             public POINT ptScreenPos;
         }
 
+        // internal (not private): referenced by the internal SendInputOverride
+        // fault-injection seam, which MouseUtils.Tests needs to see via InternalsVisibleTo.
         [StructLayout(LayoutKind.Sequential)]
-        private struct INPUT
+        internal struct INPUT
         {
             public uint type;
             public INPUTUNION U;
@@ -4107,8 +4137,9 @@ namespace MouseAutomation
 
         // The union must include all input types so Marshal.SizeOf(INPUT) matches
         // what Windows expects (40 bytes on x64); otherwise SendInput fails.
+        // internal (not private): nested inside the internal INPUT struct above.
         [StructLayout(LayoutKind.Explicit)]
-        private struct INPUTUNION
+        internal struct INPUTUNION
         {
             [FieldOffset(0)] public MOUSEINPUT mi;
             [FieldOffset(0)] public KEYBDINPUT ki;
@@ -4116,7 +4147,7 @@ namespace MouseAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct MOUSEINPUT
+        internal struct MOUSEINPUT
         {
             public int dx;
             public int dy;
@@ -4127,7 +4158,7 @@ namespace MouseAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct KEYBDINPUT
+        internal struct KEYBDINPUT
         {
             public ushort wVk;
             public ushort wScan;
@@ -4137,7 +4168,7 @@ namespace MouseAutomation
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct HARDWAREINPUT
+        internal struct HARDWAREINPUT
         {
             public uint uMsg;
             public ushort wParamL;
