@@ -122,16 +122,20 @@ for these should assert `false` with a non-null `message`, distinct from a
 genuine timeout case (`false` with `message == null`).
 
 - `GetX`/`GetY`/`GetPosition`, `MoveTo`, `MoveBy`, `SmoothMoveTo` (assert final
-  position; for `SmoothMoveTo`, just assert the destination, not the path)
+  position; for `SmoothMoveTo`, just assert the destination, not the path;
+  `steps`/`delayMilliseconds` out of range, or their product exceeding the
+  60-second cap, → `false` + message instead of throwing/blocking)
 - `JiggleMouse` (assert position unchanged before/after)
 - `Click`/`ClickAt`/`LeftClick`/`RightClick`/`MiddleClick` and the `*At`
-  variants (assert harness button fired; distinguish buttons via the harness's
-  last-button label, `lblClickDetail`)
+  variants, including `MiddleClickAt` (assert harness button fired;
+  distinguish buttons via the harness's last-button label, `lblClickDetail`)
 - `DoubleClick`/`DoubleClickAt`/`LeftDoubleClick`/`LeftDoubleClickAt`,
-  `TripleClick` (assert harness's click-count label)
-- `MouseDown`/`MouseUp`/`ClickAndHold` (assert `IsLeftButtonDown` mid-hold)
+  `RightDoubleClick`/`RightDoubleClickAt`, `MiddleDoubleClick`/
+  `MiddleDoubleClickAt`, `TripleClick` (assert harness's click-count label)
+- `MouseDown`/`MouseUp`/`ClickAndHold` (assert `IsLeftButtonDown` mid-hold;
+  `holdMilliseconds` exceeding the 60-second cap → `false` + message)
 - `ClickWithModifiers` (Ctrl+Click multi-select in harness list; assert
-  selection count)
+  selection count; an undefined `ModifierKeys` bit → `false` + message)
 - `ClickAndRestore` (assert cursor position unchanged after, and that the click
   still registered)
 - `ClickWithRetry` (hard to force a transient input-injection failure — cover
@@ -141,20 +145,63 @@ genuine timeout case (`false` with `message == null`).
   target's status label, `lblDragStatus` — press/release coordinates — for
   drag results, and the list's selection state for rubber-band; assert
   modifiers are released even when the drag fails — simulate by passing an
-  invalid `MouseButton` cast)
-- `Scroll`/`ScrollUp`/`ScrollDown`/`ScrollHorizontal*` (assert harness list's
-  scroll position changed)
+  invalid `MouseButton` cast; `holdMilliseconds` exceeding the 60-second cap
+  on `DragAndHold` → `false` + message)
+- `Scroll`/`ScrollUp`/`ScrollDown`/`ScrollHorizontal*`/`ScrollAt` (assert
+  harness list's scroll position changed and, for `ScrollAt`/
+  `ScrollHorizontalAt`, that the operator's cursor position is unchanged
+  after; negative `notches` → `false` + message instead of scrolling the
+  wrong direction)
 - `SetCursor`/`ReplaceSystemCursor`/`SetCursorFromFile`/`ResetSystemCursors`
   (hard to assert programmatically — screenshot-diff via `ScreenCaptureUtils`
-  before/after, see Phase 3)
+  before/after, see Phase 3; also verify disposing the component without
+  calling `ResetSystemCursors` restores only the specific slots it touched)
 - `HideCursor`/`ShowCursor`/`IsCursorVisible` (assert the internal flag flips
-  correctly, including double-hide/double-show no-ops)
+  correctly, including double-hide/double-show no-ops; verify disposing the
+  component after `HideCursor` without a matching `ShowCursor` restores
+  visibility when disposed on the same thread, and does not when disposed on
+  a different thread)
 - `ClipCursor`/`ReleaseCursorClip`/`GetCursorClip` (assert `GetCursorClip`
-  reflects the rect you set, and reverts to full virtual screen after release)
+  reflects the rect you set, and `ReleaseCursorClip` restores the exact prior
+  clip rather than always clearing to none — set an initial clip via a raw
+  `ClipCursor` Win32 call outside this component, then confirm this
+  component's `ClipCursor`/`ReleaseCursorClip` round-trip restores it; also
+  verify disposing after `ClipCursor` without calling `ReleaseCursorClip`
+  restores the same prior clip)
 - `GetDoubleClickTimeMs`/`SetDoubleClickTimeMs` (set → get → restore original;
   out-of-range case → `false` + message instead of an exception)
 - `GetScreenWidth`/`GetScreenHeight` and remaining screen-info methods (sanity
   assert > 0)
+- `FlashCursorHighlight`, `MoveMouseBezier` (and `BezierClickAt`/
+  `BezierDoubleClickAt`/`BezierDragAndDrop` through it) (`(2 * flashes - 1) *
+  flashMs`/`durationMs` exceeding the 60-second cap → `false` + message)
+- `WaitForPixelColor`/`WaitForPixelChange`/`WaitForIdleCursor` (negative
+  `timeoutMs`, or one exceeding the 30-minute cap, → `false` + message
+  instead of an immediate/unbounded poll)
+- `Dispose` (hold a button via `MouseDown`, block input via `BlockUserInput`,
+  hide the cursor via `HideCursor`, clip via `ClipCursor`, and replace a
+  system cursor via `SetCursor`, all without their matching cleanup call,
+  then dispose the component and confirm each is cleaned up — button
+  released, input unblocked, cursor visible, clip restored, cursor slot
+  restored; repeat the input-block/cursor-hide cases disposing from a
+  *different* thread and confirm they are correctly left unresolved, per
+  the documented thread-affinity limitation)
+
+The invalid-input guards for every method touched in this remediation pass,
+plus fault-injected native-call failures/exceptions for `SendInput`/
+`GetCursorPos`/`SetCursorPos` (a recoverable exception converting to `false`
++ message; compound operations still releasing what they acquired when the
+release step itself fails; `ClickAndRestore` never reporting success after a
+simulated restore failure; `ClickWithModifiers`/`RubberBandSelect` recovering
+a failed release; `MouseDown`/`Dispose` interaction), already have xunit
+coverage in `src/mouseutils/MouseUtils.Tests`
+(`dotnet test src/mouseutils/MouseUtils.Tests/MouseUtils.Tests.csproj`) via
+an internal `SendInputOverride`/`GetCursorPosOverride`/`SetCursorPosOverride`
+seam (`InternalsVisibleTo`) - these do not need a live desktop and should not
+be re-verified manually. The `Dispose` bullet above and the cursor-hide/clip/
+system-cursor restoration paths are the parts that genuinely need the manual
+pass, since they call real Win32 state-changing APIs the fault-injection
+seam doesn't cover.
 
 ### WindowUtils (needs Setup: harness app + one child window)
 

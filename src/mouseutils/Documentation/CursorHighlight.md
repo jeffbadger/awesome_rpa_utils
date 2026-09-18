@@ -36,3 +36,8 @@ foreach (var field in formFields)
 > The ring uses XOR drawing so it erases itself exactly, but it won't draw over
 > exclusive fullscreen (DirectX) applications, and a window repaint while the
 > ring is visible can leave artifacts the erase pass can't clean up.
+
+The total blocking duration - `(2 * flashes - 1) * flashMs` (each flash
+sleeps once visible, plus once hidden except the last) - is capped at 60
+seconds - exceeding it returns `false` with a message rather than blocking
+the automation thread for that long.

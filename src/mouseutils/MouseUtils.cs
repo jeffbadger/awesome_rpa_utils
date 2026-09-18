@@ -219,8 +219,14 @@ namespace MouseAutomation
                 {
                     try
                     {
-                        RECT rc = previousClip;
-                        ClipCursorRect(ref rc);
+                        // Same ownership check as ReleaseCursorClip - don't stomp a clip
+                        // another actor has taken over since this instance's last ClipCursor call.
+                        if (!(GetClipCursor(out RECT current) &&
+                              _lastAppliedClipRect is RECT lastApplied && !current.Equals(lastApplied)))
+                        {
+                            RECT rc = previousClip;
+                            ClipCursorRect(ref rc);
+                        }
                     }
                     catch { /* best-effort */ }
                     _previousClipRect = null;
@@ -1934,7 +1940,16 @@ namespace MouseAutomation
         /// instance's last <see cref="ClipCursor"/> call, rather than unconditionally
         /// clearing to "no clip" - the latter would also clear a clip another app or
         /// another instance of this component legitimately owns. Falls back to clearing
-        /// to "no clip" only when this instance never called <see cref="ClipCursor"/>.
+        /// to "no clip" only when this instance never called <see cref="ClipCursor"/>. Also
+        /// checks, immediately before restoring, whether the active clip still matches
+        /// what this instance itself last applied - if another actor has changed it since
+        /// (another app, or another <see cref="ClipCursor"/> call on this or another
+        /// instance), this leaves their clip alone instead of overwriting it with a now-stale
+        /// rectangle. That check only covers the moment this method runs, though: it cannot
+        /// detect a change that happens between the check and the underlying Win32 call, nor
+        /// can it distinguish "restored to what was captured" from "another actor happened to
+        /// set the identical rectangle" - so this reduces, but does not eliminate, the window
+        /// for clobbering another actor's clip.
         /// </remarks>
         [Category("Mouse - Cursor")]
         [Description("Removes cursor confinement set by ClipCursor, restoring whatever clip was in effect before it. Returns True on success; never throws.")]
@@ -1946,8 +1961,22 @@ namespace MouseAutomation
                 bool ok;
                 if (_previousClipRect is RECT previous)
                 {
-                    RECT rc = previous;
-                    ok = ClipCursorRect(ref rc);
+                    // Mirror ClipCursor's own ownership check: only restore the saved
+                    // rectangle if the clip is still what this instance itself last
+                    // applied. If it isn't, another actor (another app, or another
+                    // ClipCursor call on this or another instance) has since taken over
+                    // the clip, and restoring our stale rectangle would stomp their
+                    // change instead of releasing something we actually own.
+                    if (GetClipCursor(out RECT current) &&
+                        _lastAppliedClipRect is RECT lastApplied && !current.Equals(lastApplied))
+                    {
+                        ok = true;
+                    }
+                    else
+                    {
+                        RECT rc = previous;
+                        ok = ClipCursorRect(ref rc);
+                    }
                 }
                 else
                 {
