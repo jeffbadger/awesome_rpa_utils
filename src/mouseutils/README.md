@@ -224,9 +224,12 @@ Modifier keys combinable in `ClickWithModifiers`: `None`, `Control`, `Shift`, `A
   immediately before, not necessarily the Windows default) as a backstop, but that should not
   be relied on as the primary cleanup path.
 - **`ClipCursor`/`ReleaseCursorClip`** now restore the exact clip (or lack of one) that was in
-  effect immediately before `ClipCursor` was called, rather than always clearing to "no clip" -
-  the latter could otherwise stomp a clip another app or another instance of this component
-  legitimately owns. Disposing this component also restores that same saved clip as a backstop.
+  effect immediately before `ClipCursor` was called, rather than always clearing to "no clip".
+  `ReleaseCursorClip` (and `Dispose` as a backstop) also check, right before restoring, whether
+  the active clip still matches what this instance itself last applied — if another app or
+  another `ClipCursor` call has since taken over the clip, the newer clip is left alone instead
+  of being overwritten with a now-stale rectangle. This check only covers the instant it runs,
+  so it narrows but does not eliminate the window for stomping another actor's clip.
 - **`Dispose` cleans up component-owned state left behind by an automation that exits (or
   throws) before its own matching cleanup runs**: a button still held via `MouseDown`, a
   `BlockUserInput` block or `HideCursor` hide (each only when disposing on the same thread
