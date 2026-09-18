@@ -37,6 +37,7 @@ $releaseAssemblies = @(
     "DataContractAutomation.dll"
     "JsonAutomation.dll"
     "ValueStoreAutomation.dll"
+    "InterruptAutomation.dll"
 )
 
 # Every component project multi-targets these two TFMs (OcrUtils uses the versioned

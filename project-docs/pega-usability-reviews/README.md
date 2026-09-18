@@ -56,6 +56,7 @@ enum is not rendered as a selectable constant.
 | LocalQueueUtils | All ports are scalar; JSON and bulk-ingestion methods deliberately eliminate collection-proxy construction. |
 | StackUtils | Instance-local LIFO work with scalar ports, mixed-kind routing, atomic bulk bridges, and explicit empty results. |
 | DataContractUtils | Typed named values with design-time JSON preload, staged initialization, strict scalar access, and optional DataTable bridges. |
+| InterruptUtils | All ports are scalar; rules are added by method calls at setup, and results are readable as scalars/JSON so a step never depends on an event. |
 
 ## Review order
 
@@ -71,6 +72,7 @@ enum is not rendered as a selectable constant.
 10. [WinEventUtils](WinEventUtils-pega-usability-review.md)
 11. [StackUtils](StackUtils-pega-usability-review.md)
 12. [DataContractUtils](DataContractUtils-pega-usability-review.md)
+13. [InterruptUtils](InterruptUtils-pega-usability-review.md)
 
 Each utility's detailed findings are in its own file in this folder.
 

@@ -758,6 +758,38 @@ The platform-independent xunit coverage is in
 `src/datacontractutils/DataContractUtils.Tests`
 (`dotnet test src/datacontractutils/DataContractUtils.Tests/DataContractUtils.Tests.csproj`).
 
+### InterruptUtils (needs a desktop; Setup: a second process that shows popups on demand - a small WinForms harness whose child process calls `MessageBox.Show` after a delay; Cleanup: close any popup left open and dispose the component)
+
+The popup must come from a **different process** than the automation: a popup owned by the
+automation's own process is deliberately never touched, so a same-process dialog proves
+nothing.
+
+- Add a dismiss rule for the popup, `Start`, then block the automation's thread in a long
+  wait (`Thread.Sleep`/a wait step) while the child shows the popup after a few seconds.
+  Verify the child's `MessageBox` returned the rule's button, `PopupDismissed` fired once
+  with the expected rule, title, message, button and process, `GetDismissalCount` is 1 and
+  `GetLogJson` has the entry. Try it with `sweepIntervalMs: 0` (window events alone) and
+  with the default.
+- A popup whose title does not match, or whose process does not match, stays open. A
+  watch-only rule raises `PopupDetected` once and leaves the popup open.
+- `Pause` leaves a matching popup open; `Resume` then dismisses it. `SetRuleEnabled(false)`
+  does the same for one rule.
+- Open a popup *before* calling `Start` and verify the periodic scan dismisses it.
+- A form whose button is created a moment after the window appears (not a `#32770`, so pass
+  `className: "*"`) is still dismissed; a button-less window is closed by a close rule.
+- A popup that returns every time trips `maxDismissalsPerMinute`: `InterruptError` fires,
+  the rule lists as `"stopped": true`, the next popup stays open, and `SetRuleEnabled(true)`
+  resumes it.
+- A popup with no button matching the rule, or whose button never closes it, ends in
+  `PopupDismissFailed` with a `Detail` naming the reason, and `HasUnresolvedPopup` is true.
+- Cycle `Start`/`Stop` many times and dispose while running: the thread count must not grow.
+- Not automatable here: popups on the secure desktop (UAC) and a locked screen (window events
+  are not delivered), and applications that do not raise standard window events.
+
+The platform-independent xunit coverage drives the decision logic with a fake desktop and is in
+`src/interruptutils/InterruptUtils.Tests`
+(`dotnet test src/interruptutils/InterruptUtils.Tests/InterruptUtils.Tests.csproj`).
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned

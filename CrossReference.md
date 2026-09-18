@@ -2,7 +2,7 @@
 
 A single searchable index of every **PME** — Property, Method, and Event —
 exposed by every component in this repository. Use it to answer "does
-anything in this library already do X" without opening 20 different
+anything in this library already do X" without opening 21 different
 READMEs: `Ctrl+F` for a method name, a keyword from what you're trying to
 do, or a parameter/return type, or jump straight to a component from the
 quick-reference table below.
@@ -24,6 +24,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [DialogUtils](#dialogutils) | `DialogAutomation` | 21 | 0 | 0 | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, and fills them in: text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs. |
 | [EventLogUtils](#eventlogutils) | `EventLogAutomation` | 20 | 0 | 0 | Reads, queries, waits for, writes, and exports/imports Windows Event Log entries. |
 | [FileWatchUtils](#filewatchutils) | `FileWatchAutomation` | 28 | 0 | 5 | Waits for file existence/deletion/change/stability/unlock, watches for filesystem events, and atomically moves/replaces/claims files. |
+| [InterruptUtils](#interruptutils) | `InterruptAutomation` | 19 | 0 | 4 | Watches for known popups on background threads and dismisses them while the automation is busy, such as during a long wait. |
 | [JsonUtils](#jsonutils) | `JsonAutomation` | 24 | 0 | 0 | Reads, updates, validates, and transforms JSON via real JSONPath. |
 | [KeyboardUtils](#keyboardutils) | `KeyboardAutomation` | 15 (16 rows) | 0 | 0 | Injects keyboard input via `SendInput` — key presses, combos, typed text — and queries key/modifier state. |
 | [LocalQueueUtils](#localqueueutils) | `LocalQueueAutomation` | 21 | 0 | 0 | A persistent, machine-local work queue with a lease/process/complete loop, for variable-count work without a Pega collection proxy. |
@@ -260,6 +261,45 @@ Coordinates with files produced by other applications: waits for existence/delet
 | `Deleted` | `EventHandler<FileWatchChangeEventArgs>` | Raised when a file or directory is deleted, while a background watch (`StartWatching`) is running. |
 | `Renamed` | `EventHandler<FileWatchRenamedEventArgs>` | Raised on a rename, while a background watch (`StartWatching`) is running. |
 | `WatchError` | `EventHandler<FileWatchErrorEventArgs>` | Raised if the underlying watcher itself fails (e.g. an internal notification-buffer overflow); never raised for a subscriber's own handler exception. |
+
+## InterruptUtils
+
+Watches for known popups on its own background threads and dismisses them while the automation is busy, for example during a long wait. Describe each popup with a rule (title, message text, owning process, plus the button to click), `Start`, and carry on; outcomes are reported through events and a queryable log.
+
+**Namespace:** `InterruptAutomation` | **Assembly:** `InterruptAutomation`
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `AddCloseWindowRule` | `bool AddCloseWindowRule(string ruleName, string titleContains, string messageContains, string processName, out string message, string className = null)` | Dismisses a matching popup by closing its window, for a popup with no button to click. |
+| `AddDismissRuleById` | `bool AddDismissRuleById(string ruleName, string titleContains, string messageContains, string processName, InterruptButton button, out string message, string className = null)` | Dismisses a matching popup by clicking a standard button (OK, Cancel, Yes, ...) by control ID. |
+| `AddDismissRuleByText` | `bool AddDismissRuleByText(string ruleName, string titleContains, string messageContains, string processName, string buttonText, out string message, bool exactButtonText = true, string className = null)` | Dismisses a matching popup by clicking the button with this text (ignoring case and the `&` access-key marker). |
+| `AddWatchOnlyRule` | `bool AddWatchOnlyRule(string ruleName, string titleContains, string messageContains, string processName, out string message, string className = null)` | Only reports a matching popup (event and log); never touches it. |
+| `ClearLog` | `bool ClearLog(out string message)` | Empties the log. Dismissal counts are kept. |
+| `ClearRules` | `bool ClearRules(out string message)` | Removes every rule. The log is kept. |
+| `GetDismissalCount` | `bool GetDismissalCount(string ruleName, out int count, out string message)` | How many popups a rule has dismissed. |
+| `GetLastEventJson` | `bool GetLastEventJson(out string eventJson, out string message)` | The most recent log entry as JSON (`{}` if none). |
+| `GetLogJson` | `bool GetLogJson(int maxEntries, out string logJson, out string message)` | The most recent log entries, oldest first, as a JSON array (the log keeps the last 500). |
+| `GetTotalDismissals` | `bool GetTotalDismissals(out int total, out string message)` | How many popups all rules have dismissed together. |
+| `HasUnresolvedPopup` | `bool HasUnresolvedPopup(out bool hasUnresolvedPopup, out string message)` | Whether a popup a dismiss rule matched is still open (being retried, or given up on). |
+| `IsRunning` | `bool IsRunning()` | Whether watching is running. |
+| `ListRulesJson` | `bool ListRulesJson(out string rulesJson, out string message)` | Lists the rules with their state, whether each has stopped itself, and its dismissal count, as JSON. |
+| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch. |
+| `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule and its dismissal count. |
+| `Resume` | `bool Resume(out string message)` | Lets the handler dismiss popups again after `Pause`. |
+| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on; turning it on also clears a runaway stop. |
+| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads and returns immediately. |
+| `Stop` | `bool Stop(out string message)` | Stops watching. Rules, counts and the log are kept. |
+
+### Events
+
+| Event | Type | Description |
+|---|---|---|
+| `InterruptError` | `EventHandler<InterruptErrorEventArgs>` | Raised on a worker thread when the handler has a problem, such as a rule that stopped itself for dismissing too many popups. |
+| `PopupDetected` | `EventHandler<InterruptPopupEventArgs>` | Raised on a worker thread when a popup matching a watch-only rule appears (it is not touched). |
+| `PopupDismissed` | `EventHandler<InterruptPopupEventArgs>` | Raised on a worker thread after a popup was dismissed by a rule. |
+| `PopupDismissFailed` | `EventHandler<InterruptPopupEventArgs>` | Raised on a worker thread when a popup matched a rule but could not be dismissed; `Detail` says why. |
 
 ## JsonUtils
 
