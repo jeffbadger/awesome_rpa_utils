@@ -20,10 +20,14 @@ namespace MouseAutomation.Tests
 
         public void Dispose()
         {
+            // Dispose _mouse while the seams are still installed - a test that leaves
+            // state tracked as held (e.g. a button-up injected to fail) will have
+            // Dispose's own best-effort cleanup go through the fake, not the real
+            // Win32 call, so an ordinary passing test run never injects live input.
+            _mouse.Dispose();
             MouseUtils.SendInputOverride = null;
             MouseUtils.GetCursorPosOverride = null;
             MouseUtils.SetCursorPosOverride = null;
-            _mouse.Dispose();
         }
 
         // --- Recoverable exceptions at the native boundary convert to false + message,
