@@ -431,7 +431,7 @@ namespace MouseAutomation
         /// <param name="steps">Number of intermediate move events. Must be at least 1.</param>
         /// <param name="delayMilliseconds">Delay between steps in milliseconds; 0 moves without pausing. Must be zero or positive.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="steps"/> is below 1, <paramref name="delayMilliseconds"/> is negative, or a Win32 cursor call failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="steps"/> is below 1, <paramref name="delayMilliseconds"/> is negative, their total blocking duration exceeds 60 seconds, or a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Position")]
         [Description("Smoothly moves the cursor to the target position using the given number of steps and delay between steps. Returns True on success; never throws.")]
         public bool SmoothMoveTo(int x, int y, int steps, int delayMilliseconds, out string message)
@@ -447,6 +447,13 @@ namespace MouseAutomation
                 if (delayMilliseconds < 0)
                 {
                     message = "delayMilliseconds must be zero or positive.";
+                    return false;
+                }
+                // long arithmetic: steps/delayMilliseconds are each only bounded below, so
+                // their product could otherwise overflow int before this check saw it.
+                if ((long)steps * delayMilliseconds > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"steps * delayMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds total) - bad wiring should not block the automation thread indefinitely.";
                     return false;
                 }
 
@@ -838,9 +845,9 @@ namespace MouseAutomation
         /// Holds the given button down for the specified time, then releases it.
         /// </summary>
         /// <param name="button">The mouse button to hold.</param>
-        /// <param name="holdMilliseconds">How long to hold the button. Must be zero or positive.</param>
+        /// <param name="holdMilliseconds">How long to hold the button. Must be zero or positive, and at most <c>60000</c> (60 seconds).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the hold failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, a negative <paramref name="holdMilliseconds"/>, or a failed input injection. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> for an undefined <paramref name="button"/>, an out-of-range <paramref name="holdMilliseconds"/>, or a failed input injection. Never throws.</returns>
         [Category("Mouse - Click")]
         [Description("Holds the given button down for the specified time, then releases it. Returns True on success; never throws.")]
         public bool ClickAndHold(MouseButton button, int holdMilliseconds, out string message)
@@ -851,6 +858,11 @@ namespace MouseAutomation
                 if (holdMilliseconds < 0)
                 {
                     message = "holdMilliseconds must be zero or positive.";
+                    return false;
+                }
+                if (holdMilliseconds > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"holdMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
                     return false;
                 }
 
@@ -1293,9 +1305,9 @@ namespace MouseAutomation
         /// <param name="startY">Drag start Y coordinate in screen pixels.</param>
         /// <param name="endX">Drag end X coordinate in screen pixels.</param>
         /// <param name="endY">Drag end Y coordinate in screen pixels.</param>
-        /// <param name="holdMilliseconds">How long to hold the button at the destination before releasing. Must be zero or positive.</param>
+        /// <param name="holdMilliseconds">How long to hold the button at the destination before releasing. Must be zero or positive, and at most <c>60000</c> (60 seconds).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the drag failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="holdMilliseconds"/> is negative or a Win32 cursor call/input injection failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="holdMilliseconds"/> is out of range or a Win32 cursor call/input injection failed. Never throws.</returns>
         [Category("Mouse - Drag")]
         [Description("Drags from start to end, then holds the button down at the destination before releasing (for hover-to-expand drop targets). Returns True on success; never throws.")]
         public bool DragAndHold(int startX, int startY, int endX, int endY, int holdMilliseconds, out string message)
@@ -1306,6 +1318,11 @@ namespace MouseAutomation
                 if (holdMilliseconds < 0)
                 {
                     message = "holdMilliseconds must be zero or positive.";
+                    return false;
+                }
+                if (holdMilliseconds > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"holdMilliseconds must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
                     return false;
                 }
 
@@ -2950,7 +2967,7 @@ namespace MouseAutomation
         ///  - The XOR blend means the apparent color varies by background.
         /// </remarks>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the highlight failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="radius"/>/<paramref name="flashes"/>/<paramref name="flashMs"/>/<paramref name="ringWidth"/> is below 1, or a GDI/cursor call failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="radius"/>/<paramref name="flashes"/>/<paramref name="flashMs"/>/<paramref name="ringWidth"/> is below 1, their total blocking duration exceeds 60 seconds, or a GDI/cursor call failed. Never throws.</returns>
         [Category("Mouse - Highlight")]
         [Description("Flashes an inverting ring around the cursor for demos/recordings. Erases itself exactly via XOR drawing. Returns True on success; never throws.")]
         public bool FlashCursorHighlight(out string message, int radius = 30, int flashes = 3, int flashMs = 200, int ringWidth = 3, int colorRef = 0x0000FF)
@@ -2976,6 +2993,14 @@ namespace MouseAutomation
                 if (ringWidth < 1)
                 {
                     message = "ringWidth must be at least 1.";
+                    return false;
+                }
+                // long arithmetic: flashes/flashMs are each already bounded below by 1 but
+                // not above, so their product could otherwise overflow int before this
+                // check ever saw it.
+                if ((long)flashes * flashMs > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"flashes * flashMs must be at most {MaxHeldOrMovementMilliseconds} (60 seconds total) - bad wiring should not block the automation thread indefinitely.";
                     return false;
                 }
 
@@ -3063,7 +3088,7 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">Target X coordinate in screen pixels.</param>
         /// <param name="y">Target Y coordinate in screen pixels.</param>
-        /// <param name="durationMs">Total movement time in milliseconds (default 500). Must be at least 1.</param>
+        /// <param name="durationMs">Total movement time in milliseconds (default 500). Must be at least 1, and at most <c>60000</c> (60 seconds).</param>
         /// <remarks>
         /// The curve, timing, and jitter vary on every call, so repeated movements to
         /// the same target do not look identical — useful for anti-detection and for
@@ -3071,7 +3096,7 @@ namespace MouseAutomation
         /// jitter on the final step), so the click lands precisely where intended.
         /// </remarks>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the move failed.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="durationMs"/> is below 1 or a Win32 cursor call failed. Never throws.</returns>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="durationMs"/> is out of range or a Win32 cursor call failed. Never throws.</returns>
         [Category("Mouse - Movement")]
         [Description("Moves the cursor to the target along a randomized Bezier curve with ease-in-out timing (human-like). Returns True on success; never throws.")]
         public bool MoveMouseBezier(int x, int y, out string message, int durationMs = 500)
@@ -3082,6 +3107,11 @@ namespace MouseAutomation
                 if (durationMs < 1)
                 {
                     message = "durationMs must be at least 1.";
+                    return false;
+                }
+                if (durationMs > MaxHeldOrMovementMilliseconds)
+                {
+                    message = $"durationMs must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
                     return false;
                 }
 
@@ -3336,10 +3366,10 @@ namespace MouseAutomation
         /// <param name="x">X coordinate in screen pixels.</param>
         /// <param name="y">Y coordinate in screen pixels.</param>
         /// <param name="expectedColorRef">The color to wait for, as a 0x00BBGGRR COLORREF (see <see cref="GetPixelColor"/>).</param>
-        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds. Must be zero or positive, and at most <c>1800000</c> (30 minutes).</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="message"><c>null</c> if the poll completed (matched or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
-        /// <returns><c>true</c> if the pixel matched before the timeout; <c>false</c> if it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <param name="message"><c>null</c> if the poll completed (matched or genuinely timed out); otherwise a human-readable reason <paramref name="timeoutMs"/> was invalid, or a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the pixel matched before the timeout; <c>false</c> if <paramref name="timeoutMs"/> is negative or too large, it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("Mouse - Verification")]
         [Description("Polls a screen pixel until it matches the expected COLORREF or the timeout elapses. Returns True if it matched in time; never throws.")]
         public bool WaitForPixelColor(int x, int y, int expectedColorRef, int timeoutMs, int pollIntervalMs, out string message)
@@ -3347,6 +3377,16 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be zero or positive.";
+                    return false;
+                }
+                if (timeoutMs > MaxWaitTimeoutMilliseconds)
+                {
+                    message = $"timeoutMs must be at most {MaxWaitTimeoutMilliseconds} (30 minutes) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
                 if (pollIntervalMs < 1) pollIntervalMs = 1;
 
                 int start = Environment.TickCount;
@@ -3381,10 +3421,10 @@ namespace MouseAutomation
         /// </summary>
         /// <param name="x">X coordinate in screen pixels.</param>
         /// <param name="y">Y coordinate in screen pixels.</param>
-        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds. Must be zero or positive, and at most <c>1800000</c> (30 minutes).</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="message"><c>null</c> if the poll completed (changed or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
-        /// <returns><c>true</c> if the pixel changed before the timeout; <c>false</c> if it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <param name="message"><c>null</c> if the poll completed (changed or genuinely timed out); otherwise a human-readable reason <paramref name="timeoutMs"/> was invalid, or a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the pixel changed before the timeout; <c>false</c> if <paramref name="timeoutMs"/> is negative or too large, it timed out, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         [Category("Mouse - Verification")]
         [Description("Polls a screen pixel until its color changes from its value at call time, or the timeout elapses. Returns True if it changed in time; never throws.")]
         public bool WaitForPixelChange(int x, int y, int timeoutMs, int pollIntervalMs, out string message)
@@ -3392,6 +3432,16 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be zero or positive.";
+                    return false;
+                }
+                if (timeoutMs > MaxWaitTimeoutMilliseconds)
+                {
+                    message = $"timeoutMs must be at most {MaxWaitTimeoutMilliseconds} (30 minutes) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
                 if (pollIntervalMs < 1) pollIntervalMs = 1;
 
                 if (!GetPixelColor(x, y, out int baseline, out message))
@@ -3464,10 +3514,10 @@ namespace MouseAutomation
         /// Waits until the system busy cursor (Wait/AppStarting) is no longer showing,
         /// or the timeout elapses.
         /// </summary>
-        /// <param name="timeoutMs">Maximum time to wait, in milliseconds.</param>
+        /// <param name="timeoutMs">Maximum time to wait, in milliseconds. Must be zero or positive, and at most <c>1800000</c> (30 minutes).</param>
         /// <param name="pollIntervalMs">Delay between checks, in milliseconds; values below 1 are treated as 1.</param>
-        /// <param name="message"><c>null</c> if the poll completed (idle or genuinely timed out); otherwise a human-readable reason a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
-        /// <returns><c>true</c> if the cursor became idle before the timeout; <c>false</c> if it timed out still busy, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
+        /// <param name="message"><c>null</c> if the poll completed (idle or genuinely timed out); otherwise a human-readable reason <paramref name="timeoutMs"/> was invalid, or a Win32 failure aborted the poll early (in which case this method also returns <c>false</c>).</param>
+        /// <returns><c>true</c> if the cursor became idle before the timeout; <c>false</c> if <paramref name="timeoutMs"/> is negative or too large, it timed out still busy, or if a Win32 failure aborted the poll (check <paramref name="message"/> to tell them apart). Never throws.</returns>
         /// <inheritdoc cref="IsBusyCursorActive" select="remarks"/>
         [Category("Mouse - Verification")]
         [Description("Waits until the busy cursor (Wait/AppStarting) clears, or the timeout elapses. Returns True if it became idle in time; never throws.")]
@@ -3476,6 +3526,16 @@ namespace MouseAutomation
             message = default;
             try
             {
+                if (timeoutMs < 0)
+                {
+                    message = "timeoutMs must be zero or positive.";
+                    return false;
+                }
+                if (timeoutMs > MaxWaitTimeoutMilliseconds)
+                {
+                    message = $"timeoutMs must be at most {MaxWaitTimeoutMilliseconds} (30 minutes) - bad wiring should not block the automation thread indefinitely.";
+                    return false;
+                }
                 if (pollIntervalMs < 1) pollIntervalMs = 1;
 
                 int start = Environment.TickCount;
@@ -3756,6 +3816,19 @@ namespace MouseAutomation
         private const int MAX_WHEEL_NOTCHES = int.MaxValue / WHEEL_DELTA;
 
         private const ModifierKeys AllDefinedModifierKeys = ModifierKeys.Control | ModifierKeys.Shift | ModifierKeys.Alt;
+
+        // Bounds on caller-supplied blocking durations, so bad Pega wiring (e.g. a
+        // units mistake - milliseconds where seconds were meant) cannot block the
+        // automation thread indefinitely. This is bounding, not cancellation: Pega
+        // Robot Studio automations execute steps sequentially on one thread, so there
+        // is no mechanism for a separate step to interrupt a call already blocked in
+        // one of these methods. Two tiers, not one, since the methods they apply to
+        // are semantically different: WaitFor* methods poll for a genuine external
+        // event (a slow report rendering, an application finishing work) that can
+        // legitimately take minutes; holds/movements/highlights are synthetic actions
+        // this component performs itself and have no legitimate reason to run long.
+        private const int MaxWaitTimeoutMilliseconds = 30 * 60 * 1000; // 30 minutes
+        private const int MaxHeldOrMovementMilliseconds = 60 * 1000; // 60 seconds
 
         private const int XBUTTON1 = 0x0001;
         private const int XBUTTON2 = 0x0002;

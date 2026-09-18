@@ -291,5 +291,87 @@ namespace MouseAutomation.Tests
             Assert.False(ok);
             Assert.False(string.IsNullOrEmpty(message));
         }
+
+        // --- Bounded (not cancellable) waits: bad Pega wiring (e.g. a units mistake)
+        // must not be able to block the automation thread indefinitely. Every check
+        // below returns before any native call. ---
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(1_800_001)]
+        public void WaitForPixelColor_TimeoutOutOfRange_ReturnsFalseWithMessage(int timeoutMs)
+        {
+            bool ok = _mouse.WaitForPixelColor(0, 0, 0, timeoutMs, 50, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(1_800_001)]
+        public void WaitForPixelChange_TimeoutOutOfRange_ReturnsFalseWithMessage(int timeoutMs)
+        {
+            bool ok = _mouse.WaitForPixelChange(0, 0, timeoutMs, 50, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(1_800_001)]
+        public void WaitForIdleCursor_TimeoutOutOfRange_ReturnsFalseWithMessage(int timeoutMs)
+        {
+            bool ok = _mouse.WaitForIdleCursor(timeoutMs, 50, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void ClickAndHold_HoldMillisecondsTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.ClickAndHold(MouseButton.Left, 60_001, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void DragAndHold_HoldMillisecondsTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.DragAndHold(0, 0, 10, 10, 60_001, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void MoveMouseBezier_DurationTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.MoveMouseBezier(0, 0, out string message, 60_001);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void FlashCursorHighlight_TotalDurationTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.FlashCursorHighlight(out string message, flashes: 1000, flashMs: 1000);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void SmoothMoveTo_TotalDurationTooLarge_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.SmoothMoveTo(0, 0, 1000, 1000, out string message);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
     }
 }
