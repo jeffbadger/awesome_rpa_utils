@@ -1488,7 +1488,10 @@ namespace WinEventAutomation.Tests
             {
                 // Baseline includes hidden windows: a pre-existing window that merely becomes visible
                 // after the launch is still not ours to close.
-                var existing = new HashSet<IntPtr>(EnumNotepadWindows(visibleOnly: false));
+                var baseline = EnumNotepadWindows(visibleOnly: false);
+                if (baseline == null)
+                    return null; // cannot tell which windows are not ours, so do not launch
+                var existing = new HashSet<IntPtr>(baseline);
                 string path = Environment.GetFolderPath(Environment.SpecialFolder.System) + "\\notepad.exe";
                 var launcher = Process.Start(new ProcessStartInfo(path) { UseShellExecute = false });
                 return launcher == null ? null : new NotepadInstance(launcher, existing);
@@ -1504,18 +1507,20 @@ namespace WinEventAutomation.Tests
             notepad?.Close();
         }
 
+        // Returns null if the enumeration itself fails, so a failure is never mistaken for
+        // "no Notepad windows" (which would make every existing window look new).
         private static List<IntPtr> EnumNotepadWindows(bool visibleOnly = true)
         {
             var found = new List<IntPtr>();
             var className = new StringBuilder(64);
-            EnumWindows((hwnd, _) =>
+            bool completed = EnumWindows((hwnd, _) =>
             {
                 if ((!visibleOnly || IsWindowVisible(hwnd)) && GetClassName(hwnd, className, className.Capacity) > 0 &&
                     string.Equals(className.ToString(), "Notepad", StringComparison.Ordinal))
                     found.Add(hwnd);
                 return true;
             }, IntPtr.Zero);
-            return found;
+            return completed ? found : null;
         }
 
         /// <summary>
@@ -1550,7 +1555,10 @@ namespace WinEventAutomation.Tests
                     var closing = new HashSet<IntPtr>();
                     while (Environment.TickCount64 < deadline)
                     {
-                        foreach (var hwnd in EnumNotepadWindows())
+                        var visible = EnumNotepadWindows();
+                        if (visible == null)
+                            break; // cannot tell new windows from existing ones: close nothing
+                        foreach (var hwnd in visible)
                         {
                             if (!_existing.Contains(hwnd) && closing.Add(hwnd))
                                 PostMessage(hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
