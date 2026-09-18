@@ -1858,8 +1858,12 @@ namespace MouseAutomation
                 // so this uniformly captures "no clip" too - so ReleaseCursorClip/Dispose
                 // can restore it precisely instead of always clearing to "no clip",
                 // which could stomp a clip another app (or another instance of this
-                // component) legitimately owns.
-                if (GetClipCursor(out RECT previous))
+                // component) legitimately owns. Only the FIRST call captures this -
+                // if _previousClipRect is already set, this instance is already clipped
+                // and re-clipping (calling ClipCursor again without releasing first)
+                // must not overwrite the real original with this instance's own current
+                // clip, or releasing later would restore to the wrong rectangle.
+                if (_previousClipRect == null && GetClipCursor(out RECT previous))
                     _previousClipRect = previous;
 
                 RECT rc = new RECT { Left = left, Top = top, Right = right, Bottom = bottom };
@@ -2246,7 +2250,15 @@ namespace MouseAutomation
             // BlockInput(false) returns False when nothing is blocked; that is not an
             // error for cleanup purposes, so the result is deliberately ignored.
             BlockInputNative(false);
-            _inputBlockedByThisInstance = false;
+
+            // BlockInput's block is thread-affine - only the thread that set it can
+            // clear it - so calling this from a different thread leaves the real block
+            // untouched even though the native call above returns. Clearing the tracked
+            // state unconditionally would make Dispose's own backstop skip its cleanup
+            // attempt later (on the thread that actually could still fix it), leaving
+            // input blocked with no remaining way to recover it.
+            if (Environment.CurrentManagedThreadId == _inputBlockedThreadId)
+                _inputBlockedByThisInstance = false;
         }
 
         #endregion
@@ -3566,31 +3578,36 @@ namespace MouseAutomation
         /// it is given - hence the copy; the caller keeps ownership of hSource).
         /// </summary>
         /// <remarks>
-        /// Also remembers, the first time this instance ever touches a given slot, what
-        /// cursor was active there beforehand (via <c>LoadCursor</c>, which returns the
-        /// currently-active cursor for a slot, not a fixed default) - not on every call,
-        /// so replacing the same slot twice does not overwrite the real original with
-        /// this instance's own prior replacement. <see cref="Dispose(bool)"/> restores
-        /// only these specific saved slots, rather than the wider, instance-agnostic
+        /// Also remembers, the first time this instance ever *successfully* replaces a
+        /// given slot, what cursor was active there beforehand (via <c>LoadCursor</c>,
+        /// which returns the currently-active cursor for a slot, not a fixed default) -
+        /// not on every call, so replacing the same slot twice does not overwrite the
+        /// real original with this instance's own prior replacement. The capture is
+        /// deferred until the replacement actually succeeds (see below) - committing it
+        /// unconditionally would make this instance believe it owns (and
+        /// <see cref="Dispose(bool)"/> would later restore) a slot it never actually
+        /// changed, potentially overwriting a later, unrelated, legitimate change to
+        /// that same slot. <see cref="Dispose(bool)"/> restores only these specific
+        /// saved slots, rather than the wider, instance-agnostic
         /// <see cref="ResetSystemCursors"/> reset, which reloads every configured cursor
         /// and can overwrite a concurrent change by the user or another process.
         /// </remarks>
         private bool TryApplySystemCursor(SystemCursorType slot, IntPtr hSource, out string message)
         {
-            if (!_originalCursorHandlesBySlot.ContainsKey(slot))
+            bool isFirstTouch = !_originalCursorHandlesBySlot.ContainsKey(slot);
+            IntPtr pendingOriginalCopy = IntPtr.Zero;
+            if (isFirstTouch)
             {
                 IntPtr hCurrent = LoadCursor(IntPtr.Zero, (int)slot);
                 if (hCurrent != IntPtr.Zero)
-                {
-                    IntPtr hCurrentCopy = CopyIcon(hCurrent);
-                    if (hCurrentCopy != IntPtr.Zero)
-                        _originalCursorHandlesBySlot[slot] = hCurrentCopy;
-                }
+                    pendingOriginalCopy = CopyIcon(hCurrent);
             }
 
             IntPtr hCopy = CopyIcon(hSource); // CopyCursor is a macro for CopyIcon
             if (hCopy == IntPtr.Zero)
             {
+                if (pendingOriginalCopy != IntPtr.Zero)
+                    DestroyCursor(pendingOriginalCopy);
                 message = new Win32Exception(Marshal.GetLastWin32Error(), "CopyIcon/CopyCursor of the cursor failed.").Message;
                 return false;
             }
@@ -3599,10 +3616,16 @@ namespace MouseAutomation
             {
                 int err = Marshal.GetLastWin32Error();
                 DestroyCursor(hCopy);
+                if (pendingOriginalCopy != IntPtr.Zero)
+                    DestroyCursor(pendingOriginalCopy);
                 message = new Win32Exception(err, "SetSystemCursor failed for slot " + slot + ".").Message;
                 return false;
             }
-            // hCopy is now owned by the system - do not destroy it.
+            // hCopy is now owned by the system - do not destroy it. The replacement
+            // succeeded, so this is when (and only when) ownership of the slot's
+            // original cursor is actually committed.
+            if (pendingOriginalCopy != IntPtr.Zero)
+                _originalCursorHandlesBySlot[slot] = pendingOriginalCopy;
             message = null;
             return true;
         }
