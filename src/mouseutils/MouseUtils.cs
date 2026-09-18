@@ -3031,12 +3031,19 @@ namespace MouseAutomation
                     message = "ringWidth must be at least 1.";
                     return false;
                 }
-                // long arithmetic: flashes/flashMs are each already bounded below by 1 but
-                // not above, so their product could otherwise overflow int before this
-                // check ever saw it.
-                if ((long)flashes * flashMs > MaxHeldOrMovementMilliseconds)
+                // Each flash sleeps once while visible (flashMs) and, for every flash but
+                // the last, once more while hidden before the next one - (2*flashes - 1)
+                // sleeps of flashMs each, not flashes*flashMs (which would undercount the
+                // real blocking duration by nearly half for a large flash count). double
+                // arithmetic here, not long: flashes/flashMs are each already bounded
+                // below by 1 but not above, and even long could theoretically overflow if
+                // both were near int.MaxValue simultaneously - double's far larger range
+                // makes that impossible, and losing precision doesn't matter for a
+                // greater-than comparison against a small threshold.
+                double totalFlashMs = (2.0 * flashes - 1) * flashMs;
+                if (totalFlashMs > MaxHeldOrMovementMilliseconds)
                 {
-                    message = $"flashes * flashMs must be at most {MaxHeldOrMovementMilliseconds} (60 seconds total) - bad wiring should not block the automation thread indefinitely.";
+                    message = $"The total flash duration ((2 * flashes - 1) * flashMs) must be at most {MaxHeldOrMovementMilliseconds} (60 seconds) - bad wiring should not block the automation thread indefinitely.";
                     return false;
                 }
 
@@ -3441,12 +3448,17 @@ namespace MouseAutomation
                         message = null;
                         return true;
                     }
-                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    int elapsed = unchecked(Environment.TickCount - start);
+                    if (elapsed >= timeoutMs)
                     {
                         message = null;
                         return false;
                     }
-                    Thread.Sleep(pollIntervalMs);
+                    // Clamp to the remaining time, not the raw poll interval - an
+                    // oversized pollIntervalMs (up to int.MaxValue, ~24.8 days) would
+                    // otherwise sleep straight through the 30-minute cap above before
+                    // ever re-checking the deadline, defeating the whole point of it.
+                    Thread.Sleep(Math.Min(pollIntervalMs, timeoutMs - elapsed));
                 }
 
             }
@@ -3499,12 +3511,15 @@ namespace MouseAutomation
                         message = null;
                         return true;
                     }
-                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    int elapsed = unchecked(Environment.TickCount - start);
+                    if (elapsed >= timeoutMs)
                     {
                         message = null;
                         return false;
                     }
-                    Thread.Sleep(pollIntervalMs);
+                    // Clamp to the remaining time, not the raw poll interval - see
+                    // WaitForPixelColor for why.
+                    Thread.Sleep(Math.Min(pollIntervalMs, timeoutMs - elapsed));
                 }
 
             }
@@ -3589,12 +3604,15 @@ namespace MouseAutomation
                             return false; // aborted due to a Win32 failure
                         return true; // not busy - idle
                     }
-                    if (unchecked(Environment.TickCount - start) >= timeoutMs)
+                    int elapsed = unchecked(Environment.TickCount - start);
+                    if (elapsed >= timeoutMs)
                     {
                         message = null;
                         return false;
                     }
-                    Thread.Sleep(pollIntervalMs);
+                    // Clamp to the remaining time, not the raw poll interval - see
+                    // WaitForPixelColor for why.
+                    Thread.Sleep(Math.Min(pollIntervalMs, timeoutMs - elapsed));
                 }
 
             }

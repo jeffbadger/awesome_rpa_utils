@@ -376,6 +376,20 @@ namespace MouseAutomation.Tests
             Assert.False(string.IsNullOrEmpty(message));
         }
 
+        // Regression test: the total blocking duration is (2*flashes - 1) * flashMs -
+        // each flash sleeps once visible, and all but the last sleep again while hidden -
+        // not flashes * flashMs. flashes: 500, flashMs: 100 gives flashes*flashMs =
+        // 50,000 (previously wrongly accepted, under the 60-second cap) but the real
+        // duration is (2*500-1)*100 = 99,900ms, well over it.
+        [Fact]
+        public void FlashCursorHighlight_TotalDurationAccountsForHiddenGaps_ReturnsFalseWithMessage()
+        {
+            bool ok = _mouse.FlashCursorHighlight(out string message, flashes: 500, flashMs: 100);
+
+            Assert.False(ok);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
         [Fact]
         public void SmoothMoveTo_TotalDurationTooLarge_ReturnsFalseWithMessage()
         {
