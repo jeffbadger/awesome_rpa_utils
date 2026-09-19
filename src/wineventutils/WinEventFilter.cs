@@ -223,7 +223,7 @@ namespace WinEventAutomation
         {
             if (hwnd == IntPtr.Zero)
                 return false;
-            long now = Environment.TickCount64;
+            long now = WinCompat.TickCount64;
             if (ButtonChildCache.TryGetValue(hwnd, out var cached) && now - cached.Ticks < ButtonChildCacheTtl.TotalMilliseconds)
                 return cached.Found;
             bool found = false;

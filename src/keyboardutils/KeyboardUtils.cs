@@ -607,6 +607,17 @@ namespace KeyboardAutomation
 
                 try
                 {
+#if NETFRAMEWORK
+                    // net48 has no System.Text.Rune; the code-point enumeration below
+                    // produces the same sequence the Rune loop yields on .NET Core+.
+                    foreach (int runeCodePoint in EnumerateCodePoints(text))
+                    {
+                        SendInputs(BuildUnicodeRuneBatch(runeCodePoint));
+
+                        if (delayMilliseconds > 0)
+                            Thread.Sleep(delayMilliseconds);
+                    }
+#else
                     foreach (var rune in text.EnumerateRunes())
                     {
                         SendInputs(BuildUnicodeRuneBatch(rune));
@@ -614,6 +625,7 @@ namespace KeyboardAutomation
                         if (delayMilliseconds > 0)
                             Thread.Sleep(delayMilliseconds);
                     }
+#endif
 
                     message = null;
                     return true;
@@ -1178,6 +1190,51 @@ namespace KeyboardAutomation
             return input;
         }
 
+#if NETFRAMEWORK
+        /// <summary>
+        /// Net48 twin of the Rune-based overload: builds the atomic batch for one
+        /// Unicode code point typed via <c>KEYEVENTF_UNICODE</c> — a single UTF-16
+        /// code unit as down/up, or a surrogate pair as high-down, low-down, low-up,
+        /// high-up — both code units held before either is released.
+        /// </summary>
+        internal static INPUT[] BuildUnicodeRuneBatch(int codePoint)
+        {
+            if (codePoint <= 0xFFFF)
+            {
+                char unit = (char)codePoint;
+                return new[]
+                {
+                    MakeUnicodeKeyInput(unit, false),
+                    MakeUnicodeKeyInput(unit, true)
+                };
+            }
+
+            string utf16 = char.ConvertFromUtf32(codePoint);
+            return new[]
+            {
+                MakeUnicodeKeyInput(utf16[0], false),
+                MakeUnicodeKeyInput(utf16[1], false),
+                MakeUnicodeKeyInput(utf16[1], true),
+                MakeUnicodeKeyInput(utf16[0], true)
+            };
+        }
+
+        /// <summary>Enumerates text as Unicode code points (surrogate pairs joined),
+        /// the net48 replacement for <c>string.EnumerateRunes()</c>.</summary>
+        private static System.Collections.Generic.IEnumerable<int> EnumerateCodePoints(string text)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    yield return char.ConvertToUtf32(text[i], text[i + 1]);
+                    i++;
+                }
+                else
+                    yield return text[i];
+            }
+        }
+#else
         /// <summary>
         /// Builds the atomic batch for one rune typed via <c>KEYEVENTF_UNICODE</c>: a single
         /// code unit as down/up, or a surrogate pair as high-down, low-down, low-up, high-up —
@@ -1206,6 +1263,7 @@ namespace KeyboardAutomation
                 MakeUnicodeKeyInput(chars[0], true)
             };
         }
+#endif
 
         /// <summary>
         /// Injects a batch of input events atomically (in order) and fails loudly when

@@ -38,7 +38,7 @@ namespace ArchiveAutomation
 
                 foreach (string filePath in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
                 {
-                    string relative = Path.GetRelativePath(sourceRoot, filePath).Replace(Path.DirectorySeparatorChar, '/');
+                    string relative = ArchiveCore.GetRelativePath(sourceRoot, filePath).Replace(Path.DirectorySeparatorChar, '/');
                     string entryName = entryPrefix + relative;
 
                     DateTimeOffset timestamp = new DateTimeOffset(File.GetLastWriteTime(filePath));
@@ -68,7 +68,7 @@ namespace ArchiveAutomation
                     if (Directory.EnumerateFiles(dirPath, "*", SearchOption.AllDirectories).Any())
                         continue;
 
-                    string relative = Path.GetRelativePath(sourceRoot, dirPath).Replace(Path.DirectorySeparatorChar, '/');
+                    string relative = ArchiveCore.GetRelativePath(sourceRoot, dirPath).Replace(Path.DirectorySeparatorChar, '/');
                     string entryName = entryPrefix + relative + "/";
                     var dirEntry = new ZipEntry(entryName);
 
