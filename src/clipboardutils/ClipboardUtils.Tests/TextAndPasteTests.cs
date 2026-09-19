@@ -560,5 +560,37 @@ namespace ClipboardAutomation.Tests
             for (int i = 0; i < original.Count; i++)
                 Assert.Equal(original[i].Data, after[i].Data);
         }
+
+        [Fact]
+        public void Paste_WhenSettingTheTextTimesOut_TheOriginalIsPutBackOnceTheSetterFinishes()
+        {
+            using var release = new System.Threading.ManualResetEventSlim(false);
+            using var rig = new Rig(operationTimeoutMs: 300).WithRichContent();
+            var original = rig.Contents();
+            rig.Clipboard.OnWrite = id => release.Wait(10000);   // the very first write, the temporary text, hangs
+
+            Assert.False(rig.Utils.PasteText("late text", out string message));
+            Assert.Contains("put back automatically", message);
+            Assert.Equal(0, rig.Keys.Sent);   // never pasted
+
+            release.Set();   // the setter finishes, landing the text late; the kept snapshot must then replace it
+            int deadline = Environment.TickCount + 5000;
+            while (Environment.TickCount - deadline < 0 && !SameContents(rig.Contents(), original))
+                System.Threading.Thread.Sleep(10);
+            Assert.True(SameContents(rig.Contents(), original), "the original clipboard was never put back");
+            Assert.True(rig.Utils.SetClipboardText("works again", out _));
+        }
+
+        private static bool SameContents(List<(uint Id, byte[] Data)> a, List<(uint Id, byte[] Data)> b)
+        {
+            if (a.Count != b.Count)
+                return false;
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (a[i].Id != b[i].Id || !System.Linq.Enumerable.SequenceEqual(a[i].Data, b[i].Data))
+                    return false;
+            }
+            return true;
+        }
     }
 }

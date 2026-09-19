@@ -281,7 +281,7 @@ namespace ClipboardAutomation
                 }
 
                 ClipboardSnapshot snapshot = captured.Snapshot;
-                bool restoreAbandoned = false;
+                bool snapshotHandedOver = false;   // an abandoned worker still needs the snapshot, and wipes it itself when done
                 try
                 {
                     if (requireCompleteRestore && snapshot.HasLoss)
@@ -297,9 +297,19 @@ namespace ClipboardAutomation
                         {
                             bool ok = _engine.TrySetText(text, excludeFromHistory, out string error);
                             return new SimpleResult { Ok = ok, Error = error };
-                        }, out SimpleResult set, out string setTimeout))
+                        }, out SimpleResult set, out string setTimeout, out bool setAbandoned, () =>
+                        {
+                            // The text landed late, over the clipboard's real contents: put them back now.
+                            try { _engine.TryRestore(snapshot, out _); }
+                            finally { snapshot.Wipe(); }
+                        }))
                     {
                         failure = setTimeout;
+                        if (setAbandoned)
+                        {
+                            snapshotHandedOver = true;
+                            failure += " The clipboard's original contents are kept and are put back automatically if the owner ever answers.";
+                        }
                     }
                     else if (!set.Ok)
                     {
@@ -333,12 +343,19 @@ namespace ClipboardAutomation
 
                     // Whatever happened above, the clipboard is put back: the text may already be on it.
                     string restoreProblem = null;
-                    if (!TryRunBounded("Restoring the clipboard", () =>
+                    if (snapshotHandedOver)
+                    {
+                        // Nothing more to do here: the abandoned setter restores the clipboard when it finishes.
+                    }
+                    else if (!TryRunBounded("Restoring the clipboard", () =>
                         {
                             bool ok = _engine.TryRestore(snapshot, out string error);
                             return new SimpleResult { Ok = ok, Error = error };
-                        }, out SimpleResult restored, out string restoreTimeout, out restoreAbandoned, snapshot.Wipe))
+                        }, out SimpleResult restored, out string restoreTimeout, out bool restoreAbandoned, snapshot.Wipe))
+                    {
                         restoreProblem = restoreTimeout;
+                        snapshotHandedOver = restoreAbandoned;
+                    }
                     else if (!restored.Ok)
                         restoreProblem = restored.Error;
 
@@ -346,8 +363,8 @@ namespace ClipboardAutomation
                 }
                 finally
                 {
-                    // An abandoned restore is still reading the snapshot; it wipes it itself when it finishes.
-                    if (!restoreAbandoned)
+                    // An abandoned worker is still using the snapshot; it wipes it itself when it finishes.
+                    if (!snapshotHandedOver)
                         snapshot.Wipe();
                 }
                 }
@@ -676,9 +693,10 @@ namespace ClipboardAutomation
                         }
                         if (wasAbandoned)
                         {
-                            Interlocked.Decrement(ref _abandonedOperations);
+                            // Other operations stay refused until this follow-up (a deferred restore) is done too.
                             try { afterAbandonedFinish?.Invoke(); }
                             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
+                            finally { Interlocked.Decrement(ref _abandonedOperations); }
                         }
                         else
                         {
