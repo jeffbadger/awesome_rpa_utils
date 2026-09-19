@@ -991,23 +991,26 @@ namespace ArchiveAutomation
                 int entryIndex = 0;
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
+                    // Incremented for every entry, including directory entries - each
+                    // occupies one central-directory record, and that position is what
+                    // ZipCompat aligns its net48 reads against.
+                    int thisEntryIndex = entryIndex++;
                     if (IsDirectoryEntry(entry))
                         continue;
 
                     // Never opened/decompressed - System.IO.Compression cannot decrypt an
                     // encrypted entry under any circumstance, and its exact behavior on
                     // Open() for one is not relied upon either way.
-                    if (ZipCompat.IsEncrypted(archivePath, entry, entryIndex))
+                    if (ZipCompat.IsEncrypted(archivePath, entry, thisEntryIndex))
                     {
                         list.Add(new CrcValidationEntry
                         {
                             FullName = entry.FullName,
-                            DeclaredCrc32 = ZipCompat.Crc32(archivePath, entry, entryIndex),
+                            DeclaredCrc32 = ZipCompat.Crc32(archivePath, entry, thisEntryIndex),
                             ComputedCrc32 = 0,
                             IsValid = false,
                             Status = "SkippedEncrypted"
                         });
-                        entryIndex++;
                         continue;
                     }
 
@@ -1015,8 +1018,7 @@ namespace ArchiveAutomation
                     using (Stream stream = entry.Open())
                         computed = Crc32Core.Compute(stream);
 
-                    uint declaredCrc32 = ZipCompat.Crc32(archivePath, entry, entryIndex);
-                    entryIndex++;
+                    uint declaredCrc32 = ZipCompat.Crc32(archivePath, entry, thisEntryIndex);
                     bool valid = computed == declaredCrc32;
                     list.Add(new CrcValidationEntry
                     {
