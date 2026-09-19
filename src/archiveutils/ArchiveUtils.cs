@@ -4,9 +4,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
-#if !NETFRAMEWORK
 using System.IO.Enumeration;
-#endif
 using System.Linq;
 using System.Text.Json;
 
@@ -563,7 +561,7 @@ namespace ArchiveAutomation
                 }
 
                 Directory.CreateDirectory(destinationDirectoryPath);
-                ArchiveCore.ExtractToDirectory(archivePath, destinationDirectoryPath, overwrite);
+                ZipFile.ExtractToDirectory(archivePath, destinationDirectoryPath, overwrite);
 
                 if (!preserveTimestamps)
                 {
@@ -654,8 +652,7 @@ namespace ArchiveAutomation
 
         /// <summary>
         /// Extracts the first entry whose name matches a glob pattern (via
-        /// <see cref="SimpleExpressionMatcher"/>'s simple-expression matching, e.g.
-        /// <c>"*.csv"</c>),
+        /// <see cref="FileSystemName"/>'s simple-expression matching, e.g. <c>"*.csv"</c>),
         /// rather than requiring an exact name. Same zip-slip and zip-bomb guards as
         /// <see cref="ExtractSingleFile"/>. Never throws.
         /// </summary>
@@ -700,7 +697,7 @@ namespace ArchiveAutomation
                 ZipArchiveEntry match = null;
                 foreach (ZipArchiveEntry candidate in archive.Entries)
                 {
-                    if (SimpleExpressionMatcher.MatchesSimpleExpression(entryNamePattern, candidate.FullName))
+                    if (FileSystemName.MatchesSimpleExpression(entryNamePattern, candidate.FullName))
                     {
                         match = candidate;
                         break;
@@ -833,9 +830,8 @@ namespace ArchiveAutomation
 
                 using ZipArchive archive = ZipFile.OpenRead(archivePath);
                 var results = new List<ArchiveEntryInfo>();
-                int entryIndex = 0;
                 foreach (ZipArchiveEntry entry in archive.Entries)
-                    results.Add(ToArchiveEntryInfo(archivePath, entry, entryIndex++));
+                    results.Add(ToArchiveEntryInfo(entry));
 
                 json = JsonSerializer.Serialize(results, ArchiveJson.Options);
                 message = null;
@@ -872,13 +868,12 @@ namespace ArchiveAutomation
                 }
 
                 using ZipArchive archive = ZipFile.OpenRead(archivePath);
-                int entryIndex = 0;
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
                     entryCount++;
                     totalUncompressedBytes += entry.Length;
                     totalCompressedBytes += entry.CompressedLength;
-                    if (ZipCompat.IsEncrypted(archivePath, entry, entryIndex++))
+                    if (entry.IsEncrypted)
                         hasEncryptedEntries = true;
                 }
 
@@ -892,15 +887,15 @@ namespace ArchiveAutomation
             }
         }
 
-        private static ArchiveEntryInfo ToArchiveEntryInfo(string archivePath, ZipArchiveEntry entry, int entryIndex) => new ArchiveEntryInfo
+        private static ArchiveEntryInfo ToArchiveEntryInfo(ZipArchiveEntry entry) => new ArchiveEntryInfo
         {
             FullName = entry.FullName,
             Length = entry.Length,
             CompressedLength = entry.CompressedLength,
             CompressionRatio = entry.CompressedLength > 0 ? (double)entry.Length / entry.CompressedLength : 0.0,
             LastWriteUtcIso8601 = entry.LastWriteTime.UtcDateTime.ToString("o"),
-            Crc32 = ZipCompat.Crc32(archivePath, entry, entryIndex),
-            IsEncrypted = ZipCompat.IsEncrypted(archivePath, entry, entryIndex),
+            Crc32 = entry.Crc32,
+            IsEncrypted = entry.IsEncrypted,
             IsDirectory = IsDirectoryEntry(entry)
         };
 
@@ -988,25 +983,20 @@ namespace ArchiveAutomation
             var list = new List<CrcValidationEntry>();
             using (ZipArchive archive = ZipFile.OpenRead(archivePath))
             {
-                int entryIndex = 0;
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
-                    // Incremented for every entry, including directory entries - each
-                    // occupies one central-directory record, and that position is what
-                    // ZipCompat aligns its net48 reads against.
-                    int thisEntryIndex = entryIndex++;
                     if (IsDirectoryEntry(entry))
                         continue;
 
                     // Never opened/decompressed - System.IO.Compression cannot decrypt an
                     // encrypted entry under any circumstance, and its exact behavior on
                     // Open() for one is not relied upon either way.
-                    if (ZipCompat.IsEncrypted(archivePath, entry, thisEntryIndex))
+                    if (entry.IsEncrypted)
                     {
                         list.Add(new CrcValidationEntry
                         {
                             FullName = entry.FullName,
-                            DeclaredCrc32 = ZipCompat.Crc32(archivePath, entry, thisEntryIndex),
+                            DeclaredCrc32 = entry.Crc32,
                             ComputedCrc32 = 0,
                             IsValid = false,
                             Status = "SkippedEncrypted"
@@ -1018,12 +1008,11 @@ namespace ArchiveAutomation
                     using (Stream stream = entry.Open())
                         computed = Crc32Core.Compute(stream);
 
-                    uint declaredCrc32 = ZipCompat.Crc32(archivePath, entry, thisEntryIndex);
-                    bool valid = computed == declaredCrc32;
+                    bool valid = computed == entry.Crc32;
                     list.Add(new CrcValidationEntry
                     {
                         FullName = entry.FullName,
-                        DeclaredCrc32 = declaredCrc32,
+                        DeclaredCrc32 = entry.Crc32,
                         ComputedCrc32 = computed,
                         IsValid = valid,
                         Status = valid ? "Valid" : "Mismatch"
@@ -1064,10 +1053,9 @@ namespace ArchiveAutomation
                 }
 
                 using ZipArchive archive = ZipFile.OpenRead(archivePath);
-                int entryIndex = 0;
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
-                    if (ZipCompat.IsEncrypted(archivePath, entry, entryIndex++))
+                    if (entry.IsEncrypted)
                     {
                         hasEncryptedEntries = true;
                         break;

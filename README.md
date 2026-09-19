@@ -156,62 +156,6 @@ other pages inside itself. Choose a different output path with
 substitutes it with `net8.0` and `net10.0` to produce one archive per target
 framework.
 
-The release workflow additionally packs the components as NuGet packages: its
-`pack` step runs `scripts/Pack-NuGet.ps1` and uploads the `.nupkg` files as
-release assets alongside the zip archives.
-
-## Packaging NuGet packages
-
-Every component ships as its own NuGet package (`AwesomeRpaUtils.<AssemblyName>`,
-e.g. `AwesomeRpaUtils.WindowAutomation`), one per `src/` component, mirroring the
-per-component release archives. To build and pack every component, run:
-
-```powershell
-./scripts/Pack-NuGet.ps1 -Version 0.4.0
-```
-
-The version may also come from the `RELEASE_TAG` environment variable
-(leading `v` stripped), which is how the release workflow supplies it — package
-versions always come from a repo tag, never hardcoded in a csproj. Packages
-land in `artifacts/nuget/`, which doubles as a local NuGet folder feed (see
-"Consuming the NuGet packages" below).
-
-Each package ships the component assembly for every TFM the component
-multi-targets — `net48`, `net8.0-windows`, and `net10.0-windows` (OcrUtils has
-no `net48` TFM: its WinRT OCR dependency cannot target .NET Framework) — plus a
-README, license, and repository link. Third-party dependencies
-(SharpZipLib, System.Text.Json on net48, the System.Diagnostics.EventLog /
-System.ServiceProcess.ServiceController support packages, …) are declared as
-proper NuGet dependencies per TFM, so a consumer's restore pulls them
-automatically; nothing has to be hand-copied like the release archives'
-SupportLibraries.zip.
-
-## Consuming the NuGet packages
-
-For now the packages are distributed as a local folder feed — publish to
-nuget.org / GitHub Packages can be added later without restructuring. In a
-consumer project (e.g. a UiPath/PAD/Blue Prism wrapper or a test console
-app), add a `nuget.config` next to the `.csproj`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <add key="AwesomeRpaUtils" value="<path-to-repo>/artifacts/nuget" />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-  </packageSources>
-</configuration>
-```
-
-then `dotnet add package AwesomeRpaUtils.WindowAutomation --version 0.4.0`.
-Platform notes: the `net8.0-windows`/`net10.0-windows` flavors are for UiPath
-modern projects (Studio 2024.10+, .NET 8) and modern .NET consumers on
-Windows; the `net48` flavor exists for .NET Framework hosts (Power Automate
-Desktop custom actions, Blue Prism VBOs, Automation Anywhere 360 custom
-packages) and pulls the System.Text.Json 8.0.5 dependency automatically.
-`OcrUtils` (`AwesomeRpaUtils.OcrAutomation`) ships only the
-`net8.0-windows10.0.19041.0` / `net10.0-windows10.0.19041.0` flavors.
-
 ## REST component code generation
 
 Rather than hand-writing a REST component per API, the repository includes a

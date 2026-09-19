@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Text;
 
 namespace ArchiveAutomation
 {
@@ -62,130 +61,13 @@ namespace ArchiveAutomation
         internal static string MakeTempSiblingPath(string finalPath) =>
             finalPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
 
-        // Net48 compatibility shim for File.Move(source, dest, overwrite). The
-        // delete-then-move fallback is not fully atomic on net48; net8/net10 keep
-        // the atomic overload. The caller builds a per-call-unique temp file, so
-        // the non-atomic window can never collide with a concurrent publisher.
-#if NETFRAMEWORK
-        internal static void MoveFileOverwrite(string sourcePath, string destinationPath, bool overwrite)
-        {
-            if (overwrite && File.Exists(destinationPath))
-                File.Delete(destinationPath);
-            File.Move(sourcePath, destinationPath);
-        }
-#else
-        internal static void MoveFileOverwrite(string sourcePath, string destinationPath, bool overwrite) => File.Move(sourcePath, destinationPath, overwrite);
-#endif
-
-        // Net48 compatibility shim for Path.GetRelativePath: computes the same
-        // common-path-prefix relative path, with the ordinal-ignore-case comparison
-        // the BCL uses on Windows. Paths under different roots fall back to the
-        // full path, matching the BCL.
-        internal static string GetRelativePath(string relativeTo, string path)
-        {
-#if !NETFRAMEWORK
-            return Path.GetRelativePath(relativeTo, path);
-#else
-            relativeTo = Path.GetFullPath(relativeTo).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            path = Path.GetFullPath(path);
-
-            string[] baseParts = relativeTo.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
-            string[] pathParts = path.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
-
-            int common = 0;
-            while (common < baseParts.Length && common < pathParts.Length &&
-                   string.Equals(baseParts[common], pathParts[common], StringComparison.OrdinalIgnoreCase))
-                common++;
-            if (common == 0)
-                return path;
-
-            var result = new StringBuilder();
-            for (int i = common; i < baseParts.Length; i++)
-                result.Append("..").Append(Path.DirectorySeparatorChar);
-            for (int i = common; i < pathParts.Length; i++)
-            {
-                result.Append(pathParts[i]);
-                if (i < pathParts.Length - 1)
-                    result.Append(Path.DirectorySeparatorChar);
-            }
-
-            string text = result.ToString();
-            return text.Length == 0 ? "." : text;
-#endif
-        }
-
-        /// <summary>
-        /// Extracts a ZIP archive to <paramref name="destinationDirectoryPath"/> with the modern
-        /// BCL's <c>ZipFile.ExtractToDirectory(archivePath, destination, overwrite)</c> semantics:
-        /// refuse to clobber existing files unless <paramref name="overwrite"/> is set, never let
-        /// an entry escape the destination directory, and carry entry timestamps across. Net48 has
-        /// no overwrite overload, so the NETFRAMEWORK branch extracts entry-by-entry.
-        /// </summary>
-        internal static void ExtractToDirectory(string archivePath, string destinationDirectoryPath, bool overwrite)
-        {
-#if !NETFRAMEWORK
-            ZipFile.ExtractToDirectory(archivePath, destinationDirectoryPath, overwrite);
-#else
-            using (ZipArchive archive = ZipFile.OpenRead(archivePath))
-            {
-                string destinationRoot = Path.GetFullPath(destinationDirectoryPath);
-                if (!destinationRoot.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
-                    destinationRoot += Path.DirectorySeparatorChar;
-                Directory.CreateDirectory(destinationRoot);
-
-                foreach (ZipArchiveEntry entry in archive.Entries)
-                {
-                    // Guard the resolved target before touching anything, so a crafted
-                    // entry name ('..\', an absolute path) cannot escape the destination.
-                    string targetPath = Path.GetFullPath(Path.Combine(destinationRoot, entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
-                    if (!targetPath.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
-                        throw new IOException($"Extracting entry '{entry.FullName}' would have escaped the destination directory.");
-
-                    if (entry.FullName.EndsWith("/", StringComparison.Ordinal))
-                    {
-                        Directory.CreateDirectory(targetPath);
-                        continue;
-                    }
-
-                    if (Directory.Exists(targetPath))
-                        throw new IOException($"The directory '{targetPath}' already exists when a file was expected.");
-                    if (File.Exists(targetPath))
-                    {
-                        if (!overwrite)
-                            throw new IOException($"The file '{targetPath}' already exists.");
-                        File.Delete(targetPath);
-                    }
-
-                    string parentDirectory = Path.GetDirectoryName(targetPath);
-                    if (!string.IsNullOrEmpty(parentDirectory))
-                        Directory.CreateDirectory(parentDirectory);
-
-                    using (Stream source = entry.Open())
-                    using (var target = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                        source.CopyTo(target);
-
-                    try
-                    {
-                        if (entry.LastWriteTime.UtcDateTime >= MinZipTimestamp.DateTime)
-                            File.SetLastWriteTimeUtc(targetPath, entry.LastWriteTime.UtcDateTime);
-                    }
-                    catch (ArgumentOutOfRangeException)
-                    {
-                        // Out-of-range entry timestamp: leave the file's current time,
-                        // like the modern BCL's extraction does.
-                    }
-                }
-            }
-#endif
-        }
-
         /// <summary>Publishes a fully-built temp file to its final path via <see cref="File.Move(string, string, bool)"/>, the same same-volume-atomic idiom as <c>FileWatchUtils.AtomicMoveFile</c>. Best-effort deletes the temp file on failure.</summary>
         internal static bool TryPublishAtomically(string tempPath, string finalPath, bool overwrite, out string error)
         {
             error = null;
             try
             {
-                MoveFileOverwrite(tempPath, finalPath, overwrite);
+                File.Move(tempPath, finalPath, overwrite);
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -222,7 +104,7 @@ namespace ArchiveAutomation
             {
                 foreach (string filePath in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
                 {
-                    string relative = GetRelativePath(sourceRoot, filePath).Replace(Path.DirectorySeparatorChar, '/');
+                    string relative = Path.GetRelativePath(sourceRoot, filePath).Replace(Path.DirectorySeparatorChar, '/');
                     string entryName = entryPrefix + relative;
 
                     DateTimeOffset timestamp = normalizeTimestamps ? normalizedTimestamp : new DateTimeOffset(File.GetLastWriteTime(filePath));
@@ -250,7 +132,7 @@ namespace ArchiveAutomation
                     if (Directory.EnumerateFiles(dirPath, "*", SearchOption.AllDirectories).Any())
                         continue;
 
-                    string relative = GetRelativePath(sourceRoot, dirPath).Replace(Path.DirectorySeparatorChar, '/');
+                    string relative = Path.GetRelativePath(sourceRoot, dirPath).Replace(Path.DirectorySeparatorChar, '/');
                     string entryName = entryPrefix + relative + "/";
                     ZipArchiveEntry dirEntry = archive.CreateEntry(entryName);
 

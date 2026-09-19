@@ -2301,14 +2301,11 @@ namespace UIAutomation
         /// <summary>Packs RGB components (each clamped to 0-255) into a 0xBBGGRR colorRef value.</summary>
         private static int PackColorRef(int red, int green, int blue)
         {
-            red = ClampInt(red, 0, 255);
-            green = ClampInt(green, 0, 255);
-            blue = ClampInt(blue, 0, 255);
+            red = Math.Clamp(red, 0, 255);
+            green = Math.Clamp(green, 0, 255);
+            blue = Math.Clamp(blue, 0, 255);
             return red | (green << 8) | (blue << 16);
         }
-
-        // Math.Clamp equivalent; net48 lacks Math.Clamp.
-        private static int ClampInt(int value, int min, int max) => value < min ? min : (value > max ? max : value);
 
         /// <summary>
         /// Runs a UIA property/pattern read and converts UIA's runtime failure modes into the

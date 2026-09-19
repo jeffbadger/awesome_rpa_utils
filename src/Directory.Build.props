@@ -7,11 +7,4 @@
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
   </PropertyGroup>
 
-  <!--
-    NuGet packaging defaults live in src/Directory.Build.targets, imported
-    AFTER each csproj body - a pack metadata PropertyGroup here would never
-    fire, because $(TargetFrameworks)/$(AssemblyName) are still unset when a
-    Directory.Build.props is evaluated. The version is supplied at pack time
-    by scripts/Pack-NuGet.ps1 (-p:Version) so no version is hardcoded here.
-  -->
 </Project>
