@@ -3,6 +3,9 @@
 > **⚠ Destructive:** `PasteText` permanently destroys any non-text clipboard content
 > (an image, files) — see Restore behavior below. Snapshot it yourself first if the
 > automation might run while the clipboard holds something other than text.
+>
+> **To keep every clipboard format,** use [`ClipboardUtils.PasteText`](../../clipboardutils/README.md)
+> instead: it saves everything on the clipboard, pastes, and restores it all, byte for byte.
 
 ## Paste text into a field that mangles synthetic keystrokes
 

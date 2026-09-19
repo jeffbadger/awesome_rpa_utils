@@ -663,7 +663,7 @@ namespace KeyboardAutomation
         /// </remarks>
         [Category("Keyboard - Clipboard")]
         [Description("Sets the clipboard to the given text, sends Ctrl+V, then restores the original clipboard. " +
-                     "WARNING: destroys non-text clipboard content (images, files) permanently. Returns True on success; never throws.")]
+                     "WARNING: destroys non-text clipboard content (images, files) permanently; ClipboardUtils.PasteText keeps every format. Returns True on success; never throws.")]
         public bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)
         {
             message = default;
