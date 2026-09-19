@@ -181,7 +181,7 @@ namespace ClipboardAutomation
                     {
                         bool ok = _engine.TrySetText(text, excludeFromHistory, out string error);
                         return new SimpleResult { Ok = ok, Error = error };
-                    }, out SimpleResult result, out message))
+                    }, out SimpleResult result, out message, ownWrite: true))
                     return false;
                 message = result.Ok ? null : result.Error;
                 return result.Ok;
@@ -212,7 +212,7 @@ namespace ClipboardAutomation
                         {
                             bool ok = _engine.TryClear(out string error);
                             return new SimpleResult { Ok = ok, Error = error };
-                        }, out SimpleResult result, out message))
+                        }, out SimpleResult result, out message, ownWrite: true))
                         return false;
                     message = result.Ok ? null : result.Error;
                     return result.Ok;
@@ -302,7 +302,7 @@ namespace ClipboardAutomation
                             // The text landed late, over the clipboard's real contents: put them back now.
                             try { _engine.TryRestore(snapshot, out _); }
                             finally { snapshot.Wipe(); }
-                        }))
+                        }, true))
                     {
                         failure = setTimeout;
                         if (setAbandoned)
@@ -351,7 +351,7 @@ namespace ClipboardAutomation
                         {
                             bool ok = _engine.TryRestore(snapshot, out string error);
                             return new SimpleResult { Ok = ok, Error = error };
-                        }, out SimpleResult restored, out string restoreTimeout, out bool restoreAbandoned, snapshot.Wipe))
+                        }, out SimpleResult restored, out string restoreTimeout, out bool restoreAbandoned, snapshot.Wipe, true))
                     {
                         restoreProblem = restoreTimeout;
                         snapshotHandedOver = restoreAbandoned;
@@ -659,13 +659,15 @@ namespace ClipboardAutomation
         /// finishes (and closes the clipboard) on its own if the owner ever answers, and until it has, no other
         /// clipboard operation is started, so it can never race a later one.
         /// </summary>
-        private bool TryRunBounded<T>(string operation, Func<T> work, out T result, out string message) where T : class =>
-            TryRunBounded(operation, work, out result, out message, out _, null);
+        private bool TryRunBounded<T>(string operation, Func<T> work, out T result, out string message, bool ownWrite = false) where T : class =>
+            TryRunBounded(operation, work, out result, out message, out _, null, ownWrite);
 
         // abandoned: true if the operation was given up on and may still be running.
         // afterAbandonedFinish: runs on the worker thread if the operation finishes after being abandoned; for releasing what it was still using.
+        // ownWrite: the operation writes to the clipboard on the component's own account; if it is abandoned and lands late,
+        // the history must not take that write for a copy made by someone else.
         private bool TryRunBounded<T>(string operation, Func<T> work, out T result, out string message, out bool abandoned,
-            Action afterAbandonedFinish) where T : class
+            Action afterAbandonedFinish, bool ownWrite = false) where T : class
         {
             abandoned = false;
             if (Volatile.Read(ref _abandonedOperations) > 0)
@@ -704,7 +706,13 @@ namespace ClipboardAutomation
                             // Other operations stay refused until this follow-up (a deferred restore) is done too.
                             try { afterAbandonedFinish?.Invoke(); }
                             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
-                            finally { Interlocked.Decrement(ref _abandonedOperations); }
+                            finally
+                            {
+                                if (ownWrite)
+                                    AbsorbLateOwnWrite();
+                                Interlocked.Decrement(ref _abandonedOperations);
+                            }
+
                             // Nobody is left to receive what it copied; do not leave it in memory.
                             try { (value as IWipeable)?.Wipe(); }
                             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }

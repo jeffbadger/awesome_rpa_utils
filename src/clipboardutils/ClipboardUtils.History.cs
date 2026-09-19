@@ -444,7 +444,7 @@ namespace ClipboardAutomation
                             {
                                 bool ok = _engine.TryRestoreHistoryItem(item, out string error);
                                 return new SimpleResult { Ok = ok, Error = error };
-                            }, out SimpleResult result, out message))
+                            }, out SimpleResult result, out message, ownWrite: true))
                             return false;
                         message = result.Ok ? null : result.Error;
                         return result.Ok;
@@ -556,7 +556,27 @@ namespace ClipboardAutomation
             }
         }
 
+        /// <summary>Moves the history's baseline past a write this component made late (after its operation timed out), so it is not mistaken for a copy.</summary>
+        private void AbsorbLateOwnWrite()
+        {
+            try
+            {
+                lock (_pollLock)
+                {
+                    lock (_historyLock)
+                    {
+                        if (_historyThread != null)
+                            _handledSequence = _engine.SequenceNumber;
+                    }
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+            }
+        }
+
         private sealed class HistoryCapture : IWipeable
+
         {
             public void Wipe() => Item?.Wipe();
 

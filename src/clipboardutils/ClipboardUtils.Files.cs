@@ -198,7 +198,7 @@ namespace ClipboardAutomation
                     {
                         bool ok = _engine.TrySetFileDropList(paths, effect, out string error);
                         return new SimpleResult { Ok = ok, Error = error };
-                    }, out SimpleResult result, out message))
+                    }, out SimpleResult result, out message, ownWrite: true))
                     return false;
                 message = result.Ok ? null : result.Error;
                 return result.Ok;

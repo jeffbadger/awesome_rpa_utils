@@ -1031,5 +1031,25 @@ namespace ClipboardAutomation.Tests
             Assert.True(WaitFor(() => { lock (rig.Clipboard.ReturnedArrays) return rig.Clipboard.ReturnedArrays.Count > 0 && rig.Clipboard.ReturnedArrays.All(a => a.All(b => b == 0)); }), "the abandoned capture was left in memory");
             Assert.Equal(0, Count(rig));
         }
+
+        [Fact]
+        public void AnOwnWriteThatLandsAfterItsTimeout_IsNotMistakenForACopy()
+        {
+            using var release = new ManualResetEventSlim(false);
+            using var rig = new Rig(operationTimeoutMs: 250);
+            StartOk(rig, 5);
+            rig.Clipboard.OnWrite = id => release.Wait(10000);   // the write hangs, so SetClipboardText times out
+
+            Assert.False(rig.Utils.SetClipboardText("late own text", out string message));
+            Assert.Contains("did not finish", message);
+
+            release.Set();   // it lands after the scope that owned it has ended
+            Assert.True(WaitFor(() => rig.Clipboard.TextOf() == "late own text"));
+            Thread.Sleep(500);   // many polls, and time for the abandoned worker to finish
+
+            Assert.Equal(0, Count(rig));
+            Copy(rig, "a real copy afterwards");   // and the watcher still works
+            Assert.True(WaitFor(() => Count(rig) == 1));
+        }
     }
 }
