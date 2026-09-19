@@ -111,24 +111,28 @@ namespace ClipboardAutomation
                 if (!TryNormalizeName(snapshotName, out string name, out message))
                     return false;
 
-                // The lock is held throughout so that discarding the copy cannot overwrite its bytes mid-restore.
-                lock (_lock)
+                // Entered before the lock below (never inside it): the history's lock is always taken first.
+                using (OwnOperation())
                 {
-                    if (!_snapshots.TryGetValue(name, out ClipboardSnapshot snapshot))
+                    // The lock is held throughout so that discarding the copy cannot overwrite its bytes mid-restore.
+                    lock (_lock)
                     {
-                        message = "There is no snapshot named '" + name + "'.";
-                        return false;
-                    }
-
-                    if (!TryRunBounded("Restoring the clipboard", () =>
+                        if (!_snapshots.TryGetValue(name, out ClipboardSnapshot snapshot))
                         {
-                            bool ok = _engine.TryRestore(snapshot, out string error);
-                            return new SimpleResult { Ok = ok, Error = error };
-                        }, out SimpleResult result, out message))
-                        return false;
+                            message = "There is no snapshot named '" + name + "'.";
+                            return false;
+                        }
 
-                    message = result.Ok ? null : result.Error;
-                    return result.Ok;
+                        if (!TryRunBounded("Restoring the clipboard", () =>
+                            {
+                                bool ok = _engine.TryRestore(snapshot, out string error);
+                                return new SimpleResult { Ok = ok, Error = error };
+                            }, out SimpleResult result, out message))
+                            return false;
+
+                        message = result.Ok ? null : result.Error;
+                        return result.Ok;
+                    }
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))

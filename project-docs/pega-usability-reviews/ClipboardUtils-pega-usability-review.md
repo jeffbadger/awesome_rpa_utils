@@ -55,6 +55,16 @@ strings and numbers.
 6. **Decision: no event when the clipboard changes.** Robot Studio's support for component events is
    unproven and a listener needs a window on its own thread; polling the sequence number is exact, cheap,
    needs no open clipboard, and works from a blocked step.
+7. **Decision: a clipboard history that polls, on a thread of its own, and records only other people's copies.**
+   Like decision 6, it polls the sequence number rather than using a listener. It never records what the
+   component itself puts on the clipboard (`PasteText`, `SetClipboardText`, restores...), because a history
+   full of the automation's own scaffolding is useless; a copy made just before such a write is recorded
+   first. Content marked "exclude from history" is skipped without being read, so a password manager's
+   entries are not kept. `maxItems` has no default (1 to 1000), so the memory cost is a conscious choice;
+   the default mode is text only, so it never asks an application to render every format of every copy;
+   items count against `MaximumClipboardMegabytes`, are memory-only, and are wiped on discard, clear and
+   dispose. The list omits text unless asked, and `FindClipboardHistoryIndex` / `SearchClipboardHistoryJson`
+   give a Robot step a way to pick an item without parsing JSON.
 
 ## Accepted caveats
 
@@ -63,3 +73,4 @@ that asks for `CF_BITMAP` is handed a bitmap Windows builds from the DIB. `exclu
 that clipboard history, cloud sync and well-behaved monitors check; other software can still read the
 clipboard. `PasteText` sends a keystroke to whatever has the focus and cannot find the field. The clipboard
 is machine-wide state, so another process changing it during a save or paste is not prevented.
+A history holds whatever was copied, passwords from software that does not mark them included, and misses a copy replaced within one poll interval.

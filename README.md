@@ -11,7 +11,7 @@ for checking whether something already exists before writing it yourself.
 | Component | Assembly | Description |
 |---|---|---|
 | [archiveutils](src/archiveutils/README.md) | `ArchiveAutomation` | Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection and independent CRC-32 verification built in. |
-| [clipboardutils](src/clipboardutils/README.md) | `ClipboardAutomation` | Saves and restores everything on the clipboard (every format, not just text), pastes text without destroying what was there, waits for the clipboard to change, and reads or sets a list of files. |
+| [clipboardutils](src/clipboardutils/README.md) | `ClipboardAutomation` | Saves and restores everything on the clipboard (every format, not just text), pastes text without destroying what was there, waits for the clipboard to change, reads or sets a list of files, and keeps a searchable history of the last N copies. |
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
 | [datacontractutils](src/datacontractutils/README.md) | `DataContractAutomation` | Defines a typed named-value contract during initialization, then provides strict scalar getters/setters and atomic JSON/DataTable updates at runtime. |
 | [dialogutils](src/dialogutils/README.md) | `DialogAutomation` | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, without moving the cursor, and fills them in: text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs. |

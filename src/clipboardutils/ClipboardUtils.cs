@@ -24,6 +24,7 @@ namespace ClipboardAutomation
         private const int MaxNameLength = 64;
 
         internal const int DefaultOperationTimeoutMs = 20000;
+        internal const int DefaultHistorySettleMs = 100;
         internal const int MaxWaitMs = 3600000;
         internal const int MinPollIntervalMs = 5;
         internal const int MaxPollIntervalMs = 60000;
@@ -39,6 +40,7 @@ namespace ClipboardAutomation
         private readonly Action<int> _sleep;
         private readonly Func<long> _nowMs;
         private readonly int _operationTimeoutMs;
+        private readonly int _historySettleMs;
 
         private readonly object _lock = new object();
         private readonly Dictionary<string, ClipboardSnapshot> _snapshots = new Dictionary<string, ClipboardSnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -49,7 +51,7 @@ namespace ClipboardAutomation
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
         /// </summary>
-        public ClipboardUtils() : this(new Win32ClipboardApi(), new Win32KeySender(), Thread.Sleep, () => Environment.TickCount64, DefaultOperationTimeoutMs)
+        public ClipboardUtils() : this(new Win32ClipboardApi(), new Win32KeySender(), Thread.Sleep, () => Environment.TickCount64, DefaultOperationTimeoutMs, DefaultHistorySettleMs)
         {
         }
 
@@ -62,13 +64,14 @@ namespace ClipboardAutomation
             container?.Add(this);
         }
 
-        internal ClipboardUtils(IClipboardApi api, IKeySender keys, Action<int> sleep, Func<long> nowMs, int operationTimeoutMs)
+        internal ClipboardUtils(IClipboardApi api, IKeySender keys, Action<int> sleep, Func<long> nowMs, int operationTimeoutMs, int historySettleMs = DefaultHistorySettleMs)
         {
             _engine = new ClipboardEngine(api);
             _keys = keys;
             _sleep = sleep;
             _nowMs = nowMs;
             _operationTimeoutMs = operationTimeoutMs;
+            _historySettleMs = historySettleMs;
         }
 
         /// <summary>
@@ -171,6 +174,8 @@ namespace ClipboardAutomation
                     message = "text may not be null (use an empty string for empty text).";
                     return false;
                 }
+                using (OwnOperation())
+                {
                 if (!TryRunBounded("Setting the clipboard text", () =>
                     {
                         bool ok = _engine.TrySetText(text, excludeFromHistory, out string error);
@@ -179,6 +184,7 @@ namespace ClipboardAutomation
                     return false;
                 message = result.Ok ? null : result.Error;
                 return result.Ok;
+                }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
@@ -199,14 +205,17 @@ namespace ClipboardAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                if (!TryRunBounded("Clearing the clipboard", () =>
-                    {
-                        bool ok = _engine.TryClear(out string error);
-                        return new SimpleResult { Ok = ok, Error = error };
-                    }, out SimpleResult result, out message))
-                    return false;
-                message = result.Ok ? null : result.Error;
-                return result.Ok;
+                using (OwnOperation())
+                {
+                    if (!TryRunBounded("Clearing the clipboard", () =>
+                        {
+                            bool ok = _engine.TryClear(out string error);
+                            return new SimpleResult { Ok = ok, Error = error };
+                        }, out SimpleResult result, out message))
+                        return false;
+                    message = result.Ok ? null : result.Error;
+                    return result.Ok;
+                }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
@@ -254,6 +263,9 @@ namespace ClipboardAutomation
                     return false;
                 }
 
+                // The whole paste, including the restore, is this component's own doing: the history must not record it.
+                using (OwnOperation())
+                {
                 long limit = MaximumBytes;
                 if (!TryRunBounded("Saving the clipboard", () =>
                     {
@@ -318,6 +330,7 @@ namespace ClipboardAutomation
                 finally
                 {
                     snapshot.Wipe();
+                }
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -710,6 +723,11 @@ namespace ClipboardAutomation
                     _snapshots.Clear();
                     _storedBytes = 0;
                 }
+
+                // Outside the lock above: stopping the watcher waits for its thread, which itself takes locks.
+                StopHistoryWatcher();
+                lock (_historyLock)
+                    WipeHistory();
             }
             base.Dispose(disposing);
         }

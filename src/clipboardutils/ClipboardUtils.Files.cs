@@ -187,14 +187,17 @@ namespace ClipboardAutomation
             if (!TryNormalizePaths(raw, requireExisting, out List<string> paths, out message))
                 return false;
 
-            if (!TryRunBounded("Setting the clipboard's file list", () =>
-                {
-                    bool ok = _engine.TrySetFileDropList(paths, effect, out string error);
-                    return new SimpleResult { Ok = ok, Error = error };
-                }, out SimpleResult result, out message))
-                return false;
-            message = result.Ok ? null : result.Error;
-            return result.Ok;
+            using (OwnOperation())
+            {
+                if (!TryRunBounded("Setting the clipboard's file list", () =>
+                    {
+                        bool ok = _engine.TrySetFileDropList(paths, effect, out string error);
+                        return new SimpleResult { Ok = ok, Error = error };
+                    }, out SimpleResult result, out message))
+                    return false;
+                message = result.Ok ? null : result.Error;
+                return result.Ok;
+            }
         }
 
         /// <summary>

@@ -823,6 +823,12 @@ a real Windows clipboard and is run by hand. The run overwrites the clipboard; s
   focus without tapping Alt (an Alt tap puts it in menu mode, which swallows the next keystroke).
 - `requireCompleteRestore` / `requireCompleteCopy` refuse, leaving the clipboard untouched, when a
   GDI-object format is on the clipboard.
+- **History** (needs the real clipboard; save yours first): `StartClipboardHistory(5, ...)`, then copy text from
+  another application (or a child process) three times: three items, newest first; `FindClipboardHistoryIndex`
+  finds a word from the oldest and `RestoreClipboardHistoryItem` puts it back. Then `SetClipboardText`,
+  `PasteText` and `RestoreClipboard` must **not** add items. Copy from a password manager (or set
+  `ExcludeClipboardContentFromMonitorProcessing` from a child process): `skippedExcluded` rises and nothing is
+  kept. In `AllFormats` mode, copy an image and restore the item: the image is back byte for byte.
 - Not automatable here: whether Windows' clipboard history and cloud sync honour `excludeFromHistory`
   (they are user settings); check by hand with Win+V.
 

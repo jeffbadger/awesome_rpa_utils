@@ -8,6 +8,7 @@ A Pega Robot Studio-ready component (`ClipboardUtils`) for the Windows clipboard
   restore plain text; anything else (an image, files, formatted text) is gone once it runs.
 - **Wait for the clipboard to change**, or for a format to appear, instead of sleeping and hoping.
 - **Read and set a list of files**, the way Explorer's Copy and Cut do.
+- **Keep a history of the last N things copied**, search it, and put an item back.
 
 It uses the raw Win32 clipboard functions (no OLE), so it works from any thread, and nothing in
 it needs a window or a message loop.
@@ -27,6 +28,10 @@ component in this repo.
 ### `FileDropEffect`
 What pasting a file list is asked to do, as the clipboard's `Preferred DropEffect` says:
 `Copy` (1), `Move` (2, what Cut leaves), `Link` (4).
+
+### `ClipboardHistoryMode`
+What the history keeps of each copy: `TextOnly` (0, the default: text and file lists) or `AllFormats` (1: every
+format, so an item restores completely).
 
 ## Constructors
 
@@ -93,6 +98,25 @@ See [File lists](Documentation/FileLists.md).
 | `SetFileDropList` | `bool SetFileDropList(string paths, FileDropEffect effect, out string message, bool requireExisting = true)` | Puts a list of files (one path per line) on the clipboard for a copy or move paste. |
 | `SetFileDropListJson` | `bool SetFileDropListJson(string pathsJson, FileDropEffect effect, out string message, bool requireExisting = true)` | The same, from a JSON array of paths. |
 
+### History
+
+Keeps the last N things copied, from a background thread. See [History](Documentation/History.md).
+Item 0 is always the newest. `maxItems` has no default: it is required (1 to 1000).
+
+| Method | Signature | Description |
+|---|---|---|
+| `StartClipboardHistory` | `bool StartClipboardHistory(int maxItems, out string message, ClipboardHistoryMode mode = TextOnly, int pollIntervalMs = 250, bool captureCurrent = false)` | Starts recording every new copy, keeping the last `maxItems`. |
+| `StopClipboardHistory` | `bool StopClipboardHistory(out string message)` | Stops recording. The items are kept. |
+| `GetClipboardHistoryCount` | `bool GetClipboardHistoryCount(out int count, out string message)` | How many items are kept. |
+| `GetClipboardHistoryStatusJson` | `bool GetClipboardHistoryStatusJson(out string statusJson, out string message)` | Whether it is running, its settings, and counts (recorded, skipped, failed, last error). |
+| `GetClipboardHistoryJson` | `bool GetClipboardHistoryJson(int maxEntries, out string historyJson, out string message, bool includeText = false)` | Lists the newest items as JSON. Text is left out unless asked for. |
+| `GetClipboardHistoryText` | `bool GetClipboardHistoryText(int index, out string text, out bool textAvailable, out string message)` | The text of one item. |
+| `FindClipboardHistoryIndex` | `bool FindClipboardHistoryIndex(string searchText, out int index, out string message, bool matchCase = false, int startIndex = 0)` | The index of the newest item whose text or file paths contain the text (-1 if none). |
+| `SearchClipboardHistoryJson` | `bool SearchClipboardHistoryJson(string searchText, out string historyJson, out string message, bool matchCase = false, int maxEntries = 50, bool includeText = false)` | Lists every matching item as JSON, each with its index. |
+| `RestoreClipboardHistoryItem` | `bool RestoreClipboardHistoryItem(int index, out string message)` | Puts an item back on the clipboard (complete in `AllFormats` mode). Not recorded again. |
+| `DiscardClipboardHistoryItem` | `bool DiscardClipboardHistoryItem(int index, out string message)` | Removes one item, overwriting its bytes. |
+| `ClearClipboardHistory` | `bool ClearClipboardHistory(out string message)` | Removes every item. |
+
 ## Notes & Caveats
 
 - **Setting anything replaces the clipboard.** `SetClipboardText` and `SetFileDropList` discard every
@@ -133,3 +157,7 @@ See [File lists](Documentation/FileLists.md).
   use `WaitForClipboardChangeSince`.
 - **The clipboard is machine-wide state.** Two automations, or an automation and a person, using it at
   once will interfere, exactly as with any clipboard use.
+- **Clipboard history holds whatever was copied.** That can include passwords from software that does not mark
+  them. Content marked "exclude from history" (what password managers set) is skipped unread, and what this
+  component itself puts on the clipboard is never recorded. It is kept in memory only; `ClearClipboardHistory`
+  (or disposing the component) overwrites it. A copy replaced within one poll interval is missed.

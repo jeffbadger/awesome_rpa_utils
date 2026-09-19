@@ -24,6 +24,7 @@ namespace ClipboardAutomation.Tests
         private uint _nextRegistered = 0xC000;
         private long _sequence = 1000;
         private bool _isOpen;
+        private int _openThread;
 
         public List<Item> Items { get; } = new List<Item>();
         public int OpenCount;
@@ -87,6 +88,17 @@ namespace ClipboardAutomation.Tests
             return data == null ? null : Encoding.Unicode.GetString(data, 0, data.Length - 2);
         }
 
+        /// <summary>Another application copies something: the clipboard is emptied and filled with what the callback puts.</summary>
+        public void ExternalReplace(Action<FakeClipboardApi> fill)
+        {
+            lock (_lock)
+            {
+                Items.Clear();
+                _sequence++;
+                fill(this);
+            }
+        }
+
         public void ExternalChange()
         {
             lock (_lock)
@@ -129,9 +141,15 @@ namespace ClipboardAutomation.Tests
                     error = OpenFailure;
                     return false;
                 }
+                if (_isOpen && _openThread != Environment.CurrentManagedThreadId)
+                {
+                    error = "the clipboard is held open by another caller (Win32 error 5: Access is denied.)";
+                    return false;
+                }
                 if (_isOpen)
                     throw new InvalidOperationException("The clipboard was opened twice.");
                 _isOpen = true;
+                _openThread = Environment.CurrentManagedThreadId;
                 error = null;
                 return true;
             }
@@ -274,9 +292,9 @@ namespace ClipboardAutomation.Tests
         public readonly ClipboardUtils Utils;
         private long _now;
 
-        public Rig(int operationTimeoutMs = 5000)
+        public Rig(int operationTimeoutMs = 5000, int historySettleMs = 20)
         {
-            Utils = new ClipboardUtils(Clipboard, Keys, ms => { Sleeps.Add(ms); OnSleep?.Invoke(ms); _now += ms; }, () => _now, operationTimeoutMs);
+            Utils = new ClipboardUtils(Clipboard, Keys, ms => { Sleeps.Add(ms); OnSleep?.Invoke(ms); _now += ms; }, () => _now, operationTimeoutMs, historySettleMs);
         }
 
         public void Dispose() => Utils.Dispose();

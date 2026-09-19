@@ -19,7 +19,7 @@ namespace ClipboardAutomation
     /// work, and closes it again, so the clipboard is never left open. Nothing here throws for an expected failure;
     /// each reports it through its <c>error</c> value.
     /// </summary>
-    internal sealed class ClipboardEngine
+    internal sealed partial class ClipboardEngine
     {
         private readonly IClipboardApi _api;
 
@@ -44,7 +44,20 @@ namespace ClipboardAutomation
                 return false;
             try
             {
-                IReadOnlyList<uint> ids = _api.EnumerateFormats();
+                return CaptureOpen(_api.EnumerateFormats(), maxBytes, out snapshot, out error);
+            }
+            finally
+            {
+                _api.Close();
+            }
+        }
+
+        /// <summary>The copying itself, for a clipboard that is already open.</summary>
+        private bool CaptureOpen(IReadOnlyList<uint> ids, long maxBytes, out ClipboardSnapshot snapshot, out string error)
+        {
+            snapshot = null;
+            error = null;
+            {
                 var present = new HashSet<uint>(ids);
                 var result = new ClipboardSnapshot { CapturedUtc = DateTime.UtcNow };
                 long total = 0;
@@ -108,10 +121,6 @@ namespace ClipboardAutomation
                 snapshot = result;
                 error = null;
                 return true;
-            }
-            finally
-            {
-                _api.Close();
             }
         }
 
@@ -184,6 +193,20 @@ namespace ClipboardAutomation
                 return false;
             try
             {
+                return ReadTextOpen(maxBytes, out text, out available, out error);
+            }
+            finally
+            {
+                _api.Close();
+            }
+        }
+
+        /// <summary>Reads the text, for a clipboard that is already open.</summary>
+        private bool ReadTextOpen(long maxBytes, out string text, out bool available, out string error)
+        {
+            text = string.Empty;
+            available = false;
+            {
                 uint id = _api.IsFormatAvailable(ClipboardFormats.CF_UNICODETEXT) ? ClipboardFormats.CF_UNICODETEXT
                     : _api.IsFormatAvailable(ClipboardFormats.CF_TEXT) ? ClipboardFormats.CF_TEXT
                     : 0;
@@ -209,10 +232,6 @@ namespace ClipboardAutomation
                 available = true;
                 error = null;
                 return true;
-            }
-            finally
-            {
-                _api.Close();
             }
         }
 
@@ -343,6 +362,20 @@ namespace ClipboardAutomation
                 return false;
             try
             {
+                return ReadFileListOpen(maxBytes, out paths, out effect, out error);
+            }
+            finally
+            {
+                _api.Close();
+            }
+        }
+
+        /// <summary>Reads the file list, for a clipboard that is already open.</summary>
+        private bool ReadFileListOpen(long maxBytes, out List<string> paths, out FileDropEffect effect, out string error)
+        {
+            paths = new List<string>();
+            effect = FileDropEffect.Copy;
+            {
                 if (!_api.IsFormatAvailable(ClipboardFormats.CF_HDROP))
                 {
                     error = null;
@@ -372,10 +405,6 @@ namespace ClipboardAutomation
                 }
                 error = null;
                 return true;
-            }
-            finally
-            {
-                _api.Close();
             }
         }
 
