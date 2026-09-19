@@ -790,6 +790,46 @@ The platform-independent xunit coverage drives the decision logic with a fake de
 `src/interruptutils/InterruptUtils.Tests`
 (`dotnet test src/interruptutils/InterruptUtils.Tests/InterruptUtils.Tests.csproj`).
 
+### ClipboardUtils (needs a desktop and a real clipboard; Setup: a second process that owns the clipboard and a small text-box window that can take the focus; Cleanup: save and restore your own clipboard around the run, close the windows)
+
+The unit tests never touch the real clipboard (they use an in-memory one), so everything below needs
+a real Windows clipboard and is run by hand. The run overwrites the clipboard; save it first with
+`SaveClipboard` and put it back at the end.
+
+- Put a **rich clipboard** on it from another application or a WinForms harness: text, HTML, RTF, an
+  image, a file list, and a custom registered format. `SaveClipboard`, then `SetClipboardText` (assert
+  only text formats remain), then `RestoreClipboard`. Assert every copied format is back **in the same
+  order and byte for byte** (hash each format with `GetClipboardData`; the OLE bookkeeping formats
+  `DataObject` and `Ole Private Data` are deliberately not restored).
+- **Image fidelity needs a well-formed source.** A WinForms `Clipboard.SetImage` puts a malformed
+  `CF_DIBV5` on the clipboard, so another process may read a different image than the one set, with or
+  without this component. Test with a hand-built DIB + DIBV5 and compare what a separate process reads
+  before the destroy and after the restore.
+- **File lists**: `SetFileDropList` with real files and Copy, then Move; paste into a folder with
+  Explorer (the shell's `Paste` verb) and assert the files are copied (sources remain) or moved (sources
+  gone). Read a Cut-style list produced by another process and assert the effect is Move.
+- **Waiting**: a background thread changes the clipboard after 0.8 s: `WaitForClipboardChangeSince` returns
+  in about that time; with no change `WaitForClipboardChange` times out with `timedOut` true and no message;
+  a change made *before* the wait is not missed by the `Since` variant; `WaitForClipboardFormat("CF_HDROP")`
+  returns when a file list appears.
+- **Another process owns the clipboard**: a process that copies with an OLE data object it renders on
+  demand. `SaveClipboard` and `RestoreClipboard` work; its text and custom format are captured.
+- **A hung owner**: a process whose window never answers `WM_RENDERFORMAT` after `SetClipboardData(format, NULL)`.
+  `SaveClipboard` must return a failure with a reason and never hang (in practice it fails fast with
+  "another application is holding it", because Windows' own clipboard-history service is blocked on the
+  owner and holds the clipboard open). After the owner is killed the clipboard works again.
+- **`PasteText`** into a real text box in another process with the focus in it, over a rich clipboard: the
+  text box gets the pasted text, and afterwards every format is back byte for byte. Give the window the
+  focus without tapping Alt (an Alt tap puts it in menu mode, which swallows the next keystroke).
+- `requireCompleteRestore` / `requireCompleteCopy` refuse, leaving the clipboard untouched, when a
+  GDI-object format is on the clipboard.
+- Not automatable here: whether Windows' clipboard history and cloud sync honour `excludeFromHistory`
+  (they are user settings); check by hand with Win+V.
+
+The platform-independent xunit coverage drives the whole component against an in-memory clipboard and is in
+`src/clipboardutils/ClipboardUtils.Tests`
+(`dotnet test src/clipboardutils/ClipboardUtils.Tests/ClipboardUtils.Tests.csproj`).
+
 ## Phase 2 — Outcome conditions
 
 For every automation above, add outcome conditions covering: the returned

@@ -65,7 +65,7 @@ Modifier keys combinable in `PressKeyWithModifiers` and reported by
 
 | Method | Signature | Description |
 |---|---|---|
-| `PasteText` | `bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, waits `postPasteDelayMilliseconds`, then restores the original clipboard contents. **Destroys non-text clipboard content (images, files) permanently.** Returns True on success; never throws. |
+| `PasteText` | `bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 50)` | Saves the current clipboard text, sets the clipboard to `text`, sends Ctrl+V, waits `postPasteDelayMilliseconds`, then restores the original clipboard contents. **Destroys non-text clipboard content (images, files) permanently.** Returns True on success; never throws. To keep every format, use [`ClipboardUtils.PasteText`](../clipboardutils/README.md). |
 
 ### State Query & Modifiers
 

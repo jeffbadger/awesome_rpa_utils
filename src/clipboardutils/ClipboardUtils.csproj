@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>ClipboardAutomation</AssemblyName>
+    <RootNamespace>ClipboardAutomation</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Emit ClipboardAutomation.xml next to the DLL so the XML doc comments are consumable -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets ClipboardUtils.Tests drive the engine with a fake clipboard, never the real one -->
+    <InternalsVisibleTo Include="ClipboardUtils.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="ClipboardUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
+</Project>
