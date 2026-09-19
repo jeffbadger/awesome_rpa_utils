@@ -87,28 +87,6 @@ deps resolved) and compiled against the public API (execution needs a Windows de
 3. ⚠️ Verify `UiPath.Activities.Sdk` supports a `net8.0-windows` target at implementation time. Fallback if not: target `net6.0-windows` and add a `net6.0-windows` TFM to the wrapped components.
 4. Local pack; Studio install via "Manage Packages → local feed" (manual, Windows-only QA — document steps).
 
-### Phase B status (2026-09-19) — COMPLETE, pending review/PR
-
-Research resolved step 3's open question: `UiPath.Activities.Sdk` does not exist on nuget.org. The
-official `UiPath.Activities.Template` targets **net6.0** and pulls the workflow SDK pieces from the
-UiPath Official feed, so the documented fallback is in force:
-
-- Activities project targets `net6.0-windows`; the 5 wrapped components (Window, Mouse, Keyboard,
-  Dialog, Json) gained a `net6.0-windows` TFM (all still build/test clean on net8/net10/net48).
-- Package set (from the official template): `System.Activities.ViewModels` 1.20260609.1 as a public
-  dependency, `UiPath.Activities.Api` 24.10.1 and `UiPath.Workflow` 6.0.0-20240401-07 as
-  `PrivateAssets=All` (Studio ships its own copies, so they must not leak into the nuspec deps).
-  Sources live in the project's own `nuget.config` (UiPath Official feed + nuget.org).
-- 17 thin `CodeActivity`/`CodeActivity<T>` wrappers (5 Window, 5 Mouse, 3 Keyboard, 3 Dialog, 3 Json)
-  under `Awesome RPA Utils > <Sub>` categories, delegating to the component methods. Failed
-  component calls (bool + out-message pattern) throw an exception carrying the component message.
-- Verified: `dotnet pack -p:Version=0.4.0` produces `AwesomeRpaUtils.Activities.0.4.0.nupkg` whose
-  nuspec declares all five component packages at **0.4.0** (`-p:Version` is a global property, so it
-  flows into the ProjectReference-derived dependency versions — no 1.0.0 drift), excludes the
-  PrivateAssets UiPath packages, and contains `lib/net6.0-windows7.0/AwesomeRpaUtils.Activities.dll`
-  + README. `Pack-NuGet.ps1` extended to pack the activities project when present (feed grew to 22
-  packages); full sln build green; jsonutils/stack/localqueue/datacontract suites pass.
-
 ### Phase B verification
 - Package builds + packs locally.
 - Manual QA checklist in `integrations/uipath/README.md` (Studio load, activity appears in search, executes against a real window).

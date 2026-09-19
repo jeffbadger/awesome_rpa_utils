@@ -51,18 +51,6 @@ foreach ($project in $componentProjects) {
     }
 }
 
-# The UiPath activities package is packed after the components: it is not under
-# src/, and its nuspec's dependency versions come from the referenced component
-# projects, which need the same -p:Version so the whole feed stays consistent.
-# It restores against its own nuget.config (the UiPath Official feed).
-$activitiesProject = Join-Path $repositoryRoot "integrations/uipath/AwesomeRpaUtils.Activities/AwesomeRpaUtils.Activities.csproj"
-if (Test-Path -LiteralPath $activitiesProject) {
-    & dotnet pack $activitiesProject --configuration $Configuration -p:Version=$Version --output $outputDirectory
-    if ($LASTEXITCODE -ne 0) {
-        throw "Packing 'AwesomeRpaUtils.Activities.csproj' failed with exit code $LASTEXITCODE."
-    }
-}
-
 $packages = Get-ChildItem -LiteralPath $outputDirectory -Filter "*.nupkg" -File | Sort-Object -Property Name
 if ($packages.Count -lt $componentProjects.Count) {
     throw "Expected at least $($componentProjects.Count) packages in '$outputDirectory', but found $($packages.Count)."
