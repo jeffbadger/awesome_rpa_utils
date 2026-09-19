@@ -220,6 +220,14 @@ Mouse, Keyboard, Dialog, and Json components — Studio pulls the component pack
 dependencies on install. See `integrations/uipath/AwesomeRpaUtils.Activities/README.md` for the
 activity list, conventions, and the manual Studio QA checklist.
 
+### Blue Prism
+
+Blue Prism consumes the net48 assemblies directly from code stages: a business object
+references the component + dependency DLLs in its Code Options tab (External References +
+Namespace Imports) and wraps each method with a code stage. See
+`integrations/blue-prism/README.md` for the setup steps, dependency table, and paste-ready
+Global Code / code-stage snippets.
+
 ### Power Automate for desktop
 
 PAD consumes the net48 assemblies directly — either from the built-in
