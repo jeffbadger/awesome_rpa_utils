@@ -72,8 +72,10 @@ if index >= 0:
 ## Cautions
 
 - **A history holds whatever was copied, passwords included** (from software that does not mark them). Use
-  `TextOnly` unless you need the other formats, call `ClearClipboardHistory` when done; disposing the
-  component overwrites the memory it used.
+  `TextOnly` unless you need the other formats and call `ClearClipboardHistory` when done. Discarding,
+  clearing and disposing overwrite the copied *bytes* (all-formats items), but an item's **text and file
+  paths are .NET strings, which cannot be overwritten**: they are only dropped, and remain in memory until the
+  garbage collector reuses it. The same is true of the text you read out.
 - **It polls rather than being notified.** A copy replaced within one poll interval is missed; lower
   `pollIntervalMs` to catch faster changes.
 - **`AllFormats` asks the copying application for every format.** That makes an application that copies lazily

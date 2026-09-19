@@ -114,7 +114,7 @@ Item 0 is always the newest. `maxItems` has no default: it is required (1 to 100
 | `FindClipboardHistoryIndex` | `bool FindClipboardHistoryIndex(string searchText, out int index, out string message, bool matchCase = false, int startIndex = 0)` | The index of the newest item whose text or file paths contain the text (-1 if none). |
 | `SearchClipboardHistoryJson` | `bool SearchClipboardHistoryJson(string searchText, out string historyJson, out string message, bool matchCase = false, int maxEntries = 50, bool includeText = false)` | Lists every matching item as JSON, each with its index. |
 | `RestoreClipboardHistoryItem` | `bool RestoreClipboardHistoryItem(int index, out string message, bool requireCompleteRestore = false)` | Puts an item back on the clipboard (complete in `AllFormats` mode unless a format could not be copied; optionally refuses such an item). Not recorded again. |
-| `DiscardClipboardHistoryItem` | `bool DiscardClipboardHistoryItem(int index, out string message)` | Removes one item, overwriting its bytes. |
+| `DiscardClipboardHistoryItem` | `bool DiscardClipboardHistoryItem(int index, out string message)` | Removes one item, overwriting the bytes it kept (its text and file paths are dropped, not overwritten; see the notes). |
 | `ClearClipboardHistory` | `bool ClearClipboardHistory(out string message)` | Removes every item. |
 
 ## Notes & Caveats
@@ -160,6 +160,27 @@ Item 0 is always the newest. `maxItems` has no default: it is required (1 to 100
 - **The clipboard is machine-wide state.** Two automations, or an automation and a person, using it at
   once will interfere, exactly as with any clipboard use.
 - **Clipboard history holds whatever was copied.** That can include passwords from software that does not mark
-  them. Content marked "exclude from history" (what password managers set) is skipped unread, and what this
-  component itself puts on the clipboard is never recorded. It is kept in memory only; `ClearClipboardHistory`
-  (or disposing the component) overwrites it. A copy replaced within one poll interval is missed.
+  them. Content marked "exclude from history" (what password managers set) is skipped unread - and if such a
+  marker is there but cannot be read, or is not a readable non-zero number, the copy is skipped too, never
+  kept - and what this component itself puts on the clipboard is never recorded. It is kept in memory only.
+  A copy replaced within one poll interval is missed.
+- **Known limits of the memory wipe.** Discarding, clearing and disposing overwrite the *bytes* the component
+  copied (a snapshot's formats, and an all-formats history item's formats). A history item's **text and file
+  paths are .NET strings, which cannot be overwritten in place**: they are dropped, and stay in memory until the
+  garbage collector reuses it. The text you read out of the component (`GetClipboardText`,
+  `GetClipboardHistoryText`, the JSON) is a string in your own automation too. If a secret must not linger,
+  keep it out of the history (`excludeFromHistory`, or do not run the history around it) and prefer typing it.
+- **A timed-out operation blocks the next ones, by design.** When the clipboard's owner does not answer, the
+  operation is abandoned after 20 seconds and further clipboard operations are refused until the abandoned one
+  has finished, so it can never race them. If the owner never answers, that lasts until it is closed. A snapshot
+  or history item that is discarded while an abandoned restore is still reading it is the one case not
+  guarded; the abandoned restore can then put back blanked data.
+- **A write that lands late is not recorded, and can hide a copy made in that instant.** If the component's own
+  write is abandoned by a timeout and lands afterwards, the history skips it. A person's copy made in the very
+  same moment as that late write can be skipped with it.
+- **An unreadable file effect means Copy.** If the clipboard's `Preferred DropEffect` cannot be read, the file
+  list is reported as a Copy, the safe choice (a wrong Move would delete the source files).
+- **Empty formats come back one byte long.** A format that was on the clipboard with no data is put back as a
+  single zero byte, because the clipboard cannot be handed a zero-length block.
+- **Lowering `MaximumClipboardMegabytes` does not evict.** Snapshots already held stay; the new limit applies
+  to the next save, and a save that would go over it is refused.

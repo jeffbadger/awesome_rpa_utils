@@ -62,7 +62,7 @@ strings and numbers.
    first. Content marked "exclude from history" is skipped without being read, so a password manager's
    entries are not kept. `maxItems` has no default (1 to 1000), so the memory cost is a conscious choice;
    the default mode is text only, so it never asks an application to render every format of every copy;
-   items count against `MaximumClipboardMegabytes`, are memory-only, and are wiped on discard, clear and
+   items count against `MaximumClipboardMegabytes`, are memory-only, and their copied bytes are overwritten on discard, clear and
    dispose. The list omits text unless asked, and `FindClipboardHistoryIndex` / `SearchClipboardHistoryJson`
    give a Robot step a way to pick an item without parsing JSON.
 
@@ -74,3 +74,4 @@ that clipboard history, cloud sync and well-behaved monitors check; other softwa
 clipboard. `PasteText` sends a keystroke to whatever has the focus and cannot find the field. The clipboard
 is machine-wide state, so another process changing it during a save or paste is not prevented.
 A history holds whatever was copied, passwords from software that does not mark them included, and misses a copy replaced within one poll interval.
+History text and file paths are .NET strings and cannot be overwritten in place, only dropped; the README lists this and the other limits of the history and the timeout handling.

@@ -76,10 +76,16 @@ namespace ClipboardAutomation
                     error = null;
                     return HistoryCaptureOutcome.Empty;
                 }
-                if (IsMarkedExcluded(ids))
+                if (IsMarkedExcluded(ids, out string markerProblem))
                 {
                     error = null;
                     return HistoryCaptureOutcome.Excluded;
+                }
+                if (markerProblem != null)
+                {
+                    // Not knowing whether it asked to be kept out is not a reason to read and keep it.
+                    error = markerProblem;
+                    return HistoryCaptureOutcome.Failed;
                 }
 
                 var result = new ClipboardHistoryItem { CapturedUtc = DateTime.UtcNow };
@@ -190,24 +196,33 @@ namespace ClipboardAutomation
         /// (whatever its data), or <c>CanIncludeInClipboardHistory</c> or <c>CanUploadToCloudClipboard</c> is present and 0.
         /// Password managers set these.
         /// </summary>
-        private bool IsMarkedExcluded(IReadOnlyList<uint> ids)
+        private bool IsMarkedExcluded(IReadOnlyList<uint> ids, out string problem)
         {
+            problem = null;
             uint exclude = _api.RegisterFormat(ClipboardFormats.ExcludeFromMonitorName);
             if (exclude != 0 && Contains(ids, exclude))
                 return true;
 
-            return IsPresentAndZero(ids, ClipboardFormats.CanIncludeInHistoryName)
-                || IsPresentAndZero(ids, ClipboardFormats.CanUploadToCloudName);
+            foreach (string name in new[] { ClipboardFormats.CanIncludeInHistoryName, ClipboardFormats.CanUploadToCloudName })
+            {
+                uint id = _api.RegisterFormat(name);
+                if (id == 0 || !Contains(ids, id))
+                    continue;
+
+                ReadResult read = _api.ReadFormat(id, 16);
+                if (read.Outcome != ReadOutcome.Ok)
+                {
+                    // The marker is there but cannot be read (a hung or lazy owner): fail closed, and let the caller retry.
+                    problem = "The clipboard's " + name + " marker could not be read, so the copy was not recorded.";
+                    return false;
+                }
+                // A marker that is not a readable non-zero DWORD asks for exclusion too: better to skip than to keep a secret.
+                if (read.Data.Length < 4 || BitConverter.ToUInt32(read.Data, 0) == 0)
+                    return true;
+            }
+            return false;
         }
 
-        private bool IsPresentAndZero(IReadOnlyList<uint> ids, string formatName)
-        {
-            uint id = _api.RegisterFormat(formatName);
-            if (id == 0 || !Contains(ids, id))
-                return false;
-            ReadResult read = _api.ReadFormat(id, 16);
-            return read.Outcome == ReadOutcome.Ok && read.Data.Length >= 4 && BitConverter.ToUInt32(read.Data, 0) == 0;
-        }
 
         private static bool Contains(IReadOnlyList<uint> ids, uint id)
         {

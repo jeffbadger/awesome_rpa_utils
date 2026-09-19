@@ -31,6 +31,47 @@ namespace ClipboardAutomation
 
         internal long SequenceNumber => _api.SequenceNumber;
 
+        // What this engine itself has written to the clipboard: the sequence number just after the latest write, and how many
+        // writes there have been. The history uses them to tell its own component's writes from copies made by anyone else.
+        private readonly object _writeLock = new object();
+        private long _lastOwnWriteSequence;
+        private int _ownWriteCount;
+
+        internal int OwnWriteCount
+        {
+            get { lock (_writeLock) return _ownWriteCount; }
+        }
+
+        internal long LastOwnWriteSequence
+        {
+            get { lock (_writeLock) return _lastOwnWriteSequence; }
+        }
+
+        private void NoteOwnWrite()
+        {
+            long sequence = _api.SequenceNumber;   // the clipboard is still open, so nobody else can have written in between
+            lock (_writeLock)
+            {
+                _ownWriteCount++;
+                _lastOwnWriteSequence = sequence;
+            }
+        }
+
+        private bool EmptyNoted(out string error)
+        {
+            bool ok = _api.Empty(out error);
+            NoteOwnWrite();
+            return ok;
+        }
+
+        private bool WriteNoted(uint id, byte[] data, out string error)
+        {
+            bool ok = _api.WriteFormat(id, data, out error);
+            NoteOwnWrite();
+            return ok;
+        }
+
+
         // ------------------------------------------------------------------ snapshots
 
         /// <summary>
@@ -151,7 +192,7 @@ namespace ClipboardAutomation
                 return false;
             try
             {
-                if (!_api.Empty(out error))
+                if (!EmptyNoted(out error))
                     return false;
 
                 var failures = new List<string>();
@@ -169,7 +210,7 @@ namespace ClipboardAutomation
                         }
                     }
 
-                    if (_api.WriteFormat(id, entry.Data, out string why))
+                    if (WriteNoted(id, entry.Data, out string why))
                         written.Add(new KeyValuePair<uint, string>(id, entry.Name));
                     else
                         failures.Add(entry.Name + " (" + why + ")");
@@ -261,13 +302,13 @@ namespace ClipboardAutomation
                 return false;
             try
             {
-                if (!_api.Empty(out error))
+                if (!EmptyNoted(out error))
                     return false;
 
                 byte[] unicode = Encoding.Unicode.GetBytes(text);
                 var withTerminator = new byte[unicode.Length + 2];
                 Buffer.BlockCopy(unicode, 0, withTerminator, 0, unicode.Length);
-                if (!_api.WriteFormat(ClipboardFormats.CF_UNICODETEXT, withTerminator, out error))
+                if (!WriteNoted(ClipboardFormats.CF_UNICODETEXT, withTerminator, out error))
                     return false;
 
                 if (excludeFromHistory)
@@ -276,7 +317,7 @@ namespace ClipboardAutomation
                     {
                         uint id = _api.RegisterFormat(name);
                         string why = null;
-                        if (id == 0 || !_api.WriteFormat(id, new byte[4], out why))
+                        if (id == 0 || !WriteNoted(id, new byte[4], out why))
                         {
                             error = "The text was set, but it could not be marked to stay out of the clipboard history (" + name + (id == 0 ? " could not be registered)." : ": " + why + ").");
                             return false;
@@ -299,7 +340,7 @@ namespace ClipboardAutomation
                 return false;
             try
             {
-                return _api.Empty(out error);
+                return EmptyNoted(out error);
             }
             finally
             {
@@ -431,14 +472,14 @@ namespace ClipboardAutomation
                 return false;
             try
             {
-                if (!_api.Empty(out error))
+                if (!EmptyNoted(out error))
                     return false;
-                if (!_api.WriteFormat(ClipboardFormats.CF_HDROP, DropFileList.Build(paths), out error))
+                if (!WriteNoted(ClipboardFormats.CF_HDROP, DropFileList.Build(paths), out error))
                     return false;
 
                 uint effectId = _api.RegisterFormat(ClipboardFormats.PreferredDropEffectName);
                 string why = null;
-                if (effectId == 0 || !_api.WriteFormat(effectId, BitConverter.GetBytes((uint)effect), out why))
+                if (effectId == 0 || !WriteNoted(effectId, BitConverter.GetBytes((uint)effect), out why))
                 {
                     error = "The file list was set, but not whether to copy or move it" + (effectId == 0 ? "." : ": " + why);
                     return false;

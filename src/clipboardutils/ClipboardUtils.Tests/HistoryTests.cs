@@ -1051,5 +1051,109 @@ namespace ClipboardAutomation.Tests
             Copy(rig, "a real copy afterwards");   // and the watcher still works
             Assert.True(WaitFor(() => Count(rig) == 1));
         }
+
+        [Fact]
+        public void AnUnreadableExclusionMarker_FailsClosed_TheContentIsNeverRead()
+        {
+            using var rig = new Rig();
+            var rendered = new List<uint>();
+            rig.Clipboard.OnRead = id => { lock (rendered) rendered.Add(id); };
+            StartOk(rig, 5);
+
+            rig.Clipboard.ExternalReplace(c =>
+            {
+                c.PutText("hunter2");
+                c.PutRegistered(ClipboardFormats.CanIncludeInHistoryName, BitConverter.GetBytes(0u));
+                c.UnreadableIds.Add(c.Register(ClipboardFormats.CanIncludeInHistoryName));   // a lazy owner that will not answer
+            });
+
+            Assert.True(WaitFor(() => Status(rig).GetProperty("failed").GetInt32() == 1));
+            Assert.Equal(0, Count(rig));
+            lock (rendered)
+                Assert.DoesNotContain(ClipboardFormats.CF_UNICODETEXT, rendered);
+            Assert.Contains("marker", Status(rig).GetProperty("lastError").GetString());
+        }
+
+        [Fact]
+        public void AMalformedExclusionMarker_IsTreatedAsExcluded()
+        {
+            using var rig = new Rig();
+            StartOk(rig, 5);
+
+            rig.Clipboard.ExternalReplace(c =>
+            {
+                c.PutText("maybe secret");
+                c.PutRegistered(ClipboardFormats.CanIncludeInHistoryName, new byte[] { 0 });   // not a DWORD
+            });
+
+            Assert.True(WaitFor(() => Status(rig).GetProperty("skippedExcluded").GetInt32() == 1));
+            Assert.Equal(0, Count(rig));
+        }
+
+        [Fact]
+        public void StartingWhileAStopIsStillWaitingForTheOldWatcher_WaitsForIt()
+        {
+            using var release = new ManualResetEventSlim(false);
+            using var reading = new ManualResetEventSlim(false);
+            using var rig = new Rig(operationTimeoutMs: 5000);
+            rig.Clipboard.OnRead = id => { reading.Set(); release.Wait(8000); };
+            StartOk(rig, 5);
+            Copy(rig, "makes the watcher read");
+            Assert.True(reading.Wait(5000));
+
+            var stop = new Thread(() => rig.Utils.StopClipboardHistory(out _));
+            stop.Start();
+            Thread.Sleep(200);   // the stop has taken the old watcher away and is waiting for it to finish
+            bool started = false;
+            var start = new Thread(() => started = rig.Utils.StartClipboardHistory(5, out _, pollIntervalMs: 25));
+            start.Start();
+
+            Assert.False(start.Join(400), "a second watcher was started while the old one was still running");
+            release.Set();
+            Assert.True(stop.Join(8000));
+            Assert.True(start.Join(8000));
+            Assert.True(started);
+        }
+
+        [Fact]
+        public void AnOperationThatFailedBeforeWriting_DoesNotSwallowACopyMadeWhileItRan()
+        {
+            using var rig = new Rig();
+            rig.Clipboard.PutText("original");
+            rig.Clipboard.PutRegistered("Vendor Format", new byte[] { 1 });
+            rig.Clipboard.UnreadableIds.Add(rig.Clipboard.Register("Vendor Format"));   // cannot be put back afterwards
+            StartOk(rig, 5);
+            bool once = false;
+            rig.Clipboard.OnRead = id =>
+            {
+                if (!once)
+                {
+                    once = true;
+                    rig.Clipboard.ExternalReplace(c => c.PutText("copied while the paste was reading"));
+                }
+            };
+
+            Assert.False(rig.Utils.PasteText("x", out _, requireCompleteRestore: true));   // refused before it writes anything
+
+            Assert.True(WaitFor(() => Count(rig) == 1), "the copy made during the refused paste was lost");
+            Assert.Equal("copied while the paste was reading", TextAt(rig, 0));
+        }
+
+        [Fact]
+        public void ADeferredRestoreAfterATimedOutPasteSetter_IsNotRecordedAsACopy()
+        {
+            using var release = new ManualResetEventSlim(false);
+            using var rig = new Rig(operationTimeoutMs: 300).WithRichContent();
+            StartOk(rig, 5);
+            rig.Clipboard.OnWrite = id => release.Wait(10000);   // the temporary text hangs, so the paste gives up
+
+            Assert.False(rig.Utils.PasteText("late text", out string message));
+            Assert.Contains("put back automatically", message);
+            release.Set();
+            Assert.True(WaitFor(() => rig.Clipboard.TextOf() != "late text" && rig.Clipboard.TextOf() != null));   // the original is back
+            Thread.Sleep(500);
+
+            Assert.Equal(0, Count(rig));
+        }
     }
 }

@@ -18,6 +18,9 @@ namespace ClipboardAutomation
 
         private readonly object _historyLock = new object();
 
+        // Serializes starting and stopping the watcher. Always taken first: _historyLifecycle, then _pollLock, _historyLock, _lock.
+        private readonly object _historyLifecycle = new object();
+
         // Serializes reading the clipboard for the history: the watcher and an own operation flushing a pending change never overlap.
         // Lock order, always: _pollLock, then _historyLock, then _lock.
         private readonly object _pollLock = new object();
@@ -87,6 +90,7 @@ namespace ClipboardAutomation
                     return false;
                 }
 
+                lock (_historyLifecycle)
                 lock (_historyLock)
                 {
                     if (_historyThread != null)
@@ -94,6 +98,7 @@ namespace ClipboardAutomation
                         message = "The clipboard history is already running; call StopClipboardHistory first to change its settings.";
                         return false;
                     }
+
                     if (IsDisposed(out message))
                         return false;
 
@@ -535,10 +540,12 @@ namespace ClipboardAutomation
         private sealed class OwnScope : IDisposable
         {
             private readonly ClipboardUtils _owner;
+            private readonly int _writesAtStart;
 
             public OwnScope(ClipboardUtils owner)
             {
                 _owner = owner;
+                _writesAtStart = owner._engine.OwnWriteCount;
                 // Something copied a moment ago may not have been noticed yet, and this operation is about to overwrite
                 // the clipboard: record it first, or it would be lost.
                 owner.FlushPendingHistory();
@@ -550,7 +557,10 @@ namespace ClipboardAutomation
             {
                 lock (_owner._historyLock)
                 {
-                    _owner._handledSequence = _owner._engine.SequenceNumber;
+                    // Only what this component actually wrote is absorbed: an operation that failed before writing anything
+                    // must not swallow a copy that someone else made while it ran.
+                    if (_owner._engine.OwnWriteCount != _writesAtStart)
+                        _owner._handledSequence = _owner._engine.LastOwnWriteSequence;
                     _owner._ownOperations--;
                 }
             }
@@ -566,13 +576,14 @@ namespace ClipboardAutomation
                     lock (_historyLock)
                     {
                         if (_historyThread != null)
-                            _handledSequence = _engine.SequenceNumber;
+                            _handledSequence = _engine.LastOwnWriteSequence;
                     }
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
             }
+
         }
 
         private sealed class HistoryCapture : IWipeable
@@ -757,22 +768,27 @@ namespace ClipboardAutomation
 
         private void StopHistoryWatcher()
         {
-            Thread thread;
-            CancellationTokenSource cts;
-            lock (_historyLock)
+            // Held until the old watcher has really finished, so a Start that races this Stop cannot run a second watcher
+            // beside it over the same history.
+            lock (_historyLifecycle)
             {
-                thread = _historyThread;
-                cts = _historyCts;
-                _historyThread = null;
-                _historyCts = null;
-            }
-            if (thread == null)
-                return;
+                Thread thread;
+                CancellationTokenSource cts;
+                lock (_historyLock)
+                {
+                    thread = _historyThread;
+                    cts = _historyCts;
+                    _historyThread = null;
+                    _historyCts = null;
+                }
+                if (thread == null)
+                    return;
 
-            cts.Cancel();
-            // A capture that is waiting on a hung clipboard owner is abandoned by its own timeout, so this is bounded too.
-            if (thread.Join(_operationTimeoutMs + 3000))
-                cts.Dispose();
+                cts.Cancel();
+                // A capture that is waiting on a hung clipboard owner is abandoned by its own timeout, so this is bounded too.
+                if (thread.Join(_operationTimeoutMs + 3000))
+                    cts.Dispose();
+            }
         }
 
         private bool TryGetHistoryItem(int index, out ClipboardHistoryItem item, out string message)

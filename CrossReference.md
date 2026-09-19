@@ -94,7 +94,7 @@ Saves and restores everything on the Windows clipboard (every format, not just t
 | `ClearClipboard` | `bool ClearClipboard(out string message)` | Empties the clipboard. |
 | `ClearClipboardHistory` | `bool ClearClipboardHistory(out string message)` | Removes every item. |
 | `ClearSnapshots` | `bool ClearSnapshots(out string message)` | Discards every saved clipboard copy, overwriting its bytes in memory. |
-| `DiscardClipboardHistoryItem` | `bool DiscardClipboardHistoryItem(int index, out string message)` | Removes one item, overwriting its bytes. |
+| `DiscardClipboardHistoryItem` | `bool DiscardClipboardHistoryItem(int index, out string message)` | Removes one item, overwriting the bytes it kept (its text and file paths are dropped, not overwritten; see the notes). |
 | `DiscardSnapshot` | `bool DiscardSnapshot(string snapshotName, out string message)` | Discards a saved clipboard copy, overwriting its bytes in memory. |
 | `FindClipboardHistoryIndex` | `bool FindClipboardHistoryIndex(string searchText, out int index, out string message, bool matchCase = false, int startIndex = 0)` | The index of the newest item whose text or file paths contain the text (-1 if none). |
 | `GetClipboardHistoryCount` | `bool GetClipboardHistoryCount(out int count, out string message)` | How many items are kept. |
