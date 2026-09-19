@@ -3283,7 +3283,7 @@ namespace MouseAutomation
                 if (!TryGetPoint(out POINT start, out message))
                     return false;
 
-                Random rng = SharedRandom.Value;
+                Random rng = Random.Shared;
 
                 // Direction of the start→end line.
                 double dx = x - start.X;
@@ -4101,15 +4101,6 @@ namespace MouseAutomation
             return input;
         }
 
-        // Random.Shared equivalent: net48 has no thread-safe shared instance, so
-        // this gives each thread its own Random (Random.Shared on .NET Core+).
-        private static readonly ThreadLocal<Random> SharedRandom =
-#if NETFRAMEWORK
-            new ThreadLocal<Random>(() => new Random());
-#else
-            new ThreadLocal<Random>(() => Random.Shared);
-#endif
-
         /// <summary>
         /// Clamps a notch count into a range where |notches| * WHEEL_DELTA cannot
         /// overflow, so Math.Abs(int.MinValue) cannot throw and the computed wheel
@@ -4117,7 +4108,7 @@ namespace MouseAutomation
         /// </summary>
         private static int ClampNotches(int notches)
         {
-            return notches < -MAX_WHEEL_NOTCHES ? -MAX_WHEEL_NOTCHES : (notches > MAX_WHEEL_NOTCHES ? MAX_WHEEL_NOTCHES : notches);
+            return Math.Clamp(notches, -MAX_WHEEL_NOTCHES, MAX_WHEEL_NOTCHES);
         }
 
         private static bool TrySendMouseEvent(uint flags, int data, out string message)

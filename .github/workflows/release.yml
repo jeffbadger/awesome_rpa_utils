@@ -45,17 +45,6 @@ jobs:
         run: |
           ./scripts/Package-Documentation.ps1 `
             -ArchivePath "AwesomeRpaUtils-Documentation-$env:RELEASE_TAG.zip"
-      - name: Pack NuGet packages
-        # One package per component (AwesomeRpaUtils.*), versioned from the
-        # release tag; uploaded as release assets below. The artifacts/nuget
-        # folder layout doubles as a local NuGet folder feed.
-        shell: pwsh
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          ./scripts/Pack-NuGet.ps1 `
-            -Configuration Release `
-            -OutputPath "artifacts/nuget"
       - name: Create Release
         # v2 stages each of the 3 assets below into its own temp dir and uploads them
         # concurrently; on windows-latest (now forced onto Node 24 since GitHub retired
@@ -70,4 +59,3 @@ jobs:
             AwesomeRpaUtils-net8.0-${{ github.ref_name }}.zip
             AwesomeRpaUtils-net10.0-${{ github.ref_name }}.zip
             AwesomeRpaUtils-Documentation-${{ github.ref_name }}.zip
-            artifacts/nuget/*.nupkg

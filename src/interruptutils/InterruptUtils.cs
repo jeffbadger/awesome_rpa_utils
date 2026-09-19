@@ -779,15 +779,15 @@ namespace InterruptAutomation
                     long next;
                     try
                     {
-                        next = _engine.Pump(WinCompat.TickCount64);
+                        next = _engine.Pump(Environment.TickCount64);
                     }
                     catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
                     {
                         _engine.RecordError(string.Empty, NeverThrowsGuard.Failure("Popup handling", ex));
-                        next = WinCompat.TickCount64 + 500; // do not spin on a repeating failure
+                        next = Environment.TickCount64 + 500; // do not spin on a repeating failure
                     }
 
-                    long wait = next == long.MaxValue ? 500 : next - WinCompat.TickCount64;
+                    long wait = next == long.MaxValue ? 500 : next - Environment.TickCount64;
                     _engine.WaitForWork((int)Math.Min(Math.Max(wait, 0), 500));
                 }
             }

@@ -18,7 +18,7 @@ namespace LocalQueueAutomation
         {
             path = null; message = null;
             if (!ValidSegment(queueName)) { message = "queueName must be a non-empty local directory name without path separators."; return false; }
-            if (!Enum.IsDefined(typeof(QueueLifetime), lifetime)) { message = "lifetime is not a defined QueueLifetime value."; return false; }
+            if (!Enum.IsDefined(lifetime)) { message = "lifetime is not a defined QueueLifetime value."; return false; }
             if (lifetime == QueueLifetime.Run && !ValidSegment(runId))
             { message = "runId is required for a Run queue and must not contain path separators."; return false; }
             path = lifetime == QueueLifetime.Run
@@ -46,23 +46,8 @@ namespace LocalQueueAutomation
         {
             string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(value, JsonOptions), new UTF8Encoding(false));
-            MoveFileOverwrite(temp, path);
+            File.Move(temp, path, true);
         }
-
-        // Net48 compatibility shim for File.Move(source, dest, overwrite: true).
-        // The delete-then-move fallback is not fully atomic on net48; net8/net10
-        // keep the atomic overload. The temp file name is per-call unique, so a
-        // concurrent writer can never collide with the deleted destination.
-#if NETFRAMEWORK
-        internal static void MoveFileOverwrite(string sourcePath, string destinationPath)
-        {
-            if (File.Exists(destinationPath))
-                File.Delete(destinationPath);
-            File.Move(sourcePath, destinationPath);
-        }
-#else
-        internal static void MoveFileOverwrite(string sourcePath, string destinationPath) => File.Move(sourcePath, destinationPath, true);
-#endif
 
         internal static QueueItem ReadItem(string path) => JsonSerializer.Deserialize<QueueItem>(File.ReadAllText(path), JsonOptions) ?? throw new InvalidDataException($"Item file '{path}' contains null JSON.");
 

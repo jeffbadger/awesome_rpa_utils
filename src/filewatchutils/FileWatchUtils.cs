@@ -1007,7 +1007,7 @@ namespace FileWatchAutomation
                     return false;
                 }
 
-                MoveFileOverwrite(sourcePath, destinationPath, overwrite);
+                File.Move(sourcePath, destinationPath, overwrite);
                 message = null;
                 return true;
             }
@@ -1369,21 +1369,6 @@ namespace FileWatchAutomation
             }
         }
 
-        // Net48 compatibility shims - the net8.0/net10.0 TFMs have these APIs in the BCL.
-#if NETFRAMEWORK
-        private static void MoveFileOverwrite(string sourcePath, string destinationPath, bool overwrite)
-        {
-            if (overwrite && File.Exists(destinationPath))
-                File.Delete(destinationPath);
-            File.Move(sourcePath, destinationPath);
-        }
-
-        private static string ToHexString(byte[] bytes) => BitConverter.ToString(bytes).Replace("-", string.Empty);
-#else
-        private static void MoveFileOverwrite(string sourcePath, string destinationPath, bool overwrite) => File.Move(sourcePath, destinationPath, overwrite);
-        private static string ToHexString(byte[] bytes) => Convert.ToHexString(bytes);
-#endif
-
         private static bool TryComputeHash(string path, HashAlgorithm algorithm, out string hashHex, out string message)
         {
             hashHex = default;
@@ -1391,7 +1376,7 @@ namespace FileWatchAutomation
             using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
                 byte[] hash = algorithm.ComputeHash(stream);
-                hashHex = ToHexString(hash).ToLowerInvariant();
+                hashHex = Convert.ToHexString(hash).ToLowerInvariant();
             }
             message = null;
             return true;

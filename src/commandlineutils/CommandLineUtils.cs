@@ -526,7 +526,7 @@ namespace CommandLineAutomation
                     bool killedByUs = true;
                     try
                     {
-                        Net48Compat.KillProcessTree(process);
+                        process.Kill(entireProcessTree: true);
                     }
                     catch (InvalidOperationException)
                     {
@@ -861,7 +861,7 @@ namespace CommandLineAutomation
                     bool killedSuccessfully = true;
                     try
                     {
-                        Net48Compat.KillProcessTree(process);
+                        process.Kill(entireProcessTree: true);
                     }
                     catch (InvalidOperationException)
                     {

@@ -62,7 +62,7 @@ namespace WinEventAutomation
                 }
                 filter = filter ?? WinEventFilter.Create();
                 IntPtr foundHwnd = IntPtr.Zero;
-                if (!WinCompat.IsWindows())
+                if (!OperatingSystem.IsWindows())
                 {
                     message = "Window existence checks require Windows.";
                     return false;
@@ -122,7 +122,7 @@ namespace WinEventAutomation
         {
             win32Error = 0;
             bool stopped = false;
-            WinCompat.SetLastPInvokeError(0);
+            Marshal.SetLastPInvokeError(0);
             bool completed = WinEventInterop.EnumWindows((hwnd, _) =>
             {
                 bool keepGoing = callback(hwnd);
@@ -133,7 +133,7 @@ namespace WinEventAutomation
             stoppedByCallback = stopped;
             if (completed)
                 return true;
-            win32Error = WinCompat.GetLastPInvokeError();
+            win32Error = Marshal.GetLastPInvokeError();
             // A callback-initiated stop is success regardless of the last error:
             // snapshot-related native calls made after the match was found can
             // leave an unrelated nonzero error code even though EnumWindows itself

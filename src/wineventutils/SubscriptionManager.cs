@@ -105,12 +105,12 @@ namespace WinEventAutomation
                 message = "No subscription with id '" + id + "'.";
                 return null;
             }
-            long deadline = WinCompat.TickCount64 + Math.Max(0, timeoutMs);
+            long deadline = Environment.TickCount64 + Math.Max(0, timeoutMs);
             lock (sub.Gate)
             {
                 while (sub.Queue.IsEmpty)
                 {
-                    long remaining = deadline - WinCompat.TickCount64;
+                    long remaining = deadline - Environment.TickCount64;
                     if (remaining <= 0)
                         return null;
                     Monitor.Wait(sub.Gate, (int)Math.Min(remaining, int.MaxValue));
@@ -143,10 +143,10 @@ namespace WinEventAutomation
                 return Array.Empty<WinEventData>();
             }
             var result = new List<WinEventData>();
-            long deadline = WinCompat.TickCount64 + Math.Max(0, drainMs);
+            long deadline = Environment.TickCount64 + Math.Max(0, drainMs);
             while (result.Count < maxCount)
             {
-                long remaining = deadline - WinCompat.TickCount64;
+                long remaining = deadline - Environment.TickCount64;
                 if (remaining <= 0)
                     break;
                 if (GetNextEvent(id, (int)Math.Min(remaining, int.MaxValue), out bool hasEvent, out _) is WinEventData e)
