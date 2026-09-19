@@ -20,7 +20,7 @@ Both paths run on a Windows machine only — the components call the Win32 API
 Either source works:
 
 - **NuGet packages** (recommended): add the feed as a
-  [local folder feed](../README.md#consuming-the-nuget-packages), restore
+  [local folder feed](../../README.md#consuming-the-nuget-packages), restore
   e.g. `AwesomeRpaUtils.WindowAutomation`, and collect the DLLs from
   `lib/net48` of each extracted package.
 - **Release zip**: each component's release archive contains the net48
@@ -32,7 +32,7 @@ not part of the component's own zip. Per component (net48):
 
 | Component | Extra DLLs required beside it |
 |---|---|
-| WindowAutomation | System.Text.Json 8.0.5 (+ its dependencies: System.Memory, System.Buffers, System.Runtime.CompilerServices.Unsafe, System.Text.Encodings.Web, System.Threading.Tasks.Extensions, System.ValueTuple, Microsoft.Bcl.AsyncInterfaces, System.Numerics.Vectors) |
+| WindowAutomation | System.Text.Json 8.0.5 (+ its dependencies: System.Memory, System.Buffers, System.Runtime.CompilerServices.Unsafe, System.Text.Encodings.Web, System.Threading.Tasks.Extensions, System.ValueTuple, Microsoft.Bcl.AsyncInterfaces, System.Numerics.Vectors — restored by NuGet; the .NET 4.8 runtime already ships the ValueTuple and Numerics.Vectors types in mscorlib, so those two are redundant at load time and safe to omit) |
 | JsonAutomation | Newtonsoft.Json 13.0.3 |
 | KeyboardAutomation, MouseAutomation | none |
 
@@ -58,7 +58,7 @@ PAD's **Run .NET script** action loads assemblies from a folder:
 The script body runs as **C# 5.0** — no string interpolation, no
 `?.`, no inline `out var` declarations. The examples below follow that.
 
-### Example: validate and read JSON (JsonAutomation)
+### Example: read a JSON value (JsonAutomation)
 
 Script parameters: `JsonText` (In, string), `Value` (Out, string).
 Imports: `JsonAutomation`.
@@ -144,6 +144,7 @@ using JsonAutomation;
 namespace Modules.AwesomeRpaUtils
 {
     [Action(Id = "GetJsonValue")]
+    [Throws("GetJsonError")]
     public class GetJsonValue : ActionBase
     {
         [InputArgument]
@@ -159,14 +160,19 @@ namespace Modules.AwesomeRpaUtils
         {
             var utils = new JsonUtils();
             string message;
-            if (!utils.TryGetStringValue(Json, Path, out Value, out message))
+            string value;
+            if (!utils.TryGetStringValue(Json, Path, out value, out message))
             {
                 throw new ActionException("GetJsonError", message, null);
             }
+            // Properties cannot be passed as out arguments - read into a
+            // local first, then assign the output property.
+            Value = value;
         }
     }
 
     [Action(Id = "WaitForWindow")]
+    [Throws("WindowTimeout")]
     public class WaitForWindow : ActionBase
     {
         [InputArgument]
@@ -199,11 +205,16 @@ namespace Modules.AwesomeRpaUtils
    (self-signed for testing, CA-issued for production). Untrusted
    dependencies are a common deployment failure.
 6. **Package and upload**: bundle into a `.cab`, upload through the custom
-   actions section of make.powerautomate.com (requires the Desktop Flow
-   Module Developer role), then add from the designer's Assets Library.
+   actions section of make.powerautomate.com, then add from the designer's
+   Assets Library. Readers need a security role granting read permission on
+   the Desktop Flow Module table (`prvReaddesktopflowmodule`).
    The exact certificate/signing/cab commands are in the Microsoft
    walkthrough above; they are environment-specific (certificate thumbprint,
    cab tool) so they are not duplicated here.
+
+Note the error-handling pairing: every `ActionException` name must have a
+matching `[Throws("…")]` attribute on the action class, or the error case
+won't surface in the designer's error-handling tab.
 
 ## Notes
 
