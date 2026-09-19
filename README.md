@@ -220,6 +220,15 @@ Mouse, Keyboard, Dialog, and Json components — Studio pulls the component pack
 dependencies on install. See `integrations/uipath/AwesomeRpaUtils.Activities/README.md` for the
 activity list, conventions, and the manual Studio QA checklist.
 
+### Power Automate for desktop
+
+PAD consumes the net48 assemblies directly — either from the built-in
+**Run .NET script** action (point its "References to be loaded" at a folder
+holding the component + dependency DLLs) or wrapped as native custom actions
+with the Actions SDK. See `integrations/power-automate/README.md` for the
+dependency-DLL table, C# 5.0-compatible script examples, and the custom-action
+walkthrough.
+
 ## REST component code generation
 
 Rather than hand-writing a REST component per API, the repository includes a
