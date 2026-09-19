@@ -582,5 +582,28 @@ namespace ClipboardAutomation.Tests
             }
             Assert.True(ok, "operations never resumed after the abandoned one finished");
         }
+
+        [Fact]
+        public void ASaveAbandonedByATimeout_HasItsBytesWipedWhenItFinishesLate()
+        {
+            using var release = new ManualResetEventSlim(false);
+            using var rig = new Rig(operationTimeoutMs: 250);
+            rig.Clipboard.PutText("delay-rendered");
+            rig.Clipboard.OnRead = id => release.Wait(10000);
+            Assert.False(rig.Utils.SaveClipboard("s", out _));
+
+            release.Set();
+
+            int deadline = Environment.TickCount + 5000;
+            bool wiped = false;
+            while (!wiped && Environment.TickCount - deadline < 0)
+            {
+                lock (rig.Clipboard.ReturnedArrays)
+                    wiped = rig.Clipboard.ReturnedArrays.Count > 0 && rig.Clipboard.ReturnedArrays.All(a => a.All(b => b == 0));
+                if (!wiped)
+                    Thread.Sleep(10);
+            }
+            Assert.True(wiped, "the abandoned save left its copy in memory");
+        }
     }
 }

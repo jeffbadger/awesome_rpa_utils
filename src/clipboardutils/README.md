@@ -113,7 +113,7 @@ Item 0 is always the newest. `maxItems` has no default: it is required (1 to 100
 | `GetClipboardHistoryText` | `bool GetClipboardHistoryText(int index, out string text, out bool textAvailable, out string message)` | The text of one item. |
 | `FindClipboardHistoryIndex` | `bool FindClipboardHistoryIndex(string searchText, out int index, out string message, bool matchCase = false, int startIndex = 0)` | The index of the newest item whose text or file paths contain the text (-1 if none). |
 | `SearchClipboardHistoryJson` | `bool SearchClipboardHistoryJson(string searchText, out string historyJson, out string message, bool matchCase = false, int maxEntries = 50, bool includeText = false)` | Lists every matching item as JSON, each with its index. |
-| `RestoreClipboardHistoryItem` | `bool RestoreClipboardHistoryItem(int index, out string message)` | Puts an item back on the clipboard (complete in `AllFormats` mode). Not recorded again. |
+| `RestoreClipboardHistoryItem` | `bool RestoreClipboardHistoryItem(int index, out string message, bool requireCompleteRestore = false)` | Puts an item back on the clipboard (complete in `AllFormats` mode unless a format could not be copied; optionally refuses such an item). Not recorded again. |
 | `DiscardClipboardHistoryItem` | `bool DiscardClipboardHistoryItem(int index, out string message)` | Removes one item, overwriting its bytes. |
 | `ClearClipboardHistory` | `bool ClearClipboardHistory(out string message)` | Removes every item. |
 

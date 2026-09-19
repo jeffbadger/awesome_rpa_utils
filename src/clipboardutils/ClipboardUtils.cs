@@ -630,8 +630,16 @@ namespace ClipboardAutomation
             public string Error;
         }
 
-        private sealed class CaptureResult
+        /// <summary>A result that carries copied clipboard bytes, wiped centrally if its operation was abandoned and finishes later.</summary>
+        private interface IWipeable
         {
+            void Wipe();
+        }
+
+        private sealed class CaptureResult : IWipeable
+        {
+            public void Wipe() => Snapshot?.Wipe();
+
             public bool Ok;
             public ClipboardSnapshot Snapshot;
             public string Error;
@@ -697,6 +705,10 @@ namespace ClipboardAutomation
                             try { afterAbandonedFinish?.Invoke(); }
                             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
                             finally { Interlocked.Decrement(ref _abandonedOperations); }
+                            // Nobody is left to receive what it copied; do not leave it in memory.
+                            try { (value as IWipeable)?.Wipe(); }
+                            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
+
                         }
                         else
                         {

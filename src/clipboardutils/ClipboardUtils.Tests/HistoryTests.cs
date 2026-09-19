@@ -988,5 +988,48 @@ namespace ClipboardAutomation.Tests
             Thread.Sleep(400);   // several polls: nothing may come back, not even the copy that was pending
             Assert.Equal(0, Count(rig));
         }
+
+        [Fact]
+        public void RestoringAnItemCapturedWithAFormatLeftOut_CanBeRefused_AndOtherwiseRestoresWhatWasKept()
+        {
+            using var rig = new Rig();
+            StartOk(rig, 5, ClipboardHistoryMode.AllFormats);
+            rig.Clipboard.ExternalReplace(c =>
+            {
+                c.PutText("kept text");
+                c.PutRegistered("Vendor Format", new byte[] { 1 });
+                c.UnreadableIds.Add(c.Register("Vendor Format"));
+            });
+            Assert.True(WaitFor(() => Count(rig) == 1));
+            Assert.True(rig.Utils.GetClipboardHistoryJson(1, out string json, out _));
+            using (var doc = JsonDocument.Parse(json))
+                Assert.False(doc.RootElement[0].GetProperty("complete").GetBoolean());
+            Copy(rig, "something else");
+            Assert.True(WaitFor(() => Count(rig) == 2));
+
+            Assert.False(rig.Utils.RestoreClipboardHistoryItem(1, out string message, requireCompleteRestore: true));
+            Assert.Contains("not touched", message);
+            Assert.Equal("something else", rig.Clipboard.TextOf());
+
+            Assert.True(rig.Utils.RestoreClipboardHistoryItem(1, out message), message);
+            Assert.Equal("kept text", rig.Clipboard.TextOf());
+        }
+
+        [Fact]
+        public void ACaptureAbandonedByTheWatcher_IsWipedWhenItFinallyFinishes()
+        {
+            using var release = new ManualResetEventSlim(false);
+            using var rig = new Rig(operationTimeoutMs: 250);
+            rig.Clipboard.OnRead = id => release.Wait(5000);
+            StartOk(rig, 5, ClipboardHistoryMode.AllFormats);
+            Copy(rig, "delay rendered");
+            Assert.True(WaitFor(() => Status(rig).GetProperty("lastError").GetString().Length > 0, 8000));
+            Assert.True(rig.Utils.StopClipboardHistory(out _));
+
+            release.Set();   // the owner finally answers; the abandoned capture completes with nobody to take it
+
+            Assert.True(WaitFor(() => { lock (rig.Clipboard.ReturnedArrays) return rig.Clipboard.ReturnedArrays.Count > 0 && rig.Clipboard.ReturnedArrays.All(a => a.All(b => b == 0)); }), "the abandoned capture was left in memory");
+            Assert.Equal(0, Count(rig));
+        }
     }
 }

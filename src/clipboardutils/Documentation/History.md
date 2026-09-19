@@ -29,7 +29,7 @@ discards them. Counts (recorded, skipped, failed, last error) come from `GetClip
 | Count the items | `GetClipboardHistoryCount` |
 | List them (index, time, formats, text length, file count, size) | `GetClipboardHistoryJson(maxEntries, ...)` |
 | Get one item's text | `GetClipboardHistoryText(index, out text, ...)` |
-| Put one back on the clipboard | `RestoreClipboardHistoryItem(index)` |
+| Put one back on the clipboard | `RestoreClipboardHistoryItem(index)` (`requireCompleteRestore` refuses an item captured with a format left out; the list's `complete` field says which) |
 | Remove one | `DiscardClipboardHistoryItem(index)` |
 
 The list leaves the text out unless `includeText` is true (and then shortens it to 120 characters;

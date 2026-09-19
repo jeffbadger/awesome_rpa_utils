@@ -39,6 +39,7 @@ namespace ClipboardAutomation.Tests
         /// <summary>Called as a format is read, outside the fake's lock (a test can block here to imitate a hung owner).</summary>
         public Action<uint> OnRead;
         public Action<uint> OnWrite;
+        public List<byte[]> ReturnedArrays { get; } = new List<byte[]>();
 
         /// <summary>If set, <see cref="SequenceNumber"/> takes its values from here in turn (the last one repeats).</summary>
         public Queue<long> ScriptedSequence;
@@ -220,7 +221,10 @@ namespace ClipboardAutomation.Tests
                 return ReadResult.Failed("the fake clipboard would not give it");
             if (item.Data.LongLength > maxBytes)
                 return ReadResult.TooLarge(item.Data.LongLength);
-            return ReadResult.Ok((byte[])item.Data.Clone());
+            var copy = (byte[])item.Data.Clone();
+            lock (ReturnedArrays)
+                ReturnedArrays.Add(copy);   // so a test can check what became of every byte handed out
+            return ReadResult.Ok(copy);
         }
 
         public bool Empty(out string error)

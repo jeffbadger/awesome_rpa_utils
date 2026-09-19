@@ -407,15 +407,17 @@ namespace ClipboardAutomation
 
         /// <summary>
         /// Puts a history item back on the clipboard. An item kept in <see cref="ClipboardHistoryMode.AllFormats"/> mode comes
-        /// back complete; a text-only item comes back as its files (with their copy/move effect) if it had any, otherwise its
-        /// text. The history does not record this itself.
+        /// back complete unless it was captured with something left out (its <c>complete</c> field in the list says so); a
+        /// text-only item comes back as its files (with their copy/move effect) if it had any, otherwise its text. The history
+        /// does not record this itself.
         /// </summary>
         /// <param name="index">Which item: 0 is the newest.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
+        /// <param name="requireCompleteRestore"><c>true</c> to refuse, leaving the clipboard untouched, an item that was captured with a format left out (one that could not be copied); <c>false</c> (the default) to put back what it kept.</param>
         /// <returns><c>true</c> if the item is on the clipboard; <c>false</c> if there is no item at that index, it kept nothing that can be restored, or the clipboard could not be set. Never throws.</returns>
         [Category("Clipboard - History")]
         [Description("Puts a clipboard history item (0 is the newest) back on the clipboard. Returns True on success; never throws.")]
-        public bool RestoreClipboardHistoryItem(int index, out string message)
+        public bool RestoreClipboardHistoryItem(int index, out string message, bool requireCompleteRestore = false)
         {
             message = default;
             try
@@ -431,8 +433,14 @@ namespace ClipboardAutomation
                     {
                         if (!TryGetHistoryItem(index, out ClipboardHistoryItem item, out message))
                             return false;
+                        if (requireCompleteRestore && !item.Complete)
+                        {
+                            message = "The clipboard was not touched, because this item was captured without everything that was on the clipboard (a format could not be copied).";
+                            return false;
+                        }
 
                         if (!TryRunBounded("Restoring the history item", () =>
+
                             {
                                 bool ok = _engine.TryRestoreHistoryItem(item, out string error);
                                 return new SimpleResult { Ok = ok, Error = error };
@@ -548,8 +556,11 @@ namespace ClipboardAutomation
             }
         }
 
-        private sealed class HistoryCapture
+        private sealed class HistoryCapture : IWipeable
         {
+            public void Wipe() => Item?.Wipe();
+
+
             public HistoryCaptureOutcome Outcome;
             public ClipboardHistoryItem Item;
             public string Error;
