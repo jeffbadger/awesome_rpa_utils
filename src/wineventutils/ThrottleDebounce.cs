@@ -43,7 +43,7 @@ namespace WinEventAutomation
                 return false;
             if (!_debounceMs.TryGetValue(eventName, out int ms) || ms <= 0)
                 return false;
-            long now = Environment.TickCount64;
+            long now = WinCompat.TickCount64;
             if (_lastDelivered.TryGetValue((hwnd, eventName), out long last) && now - last < ms)
                 return true; // drop subsequent, keep first
             _lastDelivered[(hwnd, eventName)] = now;

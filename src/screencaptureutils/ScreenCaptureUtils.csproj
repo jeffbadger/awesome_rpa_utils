@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
+    <TargetFrameworks>net8.0-windows;net10.0-windows;net48</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
@@ -19,6 +19,11 @@
   <ItemGroup>
     <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
     <Compile Remove="ScreenCaptureUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- README shown on the NuGet package page (PackageReadmeFile set in Directory.Build.targets) -->
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
