@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    UiPath activities package wrapping the Awesome RPA Utils components.
+
+    Targets net6.0-windows - the flavor UiPath Studio's modern Windows projects
+    load (the official UiPath.Activities.Template targets net6.0; we use the
+    -windows moniker because the wrapped component assemblies are Windows-only).
+    Follows the official template's package set exactly: System.Activities
+    comes from the UiPath.Workflow net6 package, and both it and
+    UiPath.Activities.Api are PrivateAssets so Studio (which ships its own
+    copies) does not see them in the nuspec dependencies.
+
+    NOT part of src/AwesomeRpaUtils.sln (same precedent as RestCodeGenerator/
+    ComponentBrowser). The five ProjectReferences resolve against the
+    components' own net6.0-windows TFM; the nuspec declares those components'
+    NuGet packages as per-TFM dependencies, so installing this package in
+    Studio pulls them from the same feed.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>AwesomeRpaUtils.Activities</AssemblyName>
+    <RootNamespace>AwesomeRpaUtils.Activities</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Allows building this Windows-targeted project from a non-Windows SDK host -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Version is supplied at pack time by scripts/Pack-NuGet.ps1 (-p:Version),
+         like every other package in the feed. -->
+    <PackageId>AwesomeRpaUtils.Activities</PackageId>
+    <Authors>Jeff Badger</Authors>
+    <Description>UiPath activities wrapping the Awesome RPA Utils component suite (window, mouse, keyboard, dialog, JSON).</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageTags>UiPathActivities</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/jeffbadger/awesome_rpa_utils</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- UiPath.Activities.Template package set (see the comment above). -->
+    <PackageReference Include="System.Activities.ViewModels" Version="1.20260609.1" />
+    <PackageReference Include="UiPath.Activities.Api" Version="24.10.1" PrivateAssets="All" />
+    <PackageReference Include="UiPath.Workflow" Version="6.0.0-20240401-07" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\windowutils\WindowUtils.csproj" />
+    <ProjectReference Include="..\..\..\src\mouseutils\MouseAutomation.csproj" />
+    <ProjectReference Include="..\..\..\src\keyboardutils\KeyboardUtils.csproj" />
+    <ProjectReference Include="..\..\..\src\dialogutils\DialogUtils.csproj" />
+    <ProjectReference Include="..\..\..\src\jsonutils\JsonUtils.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- README shown on the NuGet package page -->
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

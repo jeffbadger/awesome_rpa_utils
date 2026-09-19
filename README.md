@@ -212,6 +212,14 @@ packages) and pulls the System.Text.Json 8.0.5 dependency automatically.
 `OcrUtils` (`AwesomeRpaUtils.OcrAutomation`) ships only the
 `net8.0-windows10.0.19041.0` / `net10.0-windows10.0.19041.0` flavors.
 
+### UiPath activities
+
+`AwesomeRpaUtils.Activities` is a ready-made UiPath activity package (net6.0-windows, modern
+Windows projects): 17 activities under the `Awesome RPA Utils` category wrapping the Window,
+Mouse, Keyboard, Dialog, and Json components — Studio pulls the component packages as
+dependencies on install. See `integrations/uipath/AwesomeRpaUtils.Activities/README.md` for the
+activity list, conventions, and the manual Studio QA checklist.
+
 ## REST component code generation
 
 Rather than hand-writing a REST component per API, the repository includes a
