@@ -56,7 +56,8 @@ chosen folder.
      `JsonAutomation`, `KeyboardAutomation`, `MouseAutomation`, …) — for .NET
      class libraries both the reference *and* the namespace import are
      required.
-3. Use **Check Code** to validate before publishing.
+3. Write one code stage per component method (below) and use **Check Code**
+   — on a code stage's **Code** tab — to validate before publishing.
 
 ## Wrapping pattern
 
@@ -82,6 +83,10 @@ if (!Window.WaitForWindow(Title, (int)TimeoutMs, (int)PollMs, out hWnd, out mess
 {
     ErrorMessage = message ?? "window did not appear within the timeout";
 }
+else
+{
+    ErrorMessage = "";
+}
 WindowHandle = hWnd.ToInt64();
 ```
 
@@ -90,25 +95,31 @@ process the same way as any other failure. Note `WindowUtils.WaitForWindow`
 returns `false` with a **null** message on timeout — the `??` fallback is
 required.
 
-Example — **JSON value read** (inputs: `Json` text, `Path` text; outputs:
-`Value` text, `ErrorMessage` text):
+Example — **JSON value read** (inputs: `JsonText` text, `Path` text; outputs:
+`Value` text, `ErrorMessage` text). Global Code first, then the code stage —
+`JsonClient` is used (not `Json`) so the name can't shadow the `JsonText`
+data item:
 
 ```csharp
-static readonly JsonAutomation.JsonUtils Json =
+// Global Code:
+static readonly JsonAutomation.JsonUtils JsonClient =
     new JsonAutomation.JsonUtils();
+```
 
-// code stage:
+```csharp
+// Code stage:
 string value;
 string message;
-if (!Json.TryGetStringValue(Json, Path, out value, out message))
+if (!JsonClient.TryGetStringValue(JsonText, Path, out value, out message))
 {
     ErrorMessage = message;
 }
+else
+{
+    ErrorMessage = "";
+}
 Value = value;
 ```
-
-(For the Json object, instantiate `JsonUtils` in *its* Global Code — the
-snippet above shows the Global Code line in place of the Window one.)
 
 Other starters, same shape:
 
@@ -140,5 +151,5 @@ added later — exported from a real Blue Prism install, not hand-written.
   `new IntPtr(WindowHandle)`.
 - **Runtime resources**: install .NET Framework 4.8 and the DLL set on every
   runtime resource that runs objects using these components.
-- Blue Prism code stages also support Python — irrelevant here; the net48
-  assemblies are .NET only.
+- Blue Prism code stages also support Python (via Python.NET) — not covered
+  here; the net48 assemblies are consumed from the C# code stages.
