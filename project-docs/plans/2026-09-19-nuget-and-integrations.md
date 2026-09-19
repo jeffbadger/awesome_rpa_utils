@@ -117,25 +117,6 @@ UiPath Official feed, so the documented fallback is in force:
 
 Deliverable: consumption guide `integrations/power-automate/README.md` — reference the **net48** assemblies (from the same NuGet packages) as custom actions / .NET script references, with worked examples for 2–3 components. No new build output beyond Phase A's net48 TFM.
 
-### Phase C status (2026-09-19) — COMPLETE, pending review/PR
-
-Guide written against the live Microsoft Learn docs (create-custom-actions, scripting actions
-reference, build-custom-action guidance). Two consumption paths documented:
-
-- **Run .NET script** (quick): "References to be loaded" folder + per-component dependency-DLL
-  table (JsonAutomation → Newtonsoft.Json 13.0.3; WindowAutomation → System.Text.Json 8.0.5 + its
-  dependency set; Keyboard/Mouse → none); three C# examples (Json, Window, Keyboard) written for
-  **C# 5.0** — the version PAD's .NET scripting action compiles (no interpolation/`?.`/`out var`,
-  verified against the docs) — with Script Parameters (In/Out) mapping, including the
-  "Out parameter must be assigned or the action errors" requirement.
-- **Native custom actions (Actions SDK)**: net472/48 class library named `Modules.<name>.dll`,
-  `Microsoft.PowerPlatform.PowerAutomate.Desktop.Actions.SDK` (renamed namespace — the older
-  `Microsoft.PowerAutomate.Desktop…` one is dead), two sample wrapper classes
-  (`GetJsonValue`, `WaitForWindow`) with `[Action]`/`[InputArgument]`/`[OutputArgument]` and
-  `ActionException` on failure, and the sign-all-DLLs (wrapper *and* dependencies) → cab →
-  make.powerautomate.com upload chain, linked to Microsoft's walkthrough for the
-  environment-specific commands.
-
 ## Phase D — Blue Prism
 
 Deliverable: `integrations/blue-prism/README.md` (add the net48 DLLs as VBO object references, .NET 4.8 requirement) + an importable **VBO XML** wrapping a small starter set of methods (e.g. Window + Keyboard basics). VBO XML is hand-authored — treat as stretch/optional; docs-only fallback is acceptable if the XML proves brittle.
