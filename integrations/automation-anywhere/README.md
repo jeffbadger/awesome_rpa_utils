@@ -39,20 +39,28 @@ readable by the Bot Agent's user).
 
 ## PowerShell bridge
 
-The pattern: `LoadFrom` every DLL in the folder, instantiate the component,
-call the method, and print a JSON envelope on stdout so the bot gets one
-parseable result. `Write-Output` (or the PowerShell action's output
-variable) is what the bot captures.
-
-A single-purpose script per call keeps it simple. Example — read a JSON
-value (inputs wired to bot variables; `JsonAutomation.dll` and
-`Newtonsoft.Json.dll` in `C:\RPA\AwesomeRpaUtils\net48`):
+The pattern: `Add-Type` every staged DLL (component + its dependency DLLs
+from the table), instantiate the component, call the method, and print a
+JSON envelope on stdout so the bot gets one parseable result. The shared
+loader goes at the top of every bridge script:
 
 ```powershell
+# Load every DLL staged in the folder - components and dependencies alike.
+# Loading all of them up front avoids FileNotFound exceptions when a call
+# touches a dependency (e.g. a JSON-serializing window method).
 $ErrorActionPreference = 'Stop'
-Add-Type -Path 'C:\RPA\AwesomeRpaUtils\net48\Newtonsoft.Json.dll'
-Add-Type -Path 'C:\RPA\AwesomeRpaUtils\net48\JsonAutomation.dll'
+Get-ChildItem 'C:\RPA\AwesomeRpaUtils\net48\*.dll' |
+    ForEach-Object { Add-Type -Path $_.FullName }
+```
 
+(The explicit per-DLL `Add-Type` in the examples below works too, but only
+because those calls never touch System.Text.Json — load everything instead.
+Note System.Text.Json 8.0.5 on PowerShell 5.1 can need binding redirects if
+you ever see `FileLoadException` on System.Memory or its siblings.)
+
+Example — read a JSON value (inputs wired to bot variables):
+
+```powershell
 $utils = New-Object JsonAutomation.JsonUtils
 # Pre-typed to match the method's out parameters - [ref] needs the right type
 $value = ''
@@ -69,31 +77,29 @@ ConvertTo-Json @{ ok = $true; value = $value } -Compress
 
 Pass bot variables into the script through environment variables
 (`$env:` names) or the PowerShell action's parameters — both avoid
-quoting problems with inline script text. A360's PowerShell action captures
-stdout; `ConvertTo-Json` gives the bot one string variable to parse.
+quoting problems with inline script text. The action's output variable
+(or the script's stdout when using Run DOS command + `powershell.exe`)
+is what the bot captures; `ConvertTo-Json` gives it one string to parse.
 
-Example — wait for a window and hand the handle back to the bot
-(`WindowAutomation.dll` + its System.Text.Json dependency DLLs staged):
+Example — wait for a window and hand the handle back to the bot:
 
 ```powershell
-$ErrorActionPreference = 'Stop'
-Add-Type -Path 'C:\RPA\AwesomeRpaUtils\net48\System.Text.Json.dll'
-Add-Type -Path 'C:\RPA\AwesomeRpaUtils\net48\WindowAutomation.dll'
-
 $utils = New-Object WindowAutomation.WindowUtils
 $hWnd = [IntPtr]::Zero
 $message = ''
 $ok = $utils.WaitForWindow($env:RPA_TITLE, [int]$env:RPA_TIMEOUT_MS, 250, [ref]$hWnd, [ref]$message)
 
 if (-not $ok) {
-    [Console]::Error.WriteLine(($message, "window did not appear within the timeout") | Where-Object { $_ } | Select-Object -First 1)
+    if ($message) { [Console]::Error.WriteLine($message) }
+    else { [Console]::Error.WriteLine('window did not appear within the timeout') }
     exit 1
 }
 ConvertTo-Json @{ ok = $true; windowHandle = $hWnd.ToInt64() } -Compress
 ```
 
 The bot then uses `windowHandle` (a number) in later calls, e.g. passing it
-back as `$env:RPA_HANDLE` to a script that calls
+back as `$env:RPA_HANDLE` to a script that pre-types its out variables
+(`$title = ''`; `$message = ''`) and calls
 `TryGetWindowTitle([IntPtr]$env:RPA_HANDLE, [ref]$title, [ref]$message)`.
 
 ## Advanced: a real Java custom package around the bridge
@@ -118,8 +124,10 @@ need the same calls.
   A360's error handling acts on; adjust to your process convention.
 - **Bitness**: A360 Bot Agents run 64-bit; the assemblies are AnyCPU, so no
   bitness handling is needed.
-- **Windows only**: window/mouse/keyboard/dialog automation needs a desktop
-  session on the Bot Agent machine; headless Linux runners can only use the
-  non-UI components (JSON, etc.).
+- **Windows only**: the bridge is PowerShell + .NET Framework 4.8, so it runs
+  on Windows Bot Agents with a desktop session for the UI components (the
+  non-UI components like JSON work headlessly too). Linux Bot Agents are out
+  of scope for this bridge; they would need a different one (the assemblies
+  are net48).
 - PowerShell 5.1 ships with .NET Framework 4.8 and loads net48 assemblies
   directly; no newer PowerShell is required.
