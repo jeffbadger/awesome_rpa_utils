@@ -904,5 +904,87 @@ namespace ClipboardAutomation.Tests
             Assert.False(rig.Utils.FindClipboardHistoryIndex("keep", out _, out _));
             Assert.False(rig.Utils.SearchClipboardHistoryJson("keep", out _, out _));
         }
+
+        // ------------------------------------------------------------------ review follow-ups
+
+        [Theory]
+        [InlineData(0u, true)]    // CanUploadToCloudClipboard = 0: keep it out
+        [InlineData(1u, false)]
+        public void CanUploadToCloudClipboard_IsHonouredToo(uint value, bool skipped)
+        {
+            using var rig = new Rig();
+            StartOk(rig, 5);
+
+            rig.Clipboard.ExternalReplace(c =>
+            {
+                c.PutText("maybe secret");
+                c.PutRegistered(ClipboardFormats.CanUploadToCloudName, BitConverter.GetBytes(value));
+            });
+
+            if (skipped)
+            {
+                Assert.True(WaitFor(() => Status(rig).GetProperty("skippedExcluded").GetInt32() == 1));
+                Assert.Equal(0, Count(rig));
+            }
+            else
+            {
+                Assert.True(WaitFor(() => Count(rig) == 1));
+            }
+        }
+
+        [Fact]
+        public void AllFormats_TwoCopiesThatDifferOnlyByALeftOutFormat_AreBothKept()
+        {
+            using var rig = new Rig();
+            StartOk(rig, 5, ClipboardHistoryMode.AllFormats);
+
+            foreach (string custom in new[] { "Vendor Format A", "Vendor Format B" })
+            {
+                rig.Clipboard.ExternalReplace(c =>
+                {
+                    c.PutText("same text");
+                    c.PutRegistered(custom, new byte[] { 1 });
+                    c.UnreadableIds.Add(c.Register(custom));   // cannot be copied: recorded as a loss
+                });
+                int expected = Count(rig) + 1;
+                Assert.True(WaitFor(() => Count(rig) == expected), "not recorded after " + custom);
+            }
+        }
+
+        [Fact]
+        public void TextOnly_CopiesWithNothingToIdentifyThem_AreNeverTakenForRepeats()
+        {
+            using var rig = new Rig();
+            StartOk(rig, 5);
+
+            foreach (byte marker in new byte[] { 1, 2 })
+            {
+                rig.Clipboard.ExternalReplace(c => c.Put(ClipboardFormats.CF_DIB, new byte[] { marker, 9, 9 }));
+                int expected = Count(rig) + 1;
+                Assert.True(WaitFor(() => Count(rig) == expected), "image copy " + marker + " was dropped as a repeat");
+            }
+        }
+
+        [Fact]
+        public void Clearing_WhileACaptureIsInFlight_LeavesTheHistoryEmpty()
+        {
+            using var release = new ManualResetEventSlim(false);
+            using var reading = new ManualResetEventSlim(false);
+            using var rig = new Rig();
+            StartOk(rig, 5);
+            rig.Clipboard.OnRead = id => { reading.Set(); release.Wait(5000); };
+
+            Copy(rig, "copied just before the clear");
+            Assert.True(reading.Wait(5000), "the watcher never started reading");
+
+            var clear = System.Threading.Tasks.Task.Run(() => rig.Utils.ClearClipboardHistory(out _));
+            Thread.Sleep(100);   // the clear is now waiting for the capture in flight
+            release.Set();
+            Assert.True(clear.Wait(5000));
+            Assert.True(clear.Result);
+
+            Thread.Sleep(400);   // several polls: nothing may come back, not even the copy that was pending
+            Assert.Equal(0, Count(rig));
+        }
     }
 }

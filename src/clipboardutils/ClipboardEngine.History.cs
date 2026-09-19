@@ -187,7 +187,8 @@ namespace ClipboardAutomation
 
         /// <summary>
         /// Whether the content asks not to be recorded: <c>ExcludeClipboardContentFromMonitorProcessing</c> is present
-        /// (whatever its data), or <c>CanIncludeInClipboardHistory</c> is present and 0. Password managers set these.
+        /// (whatever its data), or <c>CanIncludeInClipboardHistory</c> or <c>CanUploadToCloudClipboard</c> is present and 0.
+        /// Password managers set these.
         /// </summary>
         private bool IsMarkedExcluded(IReadOnlyList<uint> ids)
         {
@@ -195,14 +196,17 @@ namespace ClipboardAutomation
             if (exclude != 0 && Contains(ids, exclude))
                 return true;
 
-            uint canInclude = _api.RegisterFormat(ClipboardFormats.CanIncludeInHistoryName);
-            if (canInclude != 0 && Contains(ids, canInclude))
-            {
-                ReadResult read = _api.ReadFormat(canInclude, 16);
-                if (read.Outcome == ReadOutcome.Ok && read.Data.Length >= 4 && BitConverter.ToUInt32(read.Data, 0) == 0)
-                    return true;
-            }
-            return false;
+            return IsPresentAndZero(ids, ClipboardFormats.CanIncludeInHistoryName)
+                || IsPresentAndZero(ids, ClipboardFormats.CanUploadToCloudName);
+        }
+
+        private bool IsPresentAndZero(IReadOnlyList<uint> ids, string formatName)
+        {
+            uint id = _api.RegisterFormat(formatName);
+            if (id == 0 || !Contains(ids, id))
+                return false;
+            ReadResult read = _api.ReadFormat(id, 16);
+            return read.Outcome == ReadOutcome.Ok && read.Data.Length >= 4 && BitConverter.ToUInt32(read.Data, 0) == 0;
         }
 
         private static bool Contains(IReadOnlyList<uint> ids, uint id)
@@ -222,6 +226,11 @@ namespace ClipboardAutomation
 
         private static string HashText(ClipboardHistoryItem item)
         {
+            // A text-only capture of an image or a custom format has nothing to tell one copy from another, so it has no
+            // hash and is never taken for a repeat.
+            if (item.Text == null && item.Files.Count == 0)
+                return null;
+
             using (var hash = SHA256.Create())
             {
                 var builder = new StringBuilder();
@@ -234,16 +243,21 @@ namespace ClipboardAutomation
 
         private static string HashSnapshot(ClipboardSnapshot snapshot)
         {
-            using (var hash = SHA256.Create())
+            using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
             {
                 foreach (ClipboardEntry entry in snapshot.Entries)
                 {
-                    byte[] id = BitConverter.GetBytes(entry.Id);
-                    hash.TransformBlock(id, 0, id.Length, null, 0);
-                    hash.TransformBlock(entry.Data, 0, entry.Data.Length, null, 0);
+                    hash.AppendData(BitConverter.GetBytes(entry.Id));
+                    hash.AppendData(BitConverter.GetBytes(entry.Data.Length));
+                    hash.AppendData(entry.Data);
                 }
-                hash.TransformFinalBlock(new byte[0], 0, 0);
-                return Convert.ToBase64String(hash.Hash);
+                // A format that was left out still tells two copies apart (and whether one is a loss).
+                foreach (SkippedFormat skipped in snapshot.Skipped)
+                {
+                    hash.AppendData(BitConverter.GetBytes(skipped.Id));
+                    hash.AppendData(new byte[] { skipped.IsLoss ? (byte)1 : (byte)0 });
+                }
+                return Convert.ToBase64String(hash.GetHashAndReset());
             }
         }
     }

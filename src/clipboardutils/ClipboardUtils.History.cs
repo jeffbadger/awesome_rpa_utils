@@ -493,8 +493,17 @@ namespace ClipboardAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                lock (_historyLock)
-                    WipeHistory();
+                // Waits for a capture that is in flight, so it cannot add itself back after the clear, and treats a copy
+                // that was made but not yet noticed as part of what is being cleared.
+                lock (_pollLock)
+                {
+                    lock (_historyLock)
+                    {
+                        WipeHistory();
+                        if (_historyThread != null)
+                            _handledSequence = _engine.SequenceNumber;
+                    }
+                }
                 message = null;
                 return true;
             }
@@ -679,7 +688,7 @@ namespace ClipboardAutomation
 
         private void StoreHistoryItem(ClipboardHistoryItem item)
         {
-            if (_history.Count > 0 && _history[_history.Count - 1].Hash == item.Hash)
+            if (item.Hash != null && _history.Count > 0 && _history[_history.Count - 1].Hash == item.Hash)
             {
                 item.Wipe(); // the same thing copied again
                 return;

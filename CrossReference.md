@@ -19,7 +19,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | Component | Assembly | Methods | Props | Events | What it does |
 |---|---|---|---|---|---|
 | [ArchiveUtils](#archiveutils) | `ArchiveAutomation` | 18 | 0 | 0 | Creates, extracts, inspects, and validates ZIP archives, with zip-slip/zip-bomb protection and CRC-32 verification. |
-| [ClipboardUtils](#clipboardutils) | `ClipboardAutomation` | 32 | 2 | 0 | Saves and restores everything on the clipboard (all formats), pastes text without destroying what was there, waits for the clipboard to change, reads or sets a file list, and keeps a searchable history of the last N copies. |
+| [ClipboardUtils](#clipboardutils) | `ClipboardAutomation` | 32 | 1 | 0 | Saves and restores everything on the clipboard (all formats), pastes text without destroying what was there, waits for the clipboard to change, reads or sets a file list, and keeps a searchable history of the last N copies. |
 | [CommandLineUtils](#commandlineutils) | `CommandLineAutomation` | 7 | 0 | 0 | Runs external commands/processes and captures exit code, stdout, and stderr — including elevated and fire-and-forget launches. |
 | [DataContractUtils](#datacontractutils) | `DataContractAutomation` | 36 | 6 | 0 | A typed named-value contract defined at initialization, then sealed, with strict scalar getters/setters at runtime. |
 | [DialogUtils](#dialogutils) | `DialogAutomation` | 21 | 0 | 0 | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, and fills them in: text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs. |
