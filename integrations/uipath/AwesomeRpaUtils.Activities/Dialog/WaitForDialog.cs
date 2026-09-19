@@ -7,11 +7,11 @@ namespace AwesomeRpaUtils.Activities
 {
     [Category("Awesome RPA Utils > Dialog")]
     [DisplayName("Wait For Dialog")]
-    [Description("Waits for a dialog whose title matches the pattern, then outputs its handle. Throws on timeout.")]
+    [Description("Waits for a dialog whose title contains the given text to exist, then outputs its handle. Throws on timeout.")]
     public class WaitForDialog : CodeActivity
     {
         [RequiredArgument]
-        [Description("Regex pattern the dialog title must match.")]
+        [Description("Text the dialog title must contain (or match exactly when ExactMatch is set).")]
         public InArgument<string> TitlePattern { get; set; }
 
         [RequiredArgument]

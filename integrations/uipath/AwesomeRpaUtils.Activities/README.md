@@ -42,7 +42,7 @@ Every activity lives under the `Awesome RPA Utils` category, with subcategories 
 
 | Activity | Notes |
 |---|---|
-| Wait For Dialog | Regex title match → `WindowHandle`; throws on timeout |
+| Wait For Dialog | Title-substring match (exact when `ExactMatch`) → `WindowHandle`; throws on timeout |
 | Click Dialog Button | Finds a button by text, waits until enabled, clicks; output = button was enabled |
 | Get Dialog Text | Reads the dialog title text |
 

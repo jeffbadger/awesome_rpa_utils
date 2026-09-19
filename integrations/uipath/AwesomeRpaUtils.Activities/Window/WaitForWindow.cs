@@ -30,10 +30,14 @@ namespace AwesomeRpaUtils.Activities
             int pollIntervalMs = PollIntervalMs.Get(context);
             if (pollIntervalMs <= 0)
                 pollIntervalMs = 250;
-            ComponentCall.EnsureSuccess("Wait For Window",
-                utils.WaitForWindow(Title.Get(context), TimeoutMs.Get(context),
-                    pollIntervalMs, out IntPtr hWnd, out string message),
-                message);
+            // The component returns false with no message when the window never
+            // appears - the most common failure - so fall back to a timeout-
+            // specific error instead of the generic "no further detail" one.
+            bool succeeded = utils.WaitForWindow(Title.Get(context), TimeoutMs.Get(context),
+                pollIntervalMs, out IntPtr hWnd, out string message);
+            if (!succeeded)
+                throw new Exception(message ??
+                    $"Wait For Window timed out after {TimeoutMs.Get(context)} ms (title '{Title.Get(context)}').");
             WindowHandle.Set(context, hWnd);
         }
     }
