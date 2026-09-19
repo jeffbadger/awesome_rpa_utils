@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- README shown on the NuGet package page (PackageReadmeFile set in Directory.Build.props) -->
+    <!-- README shown on the NuGet package page (PackageReadmeFile set in Directory.Build.targets) -->
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

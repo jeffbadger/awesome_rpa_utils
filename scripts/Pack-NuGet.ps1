@@ -31,7 +31,7 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 # rest - it simply has no net48 TFM, since its WinRT OCR dependency cannot
 # target .NET Framework (see its csproj).
 # Package metadata (PackageId, authors, license, readme, repository) comes from
-# src/Directory.Build.props; the version is deliberately not stored in any
+# src/Directory.Build.targets; the version is deliberately not stored in any
 # csproj and is supplied here via -p:Version, exactly like the release archives
 # take their name from the release tag.
 $componentProjects = Get-ChildItem -LiteralPath $srcRoot -Recurse -Filter *.csproj -File |
