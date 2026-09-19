@@ -2,7 +2,7 @@
 
 A single searchable index of every **PME** — Property, Method, and Event —
 exposed by every component in this repository. Use it to answer "does
-anything in this library already do X" without opening 21 different
+anything in this library already do X" without opening 22 different
 READMEs: `Ctrl+F` for a method name, a keyword from what you're trying to
 do, or a parameter/return type, or jump straight to a component from the
 quick-reference table below.
@@ -19,6 +19,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | Component | Assembly | Methods | Props | Events | What it does |
 |---|---|---|---|---|---|
 | [ArchiveUtils](#archiveutils) | `ArchiveAutomation` | 18 | 0 | 0 | Creates, extracts, inspects, and validates ZIP archives, with zip-slip/zip-bomb protection and CRC-32 verification. |
+| [ClipboardUtils](#clipboardutils) | `ClipboardAutomation` | 32 | 1 | 0 | Saves and restores everything on the clipboard (all formats), pastes text without destroying what was there, waits for the clipboard to change, reads or sets a file list, and keeps a searchable history of the last N copies. |
 | [CommandLineUtils](#commandlineutils) | `CommandLineAutomation` | 7 | 0 | 0 | Runs external commands/processes and captures exit code, stdout, and stderr — including elevated and fire-and-forget launches. |
 | [DataContractUtils](#datacontractutils) | `DataContractAutomation` | 36 | 6 | 0 | A typed named-value contract defined at initialization, then sealed, with strict scalar getters/setters at runtime. |
 | [DialogUtils](#dialogutils) | `DialogAutomation` | 21 | 0 | 0 | Finds and dismisses native dialogs by button text/control ID via `BM_CLICK`, and fills them in: text boxes, check boxes, radio buttons, drop-downs, and Open/Save As file dialogs. |
@@ -73,6 +74,55 @@ Pega Robot Studio-ready component for handling ZIP archives: creating/extracting
 | `TryGetArchiveMetadata` | `bool TryGetArchiveMetadata(string archivePath, out int entryCount, out long totalUncompressedBytes, out long totalCompressedBytes, out bool hasEncryptedEntries, out string message)` | Gets summary metadata for a ZIP archive: entry count, total declared sizes, and whether any entry is encrypted. Never throws. |
 | `ValidateArchiveCrc` | `bool ValidateArchiveCrc(string archivePath, out bool allEntriesValid, out string message)` | Verifies every non-encrypted entry's actual decompressed content against its declared CRC-32 checksum. Never throws. |
 | `ValidateArchiveCrcJson` | `bool ValidateArchiveCrcJson(string archivePath, out string json, out string message)` | Same as `ValidateArchiveCrc`, but reports a JSON array with each entry's declared/computed CRC-32 and status. Never throws. |
+
+## ClipboardUtils
+
+Saves and restores everything on the Windows clipboard (every format, not just text), pastes text without destroying what was there, waits for the clipboard to change, and reads or sets a list of files. Uses the raw Win32 clipboard (no OLE), so it works from any thread.
+
+**Namespace:** `ClipboardAutomation` | **Assembly:** `ClipboardAutomation`
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `MaximumClipboardMegabytes` | `int` | Gets or sets the most clipboard data one read will take and that all saved snapshots together will hold (valid range 1 through 1,024; default 128). |
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `ClearClipboard` | `bool ClearClipboard(out string message)` | Empties the clipboard. |
+| `ClearClipboardHistory` | `bool ClearClipboardHistory(out string message)` | Removes every item. |
+| `ClearSnapshots` | `bool ClearSnapshots(out string message)` | Discards every saved clipboard copy, overwriting its bytes in memory. |
+| `DiscardClipboardHistoryItem` | `bool DiscardClipboardHistoryItem(int index, out string message)` | Removes one item, overwriting the bytes it kept (its text and file paths are dropped, not overwritten; see the notes). |
+| `DiscardSnapshot` | `bool DiscardSnapshot(string snapshotName, out string message)` | Discards a saved clipboard copy, overwriting its bytes in memory. |
+| `FindClipboardHistoryIndex` | `bool FindClipboardHistoryIndex(string searchText, out int index, out string message, bool matchCase = false, int startIndex = 0)` | The index of the newest item whose text or file paths contain the text (-1 if none). |
+| `GetClipboardHistoryCount` | `bool GetClipboardHistoryCount(out int count, out string message)` | How many items are kept. |
+| `GetClipboardHistoryJson` | `bool GetClipboardHistoryJson(int maxEntries, out string historyJson, out string message, bool includeText = false)` | Lists the newest items as JSON. Text is left out unless asked for. |
+| `GetClipboardHistoryStatusJson` | `bool GetClipboardHistoryStatusJson(out string statusJson, out string message)` | Whether it is running, its settings, and counts (recorded, skipped, failed, last error). |
+| `GetClipboardHistoryText` | `bool GetClipboardHistoryText(int index, out string text, out bool textAvailable, out string message)` | The text of one item. |
+| `GetClipboardSequenceNumber` | `bool GetClipboardSequenceNumber(out long sequenceNumber, out string message)` | Reads the clipboard's sequence number, which changes whenever its contents change. |
+| `GetClipboardText` | `bool GetClipboardText(out string text, out bool textAvailable, out string message)` | Reads the clipboard's text. An empty clipboard is a success with `textAvailable` false. |
+| `GetFileDropListJson` | `bool GetFileDropListJson(out string pathsJson, out int count, out FileDropEffect effect, out string message)` | Reads the file list on the clipboard as a JSON array of paths, with the copy/move effect. No file list is a success with count 0. |
+| `GetFileDropListText` | `bool GetFileDropListText(out string paths, out int count, out FileDropEffect effect, out string message)` | Reads the file list on the clipboard as text, one path per line, with the copy/move effect. |
+| `GetFormatsJson` | `bool GetFormatsJson(out string formatsJson, out string message)` | Lists the formats on the clipboard, in order, as JSON. Does not render any data. |
+| `GetSnapshotInfoJson` | `bool GetSnapshotInfoJson(string snapshotName, out string infoJson, out string message)` | Describes a saved clipboard copy as JSON: its formats and sizes, and any left out and why. |
+| `HasSnapshot` | `bool HasSnapshot(string snapshotName, out bool exists, out string message)` | Whether a saved clipboard copy with this name exists. |
+| `IsFormatAvailable` | `bool IsFormatAvailable(string formatName, out bool available, out string message)` | Whether a format (`CF_` name, number, or registered name such as `HTML Format`) is on the clipboard. |
+| `ListSnapshotsJson` | `bool ListSnapshotsJson(out string snapshotsJson, out string message)` | Lists the saved clipboard copies, oldest first, as JSON. |
+| `PasteText` | `bool PasteText(string text, out string message, int postPasteDelayMilliseconds = 100, bool excludeFromHistory = true, bool requireCompleteRestore = false)` | Pastes text with Ctrl+V, then restores everything that was on the clipboard, in every format. |
+| `RestoreClipboard` | `bool RestoreClipboard(string snapshotName, out string message)` | Puts a saved clipboard copy back, replacing the clipboard's contents in every format. The copy is kept. |
+| `RestoreClipboardHistoryItem` | `bool RestoreClipboardHistoryItem(int index, out string message, bool requireCompleteRestore = false)` | Puts an item back on the clipboard (complete in `AllFormats` mode unless a format could not be copied; optionally refuses such an item). Not recorded again. |
+| `SaveClipboard` | `bool SaveClipboard(string snapshotName, out string message, bool requireCompleteCopy = false)` | Keeps a copy of everything on the clipboard (all formats) under a name, to restore later. |
+| `SearchClipboardHistoryJson` | `bool SearchClipboardHistoryJson(string searchText, out string historyJson, out string message, bool matchCase = false, int maxEntries = 50, bool includeText = false)` | Lists every matching item as JSON, each with its index. |
+| `SetClipboardText` | `bool SetClipboardText(string text, out string message, bool excludeFromHistory = false)` | Replaces the clipboard with the given text, discarding every other format. Optionally keeps it out of clipboard history. |
+| `SetFileDropList` | `bool SetFileDropList(string paths, FileDropEffect effect, out string message, bool requireExisting = true)` | Puts a list of files (one path per line) on the clipboard for a copy or move paste, like Explorer's Copy or Cut. |
+| `SetFileDropListJson` | `bool SetFileDropListJson(string pathsJson, FileDropEffect effect, out string message, bool requireExisting = true)` | Puts a list of files (a JSON array of paths) on the clipboard for a copy or move paste. |
+| `StartClipboardHistory` | `bool StartClipboardHistory(int maxItems, out string message, ClipboardHistoryMode mode = TextOnly, int pollIntervalMs = 250, bool captureCurrent = false)` | Starts recording every new copy, keeping the last `maxItems`. |
+| `StopClipboardHistory` | `bool StopClipboardHistory(out string message)` | Stops recording. The items are kept. |
+| `WaitForClipboardChange` | `bool WaitForClipboardChange(int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)` | Waits for the clipboard to change, measured from the call. False with `timedOut` on timeout. |
+| `WaitForClipboardChangeSince` | `bool WaitForClipboardChangeSince(long sequenceNumber, int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)` | Waits until the sequence number differs from one read earlier, so a change made before the wait began is not missed. |
+| `WaitForClipboardFormat` | `bool WaitForClipboardFormat(string formatName, int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)` | Waits until a format (for example `CF_HDROP`, `DIB`, `HTML Format`) is on the clipboard. |
 
 ## CommandLineUtils
 
