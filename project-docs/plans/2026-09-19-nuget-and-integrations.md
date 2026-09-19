@@ -140,6 +140,23 @@ reference, build-custom-action guidance). Two consumption paths documented:
 
 Deliverable: `integrations/blue-prism/README.md` (add the net48 DLLs as VBO object references, .NET 4.8 requirement) + an importable **VBO XML** wrapping a small starter set of methods (e.g. Window + Keyboard basics). VBO XML is hand-authored — treat as stretch/optional; docs-only fallback is acceptable if the XML proves brittle.
 
+### Phase D status (2026-09-19) — COMPLETE, pending review/PR (docs-only fallback taken)
+
+Guide written against the Blue Prism 7.5 documentation (Code Options tab: language /
+External References / Namespace Imports — both required for .NET libraries; Global Code;
+Check Code) and the community's runtime-loading findings (DLLs beside `Automate.exe` is the
+reliable placement; full-path references compile but some assemblies fail to load at runtime
+from other folders). Contents: net48 assembly sources, per-component dependency-DLL table,
+deployment on every runtime resource, the one-time object setup steps, and a wrapping pattern
+(Global Code instantiation + one code stage per method) with starter snippets for
+Window/Json/Keyboard/Mouse mapped onto the `(bool, out message)` contract — including the
+WaitForWindow null-message-on-timeout `??` fallback.
+
+**VBO XML intentionally skipped** (the plan's documented fallback): the `.bprelease`/VBO export
+format is fragile to hand-author and a broken import is worse than the ~2-minute manual setup;
+the guide ships paste-ready Global Code + code-stage snippets instead, with a note that a real
+install-exported VBO can be added later if wanted.
+
 ## Phase E — Automation Anywhere
 
 Deliverable: A360 custom-package skeleton in `integrations/automation-anywhere/` — `packages.json` manifest + wrapper assembly referencing the net48 DLLs, plus a build/pack script and README. This is the most platform-specific; design it against the AA360 SDK manifest format during implementation and timebox — if the manifest contract turns out to require the full AA Visual Studio tooling, fall back to a documented "invoke via child process/REST" guide.
