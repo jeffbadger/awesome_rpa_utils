@@ -7,7 +7,7 @@
 Platform TFM reality:
 - UiPath Studio 2024.10+ runs modern projects on **.NET 8** → activity assemblies can target `net8.0-windows` and directly consume the existing `net8.0-windows` component DLLs.
 - **Blue Prism** (VBOs) and **Power Automate Desktop** custom actions require **.NET Framework 4.8-class** assemblies → need a new `net48` TFM.
-- Automation Anywhere 360 custom packages are .NET Framework/SDK-manifest based → also `net48`-class.
+- Automation Anywhere 360 custom packages are .NET Framework/SDK-manifest based → also `net48`-class. *(Corrected — see the Phase E status note: A360 custom packages are Java-based.)*
 
 ## Decisions
 
