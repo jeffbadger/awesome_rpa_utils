@@ -228,15 +228,6 @@ Namespace Imports) and wraps each method with a code stage. See
 `integrations/blue-prism/README.md` for the setup steps, dependency table, and paste-ready
 Global Code / code-stage snippets.
 
-### Automation 360
-
-Automation 360 custom packages are Java-based, so there is no native .NET
-package; bots consume the net48 assemblies through a PowerShell bridge
-(the PowerShell package's Run script action loads them via
-`Assembly.LoadFrom` and calls the components). See
-`integrations/automation-anywhere/README.md` for the bridge pattern, the
-dependency-DLL table, and the Java-package path for Control Room actions.
-
 ### Power Automate for desktop
 
 PAD consumes the net48 assemblies directly — either from the built-in

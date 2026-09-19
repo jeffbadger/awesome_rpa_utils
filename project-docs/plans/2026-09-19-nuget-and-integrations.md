@@ -7,7 +7,7 @@
 Platform TFM reality:
 - UiPath Studio 2024.10+ runs modern projects on **.NET 8** → activity assemblies can target `net8.0-windows` and directly consume the existing `net8.0-windows` component DLLs.
 - **Blue Prism** (VBOs) and **Power Automate Desktop** custom actions require **.NET Framework 4.8-class** assemblies → need a new `net48` TFM.
-- Automation Anywhere 360 custom packages are .NET Framework/SDK-manifest based → also `net48`-class. *(Corrected — see the Phase E status note: A360 custom packages are Java-based.)*
+- Automation Anywhere 360 custom packages are .NET Framework/SDK-manifest based → also `net48`-class.
 
 ## Decisions
 
@@ -160,24 +160,6 @@ install-exported VBO can be added later if wanted.
 ## Phase E — Automation Anywhere
 
 Deliverable: A360 custom-package skeleton in `integrations/automation-anywhere/` — `packages.json` manifest + wrapper assembly referencing the net48 DLLs, plus a build/pack script and README. This is the most platform-specific; design it against the AA360 SDK manifest format during implementation and timebox — if the manifest contract turns out to require the full AA Visual Studio tooling, fall back to a documented "invoke via child process/REST" guide.
-
-### Phase E status (2026-09-19) — COMPLETE, pending review/PR (fallback taken; plan assumption corrected)
-
-**The `packages.json`-manifest assumption was wrong**: Automation 360 custom packages are
-**Java-based** (Package SDK → JDK 11 + Gradle → JAR of `@BotCommand`/`@CommandPkg`-annotated
-actions; verified against AA Community's creating-custom-packages/tutorial posts and the
-Package SDK release notes). There is no supported C# custom-package manifest, so the planned
-`packages.json` + wrapper-assembly skeleton was dropped entirely.
-
-Delivered instead (the plan's documented fallback): `integrations/automation-anywhere/README.md`
-— a **PowerShell bridge** pattern (bots call the PowerShell package's Run script; the script
-`Add-Type`/`LoadFrom`s the net48 component + dependency DLLs, calls the component, and emits a
-`ConvertTo-Json` envelope on stdout with non-zero exit code + stderr on failure), two worked
-examples (Json read; Window wait with the null-message-on-timeout fallback and the
-windowHandle-as-number round-trip), the dependency-DLL table, bot-agent deployment notes
-(.NET 4.8, Windows desktop session for UI components), and a description of the *real* native
-path — a Java Package SDK package wrapping the same bridge via `ProcessBuilder` — framed as an
-advanced, do-it-only-if-many-bots option rather than delivered code.
 
 ## Execution conventions (per repo practice)
 
