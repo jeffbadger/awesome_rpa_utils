@@ -33,7 +33,7 @@ namespace WinEventAutomation
         private readonly SubscriptionManager _subscriptions = new SubscriptionManager();
         private readonly WaiterRegistry _waiters = new WaiterRegistry();
         private readonly ThrottleDebounce _debounce = new ThrottleDebounce();
-        private readonly uint _hostPid = unchecked((uint)Environment.ProcessId);
+        private readonly uint _hostPid = unchecked((uint)WinCompat.ProcessId);
         private WinEventEngine _engine;
         private volatile HashSet<WinEventCategory> _activeCategories = new HashSet<WinEventCategory>();
         private bool _disposed;
@@ -72,7 +72,7 @@ namespace WinEventAutomation
                 message = null;
                 try
                 {
-                    if (!OperatingSystem.IsWindows())
+                    if (!WinCompat.IsWindows())
                     {
                         message = "SetWinEventHook requires Windows.";
                         return false;

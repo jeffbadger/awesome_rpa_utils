@@ -771,7 +771,7 @@ namespace ValueStoreAutomation
                         }
                         current = nested;
                     }
-                    current[segments[^1]] = value;
+                    current[segments[segments.Length - 1]] = value;
                     return true;
                 }
             }

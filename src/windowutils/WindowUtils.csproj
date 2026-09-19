@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
+    <TargetFrameworks>net8.0-windows;net10.0-windows;net48</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
@@ -20,6 +20,16 @@
   <ItemGroup>
     <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
     <Compile Remove="WindowUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <!-- net48 has no System.Text.Json in the BCL; the package supplies it for the net48 build only. -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- README shown on the NuGet package page (PackageReadmeFile set in Directory.Build.props) -->
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
