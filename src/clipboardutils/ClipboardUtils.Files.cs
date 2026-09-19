@@ -141,6 +141,11 @@ namespace ClipboardAutomation
                     message = "pathsJson is not a JSON array of strings.";
                     return false;
                 }
+                if (paths.Contains(null))
+                {
+                    message = "pathsJson must be an array of path strings; it contains a null.";
+                    return false;
+                }
                 return SetFileDropListCore(paths, effect, requireExisting, out message);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))

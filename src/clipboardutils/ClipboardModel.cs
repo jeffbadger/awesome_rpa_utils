@@ -225,7 +225,7 @@ namespace ClipboardAutomation
             int position = (int)offset;
             if (wide)
             {
-                while (position + 1 < data.Length && paths.Count < MaxFiles)
+                while (position + 1 < data.Length)
                 {
                     int end = position;
                     while (end + 1 < data.Length && !(data[end] == 0 && data[end + 1] == 0))
@@ -233,12 +233,14 @@ namespace ClipboardAutomation
                     if (end == position)
                         break; // an empty string ends the list
                     paths.Add(Encoding.Unicode.GetString(data, position, end - position));
+                    if (TooMany(paths, out error))
+                        return false;
                     position = end + 2;
                 }
             }
             else
             {
-                while (position < data.Length && paths.Count < MaxFiles)
+                while (position < data.Length)
                 {
                     int end = position;
                     while (end < data.Length && data[end] != 0)
@@ -246,9 +248,21 @@ namespace ClipboardAutomation
                     if (end == position)
                         break;
                     paths.Add(DecodeAnsi(data, position, end - position));
+                    if (TooMany(paths, out error))
+                        return false;
                     position = end + 1;
                 }
             }
+            return true;
+        }
+
+        private static bool TooMany(List<string> paths, out string error)
+        {
+            error = null;
+            if (paths.Count <= MaxFiles)
+                return false;
+            paths.Clear();
+            error = "The file list holds more than " + MaxFiles + " files, more than this component will read.";
             return true;
         }
 

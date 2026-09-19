@@ -230,5 +230,21 @@ namespace ClipboardAutomation.Tests
 
             Assert.Equal(15, snapshot.TotalBytes);
         }
+
+        [Fact]
+        public void DropFileList_AtTheLimitParses_OneOverIsRefusedRatherThanTruncated()
+        {
+            var atLimit = new List<string>();
+            for (int i = 0; i < DropFileList.MaxFiles; i++)
+                atLimit.Add("a");
+
+            Assert.True(DropFileList.TryParse(DropFileList.Build(atLimit), out List<string> parsed, out string error), error);
+            Assert.Equal(DropFileList.MaxFiles, parsed.Count);
+
+            atLimit.Add("a");
+            Assert.False(DropFileList.TryParse(DropFileList.Build(atLimit), out List<string> refused, out string message));
+            Assert.Empty(refused);
+            Assert.Contains("more than", message);
+        }
     }
 }

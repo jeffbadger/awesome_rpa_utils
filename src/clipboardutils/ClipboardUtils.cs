@@ -47,6 +47,7 @@ namespace ClipboardAutomation
         private long _storedBytes;
         private int _maximumMegabytes = DefaultMaximumMegabytes;
         private bool _disposed;
+        private int _abandonedOperations;   // timed-out operations whose worker thread has not finished yet
 
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
@@ -280,6 +281,7 @@ namespace ClipboardAutomation
                 }
 
                 ClipboardSnapshot snapshot = captured.Snapshot;
+                bool restoreAbandoned = false;
                 try
                 {
                     if (requireCompleteRestore && snapshot.HasLoss)
@@ -303,15 +305,30 @@ namespace ClipboardAutomation
                     {
                         failure = set.Error;
                     }
-                    else if (!_keys.SendPasteChord(out failure))
-                    {
-                        // failure already holds the reason
-                    }
                     else
                     {
-                        pasted = true;
-                        if (postPasteDelayMilliseconds > 0)
-                            _sleep(postPasteDelayMilliseconds);
+                        // A failure while sending the keystroke or waiting must still reach the restore below.
+                        try
+                        {
+                            pasted = _keys.SendPasteChord(out failure);
+                        }
+                        catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                        {
+                            pasted = false;
+                            failure = NeverThrowsGuard.Failure("Sending Ctrl+V", ex);
+                        }
+
+                        if (pasted && postPasteDelayMilliseconds > 0)
+                        {
+                            try
+                            {
+                                _sleep(postPasteDelayMilliseconds);
+                            }
+                            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                            {
+                                // The keystroke has gone; only the wait was cut short. Carry on to the restore.
+                            }
+                        }
                     }
 
                     // Whatever happened above, the clipboard is put back: the text may already be on it.
@@ -320,7 +337,7 @@ namespace ClipboardAutomation
                         {
                             bool ok = _engine.TryRestore(snapshot, out string error);
                             return new SimpleResult { Ok = ok, Error = error };
-                        }, out SimpleResult restored, out string restoreTimeout))
+                        }, out SimpleResult restored, out string restoreTimeout, out restoreAbandoned, snapshot.Wipe))
                         restoreProblem = restoreTimeout;
                     else if (!restored.Ok)
                         restoreProblem = restored.Error;
@@ -329,7 +346,9 @@ namespace ClipboardAutomation
                 }
                 finally
                 {
-                    snapshot.Wipe();
+                    // An abandoned restore is still reading the snapshot; it wipes it itself when it finishes.
+                    if (!restoreAbandoned)
+                        snapshot.Wipe();
                 }
                 }
             }
@@ -612,12 +631,29 @@ namespace ClipboardAutomation
         /// Runs an operation that opens the clipboard on a thread this call can walk away from. Reading a format
         /// that the clipboard's owner has not produced yet asks that application for it, and if it is hung the read
         /// never returns; giving up after a while keeps the automation from hanging with it. An abandoned operation
-        /// finishes (and closes the clipboard) on its own if the owner ever answers.
+        /// finishes (and closes the clipboard) on its own if the owner ever answers, and until it has, no other
+        /// clipboard operation is started, so it can never race a later one.
         /// </summary>
-        private bool TryRunBounded<T>(string operation, Func<T> work, out T result, out string message) where T : class
+        private bool TryRunBounded<T>(string operation, Func<T> work, out T result, out string message) where T : class =>
+            TryRunBounded(operation, work, out result, out message, out _, null);
+
+        // abandoned: true if the operation was given up on and may still be running.
+        // afterAbandonedFinish: runs on the worker thread if the operation finishes after being abandoned; for releasing what it was still using.
+        private bool TryRunBounded<T>(string operation, Func<T> work, out T result, out string message, out bool abandoned,
+            Action afterAbandonedFinish) where T : class
         {
+            abandoned = false;
+            if (Volatile.Read(ref _abandonedOperations) > 0)
+            {
+                result = null;
+                message = operation + " was not started: an earlier clipboard operation that timed out is still running, "
+                    + "because the application that owns the clipboard has not answered. Try again once it has.";
+                return false;
+            }
+
             T value = null;
             Exception failure = null;
+            var state = new RunState();
             using (var done = new ManualResetEventSlim(false))
             {
                 var thread = new Thread(() =>
@@ -632,8 +668,23 @@ namespace ClipboardAutomation
                     }
                     finally
                     {
-                        try { done.Set(); }
-                        catch (ObjectDisposedException) { } // the caller gave up and moved on
+                        bool wasAbandoned;
+                        lock (state)
+                        {
+                            state.Finished = true;
+                            wasAbandoned = state.Abandoned;
+                        }
+                        if (wasAbandoned)
+                        {
+                            Interlocked.Decrement(ref _abandonedOperations);
+                            try { afterAbandonedFinish?.Invoke(); }
+                            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
+                        }
+                        else
+                        {
+                            try { done.Set(); }
+                            catch (ObjectDisposedException) { }
+                        }
                     }
                 })
                 {
@@ -644,10 +695,23 @@ namespace ClipboardAutomation
 
                 if (!done.Wait(_operationTimeoutMs))
                 {
-                    result = null;
-                    message = operation + " did not finish within " + _operationTimeoutMs + " ms. The application that owns the clipboard "
-                        + "may be hung, or another one is holding it open; the operation was abandoned.";
-                    return false;
+                    lock (state)
+                    {
+                        if (!state.Finished)
+                        {
+                            state.Abandoned = true;
+                            Interlocked.Increment(ref _abandonedOperations);
+                            abandoned = true;
+                        }
+                    }
+                    if (abandoned)
+                    {
+                        result = null;
+                        message = operation + " did not finish within " + _operationTimeoutMs + " ms. The application that owns the clipboard "
+                            + "may be hung, or another one is holding it open; the operation was abandoned.";
+                        return false;
+                    }
+                    // It finished in the instant between the wait and the lock: it is a normal result after all.
                 }
             }
 
@@ -663,6 +727,12 @@ namespace ClipboardAutomation
             result = value;
             message = null;
             return true;
+        }
+
+        private sealed class RunState
+        {
+            public bool Finished;
+            public bool Abandoned;
         }
 
         private static string DescribeLosses(ClipboardSnapshot snapshot)

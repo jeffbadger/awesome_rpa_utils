@@ -498,5 +498,67 @@ namespace ClipboardAutomation.Tests
             Assert.True(rig.Utils.GetClipboardSequenceNumber(out long after, out _));
             Assert.NotEqual(before, after);
         }
+
+        // ------------------------------------------------------------------ review follow-ups
+
+        [Fact]
+        public void Paste_WhenTheKeystrokeThrows_StillPutsTheClipboardBack()
+        {
+            using var rig = new Rig().WithRichContent();
+            var original = rig.Contents();
+            rig.Keys.OnSend = () => throw new InvalidOperationException("the keyboard blew up");
+
+            Assert.False(rig.Utils.PasteText("never pasted", out string message));
+
+            Assert.Contains("Sending Ctrl+V", message);
+            Assert.Contains("the keyboard blew up", message);
+            var after = rig.Contents();
+            Assert.Equal(original.Count, after.Count);
+            for (int i = 0; i < original.Count; i++)
+            {
+                Assert.Equal(original[i].Id, after[i].Id);
+                Assert.Equal(original[i].Data, after[i].Data);
+            }
+            Assert.False(rig.Clipboard.IsOpen);
+        }
+
+        [Fact]
+        public void Paste_WhenTheWaitAfterTheKeystrokeIsInterrupted_StillPutsTheClipboardBack()
+        {
+            using var rig = new Rig().WithRichContent();
+            var original = rig.Contents();
+            rig.OnSleep = ms => throw new System.Threading.ThreadInterruptedException();
+
+            Assert.True(rig.Utils.PasteText("pasted", out string message, postPasteDelayMilliseconds: 100), message);
+
+            Assert.Equal(1, rig.Keys.Sent);
+            var after = rig.Contents();
+            Assert.Equal(original.Count, after.Count);
+            for (int i = 0; i < original.Count; i++)
+                Assert.Equal(original[i].Data, after[i].Data);
+        }
+
+        [Fact]
+        public void Paste_WhenTheRestoreTimesOut_TheSnapshotIsNotWipedUnderIt()
+        {
+            using var release = new System.Threading.ManualResetEventSlim(false);
+            using var rig = new Rig(operationTimeoutMs: 300).WithRichContent();
+            var original = rig.Contents();
+            bool hang = false;
+            rig.Keys.OnSend = () => hang = true;   // from the keystroke on, the next write (the restore's) hangs
+            rig.Clipboard.OnWrite = id => { if (hang) release.Wait(10000); };
+
+            Assert.False(rig.Utils.PasteText("pasted", out string message));
+            Assert.Contains("did not finish", message);
+
+            release.Set();   // the abandoned restore carries on, and must still have every byte to write
+            int deadline = Environment.TickCount + 5000;
+            while (rig.Contents().Count < original.Count && Environment.TickCount - deadline < 0)
+                System.Threading.Thread.Sleep(10);
+            var after = rig.Contents();
+            Assert.Equal(original.Count, after.Count);
+            for (int i = 0; i < original.Count; i++)
+                Assert.Equal(original[i].Data, after[i].Data);
+        }
     }
 }

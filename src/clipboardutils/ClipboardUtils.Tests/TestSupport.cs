@@ -31,12 +31,14 @@ namespace ClipboardAutomation.Tests
         public int CloseCount;
         public string OpenFailure;
         public string EmptyFailure;
+        public string EnumerateFailure;   // makes listing the formats fail, as a failed EnumClipboardFormats does
         public HashSet<uint> UnreadableIds { get; } = new HashSet<uint>();
         public HashSet<uint> UnwritableIds { get; } = new HashSet<uint>();
         public HashSet<uint> ListedButAbsentAfterWrite { get; } = new HashSet<uint>();
 
         /// <summary>Called as a format is read, outside the fake's lock (a test can block here to imitate a hung owner).</summary>
         public Action<uint> OnRead;
+        public Action<uint> OnWrite;
 
         /// <summary>If set, <see cref="SequenceNumber"/> takes its values from here in turn (the last one repeats).</summary>
         public Queue<long> ScriptedSequence;
@@ -185,6 +187,8 @@ namespace ClipboardAutomation.Tests
             lock (_lock)
             {
                 RequireOpen();
+                if (EnumerateFailure != null)
+                    throw new InvalidOperationException(EnumerateFailure);
                 return Items.Select(i => i.Id).ToList();
             }
         }
@@ -238,6 +242,7 @@ namespace ClipboardAutomation.Tests
 
         public bool WriteFormat(uint id, byte[] data, out string error)
         {
+            OnWrite?.Invoke(id);   // outside the lock, so a test can make a write hang without blocking everything else
             lock (_lock)
             {
                 RequireOpen();

@@ -141,7 +141,9 @@ Item 0 is always the newest. `maxItems` has no default: it is required (1 to 100
   moment, and it needs that application to be running and answering.
 - **A clipboard owner that stops answering cannot hang the automation.** Every operation that reads
   the clipboard gives up after 20 seconds and reports it; the abandoned operation finishes on its own if the
-  owner ever answers. In practice Windows itself (its clipboard-history service) often reads a newly set
+  owner ever answers, and until it has, other clipboard operations are refused ("an earlier clipboard operation
+  that timed out is still running") so they cannot race it. In practice Windows itself (its clipboard-history
+  service) often reads a newly set
   format first and is then stuck holding the clipboard open, so the more common result is that opening the
   clipboard fails quickly with "another application is holding it". Both are reported, neither hangs.
 - **`PasteText` sends a keystroke to whatever has the focus.** It does not find the field or take the

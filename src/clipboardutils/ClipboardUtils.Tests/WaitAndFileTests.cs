@@ -588,5 +588,18 @@ namespace ClipboardAutomation.Tests
             Assert.False(rig.Utils.SetFileDropList(_folder, FileDropEffect.Copy, out string m3)); Assert.Contains("disposed", m3);
             Assert.False(rig.Utils.SetFileDropListJson("[\"" + _folder.Replace("\\", "\\\\") + "\"]", FileDropEffect.Copy, out string m4)); Assert.Contains("disposed", m4);
         }
+
+        [Fact]
+        public void SetFromJson_RejectsANullElementInsteadOfDroppingIt()
+        {
+            using var rig = new Rig();
+            string a = MakeFile("a.txt");
+            rig.Clipboard.PutText("untouched");
+
+            Assert.False(rig.Utils.SetFileDropListJson("[\"" + a.Replace("\\", "\\\\") + "\",null]", FileDropEffect.Copy, out string message));
+
+            Assert.Contains("null", message);
+            Assert.Equal("untouched", rig.Clipboard.TextOf());
+        }
     }
 }

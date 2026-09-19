@@ -44,13 +44,23 @@ namespace ClipboardAutomation
         public IReadOnlyList<uint> EnumerateFormats()
         {
             var formats = new List<uint>();
-            uint format = NativeMethods.EnumClipboardFormats(0);
-            while (format != 0)
+            uint format = 0;
+            while (true)
             {
-                formats.Add(format);
                 format = NativeMethods.EnumClipboardFormats(format);
+                if (format != 0)
+                {
+                    formats.Add(format);
+                    continue;
+                }
+
+                // Zero means the end of the list, or a failure; only a failure leaves a Win32 error behind. A partial list
+                // must never be taken for the whole clipboard.
+                int code = Marshal.GetLastWin32Error();
+                if (code != 0)
+                    throw new InvalidOperationException("The clipboard's formats could not be listed (Win32 error " + code + ": " + new Win32Exception(code).Message + ").");
+                return formats;
             }
-            return formats;
         }
 
         public string GetFormatName(uint id)

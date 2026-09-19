@@ -46,7 +46,7 @@ strings and numbers.
    serving something other than what was saved. The data they wrap is copied as its real formats.
 4. **Decision: every read runs on a thread the caller can walk away from, for 20 seconds.** A format that
    its owner renders on demand asks that application, and a hung owner would otherwise hang the automation.
-   The abandoned read finishes (and closes the clipboard) on its own if the owner ever answers. Verified:
+   The abandoned read finishes (and closes the clipboard) on its own if the owner ever answers, and until it does no other clipboard operation starts, so it cannot race a later one. Verified:
    in practice Windows' clipboard-history service reads a newly set format first and is then blocked
    holding the clipboard open, so the usual symptom is a fast "another application is holding it" failure.
 5. **Decision: snapshots are in memory only, capped, and wiped.** They may hold secrets. Discarding,

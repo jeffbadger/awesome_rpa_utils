@@ -521,5 +521,66 @@ namespace ClipboardAutomation.Tests
             Assert.False(rig.Clipboard.IsOpen);
             Assert.Equal(rig.Clipboard.OpenCount, rig.Clipboard.CloseCount);
         }
+
+        // ------------------------------------------------------------------ review follow-ups
+
+        [Fact]
+        public void ABitmapWhoseDibCouldNotBeCopied_IsALoss_NotAssumedRebuildable()
+        {
+            using var rig = new Rig();
+            rig.Clipboard.Put(ClipboardFormats.CF_DIB, new byte[] { 1, 2, 3 });
+            rig.Clipboard.Put(ClipboardFormats.CF_BITMAP, new byte[0]);
+            rig.Clipboard.UnreadableIds.Add(ClipboardFormats.CF_DIB);
+
+            Assert.False(rig.Utils.SaveClipboard("strict", out string strict, requireCompleteCopy: true));
+            Assert.Contains("CF_BITMAP", strict);
+
+            Assert.True(rig.Utils.SaveClipboard("loose", out _));
+            Assert.True(rig.Utils.GetSnapshotInfoJson("loose", out string json, out _));
+            using var doc = JsonDocument.Parse(json);
+            Assert.False(doc.RootElement.GetProperty("complete").GetBoolean());
+            Assert.All(doc.RootElement.GetProperty("skipped").EnumerateArray(), s => Assert.True(s.GetProperty("loss").GetBoolean()));
+        }
+
+        [Fact]
+        public void AFailureToListTheFormats_IsReported_NotTakenForAPartialClipboard()
+        {
+            using var rig = new Rig();
+            rig.Clipboard.PutText("hello");
+            rig.Clipboard.EnumerateFailure = "The clipboard's formats could not be listed (Win32 error 5).";
+
+            Assert.False(rig.Utils.SaveClipboard("s", out string message));
+            Assert.Contains("could not be listed", message);
+            Assert.True(rig.Utils.HasSnapshot("s", out bool exists, out _));
+            Assert.False(exists);
+            Assert.False(rig.Utils.GetFormatsJson(out _, out string listMessage));
+            Assert.Contains("could not be listed", listMessage);
+            Assert.False(rig.Clipboard.IsOpen);
+        }
+
+        [Fact]
+        public void WhileATimedOutOperationIsStillRunning_NoOtherClipboardOperationStarts()
+        {
+            using var release = new ManualResetEventSlim(false);
+            using var rig = new Rig(operationTimeoutMs: 300);
+            rig.Clipboard.PutText("delay-rendered");
+            rig.Clipboard.OnRead = id => release.Wait(10000);
+            Assert.False(rig.Utils.SaveClipboard("s", out _));   // times out, its worker is still waiting on the owner
+
+            Assert.False(rig.Utils.SetClipboardText("later", out string message));
+            Assert.Contains("still running", message);
+            Assert.Equal("delay-rendered", rig.Clipboard.TextOf());   // the later operation never touched the clipboard
+
+            release.Set();   // the owner answers, the abandoned operation finishes
+            int deadline = Environment.TickCount + 5000;
+            bool ok = false;
+            while (!ok && Environment.TickCount - deadline < 0)
+            {
+                ok = rig.Utils.SetClipboardText("later", out _);
+                if (!ok)
+                    Thread.Sleep(10);
+            }
+            Assert.True(ok, "operations never resumed after the abandoned one finished");
+        }
     }
 }

@@ -776,7 +776,7 @@ namespace ClipboardAutomation.Tests
 
             Assert.True(WaitFor(() => Status(rig).GetProperty("failed").GetInt32() == 1, 8000));
             string lastError = Status(rig).GetProperty("lastError").GetString();
-            Assert.True(lastError.Contains("did not finish") || lastError.Contains("held open"), lastError);   // the timeout, then the abandoned read still holding it
+            Assert.True(lastError.Contains("did not finish") || lastError.Contains("still running") || lastError.Contains("held open"), lastError);   // the timeout, then the retry refused while the abandoned read is still running
             release.Set();
             Assert.True(rig.Utils.StopClipboardHistory(out _)); // and it still stops cleanly
         }

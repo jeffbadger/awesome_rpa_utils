@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Globalization;
 using System.Text;
 
@@ -62,17 +63,22 @@ namespace ClipboardAutomation
                 var result = new ClipboardSnapshot { CapturedUtc = DateTime.UtcNow };
                 long total = 0;
 
+                // Formats Windows would rebuild from another one: they are only free to leave out once that other one was really copied.
+                var rebuilt = new List<SkippedFormat>();
+
                 foreach (uint id in ids)
                 {
                     string name = NameOf(id);
 
                     if (ClipboardFormats.IsRebuiltFrom(id, present))
                     {
-                        result.Skipped.Add(new SkippedFormat
+                        var skipped = new SkippedFormat
                         {
                             Id = id, Name = name, IsLoss = false,
                             Reason = "Windows rebuilds it from another format that was copied."
-                        });
+                        };
+                        result.Skipped.Add(skipped);
+                        rebuilt.Add(skipped);
                         continue;
                     }
                     if (ClipboardFormats.IsHandleBased(id))
@@ -115,6 +121,16 @@ namespace ClipboardAutomation
                                 Reason = read.Reason ?? "It could not be read."
                             });
                             break;
+                    }
+                }
+
+                var captured = new HashSet<uint>(result.Entries.Select(e => e.Id));
+                foreach (SkippedFormat skipped in rebuilt)
+                {
+                    if (!ClipboardFormats.IsRebuiltFrom(skipped.Id, captured))
+                    {
+                        skipped.IsLoss = true;
+                        skipped.Reason = "It holds a GDI handle rather than data that can be copied, and the format Windows would rebuild it from could not be copied.";
                     }
                 }
 
