@@ -977,11 +977,13 @@ namespace ClipboardAutomation.Tests
             Copy(rig, "copied just before the clear");
             Assert.True(reading.Wait(5000), "the watcher never started reading");
 
-            var clear = System.Threading.Tasks.Task.Run(() => rig.Utils.ClearClipboardHistory(out _));
+            bool cleared = false;
+            var clear = new Thread(() => cleared = rig.Utils.ClearClipboardHistory(out _));
+            clear.Start();
             Thread.Sleep(100);   // the clear is now waiting for the capture in flight
             release.Set();
-            Assert.True(clear.Wait(5000));
-            Assert.True(clear.Result);
+            Assert.True(clear.Join(5000));
+            Assert.True(cleared);
 
             Thread.Sleep(400);   // several polls: nothing may come back, not even the copy that was pending
             Assert.Equal(0, Count(rig));
