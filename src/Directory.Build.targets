@@ -1,0 +1,25 @@
+<Project>
+
+  <!--
+    NuGet packaging defaults, imported AFTER each csproj body so the conditions
+    below can see $(TargetFrameworks) and the component csprojs' own settings.
+    A pack-metadata PropertyGroup in Directory.Build.props would never fire:
+    at props-evaluation time $(TargetFrameworks) is still unset. The version is
+    supplied at pack time by scripts/Pack-NuGet.ps1 (-p:Version) so no version
+    is hardcoded here.
+  -->
+  <PropertyGroup Condition="!$(MSBuildProjectName.EndsWith('.Tests'))">
+    <IsPackable Condition="'$(IsPackable)' == ''">true</IsPackable>
+    <PackageId Condition="'$(PackageId)' == ''">AwesomeRpaUtils.$(AssemblyName)</PackageId>
+    <Authors>Jeff Badger</Authors>
+    <Copyright>Copyright © Jeff Badger</Copyright>
+    <Description>Awesome RPA Utils component: $(AssemblyName). See the package README for the full method surface.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <!-- Shown on the package page; each component csproj packs its own README.md as the file. -->
+    <PackageReadmeFile Condition="Exists('$(MSBuildProjectDirectory)/README.md')">README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/jeffbadger/awesome_rpa_utils</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+</Project>

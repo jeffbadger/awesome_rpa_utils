@@ -13,4 +13,9 @@
   <ItemGroup>
     <Compile Remove="StackUtils.Tests/**/*.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- README shown on the NuGet package page (PackageReadmeFile is set in Directory.Build.targets) -->
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
 </Project>
