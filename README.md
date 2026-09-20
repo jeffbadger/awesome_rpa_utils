@@ -159,8 +159,8 @@ framework.
 
 The release workflow additionally packs the components as NuGet packages
 (`scripts/Pack-NuGet.ps1`) and uploads the `.nupkg` files as release assets
-alongside the zip archives. The Build workflow does a dry-run pack on every push
-and pull request, so a packaging problem shows up before a release.
+alongside the zip archives. The Build workflow does a dry-run pack on every pull request to
+`main` and every push to `main`, so a packaging problem shows up before a release.
 
 ## Packaging NuGet packages
 
