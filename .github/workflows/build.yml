@@ -20,3 +20,8 @@ jobs:
         run: dotnet restore src/AwesomeRpaUtils.sln
       - name: Build
         run: dotnet build src/AwesomeRpaUtils.sln --configuration Release --no-restore
+      - name: Pack NuGet packages (dry run)
+        # Proves on every push and pull request that all components still pack, so a
+        # packaging problem is found here rather than while cutting a release.
+        shell: pwsh
+        run: ./scripts/Pack-NuGet.ps1 -Configuration Release -Version 0.0.0-ci -NoBuild

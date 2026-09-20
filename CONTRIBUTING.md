@@ -54,6 +54,8 @@ between components.
   is on for every project, so incomplete XML doc comments will surface as
   `CS1573` warnings; fix these before opening a PR)
 - If you're adding a new component, follow the conventions above rather than
-  introducing a new shape
+  introducing a new shape. A new component needs a `README.md` in its folder and the
+  `<None Include="README.md" Pack="true" PackagePath="\" />` item in its csproj (copy it from any
+  existing component), or `scripts/Pack-NuGet.ps1` and the Build workflow's pack step will fail
 - Describe what you tested and how, since there's no CI test suite to lean on
   beyond the build itself

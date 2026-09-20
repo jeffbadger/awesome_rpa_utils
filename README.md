@@ -157,6 +157,60 @@ other pages inside itself. Choose a different output path with
 substitutes it with `net8.0` and `net10.0` to produce one archive per target
 framework.
 
+The release workflow additionally packs the components as NuGet packages
+(`scripts/Pack-NuGet.ps1`) and uploads the `.nupkg` files as release assets
+alongside the zip archives. The Build workflow does a dry-run pack on every push
+and pull request, so a packaging problem shows up before a release.
+
+## Packaging NuGet packages
+
+Every component ships as its own NuGet package (`AwesomeRpaUtils.<AssemblyName>`,
+e.g. `AwesomeRpaUtils.WindowAutomation`), one per `src/` component, mirroring the
+per-component release archives. To build and pack every component, run:
+
+```powershell
+./scripts/Pack-NuGet.ps1 -Version 0.4.0
+```
+
+Add `-NoBuild` to pack the outputs of a `dotnet build src/AwesomeRpaUtils.sln -c Release`
+you have already done (the workflows do). The version may also come from the
+`RELEASE_TAG` environment variable (leading `v` stripped), which is how the
+release workflow supplies it: package versions always come from a repo tag, never
+from a csproj. Packages land in `artifacts/nuget/` (emptied first), which doubles as
+a local NuGet folder feed (see "Consuming the NuGet packages" below). The script
+fails if a component produced no package or a package has no library or README.
+
+Each package ships the component assembly for every target framework the component
+builds for (`net8.0-windows` and `net10.0-windows`; OcrUtils uses
+`net8.0-windows10.0.19041.0` / `net10.0-windows10.0.19041.0`), its XML documentation,
+the component README, the MIT license expression and the repository link. Third-party
+dependencies (SharpZipLib, `System.Diagnostics.EventLog`, `System.ServiceProcess.ServiceController`,
+and so on) are declared as NuGet dependencies, so a consumer's restore pulls them in;
+nothing has to be copied by hand as with the release archives' SupportLibraries.zip.
+
+## Consuming the NuGet packages
+
+For now the packages are distributed as a local folder feed (download the release's
+`.nupkg` files into one folder, or run the pack script);
+publishing to nuget.org or GitHub Packages can be added later without restructuring.
+In a consumer project add a `nuget.config` next to the `.csproj`:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="AwesomeRpaUtils" value="C:\path\to\folder-with-nupkgs" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+```
+
+then `dotnet add package AwesomeRpaUtils.WindowAutomation --version 0.4.0`. The
+packages target `net8.0-windows` and `net10.0-windows`, so the consuming project must
+target one of them (or a later Windows TFM). Other hosts, such as .NET Framework
+based RPA platforms, need a different build of the components; that is not part of
+these packages.
+
 ## REST component code generation
 
 Rather than hand-writing a REST component per API, the repository includes a
