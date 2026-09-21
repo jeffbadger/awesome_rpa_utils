@@ -14,8 +14,9 @@ namespace InterruptAutomation
         /// <summary>
         /// Takes the right to watch, asking a current holder (in this or another process) to stop and
         /// waiting a bounded time for it to. <paramref name="stopRequested"/> is called, on a
-        /// background thread, if someone else asks this holder to stop; it must end this holder's watch
-        /// (and so call <see cref="Release"/>).
+        /// background thread, if someone else asks this holder to stop; it must end this holder's watch.
+        /// <see cref="Release"/> is called once the watch has fully ended, which can be later than the
+        /// callback returning (a worker may still be finishing a click); the guard stays held until then.
         /// </summary>
         /// <returns><c>true</c> if the right was taken; <c>false</c> (with a message) if the holder did not stop in time.</returns>
         bool TryAcquire(Action stopRequested, out string message);
@@ -51,7 +52,6 @@ namespace InterruptAutomation
         public const int DefaultAcquireTimeoutMs = 5000;
 
         private const int ResignalMs = 250;
-        private const int ReleaseJoinMs = 3000;
 
         private readonly string _mutexName;
         private readonly string _requestName;
@@ -121,10 +121,10 @@ namespace InterruptAutomation
             if (hold == null)
                 return;
 
+            // Not waited for: the holding thread gives the mutex up as soon as it sees this, and anyone
+            // waiting for it is woken then. Waiting here could deadlock, because Release is also called
+            // from the worker that the holding thread's own stop is waiting to finish.
             hold.ReleaseRequested.Set();
-            // Release is also called from the holding thread itself (when asked to stop): it cannot wait for itself.
-            if (!ReferenceEquals(Thread.CurrentThread, hold.Thread))
-                hold.Thread.Join(ReleaseJoinMs);
         }
 
         private string TimedOutMessage() =>
@@ -183,6 +183,10 @@ namespace InterruptAutomation
                     {
                         Debug.WriteLine("InterruptUtils: stopping on request failed: " + ex.Message);
                     }
+                    // Keep the mutex until the holder says it has really finished (Release): stopping
+                    // can return while a worker is still mid-click, and that worker must not overlap a
+                    // newcomer. The newcomer's wait times out if that takes too long.
+                    hold.ReleaseRequested.Wait();
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))

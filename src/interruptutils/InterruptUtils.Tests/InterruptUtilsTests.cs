@@ -407,6 +407,7 @@ namespace InterruptAutomation.Tests
             {
                 stopping.Set();
                 mayFinish.Wait(10000); // a stop that takes longer than the newcomer will wait
+                holder.Release();      // and only then gives the guard back
             }, out _));
             try
             {
@@ -423,7 +424,6 @@ namespace InterruptAutomation.Tests
             Assert.True(newcomer.TryAcquire(() => { }, out string ok), ok);
             Assert.Null(ok);
             newcomer.Release();
-            holder.Release();
         }
 
         [Fact]
@@ -870,6 +870,40 @@ namespace InterruptAutomation.Tests
             {
                 held.Dispose();
                 rig.Dispose();
+            }
+        }
+
+        [Fact]
+        public void AnotherInstanceCannotStart_WhileTheStoppedOnesWorkerIsStillMidClick_UntilItFinishes()
+        {
+            string name = GuardName();
+            var first = new Rig(new NamedInstanceGuard(name, 800));
+            var second = new Rig(new NamedInstanceGuard(name, 800));
+            var held = new HeldClick(first.Probe);
+            try
+            {
+                Assert.True(first.Utils.AddDismissRuleByText("r", "Alert", "", "", "Yes", out _));
+                first.StartOk();
+                var w = first.Probe.AddMessageBox("Alert", "", YesNo);
+                first.Hook.Fire(w.Handle);
+                Assert.True(held.Entered.Wait(5000));
+
+                // The second start asks the first to stop, but the first's worker is stuck in a click,
+                // so the guard is not given back and the second cannot start.
+                Assert.False(second.Utils.Start(out string message));
+                Assert.Contains("did not stop", message);
+                Assert.False(second.Utils.IsRunning());
+                Assert.False(first.Utils.IsRunning());
+
+                held.Gate.Set(); // the click finishes, the worker exits and gives the guard back
+                Assert.True(WaitFor(() => second.Utils.Start(out _), 10000), "the second instance never got to start");
+                Assert.True(second.Utils.IsRunning());
+            }
+            finally
+            {
+                held.Dispose();
+                second.Dispose();
+                first.Dispose();
             }
         }
 

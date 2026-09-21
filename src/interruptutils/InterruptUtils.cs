@@ -919,26 +919,19 @@ namespace InterruptAutomation
             }
             finally
             {
-                try
-                {
-                    cts.Cancel();
-                    _engine.Wake();
-                    // If it does not end in time it is mid-click on a slow application and ends on its own
-                    // once that returns, releasing the run itself.
-                    ReleaseRun(cts, worker.Join(3000));
-                }
-                finally
-                {
-                    // Only now may another instance start watching: this one no longer handles popups.
-                    _guard.Release();
-                }
+                cts.Cancel();
+                _engine.Wake();
+                // If it does not end in time it is mid-click on a slow application and ends on its own
+                // once that returns, releasing the run itself.
+                ReleaseRun(cts, worker.Join(3000));
             }
         }
 
         /// <summary>
-        /// Releases a finished run's cancellation source, and the engine too once the component has
-        /// been disposed. Called both by the thread that stopped the run (after joining the worker)
-        /// and by the worker as it exits; only the first call that finds the run finished acts.
+        /// Releases a finished run's cancellation source, the instance guard, and the engine too once
+        /// the component has been disposed. Called both by the thread that stopped the run (after
+        /// joining the worker) and by the worker as it exits; only the first call that finds the run
+        /// finished acts.
         /// </summary>
         private void ReleaseRun(CancellationTokenSource cts, bool workerHasEnded)
         {
@@ -952,6 +945,11 @@ namespace InterruptAutomation
                 if (_disposed)
                     _engine.Dispose();
             }
+
+            // The worker has really ended, so only now may another instance start watching: until
+            // then it could still act on a popup. Outside the lock, because giving the guard back
+            // waits for the guard's thread, which may itself be waiting to stop this instance.
+            _guard.Release();
         }
 
         /// <summary>Stops watching and releases the component's threads.</summary>
