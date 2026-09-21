@@ -16,7 +16,7 @@ namespace InterruptAutomation.Tests
             public readonly FakeHookSource Hook = new FakeHookSource();
             public readonly InterruptUtils Utils;
 
-            public Rig() => Utils = new InterruptUtils(Probe, Hook);
+            public Rig(IInstanceGuard guard = null) => Utils = new InterruptUtils(Probe, Hook, guard);
 
             public void Dispose() => Utils.Dispose();
 
@@ -244,6 +244,270 @@ namespace InterruptAutomation.Tests
             rig.Utils.Dispose();
 
             Assert.Equal(1, rig.Hook.StopCalls);
+        }
+
+        // ------------------------------------------------------------------ one watcher at a time
+
+        // A guard name of its own per test, so tests never touch each other's guard or a real one.
+        private static string GuardName() => "Local\\InterruptUtilsTests." + Guid.NewGuid().ToString("N");
+
+        [Fact]
+        public void Start_StopsAnotherRunningInstanceThatSharesTheGuard()
+        {
+            string name = GuardName();
+            using var first = new Rig(new NamedInstanceGuard(name, 5000));
+            using var second = new Rig(new NamedInstanceGuard(name, 5000));
+            first.StartOk();
+            Assert.True(first.Utils.IsRunning());
+
+            second.StartOk();
+
+            Assert.False(first.Utils.IsRunning());
+            Assert.Equal(1, first.Hook.StopCalls);
+            Assert.True(second.Utils.IsRunning());
+            Assert.Equal(0, second.Hook.StopCalls);
+        }
+
+        [Fact]
+        public void TheStoppedInstance_KeepsItsRules_AndStartingItAgainStopsTheNewer()
+        {
+            string name = GuardName();
+            using var first = new Rig(new NamedInstanceGuard(name, 5000));
+            using var second = new Rig(new NamedInstanceGuard(name, 5000));
+            Assert.True(first.Utils.AddWatchOnlyRule("keep", "Title", "", "", out _));
+            first.StartOk();
+            second.StartOk();
+
+            first.StartOk();
+
+            Assert.True(first.Utils.IsRunning());
+            Assert.False(second.Utils.IsRunning());
+            Assert.True(first.Utils.ListRulesJson(out string json, out _));
+            Assert.Contains("keep", json);
+        }
+
+        [Fact]
+        public void InstancesWithDifferentGuards_DoNotAffectEachOther()
+        {
+            using var first = new Rig(new NamedInstanceGuard(GuardName(), 5000));
+            using var second = new Rig(new NamedInstanceGuard(GuardName(), 5000));
+            first.StartOk();
+            second.StartOk();
+
+            Assert.True(first.Utils.IsRunning());
+            Assert.True(second.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void ARefusedStart_DoesNotStopTheOtherInstance()
+        {
+            string name = GuardName();
+            using var running = new Rig(new NamedInstanceGuard(name, 5000));
+            using var refused = new Rig(new NamedInstanceGuard(name, 5000));
+            running.StartOk();
+
+            Assert.False(refused.Utils.Start(out _, sweepIntervalMs: -1)); // bad setting
+            Assert.True(running.Utils.IsRunning());
+
+            refused.Utils.Dispose();
+            Assert.False(refused.Utils.Start(out _)); // disposed
+            Assert.True(running.Utils.IsRunning());
+
+            Assert.False(running.Utils.Start(out string again)); // already running
+            Assert.Contains("Already running", again);
+            Assert.True(running.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void AFailedStart_GivesTheGuardBack_SoAnotherInstanceCanStart()
+        {
+            string name = GuardName();
+            using var broken = new Rig(new NamedInstanceGuard(name, 5000));
+            using var other = new Rig(new NamedInstanceGuard(name, 5000));
+            broken.Hook.FailToStart = true;
+
+            Assert.False(broken.Utils.Start(out _));
+
+            other.StartOk(); // would wait out the timeout and fail if the guard were still held
+            Assert.True(other.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void AStoppedOrDisposedInstance_GivesTheGuardBack()
+        {
+            string name = GuardName();
+            using var first = new Rig(new NamedInstanceGuard(name, 5000));
+            using var second = new Rig(new NamedInstanceGuard(name, 5000));
+            using var third = new Rig(new NamedInstanceGuard(name, 5000));
+            first.StartOk();
+            Assert.True(first.Utils.Stop(out _));
+            second.StartOk();
+            second.Utils.Dispose();
+
+            third.StartOk();
+
+            Assert.Equal(1, first.Hook.StopCalls);  // only its own Stop
+            Assert.Equal(1, second.Hook.StopCalls); // only its own Dispose
+            Assert.True(third.Utils.IsRunning());
+        }
+
+        // A stress check rather than a deterministic reproduction: the window it targets (a restart between
+        // a run being cleared and its guard being given back) is a few instructions wide, and the code
+        // closes it by construction (the two happen under one lock, and Start finishes a dead run itself).
+        [Fact]
+        public void ARestartedInstance_StillHoldsTheGuard_SoAnotherInstanceStopsIt()
+        {
+            string name = GuardName();
+            using var restarted = new Rig(new NamedInstanceGuard(name, 5000));
+            using var newcomer = new Rig(new NamedInstanceGuard(name, 5000));
+
+            // One thread stops while another restarts, as fast as they can: a late clean-up of an earlier
+            // run must never give back the guard of the run that replaced it.
+            using var done = new ManualResetEventSlim(false);
+            var stopper = new Thread(() =>
+            {
+                while (!done.IsSet)
+                    restarted.Utils.Stop(out _);
+            });
+            stopper.Start();
+            for (int i = 0; i < 2000; i++)
+                restarted.Utils.Start(out _, sweepIntervalMs: 0); // refused while running; that is fine
+            done.Set();
+            stopper.Join();
+            restarted.Utils.Stop(out _);
+            restarted.StartOk();
+
+            newcomer.StartOk(); // has to ask the restarted instance to stop, not walk in
+            Assert.False(restarted.Utils.IsRunning());
+            Assert.True(newcomer.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void StartWhenTheOtherInstanceFailsToUnhook_StillStarts_AndTheOtherIsStopped()
+        {
+            string name = GuardName();
+            using var first = new Rig(new NamedInstanceGuard(name, 5000));
+            using var second = new Rig(new NamedInstanceGuard(name, 5000));
+            first.StartOk();
+            first.Hook.ThrowOnStop = true;
+
+            second.StartOk();
+
+            Assert.False(first.Utils.IsRunning());
+            Assert.True(second.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void ConcurrentStarts_LeaveExactlyOneInstanceRunning()
+        {
+            string name = GuardName();
+            var rigs = new List<Rig>();
+            try
+            {
+                for (int i = 0; i < 8; i++)
+                    rigs.Add(new Rig(new NamedInstanceGuard(name, 10000)));
+                var threads = new List<Thread>();
+                foreach (var rig in rigs)
+                {
+                    var r = rig;
+                    var t = new Thread(() => r.Utils.Start(out _, sweepIntervalMs: 0));
+                    threads.Add(t);
+                    t.Start();
+                }
+                foreach (var t in threads)
+                    t.Join();
+
+                Assert.True(WaitFor(() => rigs.FindAll(r => r.Utils.IsRunning()).Count == 1));
+            }
+            finally
+            {
+                foreach (var rig in rigs)
+                    rig.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Guard_AHolderThatIsSlowToStop_MakesTheNewcomerFail_UntilItHasStopped()
+        {
+            string name = GuardName();
+            var holder = new NamedInstanceGuard(name, 5000);
+            var newcomer = new NamedInstanceGuard(name, 600);
+            using var stopping = new ManualResetEventSlim(false);
+            using var mayFinish = new ManualResetEventSlim(false);
+            Assert.True(holder.TryAcquire(() =>
+            {
+                stopping.Set();
+                mayFinish.Wait(10000); // a stop that takes longer than the newcomer will wait
+                holder.Release();      // and only then gives the guard back
+            }, out _));
+            try
+            {
+                Assert.False(newcomer.TryAcquire(() => { }, out string message));
+                Assert.Contains("did not stop", message);
+                Assert.True(stopping.IsSet); // it was asked
+            }
+            finally
+            {
+                mayFinish.Set();
+            }
+
+            // The holder has now finished stopping, so the guard is free.
+            Assert.True(newcomer.TryAcquire(() => { }, out string ok), ok);
+            Assert.Null(ok);
+            newcomer.Release();
+        }
+
+        [Fact]
+        public void Guard_ACallerInterruptedWhileWaiting_DoesNotLeaveTheGuardHeld()
+        {
+            string name = GuardName();
+            var holder = new NamedInstanceGuard(name, 5000);
+            var interrupted = new NamedInstanceGuard(name, 20000);
+            using var stopping = new ManualResetEventSlim(false);
+            using var mayFinish = new ManualResetEventSlim(false);
+            Assert.True(holder.TryAcquire(() =>
+            {
+                stopping.Set();
+                mayFinish.Wait(10000);
+                holder.Release();
+            }, out _));
+
+            Exception thrown = null;
+            var caller = new Thread(() =>
+            {
+                try
+                {
+                    interrupted.TryAcquire(() => { }, out _);
+                }
+                catch (Exception ex)
+                {
+                    thrown = ex;
+                }
+            });
+            caller.Start();
+            Assert.True(stopping.Wait(5000)); // the caller has asked the holder to stop and is now waiting
+            caller.Interrupt();
+            caller.Join();
+            Assert.IsType<ThreadInterruptedException>(thrown);
+
+            mayFinish.Set(); // the holder lets go; the interrupted caller's hold must not pick the guard up
+
+            var third = new NamedInstanceGuard(name, 3000);
+            Assert.True(third.TryAcquire(() => { }, out string message), message);
+            third.Release();
+        }
+
+        [Fact]
+        public void Guard_ReleaseIsSafeWhenNotHeld_AndFromTheStopCallback()
+        {
+            string name = GuardName();
+            var guard = new NamedInstanceGuard(name, 5000);
+            guard.Release(); // never held
+
+            var other = new NamedInstanceGuard(name, 5000);
+            Assert.True(guard.TryAcquire(() => guard.Release(), out _)); // gives itself up when asked
+            Assert.True(other.TryAcquire(() => { }, out string message), message);
+            other.Release();
         }
 
         // ------------------------------------------------------------------ end to end (fake desktop, real worker thread)
@@ -677,6 +941,40 @@ namespace InterruptAutomation.Tests
             {
                 held.Dispose();
                 rig.Dispose();
+            }
+        }
+
+        [Fact]
+        public void AnotherInstanceCannotStart_WhileTheStoppedOnesWorkerIsStillMidClick_UntilItFinishes()
+        {
+            string name = GuardName();
+            var first = new Rig(new NamedInstanceGuard(name, 800));
+            var second = new Rig(new NamedInstanceGuard(name, 800));
+            var held = new HeldClick(first.Probe);
+            try
+            {
+                Assert.True(first.Utils.AddDismissRuleByText("r", "Alert", "", "", "Yes", out _));
+                first.StartOk();
+                var w = first.Probe.AddMessageBox("Alert", "", YesNo);
+                first.Hook.Fire(w.Handle);
+                Assert.True(held.Entered.Wait(5000));
+
+                // The second start asks the first to stop, but the first's worker is stuck in a click,
+                // so the guard is not given back and the second cannot start.
+                Assert.False(second.Utils.Start(out string message));
+                Assert.Contains("did not stop", message);
+                Assert.False(second.Utils.IsRunning());
+                Assert.False(first.Utils.IsRunning());
+
+                held.Gate.Set(); // the click finishes, the worker exits and gives the guard back
+                Assert.True(WaitFor(() => second.Utils.Start(out _), 10000), "the second instance never got to start");
+                Assert.True(second.Utils.IsRunning());
+            }
+            finally
+            {
+                held.Dispose();
+                second.Dispose();
+                first.Dispose();
             }
         }
 

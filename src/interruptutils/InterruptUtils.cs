@@ -32,6 +32,7 @@ namespace InterruptAutomation
 
         private readonly PopupEngine _engine;
         private readonly IPopupHookSource _hook;
+        private readonly IInstanceGuard _guard;
         private readonly object _lifeLock = new object();
         private Thread _worker;
         private CancellationTokenSource _cts;
@@ -42,7 +43,7 @@ namespace InterruptAutomation
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
         /// </summary>
-        public InterruptUtils() : this(new Win32PopupProbe(), new PopupHookThread())
+        public InterruptUtils() : this(new Win32PopupProbe(), new PopupHookThread(), new NamedInstanceGuard())
         {
         }
 
@@ -55,9 +56,10 @@ namespace InterruptAutomation
             container?.Add(this);
         }
 
-        internal InterruptUtils(IPopupProbe probe, IPopupHookSource hook)
+        internal InterruptUtils(IPopupProbe probe, IPopupHookSource hook, IInstanceGuard guard = null)
         {
             _hook = hook;
+            _guard = guard ?? new NoInstanceGuard();
             _engine = new PopupEngine(probe, Thread.Sleep, OnRecord);
         }
 
@@ -391,21 +393,25 @@ namespace InterruptAutomation
         /// <summary>
         /// Starts watching for popups on background threads and returns as soon as the window-event
         /// hooks are installed (normally a few milliseconds; it waits at most 5 seconds for the
-        /// system to install them), then the automation carries on while popups matching a rule are
-        /// dismissed.
+        /// system to install them, after first waiting up to about 5 seconds for another running
+        /// instance to stop, if there is one), then the automation carries on while popups matching a
+        /// rule are dismissed.
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it did not start.</param>
         /// <param name="sweepIntervalMs">How often, in milliseconds, to scan every window as a safety net for popups the window events missed (and ones already open now); 0 turns the scan off. 0 to 60000.</param>
         /// <param name="maxAttempts">How many times to try to dismiss one popup before giving up on it. 1 to 10.</param>
         /// <param name="maxDismissalsPerMinute">How many popups one rule may dismiss in a minute before it stops itself, so a popup that keeps coming back cannot loop forever. 1 to 1000.</param>
-        /// <returns><c>true</c> if watching started; <c>false</c> if it is already running, a value is out of range, window events are unavailable in this session, a previous run is still shutting down, or the component is disposed. Never throws.</returns>
+        /// <returns><c>true</c> if watching started; <c>false</c> if it is already running, a value is out of range, window events are unavailable in this session, a previous run is still shutting down, another instance would not stop, or the component is disposed. Never throws.</returns>
         /// <remarks>
         /// Popups owned by the automation's own process are never touched. Events are not delivered
         /// while the screen is locked or on a secure desktop. Stop it with <see cref="Stop"/>;
-        /// disposing the component stops it too.
+        /// disposing the component stops it too. Only one instance watches at a time, in this process
+        /// or any other in the user's session: starting one asks a running one to stop first (it keeps
+        /// its rules, counts and log), and this method fails if that instance has not stopped within a
+        /// few seconds.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
-        [Description("Starts watching for popups in the background and dismissing those that match a rule. Returns once the hooks are installed (milliseconds; at most 5 seconds). Returns True on success; never throws.")]
+        [Description("Starts watching for popups in the background and dismissing those that match a rule. Stops any other instance still watching (one that has this guard), in this process or another, and waits a few seconds for it. Returns once the hooks are installed (normally milliseconds). Returns True on success; never throws.")]
         public bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)
         {
             message = default;
@@ -439,46 +445,71 @@ namespace InterruptAutomation
                         message = "Already running; call Stop first.";
                         return false;
                     }
-                    if (_lingeringWorker != null && _lingeringWorker.IsAlive)
+                    if (_lingeringWorker != null)
                     {
-                        message = "The previous run is still shutting down; try again shortly.";
+                        if (_lingeringWorker.IsAlive)
+                        {
+                            message = "The previous run is still shutting down; try again shortly.";
+                            return false;
+                        }
+                        // It has ended but the thread that stopped it has not yet cleaned up: do that here,
+                        // so this Start cannot overlap the old run's guard being given back.
+                        FinishLingeringRunLocked();
+                    }
+
+                    // Only one instance watches at a time, in this process or any other in the session:
+                    // this asks a running one to stop and waits (a few seconds at most) for it to.
+                    if (!_guard.TryAcquire(() => Stop(out _), out string guardMessage))
+                    {
+                        message = guardMessage;
                         return false;
                     }
 
-                    _engine.SweepIntervalMs = sweepIntervalMs;
-                    _engine.MaxAttempts = maxAttempts;
-                    _engine.MaxDismissalsPerMinute = maxDismissalsPerMinute;
-                    _engine.ResetRuntime();
-
-                    // A hook failure is only queued here (it arrives on the hook thread); the worker
-                    // records it, so InterruptError is raised on the worker thread like every event.
-                    if (!_hook.Start(_engine.Enqueue, _engine.EnqueueDestroyed, _engine.EnqueueFault, out string hookMessage))
-                    {
-                        message = hookMessage ?? "Window events could not be started.";
-                        return false;
-                    }
-
-                    // From here the hook is running, so a failure to get the worker going must undo it:
-                    // Start either succeeds completely or leaves nothing behind.
-                    var cts = new CancellationTokenSource();
+                    // The guard is held from here: every way out that is not a running watch gives it back.
+                    bool started = false;
                     try
                     {
-                        var worker = new Thread(() => WorkerLoop(cts))
+                        _engine.SweepIntervalMs = sweepIntervalMs;
+                        _engine.MaxAttempts = maxAttempts;
+                        _engine.MaxDismissalsPerMinute = maxDismissalsPerMinute;
+                        _engine.ResetRuntime();
+
+                        // A hook failure is only queued here (it arrives on the hook thread); the worker
+                        // records it, so InterruptError is raised on the worker thread like every event.
+                        if (!_hook.Start(_engine.Enqueue, _engine.EnqueueDestroyed, _engine.EnqueueFault, out string hookMessage))
                         {
-                            IsBackground = true,
-                            Name = "InterruptUtils.Worker"
-                        };
-                        worker.Start();
-                        _cts = cts;
-                        _worker = worker;
+                            message = hookMessage ?? "Window events could not be started.";
+                            return false;
+                        }
+
+                        // From here the hook is running, so a failure to get the worker going must undo it:
+                        // Start either succeeds completely or leaves nothing behind.
+                        var cts = new CancellationTokenSource();
+                        try
+                        {
+                            var worker = new Thread(() => WorkerLoop(cts))
+                            {
+                                IsBackground = true,
+                                Name = "InterruptUtils.Worker"
+                            };
+                            worker.Start();
+                            _cts = cts;
+                            _worker = worker;
+                        }
+                        catch
+                        {
+                            _cts = null;
+                            _worker = null;
+                            _hook.Stop();
+                            cts.Dispose();
+                            throw; // reported by the outer handler as the reason Start failed
+                        }
+                        started = true;
                     }
-                    catch
+                    finally
                     {
-                        _cts = null;
-                        _worker = null;
-                        _hook.Stop();
-                        cts.Dispose();
-                        throw; // reported by the outer handler as the reason Start failed
+                        if (!started)
+                            _guard.Release();
                     }
                 }
 
@@ -904,9 +935,10 @@ namespace InterruptAutomation
         }
 
         /// <summary>
-        /// Releases a finished run's cancellation source, and the engine too once the component has
-        /// been disposed. Called both by the thread that stopped the run (after joining the worker)
-        /// and by the worker as it exits; only the first call that finds the run finished acts.
+        /// Releases a finished run's cancellation source, the instance guard, and the engine too once
+        /// the component has been disposed. Called both by the thread that stopped the run (after
+        /// joining the worker) and by the worker as it exits; only the first call that finds the run
+        /// finished acts.
         /// </summary>
         private void ReleaseRun(CancellationTokenSource cts, bool workerHasEnded)
         {
@@ -914,12 +946,26 @@ namespace InterruptAutomation
             {
                 if (!workerHasEnded || !ReferenceEquals(_lingeringCts, cts))
                     return;
-                _lingeringCts = null;
-                _lingeringWorker = null;
-                cts.Dispose();
-                if (_disposed)
-                    _engine.Dispose();
+                FinishLingeringRunLocked();
             }
+        }
+
+        /// <summary>
+        /// Cleans up a run whose worker has ended. The caller holds <c>_lifeLock</c>. The guard is given
+        /// back here, in the same critical section that clears the run, so a restart can never slip in
+        /// between and then have its own guard released by this run's late clean-up. Only now may another
+        /// instance start watching: until the worker has ended it could still act on a popup. Giving the
+        /// guard back does not wait for anything, so holding the lock is safe.
+        /// </summary>
+        private void FinishLingeringRunLocked()
+        {
+            CancellationTokenSource cts = _lingeringCts;
+            _lingeringCts = null;
+            _lingeringWorker = null;
+            cts?.Dispose();
+            _guard.Release();
+            if (_disposed)
+                _engine.Dispose();
         }
 
         /// <summary>Stops watching and releases the component's threads.</summary>

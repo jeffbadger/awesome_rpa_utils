@@ -22,8 +22,29 @@ counts and the log are kept, so `Start` can resume later. `Stop` succeeds even i
 was not running, and disposing the component stops it too.
 
 `Start` returns `false` (with a message) if it is already running, a setting is out of
-range, window events are unavailable in this session, or a previous run is still
-shutting down.
+range, window events are unavailable in this session, a previous run is still
+shutting down, or another instance would not stop (see below).
+
+### Only one instance watches at a time
+
+Starting an instance stops any other `InterruptUtils` that is still running, whether it is
+in the same process or another one in the same Windows session (a named mutex says who is
+watching; a named event asks the holder to stop). So a host that creates a new component for
+each run, or never stops or disposes the old one, cannot leave an earlier instance dismissing
+popups in the background. `Start` waits up to about five seconds for the other instance to stop,
+and returns `false` with a message if it has not by then. The instance that was stopped keeps its
+rules, counts and log, and `IsRunning` on it returns `false`; starting it again stops the newer
+one. A `Start` that is refused for any other reason stops nothing. If the process that was
+watching ends without stopping, the next `Start` simply takes over.
+
+This works between builds that include this guard. An older build has no guard, cannot be found or
+asked to stop, and keeps running until its process is closed. Because `Start` can wait up to about five
+seconds for another instance to stop before it installs the window-event hooks (which can take up to five
+seconds themselves), a `Start` that has to displace another instance can take noticeably longer than
+usual.
+
+If the system will not let the component create the named mutex and event (for example another
+account or a higher-privilege process created them first), `Start` goes ahead without the guard.
 
 ## The settings on `Start`
 

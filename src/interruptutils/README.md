@@ -92,7 +92,7 @@ Rules are tried in the order added and the first match wins. See
 
 | Method | Signature | Description |
 |---|---|---|
-| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads; returns once the window-event hooks are installed (milliseconds, at most 5 s). |
+| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads; returns once the window-event hooks are installed (normally milliseconds). Stops any other instance still running that has this guard, in this process or another, and waits up to about 5 s for it first. |
 | `Stop` | `bool Stop(out string message)` | Stops watching. Rules, counts and the log are kept. Succeeds when not running. |
 | `IsRunning` | `bool IsRunning()` | Whether watching is running. |
 | `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch. Returns once any dismissal already under way has finished. |
@@ -114,8 +114,8 @@ Rules are tried in the order added and the first match wins. See
 - **Nothing runs on the automation's thread.** A hook thread receives window
   events and does almost nothing (a class check and a hand-off), because a stalled
   event pump stalls every event delivered to it. A separate worker thread does the
-  reading, clicking and event-raising. `Start` returns as soon as the hooks are installed (a few
-  milliseconds; at most 5 seconds), not after any popup has been handled.
+  reading, clicking and event-raising. `Start` returns as soon as the hooks are installed (normally a few
+  milliseconds), not after any popup has been handled.
 - **A periodic scan backs up the events.** Every `sweepIntervalMs` (default 1 s) the
   worker also checks every visible top-level window. That finds popups that were
   already open when you called `Start`, popups whose applications do not raise
@@ -160,3 +160,8 @@ Rules are tried in the order added and the first match wins. See
   than depending on an event.
 - **Clean-up.** Disposing the component (or `Stop`) unhooks the window events and ends
   both threads. It is safe to dispose while running.
+- **One watcher at a time.** `Start` stops any other instance that is still running and has this
+  guard, in this process or another in the same session, so an old instance that was never stopped
+  cannot keep dismissing popups. An older build without the guard cannot be found or stopped this
+  way and keeps running until its process is closed. The stopped instance keeps its rules and log and can be started again
+  (which stops the newer one). See [Lifecycle](Documentation/Lifecycle.md).
