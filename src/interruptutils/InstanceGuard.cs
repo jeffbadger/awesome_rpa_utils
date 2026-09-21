@@ -85,28 +85,41 @@ namespace InterruptAutomation
                     return true; // already holding it
 
                 var hold = new Hold();
-                hold.Thread = new Thread(() => Run(hold, stopRequested))
+                bool succeeded = false;
+                try
                 {
-                    IsBackground = true,
-                    Name = "InterruptUtils.InstanceGuard"
-                };
-                hold.Thread.Start();
+                    hold.Thread = new Thread(() => Run(hold, stopRequested))
+                    {
+                        IsBackground = true,
+                        Name = "InterruptUtils.InstanceGuard"
+                    };
+                    hold.Thread.Start();
 
-                if (!hold.Ready.Wait(_acquireTimeoutMs + 2000))
-                {
-                    // Never got an answer: whatever the thread does later, it must not keep the guard.
-                    hold.Abandoned = true;
-                    hold.ReleaseRequested.Set();
-                    message = TimedOutMessage();
-                    return false;
+                    if (!hold.Ready.Wait(_acquireTimeoutMs + 2000))
+                    {
+                        message = TimedOutMessage(); // never got an answer
+                        return false;
+                    }
+                    if (!hold.Acquired)
+                    {
+                        message = hold.Error ?? TimedOutMessage();
+                        return false;
+                    }
+                    _hold = hold;
+                    succeeded = true;
+                    return true;
                 }
-                if (!hold.Acquired)
+                finally
                 {
-                    message = hold.Error ?? TimedOutMessage();
-                    return false;
+                    // Any way out that is not "acquired and recorded" (a timeout, a refusal, or an exception
+                    // such as the caller being interrupted while it waits) must not leave the hold's thread
+                    // to acquire the mutex later and keep it forever: tell it to give up or let go.
+                    if (!succeeded)
+                    {
+                        hold.Abandoned = true;
+                        hold.ReleaseRequested.Set();
+                    }
                 }
-                _hold = hold;
-                return true;
             }
         }
 

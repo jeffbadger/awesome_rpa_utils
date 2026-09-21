@@ -458,6 +458,46 @@ namespace InterruptAutomation.Tests
         }
 
         [Fact]
+        public void Guard_ACallerInterruptedWhileWaiting_DoesNotLeaveTheGuardHeld()
+        {
+            string name = GuardName();
+            var holder = new NamedInstanceGuard(name, 5000);
+            var interrupted = new NamedInstanceGuard(name, 20000);
+            using var stopping = new ManualResetEventSlim(false);
+            using var mayFinish = new ManualResetEventSlim(false);
+            Assert.True(holder.TryAcquire(() =>
+            {
+                stopping.Set();
+                mayFinish.Wait(10000);
+                holder.Release();
+            }, out _));
+
+            Exception thrown = null;
+            var caller = new Thread(() =>
+            {
+                try
+                {
+                    interrupted.TryAcquire(() => { }, out _);
+                }
+                catch (Exception ex)
+                {
+                    thrown = ex;
+                }
+            });
+            caller.Start();
+            Assert.True(stopping.Wait(5000)); // the caller has asked the holder to stop and is now waiting
+            caller.Interrupt();
+            caller.Join();
+            Assert.IsType<ThreadInterruptedException>(thrown);
+
+            mayFinish.Set(); // the holder lets go; the interrupted caller's hold must not pick the guard up
+
+            var third = new NamedInstanceGuard(name, 3000);
+            Assert.True(third.TryAcquire(() => { }, out string message), message);
+            third.Release();
+        }
+
+        [Fact]
         public void Guard_ReleaseIsSafeWhenNotHeld_AndFromTheStopCallback()
         {
             string name = GuardName();
