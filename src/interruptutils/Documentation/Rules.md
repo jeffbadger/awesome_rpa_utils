@@ -28,6 +28,28 @@ All three compare ignoring case, and the first two by substring. Leave a criteri
 empty (`""`) to not check it. **At least one is required**: a rule with none would
 match every dialog on the desktop, so it is refused.
 
+### How `messageContains` reads the message
+
+- **The text is matched literally.** There are no wildcards and no regular expressions:
+  `*`, `.` and the like are ordinary characters. Use a distinctive phrase from the message.
+- **Only one text control is read: the first non-empty one.** That is the first static text
+  control the popup lists among its child controls, which for a classic message box is the
+  message above the buttons. Text in any later control is never seen, so if a popup has a
+  heading and a separate body line, `messageContains` can match the heading only. If the text
+  you need is in a later control, match on a phrase from the heading, or on the title or process.
+- **The message is read last when choosing a rule, and reused within one pass.** The class,
+  title and process are checked first; while looking for a matching rule the message is read
+  only for a rule that has `messageContains` and has already matched on those, and the text is
+  reused by any later rule in the same pass. Reading it means a call into the popup's
+  application, so set `titleContains` or `processName` too and the message is not read for
+  popups those already rule out.
+- **It is also read for the record, and again on later looks.** Once a rule has been chosen
+  (and has not stopped itself for dismissing too many popups) the message is read, if it has not
+  been already, so the events and the log can carry it,
+  even for a rule with no `messageContains`. And a popup is looked at more than once (again
+  shortly after it appears, and by each periodic scan while it stays open and unresolved), and
+  every look reads it afresh, so one popup's message can be read several times.
+
 Prefer the narrowest rule that is still reliable. Adding the process name means a
 "Session Timeout" popup from some other application is left alone.
 
