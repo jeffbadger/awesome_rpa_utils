@@ -37,6 +37,12 @@ rules, counts and log, and `IsRunning` on it returns `false`; starting it again 
 one. A `Start` that is refused for any other reason stops nothing. If the process that was
 watching ends without stopping, the next `Start` simply takes over.
 
+This works between builds that include this guard. An older build has no guard, cannot be found or
+asked to stop, and keeps running until its process is closed. Because `Start` can wait up to about five
+seconds for another instance to stop before it installs the window-event hooks (which can take up to five
+seconds themselves), a `Start` that has to displace another instance can take noticeably longer than
+usual.
+
 If the system will not let the component create the named mutex and event (for example another
 account or a higher-privilege process created them first), `Start` goes ahead without the guard.
 

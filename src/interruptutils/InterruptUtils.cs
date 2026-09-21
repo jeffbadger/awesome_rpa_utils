@@ -393,8 +393,9 @@ namespace InterruptAutomation
         /// <summary>
         /// Starts watching for popups on background threads and returns as soon as the window-event
         /// hooks are installed (normally a few milliseconds; it waits at most 5 seconds for the
-        /// system to install them), then the automation carries on while popups matching a rule are
-        /// dismissed.
+        /// system to install them, after first waiting up to about 5 seconds for another running
+        /// instance to stop, if there is one), then the automation carries on while popups matching a
+        /// rule are dismissed.
         /// </summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason it did not start.</param>
         /// <param name="sweepIntervalMs">How often, in milliseconds, to scan every window as a safety net for popups the window events missed (and ones already open now); 0 turns the scan off. 0 to 60000.</param>
@@ -410,7 +411,7 @@ namespace InterruptAutomation
         /// few seconds.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
-        [Description("Starts watching for popups in the background and dismissing those that match a rule. Stops any other instance still watching, in this process or another, and waits a few seconds for it. Returns once the hooks are installed (milliseconds; at most 5 seconds). Returns True on success; never throws.")]
+        [Description("Starts watching for popups in the background and dismissing those that match a rule. Stops any other instance still watching (one that has this guard), in this process or another, and waits a few seconds for it. Returns once the hooks are installed (normally milliseconds). Returns True on success; never throws.")]
         public bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)
         {
             message = default;

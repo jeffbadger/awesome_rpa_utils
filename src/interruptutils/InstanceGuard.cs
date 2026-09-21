@@ -68,12 +68,27 @@ namespace InterruptAutomation
 
         private sealed class Hold
         {
+            // Ready never has its wait handle asked for, so it holds no native handle and is left to the GC
+            // (disposing it could race a caller that is still about to wait on it). ReleaseRequested does
+            // hand out a wait handle, so the guard thread disposes it when it exits.
             public readonly ManualResetEventSlim Ready = new ManualResetEventSlim(false);
             public readonly ManualResetEventSlim ReleaseRequested = new ManualResetEventSlim(false);
             public Thread Thread;
             public volatile bool Acquired;
             public volatile bool Abandoned;
             public string Error;
+
+            /// <summary>Asks the guard thread to give up or let go. Safe after the thread has finished and cleaned up.</summary>
+            public void SignalRelease()
+            {
+                try
+                {
+                    ReleaseRequested.Set();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
         }
 
         public bool TryAcquire(Action stopRequested, out string message)
@@ -117,7 +132,7 @@ namespace InterruptAutomation
                     if (!succeeded)
                     {
                         hold.Abandoned = true;
-                        hold.ReleaseRequested.Set();
+                        hold.SignalRelease();
                     }
                 }
             }
@@ -137,7 +152,7 @@ namespace InterruptAutomation
             // Not waited for: the holding thread gives the mutex up as soon as it sees this, and anyone
             // waiting for it is woken then. Waiting here could deadlock, because Release is also called
             // from the worker that the holding thread's own stop is waiting to finish.
-            hold.ReleaseRequested.Set();
+            hold.SignalRelease();
         }
 
         private string TimedOutMessage() =>
@@ -224,6 +239,7 @@ namespace InterruptAutomation
                 mutex?.Dispose();
                 request?.Dispose();
                 hold.Ready.Set(); // every exit lets TryAcquire go on
+                hold.ReleaseRequested.Dispose(); // the last use of it on this thread; late signals are tolerated
             }
         }
 
