@@ -73,8 +73,9 @@ explaining why on failure; `IsRunning` returns just the `bool`. None of them thr
 
 At least one of `titleContains`, `messageContains` and `processName` is required
 on every rule, so no rule can mean "click whatever dialog appears". Text is
-matched by case-insensitive substring; every criterion you set must match.
-Rules are tried in the order added and the first match wins. See
+matched by case-insensitive substring (literally: no wildcards or regular expressions); every
+criterion you set must match. `messageContains` looks only at the first non-empty text control
+in the popup. Rules are tried in the order added and the first match wins. See
 [Rules](Documentation/Rules.md).
 
 | Method | Signature | Description |
