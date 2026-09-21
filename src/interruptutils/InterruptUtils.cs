@@ -410,7 +410,7 @@ namespace InterruptAutomation
         /// few seconds.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
-        [Description("Starts watching for popups in the background and dismissing those that match a rule. Returns once the hooks are installed (milliseconds; at most 5 seconds). Returns True on success; never throws.")]
+        [Description("Starts watching for popups in the background and dismissing those that match a rule. Stops any other instance still watching, in this process or another, and waits a few seconds for it. Returns once the hooks are installed (milliseconds; at most 5 seconds). Returns True on success; never throws.")]
         public bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)
         {
             message = default;
