@@ -30,17 +30,9 @@ namespace InterruptAutomation
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 
-        // Every instance that is watching right now, process-wide. Start stops the others (one
-        // process needs one watcher, and an instance that was never stopped or disposed - a host
-        // that creates a fresh component per run - would otherwise keep dismissing popups).
-        // s_startGate serializes Starts so two cannot both pass the "stop the others" step;
-        // s_runningLock guards the list and is never held while taking any other lock.
-        private static readonly object s_startGate = new object();
-        private static readonly object s_runningLock = new object();
-        private static readonly List<InterruptUtils> s_running = new List<InterruptUtils>();
-
         private readonly PopupEngine _engine;
         private readonly IPopupHookSource _hook;
+        private readonly IInstanceGuard _guard;
         private readonly object _lifeLock = new object();
         private Thread _worker;
         private CancellationTokenSource _cts;
@@ -51,7 +43,7 @@ namespace InterruptAutomation
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
         /// </summary>
-        public InterruptUtils() : this(new Win32PopupProbe(), new PopupHookThread())
+        public InterruptUtils() : this(new Win32PopupProbe(), new PopupHookThread(), new NamedInstanceGuard())
         {
         }
 
@@ -64,9 +56,10 @@ namespace InterruptAutomation
             container?.Add(this);
         }
 
-        internal InterruptUtils(IPopupProbe probe, IPopupHookSource hook)
+        internal InterruptUtils(IPopupProbe probe, IPopupHookSource hook, IInstanceGuard guard = null)
         {
             _hook = hook;
+            _guard = guard ?? new NoInstanceGuard();
             _engine = new PopupEngine(probe, Thread.Sleep, OnRecord);
         }
 
@@ -407,13 +400,14 @@ namespace InterruptAutomation
         /// <param name="sweepIntervalMs">How often, in milliseconds, to scan every window as a safety net for popups the window events missed (and ones already open now); 0 turns the scan off. 0 to 60000.</param>
         /// <param name="maxAttempts">How many times to try to dismiss one popup before giving up on it. 1 to 10.</param>
         /// <param name="maxDismissalsPerMinute">How many popups one rule may dismiss in a minute before it stops itself, so a popup that keeps coming back cannot loop forever. 1 to 1000.</param>
-        /// <returns><c>true</c> if watching started; <c>false</c> if it is already running, a value is out of range, window events are unavailable in this session, a previous run is still shutting down, or the component is disposed. Never throws.</returns>
+        /// <returns><c>true</c> if watching started; <c>false</c> if it is already running, a value is out of range, window events are unavailable in this session, a previous run is still shutting down, another instance would not stop, or the component is disposed. Never throws.</returns>
         /// <remarks>
         /// Popups owned by the automation's own process are never touched. Events are not delivered
         /// while the screen is locked or on a secure desktop. Stop it with <see cref="Stop"/>;
-        /// disposing the component stops it too. Only one instance watches at a time: starting
-        /// one stops any other instance in the process that is still running (its rules, counts and
-        /// log are kept, and it can be started again, which stops this one).
+        /// disposing the component stops it too. Only one instance watches at a time, in this process
+        /// or any other in the user's session: starting one asks a running one to stop first (it keeps
+        /// its rules, counts and log), and this method fails if that instance has not stopped within a
+        /// few seconds.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
         [Description("Starts watching for popups in the background and dismissing those that match a rule. Returns once the hooks are installed (milliseconds; at most 5 seconds). Returns True on success; never throws.")]
@@ -438,34 +432,36 @@ namespace InterruptAutomation
                     return false;
                 }
 
-                lock (s_startGate)
+                lock (_lifeLock)
                 {
-                    // Only stop the other watchers if this Start can go ahead: a Start that is
-                    // refused (already running, disposed) must not disturb anyone else.
-                    bool mayStart;
-                    lock (_lifeLock)
-                        mayStart = !_disposed && _worker == null && (_lingeringWorker == null || !_lingeringWorker.IsAlive);
-                    if (mayStart)
-                        StopOtherRunningInstances();
-
-                    lock (_lifeLock)
+                    if (_disposed)
                     {
-                        if (_disposed)
-                        {
-                            message = "The component has been disposed.";
-                            return false;
-                        }
-                        if (_worker != null)
-                        {
-                            message = "Already running; call Stop first.";
-                            return false;
-                        }
-                        if (_lingeringWorker != null && _lingeringWorker.IsAlive)
-                        {
-                            message = "The previous run is still shutting down; try again shortly.";
-                            return false;
-                        }
+                        message = "The component has been disposed.";
+                        return false;
+                    }
+                    if (_worker != null)
+                    {
+                        message = "Already running; call Stop first.";
+                        return false;
+                    }
+                    if (_lingeringWorker != null && _lingeringWorker.IsAlive)
+                    {
+                        message = "The previous run is still shutting down; try again shortly.";
+                        return false;
+                    }
 
+                    // Only one instance watches at a time, in this process or any other in the session:
+                    // this asks a running one to stop and waits (a few seconds at most) for it to.
+                    if (!_guard.TryAcquire(() => Stop(out _), out string guardMessage))
+                    {
+                        message = guardMessage;
+                        return false;
+                    }
+
+                    // The guard is held from here: every way out that is not a running watch gives it back.
+                    bool started = false;
+                    try
+                    {
                         _engine.SweepIntervalMs = sweepIntervalMs;
                         _engine.MaxAttempts = maxAttempts;
                         _engine.MaxDismissalsPerMinute = maxDismissalsPerMinute;
@@ -492,7 +488,6 @@ namespace InterruptAutomation
                             worker.Start();
                             _cts = cts;
                             _worker = worker;
-                            Register(this);
                         }
                         catch
                         {
@@ -502,6 +497,12 @@ namespace InterruptAutomation
                             cts.Dispose();
                             throw; // reported by the outer handler as the reason Start failed
                         }
+                        started = true;
+                    }
+                    finally
+                    {
+                        if (!started)
+                            _guard.Release();
                     }
                 }
 
@@ -885,47 +886,6 @@ namespace InterruptAutomation
             return false;
         }
 
-        private static void Register(InterruptUtils instance)
-        {
-            lock (s_runningLock)
-            {
-                if (!s_running.Contains(instance))
-                    s_running.Add(instance);
-            }
-        }
-
-        private static void Unregister(InterruptUtils instance)
-        {
-            lock (s_runningLock)
-                s_running.Remove(instance);
-        }
-
-        /// <summary>
-        /// Stops every other instance that is watching. Called with s_startGate held and no
-        /// instance lock held (stopping an instance takes its own lock and joins its worker), so
-        /// two instances can never wait on each other.
-        /// </summary>
-        private void StopOtherRunningInstances()
-        {
-            InterruptUtils[] others;
-            lock (s_runningLock)
-                others = s_running.FindAll(i => !ReferenceEquals(i, this)).ToArray();
-
-            foreach (InterruptUtils other in others)
-            {
-                try
-                {
-                    other.StopCore();
-                }
-                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-                {
-                    // It is unregistered and its worker cancelled even when unhooking failed; do
-                    // not let that stop this instance from starting.
-                    System.Diagnostics.Debug.WriteLine("InterruptUtils: stopping another instance failed: " + ex.Message);
-                }
-            }
-        }
-
         /// <summary>
         /// Ends the watch: detaches the run's state under the lock, then stops the hook and joins
         /// the worker outside it, so a worker that is mid-click can never deadlock against a caller.
@@ -940,7 +900,6 @@ namespace InterruptAutomation
                 cts = _cts;
                 _worker = null;
                 _cts = null;
-                Unregister(this);
                 if (worker != null)
                 {
                     // Recorded before the join, so a worker that ends first can still find its
@@ -960,11 +919,19 @@ namespace InterruptAutomation
             }
             finally
             {
-                cts.Cancel();
-                _engine.Wake();
-                // If it does not end in time it is mid-click on a slow application and ends on its own
-                // once that returns, releasing the run itself.
-                ReleaseRun(cts, worker.Join(3000));
+                try
+                {
+                    cts.Cancel();
+                    _engine.Wake();
+                    // If it does not end in time it is mid-click on a slow application and ends on its own
+                    // once that returns, releasing the run itself.
+                    ReleaseRun(cts, worker.Join(3000));
+                }
+                finally
+                {
+                    // Only now may another instance start watching: this one no longer handles popups.
+                    _guard.Release();
+                }
             }
         }
 
