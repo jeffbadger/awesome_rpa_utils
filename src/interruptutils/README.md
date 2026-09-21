@@ -92,7 +92,7 @@ Rules are tried in the order added and the first match wins. See
 
 | Method | Signature | Description |
 |---|---|---|
-| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads; returns once the window-event hooks are installed (milliseconds, at most 5 s). |
+| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads; returns once the window-event hooks are installed (milliseconds, at most 5 s). Stops any other instance in the process that is still running. |
 | `Stop` | `bool Stop(out string message)` | Stops watching. Rules, counts and the log are kept. Succeeds when not running. |
 | `IsRunning` | `bool IsRunning()` | Whether watching is running. |
 | `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch. Returns once any dismissal already under way has finished. |
@@ -160,3 +160,6 @@ Rules are tried in the order added and the first match wins. See
   than depending on an event.
 - **Clean-up.** Disposing the component (or `Stop`) unhooks the window events and ends
   both threads. It is safe to dispose while running.
+- **One watcher per process.** `Start` stops any other instance in the process that is
+  still running (it keeps its rules and log and can be started again, which stops the
+  newer one), so an old instance that was never stopped cannot keep dismissing popups.

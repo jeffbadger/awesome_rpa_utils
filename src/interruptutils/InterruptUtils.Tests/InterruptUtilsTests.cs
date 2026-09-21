@@ -246,6 +246,124 @@ namespace InterruptAutomation.Tests
             Assert.Equal(1, rig.Hook.StopCalls);
         }
 
+        // ------------------------------------------------------------------ one watcher per process
+
+        [Fact]
+        public void Start_StopsAnyOtherRunningInstance()
+        {
+            using var first = new Rig();
+            using var second = new Rig();
+            first.StartOk();
+            Assert.True(first.Utils.IsRunning());
+
+            second.StartOk();
+
+            Assert.False(first.Utils.IsRunning());
+            Assert.Equal(1, first.Hook.StopCalls);
+            Assert.True(second.Utils.IsRunning());
+            Assert.Equal(0, second.Hook.StopCalls);
+        }
+
+        [Fact]
+        public void TheStoppedInstance_KeepsItsRules_AndStartingItAgainStopsTheNewer()
+        {
+            using var first = new Rig();
+            using var second = new Rig();
+            Assert.True(first.Utils.AddWatchOnlyRule("keep", "Title", "", "", out _));
+            first.StartOk();
+            second.StartOk();
+
+            first.StartOk();
+
+            Assert.True(first.Utils.IsRunning());
+            Assert.False(second.Utils.IsRunning());
+            Assert.True(first.Utils.ListRulesJson(out string json, out _));
+            Assert.Contains("keep", json);
+        }
+
+        [Fact]
+        public void ARefusedStart_DoesNotStopTheOtherInstance()
+        {
+            using var running = new Rig();
+            using var refused = new Rig();
+            running.StartOk();
+
+            Assert.False(refused.Utils.Start(out _, sweepIntervalMs: -1)); // bad setting
+            Assert.True(running.Utils.IsRunning());
+
+            refused.Utils.Dispose();
+            Assert.False(refused.Utils.Start(out _)); // disposed
+            Assert.True(running.Utils.IsRunning());
+
+            Assert.False(running.Utils.Start(out string again)); // already running
+            Assert.Contains("Already running", again);
+            Assert.True(running.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void AStoppedOrDisposedInstance_IsNotStoppedAgainByALaterStart()
+        {
+            using var first = new Rig();
+            using var second = new Rig();
+            using var third = new Rig();
+            first.StartOk();
+            Assert.True(first.Utils.Stop(out _));
+            second.StartOk();
+            second.Utils.Dispose();
+
+            third.StartOk();
+
+            Assert.Equal(1, first.Hook.StopCalls);  // only its own Stop
+            Assert.Equal(1, second.Hook.StopCalls); // only its own Dispose
+            Assert.True(third.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void StartWhenTheOtherInstanceFailsToUnhook_StillStarts_AndTheOtherIsStopped()
+        {
+            using var first = new Rig();
+            using var second = new Rig();
+            first.StartOk();
+            first.Hook.ThrowOnStop = true;
+
+            second.StartOk();
+
+            Assert.False(first.Utils.IsRunning());
+            Assert.True(second.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void ConcurrentStarts_LeaveExactlyOneInstanceRunning()
+        {
+            var rigs = new List<Rig>();
+            try
+            {
+                for (int i = 0; i < 8; i++)
+                    rigs.Add(new Rig());
+                var threads = new List<Thread>();
+                foreach (var rig in rigs)
+                {
+                    var r = rig;
+                    var t = new Thread(() => r.Utils.Start(out _, sweepIntervalMs: 0));
+                    threads.Add(t);
+                    t.Start();
+                }
+                foreach (var t in threads)
+                    t.Join();
+
+                int running = 0;
+                foreach (var rig in rigs)
+                    if (rig.Utils.IsRunning())
+                        running++;
+                Assert.Equal(1, running);
+            }
+            finally
+            {
+                foreach (var rig in rigs)
+                    rig.Dispose();
+            }
+        }
+
         // ------------------------------------------------------------------ end to end (fake desktop, real worker thread)
 
         [Fact]

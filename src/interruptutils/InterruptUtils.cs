@@ -30,6 +30,15 @@ namespace InterruptAutomation
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 
+        // Every instance that is watching right now, process-wide. Start stops the others (one
+        // process needs one watcher, and an instance that was never stopped or disposed - a host
+        // that creates a fresh component per run - would otherwise keep dismissing popups).
+        // s_startGate serializes Starts so two cannot both pass the "stop the others" step;
+        // s_runningLock guards the list and is never held while taking any other lock.
+        private static readonly object s_startGate = new object();
+        private static readonly object s_runningLock = new object();
+        private static readonly List<InterruptUtils> s_running = new List<InterruptUtils>();
+
         private readonly PopupEngine _engine;
         private readonly IPopupHookSource _hook;
         private readonly object _lifeLock = new object();
@@ -402,7 +411,9 @@ namespace InterruptAutomation
         /// <remarks>
         /// Popups owned by the automation's own process are never touched. Events are not delivered
         /// while the screen is locked or on a secure desktop. Stop it with <see cref="Stop"/>;
-        /// disposing the component stops it too.
+        /// disposing the component stops it too. Only one instance watches at a time: starting
+        /// one stops any other instance in the process that is still running (its rules, counts and
+        /// log are kept, and it can be started again, which stops this one).
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
         [Description("Starts watching for popups in the background and dismissing those that match a rule. Returns once the hooks are installed (milliseconds; at most 5 seconds). Returns True on success; never throws.")]
@@ -427,58 +438,70 @@ namespace InterruptAutomation
                     return false;
                 }
 
-                lock (_lifeLock)
+                lock (s_startGate)
                 {
-                    if (_disposed)
-                    {
-                        message = "The component has been disposed.";
-                        return false;
-                    }
-                    if (_worker != null)
-                    {
-                        message = "Already running; call Stop first.";
-                        return false;
-                    }
-                    if (_lingeringWorker != null && _lingeringWorker.IsAlive)
-                    {
-                        message = "The previous run is still shutting down; try again shortly.";
-                        return false;
-                    }
+                    // Only stop the other watchers if this Start can go ahead: a Start that is
+                    // refused (already running, disposed) must not disturb anyone else.
+                    bool mayStart;
+                    lock (_lifeLock)
+                        mayStart = !_disposed && _worker == null && (_lingeringWorker == null || !_lingeringWorker.IsAlive);
+                    if (mayStart)
+                        StopOtherRunningInstances();
 
-                    _engine.SweepIntervalMs = sweepIntervalMs;
-                    _engine.MaxAttempts = maxAttempts;
-                    _engine.MaxDismissalsPerMinute = maxDismissalsPerMinute;
-                    _engine.ResetRuntime();
-
-                    // A hook failure is only queued here (it arrives on the hook thread); the worker
-                    // records it, so InterruptError is raised on the worker thread like every event.
-                    if (!_hook.Start(_engine.Enqueue, _engine.EnqueueDestroyed, _engine.EnqueueFault, out string hookMessage))
+                    lock (_lifeLock)
                     {
-                        message = hookMessage ?? "Window events could not be started.";
-                        return false;
-                    }
-
-                    // From here the hook is running, so a failure to get the worker going must undo it:
-                    // Start either succeeds completely or leaves nothing behind.
-                    var cts = new CancellationTokenSource();
-                    try
-                    {
-                        var worker = new Thread(() => WorkerLoop(cts))
+                        if (_disposed)
                         {
-                            IsBackground = true,
-                            Name = "InterruptUtils.Worker"
-                        };
-                        worker.Start();
-                        _cts = cts;
-                        _worker = worker;
-                    }
-                    catch
-                    {
-                        _cts = null;
-                        _worker = null;
-                        _hook.Stop();
-                        cts.Dispose();
-                        throw; // reported by the outer handler as the reason Start failed
+                            message = "The component has been disposed.";
+                            return false;
+                        }
+                        if (_worker != null)
+                        {
+                            message = "Already running; call Stop first.";
+                            return false;
+                        }
+                        if (_lingeringWorker != null && _lingeringWorker.IsAlive)
+                        {
+                            message = "The previous run is still shutting down; try again shortly.";
+                            return false;
+                        }
+
+                        _engine.SweepIntervalMs = sweepIntervalMs;
+                        _engine.MaxAttempts = maxAttempts;
+                        _engine.MaxDismissalsPerMinute = maxDismissalsPerMinute;
+                        _engine.ResetRuntime();
+
+                        // A hook failure is only queued here (it arrives on the hook thread); the worker
+                        // records it, so InterruptError is raised on the worker thread like every event.
+                        if (!_hook.Start(_engine.Enqueue, _engine.EnqueueDestroyed, _engine.EnqueueFault, out string hookMessage))
+                        {
+                            message = hookMessage ?? "Window events could not be started.";
+                            return false;
+                        }
+
+                        // From here the hook is running, so a failure to get the worker going must undo it:
+                        // Start either succeeds completely or leaves nothing behind.
+                        var cts = new CancellationTokenSource();
+                        try
+                        {
+                            var worker = new Thread(() => WorkerLoop(cts))
+                            {
+                                IsBackground = true,
+                                Name = "InterruptUtils.Worker"
+                            };
+                            worker.Start();
+                            _cts = cts;
+                            _worker = worker;
+                            Register(this);
+                        }
+                        catch
+                        {
+                            _cts = null;
+                            _worker = null;
+                            _hook.Stop();
+                            cts.Dispose();
+                            throw; // reported by the outer handler as the reason Start failed
+                        }
                     }
                 }
 
@@ -862,6 +885,47 @@ namespace InterruptAutomation
             return false;
         }
 
+        private static void Register(InterruptUtils instance)
+        {
+            lock (s_runningLock)
+            {
+                if (!s_running.Contains(instance))
+                    s_running.Add(instance);
+            }
+        }
+
+        private static void Unregister(InterruptUtils instance)
+        {
+            lock (s_runningLock)
+                s_running.Remove(instance);
+        }
+
+        /// <summary>
+        /// Stops every other instance that is watching. Called with s_startGate held and no
+        /// instance lock held (stopping an instance takes its own lock and joins its worker), so
+        /// two instances can never wait on each other.
+        /// </summary>
+        private void StopOtherRunningInstances()
+        {
+            InterruptUtils[] others;
+            lock (s_runningLock)
+                others = s_running.FindAll(i => !ReferenceEquals(i, this)).ToArray();
+
+            foreach (InterruptUtils other in others)
+            {
+                try
+                {
+                    other.StopCore();
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    // It is unregistered and its worker cancelled even when unhooking failed; do
+                    // not let that stop this instance from starting.
+                    System.Diagnostics.Debug.WriteLine("InterruptUtils: stopping another instance failed: " + ex.Message);
+                }
+            }
+        }
+
         /// <summary>
         /// Ends the watch: detaches the run's state under the lock, then stops the hook and joins
         /// the worker outside it, so a worker that is mid-click can never deadlock against a caller.
@@ -876,6 +940,7 @@ namespace InterruptAutomation
                 cts = _cts;
                 _worker = null;
                 _cts = null;
+                Unregister(this);
                 if (worker != null)
                 {
                     // Recorded before the join, so a worker that ends first can still find its

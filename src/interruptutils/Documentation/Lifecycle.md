@@ -25,6 +25,17 @@ was not running, and disposing the component stops it too.
 range, window events are unavailable in this session, or a previous run is still
 shutting down.
 
+### Only one instance watches at a time
+
+Starting an instance stops every other `InterruptUtils` in the same process that is still
+running, so a host that creates a new component for each run (or never stops or disposes
+the old one) cannot leave an earlier instance dismissing popups in the background. The
+instance that was stopped keeps its rules, counts and log, and `IsRunning` on it returns
+`false`; starting it again stops the newer one. A `Start` that is refused (already running,
+a setting out of range, disposed) does not stop anything. This applies to instances loaded
+from the same copy of the assembly: a host that loads the DLL separately for each run
+(for example into a separate load context) keeps them apart, and they do not see each other.
+
 ## The settings on `Start`
 
 ```csharp
