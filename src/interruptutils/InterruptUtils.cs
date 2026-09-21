@@ -444,10 +444,16 @@ namespace InterruptAutomation
                         message = "Already running; call Stop first.";
                         return false;
                     }
-                    if (_lingeringWorker != null && _lingeringWorker.IsAlive)
+                    if (_lingeringWorker != null)
                     {
-                        message = "The previous run is still shutting down; try again shortly.";
-                        return false;
+                        if (_lingeringWorker.IsAlive)
+                        {
+                            message = "The previous run is still shutting down; try again shortly.";
+                            return false;
+                        }
+                        // It has ended but the thread that stopped it has not yet cleaned up: do that here,
+                        // so this Start cannot overlap the old run's guard being given back.
+                        FinishLingeringRunLocked();
                     }
 
                     // Only one instance watches at a time, in this process or any other in the session:
@@ -939,17 +945,26 @@ namespace InterruptAutomation
             {
                 if (!workerHasEnded || !ReferenceEquals(_lingeringCts, cts))
                     return;
-                _lingeringCts = null;
-                _lingeringWorker = null;
-                cts.Dispose();
-                if (_disposed)
-                    _engine.Dispose();
+                FinishLingeringRunLocked();
             }
+        }
 
-            // The worker has really ended, so only now may another instance start watching: until
-            // then it could still act on a popup. Outside the lock, because giving the guard back
-            // waits for the guard's thread, which may itself be waiting to stop this instance.
+        /// <summary>
+        /// Cleans up a run whose worker has ended. The caller holds <c>_lifeLock</c>. The guard is given
+        /// back here, in the same critical section that clears the run, so a restart can never slip in
+        /// between and then have its own guard released by this run's late clean-up. Only now may another
+        /// instance start watching: until the worker has ended it could still act on a popup. Giving the
+        /// guard back does not wait for anything, so holding the lock is safe.
+        /// </summary>
+        private void FinishLingeringRunLocked()
+        {
+            CancellationTokenSource cts = _lingeringCts;
+            _lingeringCts = null;
+            _lingeringWorker = null;
+            cts?.Dispose();
             _guard.Release();
+            if (_disposed)
+                _engine.Dispose();
         }
 
         /// <summary>Stops watching and releases the component's threads.</summary>

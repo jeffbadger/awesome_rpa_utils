@@ -351,6 +351,37 @@ namespace InterruptAutomation.Tests
             Assert.True(third.Utils.IsRunning());
         }
 
+        // A stress check rather than a deterministic reproduction: the window it targets (a restart between
+        // a run being cleared and its guard being given back) is a few instructions wide, and the code
+        // closes it by construction (the two happen under one lock, and Start finishes a dead run itself).
+        [Fact]
+        public void ARestartedInstance_StillHoldsTheGuard_SoAnotherInstanceStopsIt()
+        {
+            string name = GuardName();
+            using var restarted = new Rig(new NamedInstanceGuard(name, 5000));
+            using var newcomer = new Rig(new NamedInstanceGuard(name, 5000));
+
+            // One thread stops while another restarts, as fast as they can: a late clean-up of an earlier
+            // run must never give back the guard of the run that replaced it.
+            using var done = new ManualResetEventSlim(false);
+            var stopper = new Thread(() =>
+            {
+                while (!done.IsSet)
+                    restarted.Utils.Stop(out _);
+            });
+            stopper.Start();
+            for (int i = 0; i < 2000; i++)
+                restarted.Utils.Start(out _, sweepIntervalMs: 0); // refused while running; that is fine
+            done.Set();
+            stopper.Join();
+            restarted.Utils.Stop(out _);
+            restarted.StartOk();
+
+            newcomer.StartOk(); // has to ask the restarted instance to stop, not walk in
+            Assert.False(restarted.Utils.IsRunning());
+            Assert.True(newcomer.Utils.IsRunning());
+        }
+
         [Fact]
         public void StartWhenTheOtherInstanceFailsToUnhook_StillStarts_AndTheOtherIsStopped()
         {
