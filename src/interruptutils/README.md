@@ -77,8 +77,8 @@ matched by case-insensitive substring (literally: no wildcards or regular expres
 criterion you set must match. `messageContains` looks only at the first non-empty text control
 in the popup. While looking for a matching rule it is read only for a rule whose class, title and
 process already matched (reading it is a call into the popup's application), so set `titleContains`
-or `processName` as well; once a rule is chosen it is also read for the events and the log, and again
-each time the popup is looked at. Rules are tried in the order added and the first match wins. See
+or `processName` as well; once a rule is chosen (and has not stopped itself for dismissing too many
+popups) it is also read for the events and the log, and again each time the popup is looked at. Rules are tried in the order added and the first match wins. See
 [Rules](Documentation/Rules.md).
 
 | Method | Signature | Description |
