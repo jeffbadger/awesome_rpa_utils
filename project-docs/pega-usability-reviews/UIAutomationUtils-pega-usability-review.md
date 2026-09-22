@@ -120,7 +120,7 @@ Two later PRs (`uiautomationutils-easier-use`, `uiautomationutils-more-oneshots`
 added nine methods after this review was last updated: `InvokeByName`,
 `SetValueByName`, `GetValueByName`, `SelectListItemByName`, `ToggleByName`,
 `SelectByName`, `IsToggledByName`, `IsSelectedByName`, and `IsEnabledByName`.
-This addendum reviews them and folds them into the method table above.
+This addendum reviews them in the table below so the review covers the current method surface.
 
 | Method or group | Rating | Assessment |
 |---|---|---|
