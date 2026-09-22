@@ -62,6 +62,7 @@ A common UI Automation control type, mapped internally to
 | `GetElementCount` | `bool GetElementCount(List<AutomationElement> elements, out int count, out string message)` | Gets the number of elements in a list from `GetChildren`/`FindAllByControlType`, for designers who'd rather loop by scalar index. |
 | `GetElementAt` | `bool GetElementAt(List<AutomationElement> elements, int index, out AutomationElement element, out string message)` | Gets the element at a given index in a list from `GetChildren`/`FindAllByControlType`. Pair with `GetElementCount` to drive the loop bound. |
 | `GetChildrenSummaryJson` | `bool GetChildrenSummaryJson(AutomationElement parent, out string json, out string message)` | Same as `GetChildren`, summarized as a JSON array (name/automationId/className/controlType/bounds), for designers without an `AutomationElement` collection proxy. |
+| `GetDescendantsSummaryJson` | `bool GetDescendantsSummaryJson(AutomationElement parent, out string json, out string message, int maxDepth = 5)` | Same as `GetChildrenSummaryJson`, but recurses into each child's own children too, nesting them under a `children` array - for discovering a control's full layout without knowing its structure or depth ahead of time. `maxDepth` (1-20) bounds how many levels deep it recurses. |
 
 `descendantsOnly = true` (the default) searches the full subtree
 (`TreeScope.Descendants`); `false` searches only immediate children
@@ -73,6 +74,7 @@ A common UI Automation control type, mapped internally to
 |---|---|---|
 | `GetChildrenFromWindowHandle` | `bool GetChildrenFromWindowHandle(IntPtr hWnd, out List<AutomationElement> children, out string message)` | Gets all immediate children of a top-level window from its handle, in one call - `FromWindowHandle` + `GetChildren` without the intermediate proxy. |
 | `GetChildrenSummaryJsonFromWindowHandle` | `bool GetChildrenSummaryJsonFromWindowHandle(IntPtr hWnd, out string json, out string message)` | Same, summarized as JSON. |
+| `GetDescendantsSummaryJsonFromWindowHandle` | `bool GetDescendantsSummaryJsonFromWindowHandle(IntPtr hWnd, out string json, out string message, int maxDepth = 5)` | Same as `GetChildrenSummaryJsonFromWindowHandle`, but recurses the full subtree via `GetDescendantsSummaryJson`. |
 | `InvokeByAutomationId` | `bool InvokeByAutomationId(IntPtr hWnd, string automationId, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and invokes it, in one call. |
 | `SetValueByAutomationId` | `bool SetValueByAutomationId(IntPtr hWnd, string automationId, string value, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and sets its value, in one call. |
 | `GetValueByAutomationId` | `bool GetValueByAutomationId(IntPtr hWnd, string automationId, out string value, out string message, bool descendantsOnly = true)` | Finds a descendant of a window by AutomationId and gets its value, in one call. |
@@ -165,11 +167,15 @@ A common UI Automation control type, mapped internally to
   `AutomationElement` collection proxy directly. `GetChildrenSummaryJson` goes further,
   summarizing an element's children (name/automationId/className/controlType/bounds) as
   a single JSON string for designers without any element proxy at all.
+  `GetDescendantsSummaryJson` goes further still, recursing the entire subtree (depth-
+  bounded by `maxDepth`) into the same JSON shape with a nested `children` array per
+  node - for discovering an unfamiliar control's full layout in one call.
 - **The `UIAutomationUtils - One-Shot` methods** (`GetChildrenFromWindowHandle`,
-  `GetChildrenSummaryJsonFromWindowHandle`, `InvokeByAutomationId`,
-  `SetValueByAutomationId`, `GetValueByAutomationId`, `InvokeByName`, `SetValueByName`,
-  `GetValueByName`, `SelectListItemByName`, `ToggleByName`, `SelectByName`,
-  `IsToggledByName`, `IsSelectedByName`, `IsEnabledByName`) take a window handle directly and
+  `GetChildrenSummaryJsonFromWindowHandle`, `GetDescendantsSummaryJsonFromWindowHandle`,
+  `InvokeByAutomationId`, `SetValueByAutomationId`, `GetValueByAutomationId`,
+  `InvokeByName`, `SetValueByName`, `GetValueByName`, `SelectListItemByName`,
+  `ToggleByName`, `SelectByName`, `IsToggledByName`, `IsSelectedByName`,
+  `IsEnabledByName`) take a window handle directly and
   do the `FromWindowHandle` → find/act step internally, for the common case where an
   automation doesn't need to retain an intermediate `AutomationElement` proxy between
   steps. They complement, not replace, the composable Find/Properties/Actions API. The

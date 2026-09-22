@@ -29,6 +29,23 @@ if (uia.GetChildrenSummaryJsonFromWindowHandle(hWnd, out string json, out string
 }
 ```
 
+For an unfamiliar window whose full layout you don't know at all - not just
+its immediate children - `GetDescendantsSummaryJsonFromWindowHandle`
+recurses the whole subtree into the same JSON shape, nesting each element's
+own children under a `children` array:
+
+```csharp
+IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
+if (uia.GetDescendantsSummaryJsonFromWindowHandle(hWnd, out string json, out string message, maxDepth: 8))
+{
+    Logger.Info(json); // [{"name":"...", ..., "children":[{"name":"...", ..., "children":[...]}]}]
+}
+```
+
+`maxDepth` (1-20, default 5) bounds how many levels deep it recurses, so an
+unexpectedly deep or wide subtree (e.g. a browser-hosted control) can't
+enumerate an unbounded number of elements in one call.
+
 ## Click a button by AutomationId without a separate find step
 
 ```csharp

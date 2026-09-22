@@ -613,6 +613,62 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="GetChildrenSummaryJson"/>, but recurses into each child's own
+        /// children too, nesting them under a <c>children</c> array so the JSON reflects the
+        /// subtree's actual structure - for discovering an unfamiliar control's full layout
+        /// without knowing its structure, or even its depth, ahead of time.
+        /// </summary>
+        /// <param name="parent">The element whose subtree to enumerate.</param>
+        /// <param name="json">
+        /// The subtree as nested JSON: <c>[{"name":"...","automationId":"...","className":"...",
+        /// "controlType":"...","bounds":{...},"children":[...]}]</c>. A node's own <c>children</c>
+        /// is <c>null</c> once <paramref name="maxDepth"/> is reached, or if that node itself has
+        /// no children. <c>null</c> if this method returns <c>false</c>.
+        /// </param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <param name="maxDepth">
+        /// Maximum levels to recurse below <paramref name="parent"/> (<c>1</c> matches
+        /// <see cref="GetChildrenSummaryJson"/>'s immediate-children-only scope). Bounded to
+        /// <c>1</c>-<c>20</c> so an unexpectedly deep or wide subtree (e.g. a browser-hosted
+        /// control) cannot make one call enumerate an unbounded number of elements.
+        /// </param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="parent"/> is null or <paramref name="maxDepth"/> is out of range. Never throws.</returns>
+        [Category("UIAutomation - Find")]
+        [Description("Gets the full subtree beneath an element as nested JSON (name/automationId/className/controlType/bounds/children), depth-limited. Returns True on success; never throws.")]
+        public bool GetDescendantsSummaryJson(AutomationElement parent, out string json, out string message, int maxDepth = 5)
+        {
+            json = default;
+            message = default;
+            try
+            {
+                json = null;
+                if (maxDepth < 1 || maxDepth > 20)
+                {
+                    message = "maxDepth must be between 1 and 20.";
+                    return false;
+                }
+                if (parent == null)
+                {
+                    message = "A parent element is required.";
+                    return false;
+                }
+                if (!GetChildren(parent, out List<AutomationElement> children, out message))
+                    return false;
+
+                List<SubtreeSummaryNode> payload = children.ConvertAll(child => BuildSubtreeSummary(child, maxDepth - 1));
+                json = System.Text.Json.JsonSerializer.Serialize(payload);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetDescendantsSummaryJson", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Properties
@@ -1460,6 +1516,42 @@ namespace UIAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="GetChildrenSummaryJsonFromWindowHandle"/>, but recurses the full
+        /// subtree via <see cref="GetDescendantsSummaryJson"/>, for designers who cannot
+        /// construct any <see cref="AutomationElement"/> proxy at all.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to enumerate, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="json">The subtree as JSON (see <see cref="GetDescendantsSummaryJson"/> for the shape), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <param name="maxDepth">Maximum levels to recurse below the window (see <see cref="GetDescendantsSummaryJson"/>); bounded to <c>1</c>-<c>20</c>.</param>
+        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is zero or invalid, or <paramref name="maxDepth"/> is out of range. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Gets the full subtree beneath a top-level window from its handle, as nested JSON, depth-limited, in one call. Returns True on success; never throws.")]
+        public bool GetDescendantsSummaryJsonFromWindowHandle(IntPtr hWnd, out string json, out string message, int maxDepth = 5)
+        {
+            json = default;
+            message = default;
+            try
+            {
+                json = null;
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+
+                return GetDescendantsSummaryJson(window, out json, out message, maxDepth);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                message = NeverThrowsGuard.Failure("GetDescendantsSummaryJsonFromWindowHandle", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Invokes a descendant of a top-level window matched by <c>AutomationId</c>, given the
         /// window's handle, without retaining an intermediate <see cref="AutomationElement"/>
         /// proxy. Equivalent to <see cref="FromWindowHandle"/>, <see cref="FindByAutomationId"/>,
@@ -2257,6 +2349,49 @@ namespace UIAutomation
         #endregion
 
         #region Internal Helpers
+
+        /// <summary>One node of a <see cref="GetDescendantsSummaryJson"/> result. Lowercase property names are deliberate: this serializes directly, matching the field names documented on that method.</summary>
+        private sealed class SubtreeSummaryNode
+        {
+            public string name { get; set; }
+            public string automationId { get; set; }
+            public string className { get; set; }
+            public string controlType { get; set; }
+            public object bounds { get; set; }
+            public List<SubtreeSummaryNode> children { get; set; }
+        }
+
+        /// <summary>
+        /// Builds one <see cref="SubtreeSummaryNode"/> for <paramref name="element"/>, recursing
+        /// into its children while <paramref name="remainingDepth"/> allows. Property/child reads
+        /// are best-effort, matching <see cref="GetChildrenSummaryJson"/>: a single element's
+        /// stale/unsupported property or an enumeration failure lower in the tree doesn't abort
+        /// the rest of the subtree, it just reports that one field/branch as absent.
+        /// </summary>
+        private SubtreeSummaryNode BuildSubtreeSummary(AutomationElement element, int remainingDepth)
+        {
+            GetName(element, out string name, out _);
+            GetAutomationId(element, out string automationId, out _);
+            GetClassName(element, out string className, out _);
+            GetControlTypeName(element, out string controlType, out _);
+            object bounds = GetBoundingRectangleAsRectangle(element, out System.Drawing.Rectangle rc, out _)
+                ? (object)new { left = rc.Left, top = rc.Top, width = rc.Width, height = rc.Height }
+                : null;
+
+            List<SubtreeSummaryNode> children = null;
+            if (remainingDepth > 0 && GetChildren(element, out List<AutomationElement> kids, out _) && kids.Count > 0)
+                children = kids.ConvertAll(child => BuildSubtreeSummary(child, remainingDepth - 1));
+
+            return new SubtreeSummaryNode
+            {
+                name = name,
+                automationId = automationId,
+                className = className,
+                controlType = controlType,
+                bounds = bounds,
+                children = children
+            };
+        }
 
         private static readonly Dictionary<UiControlType, ControlType> ControlTypeMap = new Dictionary<UiControlType, ControlType>
         {

@@ -78,6 +78,19 @@ namespace UIAutomation.Tests
             Assert.False(string.IsNullOrEmpty(m19));
             Assert.False(_uia.GetChildrenSummaryJson(null, out _, out string m20));
             Assert.False(string.IsNullOrEmpty(m20));
+            Assert.False(_uia.GetDescendantsSummaryJson(null, out _, out string m21));
+            Assert.False(string.IsNullOrEmpty(m21));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(21)]
+        [InlineData(-1)]
+        public void GetDescendantsSummaryJson_MaxDepthOutOfRange_ReturnsFalseWithMessage(int maxDepth)
+        {
+            Assert.False(_uia.GetDescendantsSummaryJson(null, out string json, out string message, maxDepth));
+            Assert.Null(json);
+            Assert.False(string.IsNullOrEmpty(message));
         }
 
         // --- New scalar/querySucceeded overloads: same null-element guard as their originals ---
@@ -199,6 +212,14 @@ namespace UIAutomation.Tests
         public void GetChildrenSummaryJsonFromWindowHandle_ZeroHandle_ReturnsFalseWithMessage()
         {
             Assert.False(_uia.GetChildrenSummaryJsonFromWindowHandle(IntPtr.Zero, out string json, out string message));
+            Assert.Null(json);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void GetDescendantsSummaryJsonFromWindowHandle_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.GetDescendantsSummaryJsonFromWindowHandle(IntPtr.Zero, out string json, out string message));
             Assert.Null(json);
             Assert.False(string.IsNullOrEmpty(message));
         }

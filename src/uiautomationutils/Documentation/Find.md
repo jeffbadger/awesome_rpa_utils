@@ -77,6 +77,21 @@ uia.GetChildrenSummaryJson(settingsWindow, out string json, out _);
 Logger.Info(json); // [{"name":"...","automationId":"...","className":"...","controlType":"Button","bounds":{"left":0,"top":0,"width":0,"height":0}}]
 ```
 
+## Discover an unfamiliar control's full layout, not just its children
+
+`GetDescendantsSummaryJson` is the recursive version of
+`GetChildrenSummaryJson` - it nests each element's own children under a
+`children` array, so the JSON reflects the actual subtree shape instead of
+only one level. Useful when you don't know a control's structure, or even
+its depth, ahead of time:
+
+```csharp
+uia.GetDescendantsSummaryJson(settingsWindow, out string json, out _, maxDepth: 8);
+Logger.Info(json); // [{"name":"...", ..., "children":[{"name":"...", ..., "children":[...]}]}]
+```
+
+`maxDepth` (1-20, default 5) bounds how many levels deep it recurses.
+
 ## Get the element under the mouse cursor
 
 ```csharp
