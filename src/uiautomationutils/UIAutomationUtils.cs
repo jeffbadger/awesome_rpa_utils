@@ -626,26 +626,47 @@ namespace UIAutomation
         /// is <c>null</c> once <paramref name="maxDepth"/> is reached, or if that node itself has
         /// no children. <c>null</c> if this method returns <c>false</c>.
         /// </param>
+        /// <param name="truncated">
+        /// <c>true</c> if <paramref name="maxNodes"/> was reached before the full subtree could be
+        /// enumerated - the JSON is then a partial, best-effort snapshot, not the complete subtree.
+        /// Always <c>false</c> on a call that returns <c>false</c>.
+        /// </param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
         /// <param name="maxDepth">
         /// Maximum levels to recurse below <paramref name="parent"/> (<c>1</c> matches
         /// <see cref="GetChildrenSummaryJson"/>'s immediate-children-only scope). Bounded to
-        /// <c>1</c>-<c>20</c> so an unexpectedly deep or wide subtree (e.g. a browser-hosted
-        /// control) cannot make one call enumerate an unbounded number of elements.
+        /// <c>1</c>-<c>20</c>. This bounds path length only, not breadth - a wide subtree needs
+        /// <paramref name="maxNodes"/>.
         /// </param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="parent"/> is null or <paramref name="maxDepth"/> is out of range. Never throws.</returns>
+        /// <param name="maxNodes">
+        /// Maximum total elements to include across the whole subtree, checked as nodes are
+        /// visited breadth-first-within-each-level. Bounded to <c>1</c>-<c>20000</c>, default
+        /// <c>500</c>. This is what actually protects against an unexpectedly wide subtree (e.g. a
+        /// browser-hosted control with hundreds of children per level) - <paramref name="maxDepth"/>
+        /// alone does not, since a wide-but-shallow tree can still contain enormous numbers of
+        /// elements. When the budget runs out, remaining siblings/descendants are omitted and
+        /// <paramref name="truncated"/> is set.
+        /// </param>
+        /// <returns><c>true</c> on success (whether or not <paramref name="truncated"/> is set); <c>false</c> if <paramref name="parent"/> is null or <paramref name="maxDepth"/>/<paramref name="maxNodes"/> is out of range. Never throws.</returns>
         [Category("UIAutomation - Find")]
-        [Description("Gets the full subtree beneath an element as nested JSON (name/automationId/className/controlType/bounds/children), depth-limited. Returns True on success; never throws.")]
-        public bool GetDescendantsSummaryJson(AutomationElement parent, out string json, out string message, int maxDepth = 5)
+        [Description("Gets the full subtree beneath an element as nested JSON (name/automationId/className/controlType/bounds/children), depth- and size-limited. Returns True on success; never throws.")]
+        public bool GetDescendantsSummaryJson(AutomationElement parent, out string json, out bool truncated, out string message, int maxDepth = 5, int maxNodes = 500)
         {
             json = default;
+            truncated = default;
             message = default;
             try
             {
                 json = null;
+                truncated = false;
                 if (maxDepth < 1 || maxDepth > 20)
                 {
                     message = "maxDepth must be between 1 and 20.";
+                    return false;
+                }
+                if (maxNodes < 1 || maxNodes > 20000)
+                {
+                    message = "maxNodes must be between 1 and 20000.";
                     return false;
                 }
                 if (parent == null)
@@ -656,7 +677,17 @@ namespace UIAutomation
                 if (!GetChildren(parent, out List<AutomationElement> children, out message))
                     return false;
 
-                List<SubtreeSummaryNode> payload = children.ConvertAll(child => BuildSubtreeSummary(child, maxDepth - 1));
+                int remainingBudget = maxNodes;
+                bool wasTruncated = false;
+                var payload = new List<SubtreeSummaryNode>();
+                foreach (AutomationElement child in children)
+                {
+                    if (remainingBudget <= 0) { wasTruncated = true; break; }
+                    remainingBudget--;
+                    payload.Add(BuildSubtreeSummary(child, maxDepth - 1, ref remainingBudget, ref wasTruncated));
+                }
+                truncated = wasTruncated;
+
                 json = System.Text.Json.JsonSerializer.Serialize(payload);
                 message = null;
                 return true;
@@ -664,6 +695,7 @@ namespace UIAutomation
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
+                truncated = false;
                 message = NeverThrowsGuard.Failure("GetDescendantsSummaryJson", ex);
                 return false;
             }
@@ -1522,18 +1554,22 @@ namespace UIAutomation
         /// </summary>
         /// <param name="hWnd">Handle of the window to enumerate, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
         /// <param name="json">The subtree as JSON (see <see cref="GetDescendantsSummaryJson"/> for the shape), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="truncated">See <see cref="GetDescendantsSummaryJson"/>; always <c>false</c> on a call that returns <c>false</c>.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
         /// <param name="maxDepth">Maximum levels to recurse below the window (see <see cref="GetDescendantsSummaryJson"/>); bounded to <c>1</c>-<c>20</c>.</param>
-        /// <returns><c>true</c> on success; <c>false</c> if <paramref name="hWnd"/> is zero or invalid, or <paramref name="maxDepth"/> is out of range. Never throws.</returns>
+        /// <param name="maxNodes">Maximum total elements across the whole subtree (see <see cref="GetDescendantsSummaryJson"/>); bounded to <c>1</c>-<c>20000</c>, default <c>500</c>. This, not <paramref name="maxDepth"/>, is what bounds a wide subtree.</param>
+        /// <returns><c>true</c> on success (whether or not <paramref name="truncated"/> is set); <c>false</c> if <paramref name="hWnd"/> is zero or invalid, or <paramref name="maxDepth"/>/<paramref name="maxNodes"/> is out of range. Never throws.</returns>
         [Category("UIAutomation - One-Shot")]
-        [Description("Gets the full subtree beneath a top-level window from its handle, as nested JSON, depth-limited, in one call. Returns True on success; never throws.")]
-        public bool GetDescendantsSummaryJsonFromWindowHandle(IntPtr hWnd, out string json, out string message, int maxDepth = 5)
+        [Description("Gets the full subtree beneath a top-level window from its handle, as nested JSON, depth- and size-limited, in one call. Returns True on success; never throws.")]
+        public bool GetDescendantsSummaryJsonFromWindowHandle(IntPtr hWnd, out string json, out bool truncated, out string message, int maxDepth = 5, int maxNodes = 500)
         {
             json = default;
+            truncated = default;
             message = default;
             try
             {
                 json = null;
+                truncated = false;
                 AutomationElement window = FromWindowHandle(hWnd);
                 if (window == null)
                 {
@@ -1541,11 +1577,12 @@ namespace UIAutomation
                     return false;
                 }
 
-                return GetDescendantsSummaryJson(window, out json, out message, maxDepth);
+                return GetDescendantsSummaryJson(window, out json, out truncated, out message, maxDepth, maxNodes);
 
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
+                truncated = false;
                 message = NeverThrowsGuard.Failure("GetDescendantsSummaryJsonFromWindowHandle", ex);
                 return false;
             }
@@ -2363,12 +2400,17 @@ namespace UIAutomation
 
         /// <summary>
         /// Builds one <see cref="SubtreeSummaryNode"/> for <paramref name="element"/>, recursing
-        /// into its children while <paramref name="remainingDepth"/> allows. Property/child reads
-        /// are best-effort, matching <see cref="GetChildrenSummaryJson"/>: a single element's
-        /// stale/unsupported property or an enumeration failure lower in the tree doesn't abort
-        /// the rest of the subtree, it just reports that one field/branch as absent.
+        /// into its children while <paramref name="remainingDepth"/> and <paramref name="remainingBudget"/>
+        /// allow. Property/child reads are best-effort, matching <see cref="GetChildrenSummaryJson"/>:
+        /// a single element's stale/unsupported property or an enumeration failure lower in the
+        /// tree doesn't abort the rest of the subtree, it just reports that one field/branch as
+        /// absent. <paramref name="remainingBudget"/> is a total-node budget shared across the
+        /// whole call tree (decremented once per child actually included), not a per-level limit -
+        /// it is what bounds a wide subtree, since <paramref name="remainingDepth"/> alone only
+        /// bounds path length. Once it reaches zero, remaining siblings at every level are omitted
+        /// and <paramref name="truncated"/> is set.
         /// </summary>
-        private SubtreeSummaryNode BuildSubtreeSummary(AutomationElement element, int remainingDepth)
+        private SubtreeSummaryNode BuildSubtreeSummary(AutomationElement element, int remainingDepth, ref int remainingBudget, ref bool truncated)
         {
             GetName(element, out string name, out _);
             GetAutomationId(element, out string automationId, out _);
@@ -2380,7 +2422,15 @@ namespace UIAutomation
 
             List<SubtreeSummaryNode> children = null;
             if (remainingDepth > 0 && GetChildren(element, out List<AutomationElement> kids, out _) && kids.Count > 0)
-                children = kids.ConvertAll(child => BuildSubtreeSummary(child, remainingDepth - 1));
+            {
+                children = new List<SubtreeSummaryNode>();
+                foreach (AutomationElement kid in kids)
+                {
+                    if (remainingBudget <= 0) { truncated = true; break; }
+                    remainingBudget--;
+                    children.Add(BuildSubtreeSummary(kid, remainingDepth - 1, ref remainingBudget, ref truncated));
+                }
+            }
 
             return new SubtreeSummaryNode
             {

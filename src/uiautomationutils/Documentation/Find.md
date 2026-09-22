@@ -86,11 +86,17 @@ only one level. Useful when you don't know a control's structure, or even
 its depth, ahead of time:
 
 ```csharp
-uia.GetDescendantsSummaryJson(settingsWindow, out string json, out _, maxDepth: 8);
+uia.GetDescendantsSummaryJson(settingsWindow, out string json, out bool truncated, out _, maxDepth: 8);
 Logger.Info(json); // [{"name":"...", ..., "children":[{"name":"...", ..., "children":[...]}]}]
 ```
 
-`maxDepth` (1-20, default 5) bounds how many levels deep it recurses.
+`maxDepth` (1-20, default 5) bounds how many levels deep it recurses, but
+that alone doesn't protect against a subtree that's wide rather than deep.
+`maxNodes` (1-20000, default 500) bounds the total number of elements
+included across the whole subtree - the real protection against a
+browser-hosted control or similar with hundreds of children per level. If
+`maxNodes` cuts the result short, `truncated` comes back `true` so the
+automation knows the JSON is a partial snapshot, not the whole subtree.
 
 ## Get the element under the mouse cursor
 
