@@ -639,13 +639,16 @@ namespace UIAutomation
         /// <paramref name="maxNodes"/>.
         /// </param>
         /// <param name="maxNodes">
-        /// Maximum total elements to include across the whole subtree, checked as nodes are
-        /// visited breadth-first-within-each-level. Bounded to <c>1</c>-<c>20000</c>, default
-        /// <c>500</c>. This is what actually protects against an unexpectedly wide subtree (e.g. a
-        /// browser-hosted control with hundreds of children per level) - <paramref name="maxDepth"/>
-        /// alone does not, since a wide-but-shallow tree can still contain enormous numbers of
-        /// elements. When the budget runs out, remaining siblings/descendants are omitted and
-        /// <paramref name="truncated"/> is set.
+        /// Maximum total elements to include across the whole subtree, spent breadth-first (every
+        /// element at one depth is visited before any element at the next). Bounded to
+        /// <c>1</c>-<c>20000</c>, default <c>500</c>. This is what actually protects against an
+        /// unexpectedly wide subtree (e.g. a browser-hosted control with hundreds of children per
+        /// level) - <paramref name="maxDepth"/> alone does not, since a wide-but-shallow tree can
+        /// still contain enormous numbers of elements. Children are enumerated incrementally and
+        /// stop as soon as the remaining budget is satisfied, so an element with far more children
+        /// than the remaining budget doesn't pay the cost of enumerating all of them. When the
+        /// budget runs out, remaining siblings/descendants are omitted and <paramref name="truncated"/>
+        /// is set.
         /// </param>
         /// <returns><c>true</c> on success (whether or not <paramref name="truncated"/> is set); <c>false</c> if <paramref name="parent"/> is null or <paramref name="maxDepth"/>/<paramref name="maxNodes"/> is out of range. Never throws.</returns>
         [Category("UIAutomation - Find")]
@@ -674,18 +677,12 @@ namespace UIAutomation
                     message = "A parent element is required.";
                     return false;
                 }
-                if (!GetChildren(parent, out List<AutomationElement> children, out message))
-                    return false;
 
                 int remainingBudget = maxNodes;
                 bool wasTruncated = false;
-                var payload = new List<SubtreeSummaryNode>();
-                foreach (AutomationElement child in children)
-                {
-                    if (remainingBudget <= 0) { wasTruncated = true; break; }
-                    remainingBudget--;
-                    payload.Add(BuildSubtreeSummary(child, maxDepth - 1, ref remainingBudget, ref wasTruncated));
-                }
+                List<SubtreeSummaryNode> payload = BuildSubtreeSummaryBreadthFirst(parent, maxDepth, ref remainingBudget, ref wasTruncated, out message);
+                if (payload == null)
+                    return false; // message already set by the top-level child enumeration failure
                 truncated = wasTruncated;
 
                 json = System.Text.Json.JsonSerializer.Serialize(payload);
@@ -2399,48 +2396,117 @@ namespace UIAutomation
         }
 
         /// <summary>
-        /// Builds one <see cref="SubtreeSummaryNode"/> for <paramref name="element"/>, recursing
-        /// into its children while <paramref name="remainingDepth"/> and <paramref name="remainingBudget"/>
-        /// allow. Property/child reads are best-effort, matching <see cref="GetChildrenSummaryJson"/>:
-        /// a single element's stale/unsupported property or an enumeration failure lower in the
-        /// tree doesn't abort the rest of the subtree, it just reports that one field/branch as
-        /// absent. <paramref name="remainingBudget"/> is a total-node budget shared across the
-        /// whole call tree (decremented once per child actually included), not a per-level limit -
-        /// it is what bounds a wide subtree, since <paramref name="remainingDepth"/> alone only
-        /// bounds path length. Once it reaches zero, remaining siblings at every level are omitted
-        /// and <paramref name="truncated"/> is set.
+        /// Builds the full <see cref="GetDescendantsSummaryJson"/> result for <paramref name="root"/>'s
+        /// children, breadth-first: every element at one depth is visited (and its share of
+        /// <paramref name="remainingBudget"/> reserved) before any element at the next depth, so a
+        /// tight budget yields an evenly-sampled shallow view rather than exhausting itself on one
+        /// branch while sibling subtrees go completely unvisited. Property reads are best-effort,
+        /// matching <see cref="GetChildrenSummaryJson"/>: a single element's stale/unsupported
+        /// property doesn't abort the rest of the subtree, it just reports that one field as absent.
+        /// Returns <c>null</c> if <paramref name="root"/>'s own children can't be enumerated (a real
+        /// error, not a budget/depth limit) - check <paramref name="message"/> in that case.
         /// </summary>
-        private SubtreeSummaryNode BuildSubtreeSummary(AutomationElement element, int remainingDepth, ref int remainingBudget, ref bool truncated)
+        private List<SubtreeSummaryNode> BuildSubtreeSummaryBreadthFirst(AutomationElement root, int maxDepth, ref int remainingBudget, ref bool truncated, out string message)
         {
-            GetName(element, out string name, out _);
-            GetAutomationId(element, out string automationId, out _);
-            GetClassName(element, out string className, out _);
-            GetControlTypeName(element, out string controlType, out _);
-            object bounds = GetBoundingRectangleAsRectangle(element, out System.Drawing.Rectangle rc, out _)
-                ? (object)new { left = rc.Left, top = rc.Top, width = rc.Width, height = rc.Height }
-                : null;
+            var result = new List<SubtreeSummaryNode>();
+            if (!TryGetChildrenLimited(root, remainingBudget, out List<AutomationElement> rootChildren, out message))
+                return null;
 
-            List<SubtreeSummaryNode> children = null;
-            if (remainingDepth > 0 && GetChildren(element, out List<AutomationElement> kids, out _) && kids.Count > 0)
+            var queue = new Queue<(AutomationElement Element, int Depth, List<SubtreeSummaryNode> ParentList)>();
+            EnqueueUpToBudget(rootChildren, 1, result, ref remainingBudget, ref truncated, queue);
+
+            while (queue.Count > 0)
             {
-                children = new List<SubtreeSummaryNode>();
-                foreach (AutomationElement kid in kids)
+                (AutomationElement element, int depth, List<SubtreeSummaryNode> parentList) = queue.Dequeue();
+
+                GetName(element, out string name, out _);
+                GetAutomationId(element, out string automationId, out _);
+                GetClassName(element, out string className, out _);
+                GetControlTypeName(element, out string controlType, out _);
+                object bounds = GetBoundingRectangleAsRectangle(element, out System.Drawing.Rectangle rc, out _)
+                    ? (object)new { left = rc.Left, top = rc.Top, width = rc.Width, height = rc.Height }
+                    : null;
+
+                var node = new SubtreeSummaryNode { name = name, automationId = automationId, className = className, controlType = controlType, bounds = bounds };
+                parentList.Add(node);
+
+                // No `remainingBudget > 0` short-circuit here: even at a zero budget, still probe
+                // for at least one child so a genuinely-truncated node is flagged via `truncated`
+                // rather than silently looking identical to a node with no children at all.
+                if (depth < maxDepth
+                    && TryGetChildrenLimited(element, remainingBudget, out List<AutomationElement> kids, out _)
+                    && kids.Count > 0)
                 {
-                    if (remainingBudget <= 0) { truncated = true; break; }
-                    remainingBudget--;
-                    children.Add(BuildSubtreeSummary(kid, remainingDepth - 1, ref remainingBudget, ref truncated));
+                    node.children = new List<SubtreeSummaryNode>();
+                    EnqueueUpToBudget(kids, depth + 1, node.children, ref remainingBudget, ref truncated, queue);
                 }
             }
 
-            return new SubtreeSummaryNode
+            return result;
+        }
+
+        /// <summary>
+        /// Enqueues as many of <paramref name="candidates"/> as <paramref name="remainingBudget"/>
+        /// allows (reserving the budget immediately, since every enqueued element will eventually
+        /// be turned into an output node), setting <paramref name="truncated"/> if any had to be
+        /// left out.
+        /// </summary>
+        private static void EnqueueUpToBudget(List<AutomationElement> candidates, int depth, List<SubtreeSummaryNode> parentList,
+            ref int remainingBudget, ref bool truncated, Queue<(AutomationElement, int, List<SubtreeSummaryNode>)> queue)
+        {
+            int count = candidates.Count;
+            if (count > remainingBudget)
             {
-                name = name,
-                automationId = automationId,
-                className = className,
-                controlType = controlType,
-                bounds = bounds,
-                children = children
-            };
+                truncated = true;
+                count = remainingBudget;
+            }
+            for (int i = 0; i < count; i++)
+            {
+                queue.Enqueue((candidates[i], depth, parentList));
+                remainingBudget--;
+            }
+        }
+
+        /// <summary>
+        /// Same enumeration semantics as <see cref="GetChildren"/> (every immediate child, raw
+        /// view - matching <c>FindAll(TreeScope.Children, Condition.TrueCondition)</c>), but walks
+        /// children one at a time via <see cref="TreeWalker"/> and stops once <paramref name="limit"/>
+        /// + 1 are found, instead of eagerly enumerating the whole list first. An element with far
+        /// more children than the remaining budget doesn't pay the cost of enumerating all of them;
+        /// the "+1" lets the caller tell "exactly <paramref name="limit"/> children" apart from
+        /// "more than <paramref name="limit"/> children" without enumerating further than that.
+        /// </summary>
+        private static bool TryGetChildrenLimited(AutomationElement element, int limit, out List<AutomationElement> children, out string message)
+        {
+            children = null;
+            message = null;
+            try
+            {
+                var results = new List<AutomationElement>();
+                AutomationElement child = TreeWalker.RawViewWalker.GetFirstChild(element);
+                while (child != null && results.Count <= limit)
+                {
+                    results.Add(child);
+                    child = TreeWalker.RawViewWalker.GetNextSibling(child);
+                }
+                children = results;
+                return true;
+            }
+            catch (ElementNotAvailableException ex)
+            {
+                message = $"The element is no longer available (its underlying UI has gone away): {ex.Message}";
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                message = $"The UI Automation provider rejected the operation: {ex.Message}";
+                return false;
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException)
+            {
+                message = $"The UI Automation provider rejected the operation: {ex.Message}";
+                return false;
+            }
         }
 
         private static readonly Dictionary<UiControlType, ControlType> ControlTypeMap = new Dictionary<UiControlType, ControlType>
