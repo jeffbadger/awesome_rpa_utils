@@ -113,3 +113,31 @@ per the naming convention documented in the component `README.md`.
 (the scalar left/top/width/height overload) was unaffected: it keeps the
 plain name since its parameter count already disambiguates it from every
 other overload.
+
+## Addendum: re-review of the by-Name one-shot family (2026-09-22)
+
+Two later PRs (`uiautomationutils-easier-use`, `uiautomationutils-more-oneshots`)
+added nine methods after this review was last updated: `InvokeByName`,
+`SetValueByName`, `GetValueByName`, `SelectListItemByName`, `ToggleByName`,
+`SelectByName`, `IsToggledByName`, `IsSelectedByName`, and `IsEnabledByName`.
+This addendum reviews them and folds them into the method table above.
+
+| Method or group | Rating | Assessment |
+|---|---|---|
+| `InvokeByName`, `SetValueByName`, `GetValueByName`, `ToggleByName`, `SelectByName`, `IsToggledByName`, `IsSelectedByName`, `IsEnabledByName` | **Direct** | Take a window handle (`IntPtr`) and a visible `Name` string; every input and output is scalar. No `AutomationElement` proxy in or out - the designer never needs a preceding find step to use one of these. |
+| `SelectListItemByName` | **Direct** | Same shape, extended to a container + item name pair for combo box/list/tree selection - the recurring workflow the original review had no answer for at all (see "Missing Pega-oriented surfaces" above, which only covered `GetChildren`/one-element one-shots at the time). |
+
+**Verdict: no further Pega-usability changes needed.** This family is
+already the most Pega-direct surface in the component - it is, in fact,
+exactly what a usability review would have recommended, since it was built
+in direct response to a real "just wants to click a button, get/set a
+textbox, select an item in a combo box" usability ask (see
+`Documentation/OneShot.md` and `Documentation/CommonTasks.md`). No naming
+collisions either: each is a distinctly-named new method, not an overload of
+an existing name, so the naming-ambiguity fix above doesn't apply to any of
+them.
+
+**Fixed in this pass:** `SelectByName`'s XML doc explicitly said to use
+`SelectListItemByName` instead when a separate container must be named
+first, but `SelectListItemByName`'s own doc didn't point back to
+`SelectByName` for the simpler case. Added the missing cross-reference.
