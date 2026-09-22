@@ -1728,7 +1728,9 @@ namespace UIAutomation
         /// visible <c>Name</c>, expanding it, then finding and selecting the item by its own
         /// visible <c>Name</c> within it. Equivalent to <see cref="FromWindowHandle"/>,
         /// <see cref="FindByName"/> (container), <see cref="Expand"/>, <see cref="FindByName"/>
-        /// (item), then <see cref="Select"/>.
+        /// (item), then <see cref="Select"/>. Use <see cref="SelectByName"/> instead when the
+        /// target (e.g. a tab or radio button) is uniquely findable by its own name within the
+        /// window, without needing to name a separate container first.
         /// </summary>
         /// <remarks>
         /// <see cref="Expand"/> is attempted but not required to succeed before searching for
