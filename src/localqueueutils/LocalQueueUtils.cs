@@ -37,7 +37,8 @@ namespace LocalQueueAutomation
                 {
                     QueueManifest manifest = JsonSerializer.Deserialize<QueueManifest>(File.ReadAllText(manifestPath), LocalQueueCore.JsonOptions);
                     if (manifest == null || manifest.SchemaVersion != 1) { message = "The existing queue has an unsupported or invalid schema."; return false; }
-                    if (!string.Equals(manifest.Lifetime, lifetime.ToString(), StringComparison.OrdinalIgnoreCase) || !string.Equals(manifest.RunId ?? "", runId ?? "", StringComparison.Ordinal))
+                    bool runIdMatches = lifetime != QueueLifetime.Run || string.Equals(manifest.RunId ?? "", runId ?? "", StringComparison.Ordinal);
+                    if (!string.Equals(manifest.Lifetime, lifetime.ToString(), StringComparison.OrdinalIgnoreCase) || !runIdMatches)
                     { message = "The existing queue ownership does not match the requested lifetime/runId."; return false; }
                 }
                 return AcquireLock(queuePath, out message);
@@ -352,8 +353,8 @@ namespace LocalQueueAutomation
                 if (!RequireOwned(queuePath, out string full, out message)) return false;
                 if (LocalQueueCore.States.Where(s => s != "temp").Any(s => Directory.EnumerateFileSystemEntries(LocalQueueCore.StatePath(full, s)).Any())) return true;
                 if (Directory.EnumerateFileSystemEntries(LocalQueueCore.StatePath(full, "temp")).Any()) return true;
-                FileStream stream = locks[full]; locks.Remove(full); stream.Dispose();
-                Directory.Delete(full, true); deleted = true; return true;
+                if (!DeleteQueueDirectory("DeleteQueueIfEmpty", full, out message)) return false;
+                deleted = true; return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure("DeleteQueueIfEmpty", ex); return false; }
         }
@@ -377,10 +378,7 @@ namespace LocalQueueAutomation
                     return false;
                 }
 
-                FileStream stream = locks[full];
-                locks.Remove(full);
-                stream.Dispose();
-                Directory.Delete(full, true);
+                if (!DeleteQueueDirectory("DeleteQueue", full, out message)) return false;
                 deleted = true;
                 deletedItemCount = itemCount;
                 return true;
@@ -388,6 +386,51 @@ namespace LocalQueueAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 message = NeverThrowsGuard.Failure("DeleteQueue", ex);
+                return false;
+            }
+        }
+
+        /// <summary>Deletes the queue directory. The exclusive lock is held through the entire destructive phase - no other process can open this queue mid-delete - and is only released once the manifest is gone and the queue no longer validates through this API at all.</summary>
+        private bool DeleteQueueDirectory(string operation, string full, out string message)
+        {
+            message = null;
+            FileStream stream = locks[full];
+            try
+            {
+                // Delete every state directory and the manifest first, while still holding the lock.
+                // Only once queue.json is gone - the point past which TryValidatePath will never again
+                // recognize this path as a queue, through this component or any other - do we release
+                // the lock and remove its now-vestigial file. This guarantees a failure partway through
+                // (e.g. a file the OS won't let this process unlink) leaves the queue both still owned
+                // and still valid, not just recognizable, rather than being silently orphaned.
+                foreach (string state in LocalQueueCore.States)
+                {
+                    string statePath = LocalQueueCore.StatePath(full, state);
+                    if (Directory.Exists(statePath)) Directory.Delete(statePath, true);
+                }
+                File.Delete(Path.Combine(full, "queue.json"));
+
+                locks.Remove(full);
+                stream.Dispose();
+                string lockFilePath = Path.Combine(full, ".queue.lock");
+                if (File.Exists(lockFilePath)) File.Delete(lockFilePath);
+                Directory.Delete(full, false);
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                if (locks.ContainsKey(full))
+                {
+                    // Failed before queue.json was touched, so the lock was never released and the
+                    // queue is still fully owned and valid. Every other method assumes an owned
+                    // queue's state directories all exist (true since CreateQueue creates them
+                    // upfront); restore any a partial pass removed so the queue stays fully usable,
+                    // not just recognizable, until the retry succeeds.
+                    foreach (string state in LocalQueueCore.States) Directory.CreateDirectory(LocalQueueCore.StatePath(full, state));
+                }
+                // Else: queue.json is already gone - the queue no longer validates through this API
+                // regardless of lock state, so there is nothing left to restore or re-acquire.
+                message = NeverThrowsGuard.Failure(operation, ex);
                 return false;
             }
         }
@@ -429,7 +472,7 @@ namespace LocalQueueAutomation
             businessKey = string.IsNullOrWhiteSpace(businessKey) ? null : businessKey.Trim();
             if (businessKey != null)
             {
-                var existing = LocalQueueCore.ReadItems(full, "ready", "delayed", "in-progress", "rejected", "completed").FirstOrDefault(x => string.Equals(x.Item.BusinessKey, businessKey, StringComparison.Ordinal));
+                var existing = LocalQueueCore.ReadItems(full, "ready", "delayed", "in-progress").FirstOrDefault(x => string.Equals(x.Item.BusinessKey, businessKey, StringComparison.Ordinal));
                 if (existing.Item != null) { id = existing.Item.Id; duplicate = true; return true; }
             }
             id = presetId ?? LocalQueueCore.NewId(); DateTime now = DateTime.UtcNow;

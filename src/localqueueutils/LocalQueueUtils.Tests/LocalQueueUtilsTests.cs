@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using Xunit;
 
@@ -124,6 +125,158 @@ namespace LocalQueueAutomation.Tests
             Assert.False(available);
             Assert.True(queue.GetCounts(path, out _, out _, out _, out _, out _, out int corrupt, out message), message);
             Assert.Equal(1, corrupt);
+        }
+
+        [Fact]
+        public void AddJson_CompletedBusinessKey_AllowsNewItemInstead()
+        {
+            Create();
+            Assert.True(queue.AddJson(path, "1", out string firstId, out _, out string message, "invoice-1"), message);
+            Assert.True(queue.TryTakeNext(path, out _, out _, out _, out _, out _, out string token, out _, out message), message);
+            Assert.True(queue.CompleteItem(path, firstId, token, out message), message);
+
+            Assert.True(queue.AddJson(path, "2", out string secondId, out bool duplicate, out message, "invoice-1"), message);
+            Assert.False(duplicate);
+            Assert.NotEqual(firstId, secondId);
+            Assert.True(queue.GetCounts(path, out int ready, out _, out _, out int completed, out _, out _, out message), message);
+            Assert.Equal(1, ready); Assert.Equal(1, completed);
+        }
+
+        [Fact]
+        public void AddJson_RejectedBusinessKey_AllowsNewItemInstead()
+        {
+            Create();
+            Assert.True(queue.AddJson(path, "1", out string firstId, out _, out string message, "invoice-2", maximumAttempts: 1), message);
+            Assert.True(queue.TryTakeNext(path, out _, out _, out _, out _, out _, out string token, out _, out message), message);
+            Assert.True(queue.RetryItem(path, firstId, token, "bad", out _, out bool rejected, out message), message);
+            Assert.True(rejected);
+
+            Assert.True(queue.AddJson(path, "2", out string secondId, out bool duplicate, out message, "invoice-2"), message);
+            Assert.False(duplicate);
+            Assert.NotEqual(firstId, secondId);
+        }
+
+        [Fact]
+        public void CreateQueue_PersistentQueue_ReopensWithDifferentRunId()
+        {
+            Assert.True(queue.CreateQueue(name, QueueLifetime.Persistent, "run-a", out path, out bool existed, out string message), message);
+            Assert.False(existed);
+            queue.Dispose();
+
+            using var reopened = new LocalQueueUtils();
+            Assert.True(reopened.CreateQueue(name, QueueLifetime.Persistent, "run-b", out string reopenedPath, out bool existedOnReopen, out message), message);
+            Assert.True(existedOnReopen);
+            Assert.Equal(path, reopenedPath);
+        }
+
+        [Fact]
+        public void DeleteQueue_UndeletableFile_StaysOwnedAndRetryable()
+        {
+            Create();
+            string sourceDirectory = Directory.CreateTempSubdirectory("localqueue-source-").FullName;
+            string filesDirectory = Path.Combine(path, "files");
+            bool blocked = false;
+            try
+            {
+                File.WriteAllText(Path.Combine(sourceDirectory, "input.txt"), "source");
+                Assert.True(queue.ImportFiles(path, sourceDirectory, "*.txt", false, out int added, out string message), message);
+                Assert.Equal(1, added);
+                string importedFile = Directory.EnumerateFiles(filesDirectory).Single();
+
+                BlockDeletion(importedFile, filesDirectory);
+                blocked = true;
+
+                Assert.False(queue.DeleteQueue(path, true, out bool deleted, out _, out message));
+                Assert.False(deleted);
+                Assert.True(Directory.Exists(path), "queue directory must survive a failed delete");
+                Assert.True(File.Exists(Path.Combine(path, "queue.json")), "manifest must survive a failed delete");
+                Assert.True(queue.GetCounts(path, out _, out _, out _, out _, out _, out _, out message), message);
+
+                UnblockDeletion(importedFile, filesDirectory);
+                blocked = false;
+
+                // The component must still consider the queue open (not require re-opening) and the
+                // deletion must be retryable and now succeed now that nothing blocks it.
+                Assert.True(queue.DeleteQueue(path, true, out deleted, out _, out message), message);
+                Assert.True(deleted);
+                Assert.False(Directory.Exists(path));
+            }
+            finally
+            {
+                if (blocked) UnblockDeletion(Directory.Exists(filesDirectory) ? Directory.EnumerateFiles(filesDirectory).SingleOrDefault() : null, filesDirectory);
+                if (Directory.Exists(sourceDirectory)) Directory.Delete(sourceDirectory, true);
+            }
+        }
+
+        // Windows enforces the ReadOnly attribute on delete; Unix instead requires write
+        // permission on the containing directory to unlink a file within it.
+        private static void BlockDeletion(string filePath, string containingDirectory)
+        {
+            if (OperatingSystem.IsWindows()) File.SetAttributes(filePath, FileAttributes.ReadOnly);
+            else File.SetUnixFileMode(containingDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
+
+        private static void UnblockDeletion(string filePath, string containingDirectory)
+        {
+            if (OperatingSystem.IsWindows()) { if (filePath != null && File.Exists(filePath)) File.SetAttributes(filePath, FileAttributes.Normal); }
+            else File.SetUnixFileMode(containingDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        [Fact]
+        public void CompleteItem_WrongLeaseToken_IsRejected()
+        {
+            Create();
+            Assert.True(queue.AddJson(path, "1", out string id, out _, out string message), message);
+            Assert.True(queue.TryTakeNext(path, out _, out _, out _, out _, out _, out _, out _, out message), message);
+            Assert.False(queue.CompleteItem(path, id, "wrong-token", out message));
+            Assert.Contains("lease token", message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void CompleteItem_UnknownItemId_IsRejected()
+        {
+            Create();
+            Assert.False(queue.CompleteItem(path, "missing-item", "token", out string message));
+            Assert.Contains("not found", message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void GetItem_UnknownId_ReturnsFoundFalseNotFailure()
+        {
+            Create();
+            Assert.True(queue.GetItem(path, "missing-item", out bool found, out string state, out _, out string message), message);
+            Assert.False(found);
+            Assert.Null(state);
+        }
+
+        [Fact]
+        public void CreateQueue_RunLifetimeWithoutRunId_IsRejected()
+        {
+            Assert.False(queue.CreateQueue(name, QueueLifetime.Run, null, out _, out _, out string message));
+            Assert.Contains("runId", message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void DeleteQueueIfEmpty_EmptyQueue_Deletes()
+        {
+            Create();
+            Assert.True(queue.DeleteQueueIfEmpty(path, out bool deleted, out string message), message);
+            Assert.True(deleted);
+            Assert.False(Directory.Exists(path));
+        }
+
+        [Fact]
+        public void RetryRejectedItem_ReturnsItemToReady()
+        {
+            Create();
+            Assert.True(queue.AddJson(path, "1", out string id, out _, out string message, maximumAttempts: 1), message);
+            Assert.True(queue.TryTakeNext(path, out _, out _, out _, out _, out _, out string token, out _, out message), message);
+            Assert.True(queue.RetryItem(path, id, token, "bad", out _, out bool rejected, out message), message);
+            Assert.True(rejected);
+
+            Assert.True(queue.RetryRejectedItem(path, id, false, out message), message);
+            Assert.True(queue.GetCounts(path, out int ready, out _, out _, out _, out int rejectedCount, out _, out message), message);
+            Assert.Equal(1, ready); Assert.Equal(0, rejectedCount);
         }
 
         [Fact]
