@@ -390,7 +390,7 @@ namespace LocalQueueAutomation
             }
         }
 
-        /// <summary>Releases the exclusive lock and deletes the queue directory. On failure, the lock is re-acquired so the component's ownership tracking stays consistent with the queue's undeleted, on-disk state.</summary>
+        /// <summary>Releases the exclusive lock and deletes the queue directory. On failure, the lock is re-acquired (when possible) so the component's ownership tracking stays consistent with the queue's undeleted, on-disk state.</summary>
         private bool DeleteQueueDirectory(string operation, string full, out string message)
         {
             message = null;
@@ -399,25 +399,40 @@ namespace LocalQueueAutomation
             stream.Dispose();
             try
             {
-                // Delete each state directory before the manifest/lock file so that a failure partway
-                // through (e.g. a file the OS won't let this process unlink) leaves queue.json in place -
-                // the queue stays recognizable and retryable instead of being silently orphaned.
+                // Delete state directories, then the lock file, then the manifest - in that explicit
+                // order, not via one recursive Directory.Delete(full, true) whose internal enumeration
+                // order is unspecified. This guarantees a failure partway through (e.g. a file the OS
+                // won't let this process unlink) leaves queue.json in place: the queue stays
+                // recognizable and retryable instead of being silently orphaned.
                 foreach (string state in LocalQueueCore.States)
                 {
                     string statePath = LocalQueueCore.StatePath(full, state);
                     if (Directory.Exists(statePath)) Directory.Delete(statePath, true);
                 }
-                Directory.Delete(full, true);
+                string lockFilePath = Path.Combine(full, ".queue.lock");
+                if (File.Exists(lockFilePath)) File.Delete(lockFilePath);
+                File.Delete(Path.Combine(full, "queue.json"));
+                Directory.Delete(full, false);
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                AcquireLock(full, out _);
-                // Every other method assumes an owned queue's state directories all exist (true since
-                // CreateQueue creates them upfront); restore that after a partial delete so the queue
-                // stays fully usable, not just recognizable, until the retry succeeds.
-                foreach (string state in LocalQueueCore.States) Directory.CreateDirectory(LocalQueueCore.StatePath(full, state));
-                message = NeverThrowsGuard.Failure(operation, ex);
+                string failure = NeverThrowsGuard.Failure(operation, ex);
+                if (AcquireLock(full, out string lockMessage))
+                {
+                    // Every other method assumes an owned queue's state directories all exist (true
+                    // since CreateQueue creates them upfront); restore that after a partial delete so
+                    // the queue stays fully usable, not just recognizable, until the retry succeeds.
+                    foreach (string state in LocalQueueCore.States) Directory.CreateDirectory(LocalQueueCore.StatePath(full, state));
+                    message = failure;
+                }
+                else
+                {
+                    // Someone else grabbed the lock in the gap between releasing it and this failed
+                    // delete - the queue is no longer ours. Say so instead of recreating directories
+                    // for a queue we don't own, and let the caller know it must re-open before retrying.
+                    message = $"{failure} The queue could not remain open ({lockMessage}); call OpenQueue or CreateQueue again before retrying.";
+                }
                 return false;
             }
         }
