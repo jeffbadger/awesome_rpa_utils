@@ -95,6 +95,14 @@ Controls queue ownership: `Run` creates a run-scoped queue requiring a `runId`;
   side effects.
 - **Only one component/process may own a queue.** A second open returns `False`
   with an ownership message. Disposal releases the OS file lock.
+- **`runId` only identifies `Run`-lifetime queues.** It is part of a `Run`
+  queue's storage path and is enforced on reopen. A `Persistent` queue's
+  identity is its `queueName` alone; `runId` is ignored, so later, unrelated
+  runs can reopen it with a different (or omitted) `runId`.
+- **A business key is only checked against active work.** `AddJson`'s
+  duplicate check only looks at `ready`, `delayed`, and `in-progress` items.
+  Once an item completes or is rejected, adding the same `businessKey` again
+  creates a new item rather than being reported as a duplicate.
 - **UNC paths and arbitrary queue roots are rejected.** Storage remains beneath
   the component's per-user LocalApplicationData root.
 - **Never throws.** Success returns `True` with `message == null`; recoverable

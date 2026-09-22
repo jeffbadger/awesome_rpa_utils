@@ -37,7 +37,8 @@ namespace LocalQueueAutomation
                 {
                     QueueManifest manifest = JsonSerializer.Deserialize<QueueManifest>(File.ReadAllText(manifestPath), LocalQueueCore.JsonOptions);
                     if (manifest == null || manifest.SchemaVersion != 1) { message = "The existing queue has an unsupported or invalid schema."; return false; }
-                    if (!string.Equals(manifest.Lifetime, lifetime.ToString(), StringComparison.OrdinalIgnoreCase) || !string.Equals(manifest.RunId ?? "", runId ?? "", StringComparison.Ordinal))
+                    bool runIdMatches = lifetime != QueueLifetime.Run || string.Equals(manifest.RunId ?? "", runId ?? "", StringComparison.Ordinal);
+                    if (!string.Equals(manifest.Lifetime, lifetime.ToString(), StringComparison.OrdinalIgnoreCase) || !runIdMatches)
                     { message = "The existing queue ownership does not match the requested lifetime/runId."; return false; }
                 }
                 return AcquireLock(queuePath, out message);
@@ -352,8 +353,8 @@ namespace LocalQueueAutomation
                 if (!RequireOwned(queuePath, out string full, out message)) return false;
                 if (LocalQueueCore.States.Where(s => s != "temp").Any(s => Directory.EnumerateFileSystemEntries(LocalQueueCore.StatePath(full, s)).Any())) return true;
                 if (Directory.EnumerateFileSystemEntries(LocalQueueCore.StatePath(full, "temp")).Any()) return true;
-                FileStream stream = locks[full]; locks.Remove(full); stream.Dispose();
-                Directory.Delete(full, true); deleted = true; return true;
+                if (!DeleteQueueDirectory("DeleteQueueIfEmpty", full, out message)) return false;
+                deleted = true; return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure("DeleteQueueIfEmpty", ex); return false; }
         }
@@ -377,10 +378,7 @@ namespace LocalQueueAutomation
                     return false;
                 }
 
-                FileStream stream = locks[full];
-                locks.Remove(full);
-                stream.Dispose();
-                Directory.Delete(full, true);
+                if (!DeleteQueueDirectory("DeleteQueue", full, out message)) return false;
                 deleted = true;
                 deletedItemCount = itemCount;
                 return true;
@@ -388,6 +386,38 @@ namespace LocalQueueAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 message = NeverThrowsGuard.Failure("DeleteQueue", ex);
+                return false;
+            }
+        }
+
+        /// <summary>Releases the exclusive lock and deletes the queue directory. On failure, the lock is re-acquired so the component's ownership tracking stays consistent with the queue's undeleted, on-disk state.</summary>
+        private bool DeleteQueueDirectory(string operation, string full, out string message)
+        {
+            message = null;
+            FileStream stream = locks[full];
+            locks.Remove(full);
+            stream.Dispose();
+            try
+            {
+                // Delete each state directory before the manifest/lock file so that a failure partway
+                // through (e.g. a file the OS won't let this process unlink) leaves queue.json in place -
+                // the queue stays recognizable and retryable instead of being silently orphaned.
+                foreach (string state in LocalQueueCore.States)
+                {
+                    string statePath = LocalQueueCore.StatePath(full, state);
+                    if (Directory.Exists(statePath)) Directory.Delete(statePath, true);
+                }
+                Directory.Delete(full, true);
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                AcquireLock(full, out _);
+                // Every other method assumes an owned queue's state directories all exist (true since
+                // CreateQueue creates them upfront); restore that after a partial delete so the queue
+                // stays fully usable, not just recognizable, until the retry succeeds.
+                foreach (string state in LocalQueueCore.States) Directory.CreateDirectory(LocalQueueCore.StatePath(full, state));
+                message = NeverThrowsGuard.Failure(operation, ex);
                 return false;
             }
         }
@@ -429,7 +459,7 @@ namespace LocalQueueAutomation
             businessKey = string.IsNullOrWhiteSpace(businessKey) ? null : businessKey.Trim();
             if (businessKey != null)
             {
-                var existing = LocalQueueCore.ReadItems(full, "ready", "delayed", "in-progress", "rejected", "completed").FirstOrDefault(x => string.Equals(x.Item.BusinessKey, businessKey, StringComparison.Ordinal));
+                var existing = LocalQueueCore.ReadItems(full, "ready", "delayed", "in-progress").FirstOrDefault(x => string.Equals(x.Item.BusinessKey, businessKey, StringComparison.Ordinal));
                 if (existing.Item != null) { id = existing.Item.Id; duplicate = true; return true; }
             }
             id = presetId ?? LocalQueueCore.NewId(); DateTime now = DateTime.UtcNow;
