@@ -627,9 +627,10 @@ namespace UIAutomation
         /// no children. <c>null</c> if this method returns <c>false</c>.
         /// </param>
         /// <param name="truncated">
-        /// <c>true</c> if <paramref name="maxNodes"/> was reached before the full subtree could be
-        /// enumerated - the JSON is then a partial, best-effort snapshot, not the complete subtree.
-        /// Always <c>false</c> on a call that returns <c>false</c>.
+        /// <c>true</c> if <paramref name="maxNodes"/> was reached, or an interior element's own
+        /// children could not be enumerated (e.g. it went away mid-walk), before the full subtree
+        /// could be gathered - the JSON is then a partial, best-effort snapshot, not the complete
+        /// subtree. Always <c>false</c> on a call that returns <c>false</c>.
         /// </param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
         /// <param name="maxDepth">
@@ -2433,12 +2434,21 @@ namespace UIAutomation
                 // No `remainingBudget > 0` short-circuit here: even at a zero budget, still probe
                 // for at least one child so a genuinely-truncated node is flagged via `truncated`
                 // rather than silently looking identical to a node with no children at all.
-                if (depth < maxDepth
-                    && TryGetChildrenLimited(element, remainingBudget, out List<AutomationElement> kids, out _)
-                    && kids.Count > 0)
+                if (depth < maxDepth)
                 {
-                    node.children = new List<SubtreeSummaryNode>();
-                    EnqueueUpToBudget(kids, depth + 1, node.children, ref remainingBudget, ref truncated, queue);
+                    if (!TryGetChildrenLimited(element, remainingBudget, out List<AutomationElement> kids, out _))
+                    {
+                        // A real enumeration failure (e.g. this element died mid-walk), not a
+                        // budget/depth limit - `truncated` is the only documented "this isn't the
+                        // complete subtree" signal, so surface it here too instead of silently
+                        // making this node look like a childless leaf.
+                        truncated = true;
+                    }
+                    else if (kids.Count > 0)
+                    {
+                        node.children = new List<SubtreeSummaryNode>();
+                        EnqueueUpToBudget(kids, depth + 1, node.children, ref remainingBudget, ref truncated, queue);
+                    }
                 }
             }
 
@@ -2468,13 +2478,24 @@ namespace UIAutomation
         }
 
         /// <summary>
-        /// Same enumeration semantics as <see cref="GetChildren"/> (every immediate child, raw
-        /// view - matching <c>FindAll(TreeScope.Children, Condition.TrueCondition)</c>), but walks
-        /// children one at a time via <see cref="TreeWalker"/> and stops once <paramref name="limit"/>
-        /// + 1 are found, instead of eagerly enumerating the whole list first. An element with far
-        /// more children than the remaining budget doesn't pay the cost of enumerating all of them;
-        /// the "+1" lets the caller tell "exactly <paramref name="limit"/> children" apart from
-        /// "more than <paramref name="limit"/> children" without enumerating further than that.
+        /// A <see cref="TreeWalker"/> built from the exact same condition <see cref="GetChildren"/>
+        /// passes to <c>FindAll(TreeScope.Children, Condition.TrueCondition)</c> - deliberately
+        /// not the pre-built <see cref="TreeWalker.RawViewWalker"/>, whose underlying condition is
+        /// UI Automation's raw view and can surface implementation/non-control nodes that
+        /// <c>FindAll(..., Condition.TrueCondition)</c> does not. Constructing our own walker from
+        /// the identical <see cref="Condition"/> object <see cref="GetChildren"/> uses guarantees
+        /// this enumerates the same child set, by construction, not by coincidence.
+        /// </summary>
+        private static readonly TreeWalker ChildrenWalker = new TreeWalker(Condition.TrueCondition);
+
+        /// <summary>
+        /// Same enumeration semantics as <see cref="GetChildren"/> (every immediate child, via the
+        /// same <see cref="Condition.TrueCondition"/> condition - see <see cref="ChildrenWalker"/>),
+        /// but walks children one at a time and stops once <paramref name="limit"/> + 1 are found,
+        /// instead of eagerly enumerating the whole list first. An element with far more children
+        /// than the remaining budget doesn't pay the cost of enumerating all of them; the "+1" lets
+        /// the caller tell "exactly <paramref name="limit"/> children" apart from "more than
+        /// <paramref name="limit"/> children" without enumerating further than that.
         /// </summary>
         private static bool TryGetChildrenLimited(AutomationElement element, int limit, out List<AutomationElement> children, out string message)
         {
@@ -2483,11 +2504,11 @@ namespace UIAutomation
             try
             {
                 var results = new List<AutomationElement>();
-                AutomationElement child = TreeWalker.RawViewWalker.GetFirstChild(element);
+                AutomationElement child = ChildrenWalker.GetFirstChild(element);
                 while (child != null && results.Count <= limit)
                 {
                     results.Add(child);
-                    child = TreeWalker.RawViewWalker.GetNextSibling(child);
+                    child = ChildrenWalker.GetNextSibling(child);
                 }
                 children = results;
                 return true;
