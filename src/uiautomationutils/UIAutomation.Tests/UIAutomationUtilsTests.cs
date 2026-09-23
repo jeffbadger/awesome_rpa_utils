@@ -78,6 +78,38 @@ namespace UIAutomation.Tests
             Assert.False(string.IsNullOrEmpty(m19));
             Assert.False(_uia.GetChildrenSummaryJson(null, out _, out string m20));
             Assert.False(string.IsNullOrEmpty(m20));
+            Assert.False(_uia.GetDescendantsSummaryJson(null, out _, out _, out string m21));
+            Assert.False(string.IsNullOrEmpty(m21));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(21)]
+        [InlineData(-1)]
+        public void GetDescendantsSummaryJson_MaxDepthOutOfRange_ReturnsFalseWithMaxDepthMessage(int maxDepth)
+        {
+            // A non-null element isn't reachable here (this test file deliberately avoids real
+            // UIA elements - see the class doc), but maxDepth is validated before the null-parent
+            // check specifically so this guard is independently testable: asserting the message
+            // names "maxDepth" (not just "false + some message") proves this test would fail if
+            // the maxDepth validation were ever removed, rather than silently passing via the
+            // unrelated null-parent guard.
+            Assert.False(_uia.GetDescendantsSummaryJson(null, out string json, out bool truncated, out string message, maxDepth));
+            Assert.Null(json);
+            Assert.False(truncated);
+            Assert.Contains("maxDepth", message);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(20001)]
+        [InlineData(-1)]
+        public void GetDescendantsSummaryJson_MaxNodesOutOfRange_ReturnsFalseWithMaxNodesMessage(int maxNodes)
+        {
+            Assert.False(_uia.GetDescendantsSummaryJson(null, out string json, out bool truncated, out string message, maxDepth: 5, maxNodes: maxNodes));
+            Assert.Null(json);
+            Assert.False(truncated);
+            Assert.Contains("maxNodes", message);
         }
 
         // --- New scalar/querySucceeded overloads: same null-element guard as their originals ---
@@ -200,6 +232,15 @@ namespace UIAutomation.Tests
         {
             Assert.False(_uia.GetChildrenSummaryJsonFromWindowHandle(IntPtr.Zero, out string json, out string message));
             Assert.Null(json);
+            Assert.False(string.IsNullOrEmpty(message));
+        }
+
+        [Fact]
+        public void GetDescendantsSummaryJsonFromWindowHandle_ZeroHandle_ReturnsFalseWithMessage()
+        {
+            Assert.False(_uia.GetDescendantsSummaryJsonFromWindowHandle(IntPtr.Zero, out string json, out bool truncated, out string message));
+            Assert.Null(json);
+            Assert.False(truncated);
             Assert.False(string.IsNullOrEmpty(message));
         }
 

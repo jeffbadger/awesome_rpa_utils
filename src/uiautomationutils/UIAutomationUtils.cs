@@ -613,6 +613,92 @@ namespace UIAutomation
             }
         }
 
+        /// <summary>
+        /// Same as <see cref="GetChildrenSummaryJson"/>, but recurses into each child's own
+        /// children too, nesting them under a <c>children</c> array so the JSON reflects the
+        /// subtree's actual structure - for discovering an unfamiliar control's full layout
+        /// without knowing its structure, or even its depth, ahead of time.
+        /// </summary>
+        /// <param name="parent">The element whose subtree to enumerate.</param>
+        /// <param name="json">
+        /// The subtree as nested JSON: <c>[{"name":"...","automationId":"...","className":"...",
+        /// "controlType":"...","bounds":{...},"children":[...]}]</c>. A node's own <c>children</c>
+        /// is <c>null</c> once <paramref name="maxDepth"/> is reached, or if that node itself has
+        /// no children. <c>null</c> if this method returns <c>false</c>.
+        /// </param>
+        /// <param name="truncated">
+        /// <c>true</c> if <paramref name="maxNodes"/> was reached, or an interior element's own
+        /// children could not be enumerated (e.g. it went away mid-walk), before the full subtree
+        /// could be gathered - the JSON is then a partial, best-effort snapshot, not the complete
+        /// subtree. Always <c>false</c> on a call that returns <c>false</c>.
+        /// </param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <param name="maxDepth">
+        /// Maximum levels to recurse below <paramref name="parent"/> (<c>1</c> matches
+        /// <see cref="GetChildrenSummaryJson"/>'s immediate-children-only scope). Bounded to
+        /// <c>1</c>-<c>20</c>. This bounds path length only, not breadth - a wide subtree needs
+        /// <paramref name="maxNodes"/>.
+        /// </param>
+        /// <param name="maxNodes">
+        /// Maximum total elements to include across the whole subtree, spent breadth-first (every
+        /// element at one depth is visited before any element at the next). Bounded to
+        /// <c>1</c>-<c>20000</c>, default <c>500</c>. This is what actually protects against an
+        /// unexpectedly wide subtree (e.g. a browser-hosted control with hundreds of children per
+        /// level) - <paramref name="maxDepth"/> alone does not, since a wide-but-shallow tree can
+        /// still contain enormous numbers of elements. Children are enumerated incrementally and
+        /// stop as soon as the remaining budget is satisfied, so an element with far more children
+        /// than the remaining budget doesn't pay the cost of enumerating all of them. When the
+        /// budget runs out, remaining siblings/descendants are omitted and <paramref name="truncated"/>
+        /// is set.
+        /// </param>
+        /// <returns><c>true</c> on success (whether or not <paramref name="truncated"/> is set); <c>false</c> if <paramref name="parent"/> is null or <paramref name="maxDepth"/>/<paramref name="maxNodes"/> is out of range. Never throws.</returns>
+        [Category("UIAutomation - Find")]
+        [Description("Gets the full subtree beneath an element as nested JSON (name/automationId/className/controlType/bounds/children), depth- and size-limited. Returns True on success; never throws.")]
+        public bool GetDescendantsSummaryJson(AutomationElement parent, out string json, out bool truncated, out string message, int maxDepth = 5, int maxNodes = 500)
+        {
+            json = default;
+            truncated = default;
+            message = default;
+            try
+            {
+                json = null;
+                truncated = false;
+                if (maxDepth < 1 || maxDepth > 20)
+                {
+                    message = "maxDepth must be between 1 and 20.";
+                    return false;
+                }
+                if (maxNodes < 1 || maxNodes > 20000)
+                {
+                    message = "maxNodes must be between 1 and 20000.";
+                    return false;
+                }
+                if (parent == null)
+                {
+                    message = "A parent element is required.";
+                    return false;
+                }
+
+                int remainingBudget = maxNodes;
+                bool wasTruncated = false;
+                List<SubtreeSummaryNode> payload = BuildSubtreeSummaryBreadthFirst(parent, maxDepth, ref remainingBudget, ref wasTruncated, out message);
+                if (payload == null)
+                    return false; // message already set by the top-level child enumeration failure
+                truncated = wasTruncated;
+
+                json = System.Text.Json.JsonSerializer.Serialize(payload);
+                message = null;
+                return true;
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                truncated = false;
+                message = NeverThrowsGuard.Failure("GetDescendantsSummaryJson", ex);
+                return false;
+            }
+        }
+
         #endregion
 
         #region Properties
@@ -1460,6 +1546,47 @@ namespace UIAutomation
         }
 
         /// <summary>
+        /// Same as <see cref="GetChildrenSummaryJsonFromWindowHandle"/>, but recurses the full
+        /// subtree via <see cref="GetDescendantsSummaryJson"/>, for designers who cannot
+        /// construct any <see cref="AutomationElement"/> proxy at all.
+        /// </summary>
+        /// <param name="hWnd">Handle of the window to enumerate, typically from <c>WindowUtils.FindWindowByTitle</c> or <c>DialogUtils</c>.</param>
+        /// <param name="json">The subtree as JSON (see <see cref="GetDescendantsSummaryJson"/> for the shape), or <c>null</c> if this method returns <c>false</c>.</param>
+        /// <param name="truncated">See <see cref="GetDescendantsSummaryJson"/>; always <c>false</c> on a call that returns <c>false</c>.</param>
+        /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the query failed.</param>
+        /// <param name="maxDepth">Maximum levels to recurse below the window (see <see cref="GetDescendantsSummaryJson"/>); bounded to <c>1</c>-<c>20</c>.</param>
+        /// <param name="maxNodes">Maximum total elements across the whole subtree (see <see cref="GetDescendantsSummaryJson"/>); bounded to <c>1</c>-<c>20000</c>, default <c>500</c>. This, not <paramref name="maxDepth"/>, is what bounds a wide subtree.</param>
+        /// <returns><c>true</c> on success (whether or not <paramref name="truncated"/> is set); <c>false</c> if <paramref name="hWnd"/> is zero or invalid, or <paramref name="maxDepth"/>/<paramref name="maxNodes"/> is out of range. Never throws.</returns>
+        [Category("UIAutomation - One-Shot")]
+        [Description("Gets the full subtree beneath a top-level window from its handle, as nested JSON, depth- and size-limited, in one call. Returns True on success; never throws.")]
+        public bool GetDescendantsSummaryJsonFromWindowHandle(IntPtr hWnd, out string json, out bool truncated, out string message, int maxDepth = 5, int maxNodes = 500)
+        {
+            json = default;
+            truncated = default;
+            message = default;
+            try
+            {
+                json = null;
+                truncated = false;
+                AutomationElement window = FromWindowHandle(hWnd);
+                if (window == null)
+                {
+                    message = "The window handle is zero or does not correspond to a live window.";
+                    return false;
+                }
+
+                return GetDescendantsSummaryJson(window, out json, out truncated, out message, maxDepth, maxNodes);
+
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                truncated = false;
+                message = NeverThrowsGuard.Failure("GetDescendantsSummaryJsonFromWindowHandle", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Invokes a descendant of a top-level window matched by <c>AutomationId</c>, given the
         /// window's handle, without retaining an intermediate <see cref="AutomationElement"/>
         /// proxy. Equivalent to <see cref="FromWindowHandle"/>, <see cref="FindByAutomationId"/>,
@@ -2257,6 +2384,151 @@ namespace UIAutomation
         #endregion
 
         #region Internal Helpers
+
+        /// <summary>One node of a <see cref="GetDescendantsSummaryJson"/> result. Lowercase property names are deliberate: this serializes directly, matching the field names documented on that method.</summary>
+        private sealed class SubtreeSummaryNode
+        {
+            public string name { get; set; }
+            public string automationId { get; set; }
+            public string className { get; set; }
+            public string controlType { get; set; }
+            public object bounds { get; set; }
+            public List<SubtreeSummaryNode> children { get; set; }
+        }
+
+        /// <summary>
+        /// Builds the full <see cref="GetDescendantsSummaryJson"/> result for <paramref name="root"/>'s
+        /// children, breadth-first: every element at one depth is visited (and its share of
+        /// <paramref name="remainingBudget"/> reserved) before any element at the next depth, so a
+        /// tight budget yields an evenly-sampled shallow view rather than exhausting itself on one
+        /// branch while sibling subtrees go completely unvisited. Property reads are best-effort,
+        /// matching <see cref="GetChildrenSummaryJson"/>: a single element's stale/unsupported
+        /// property doesn't abort the rest of the subtree, it just reports that one field as absent.
+        /// Returns <c>null</c> if <paramref name="root"/>'s own children can't be enumerated (a real
+        /// error, not a budget/depth limit) - check <paramref name="message"/> in that case.
+        /// </summary>
+        private List<SubtreeSummaryNode> BuildSubtreeSummaryBreadthFirst(AutomationElement root, int maxDepth, ref int remainingBudget, ref bool truncated, out string message)
+        {
+            var result = new List<SubtreeSummaryNode>();
+            if (!TryGetChildrenLimited(root, remainingBudget, out List<AutomationElement> rootChildren, out message))
+                return null;
+
+            var queue = new Queue<(AutomationElement Element, int Depth, List<SubtreeSummaryNode> ParentList)>();
+            EnqueueUpToBudget(rootChildren, 1, result, ref remainingBudget, ref truncated, queue);
+
+            while (queue.Count > 0)
+            {
+                (AutomationElement element, int depth, List<SubtreeSummaryNode> parentList) = queue.Dequeue();
+
+                GetName(element, out string name, out _);
+                GetAutomationId(element, out string automationId, out _);
+                GetClassName(element, out string className, out _);
+                GetControlTypeName(element, out string controlType, out _);
+                object bounds = GetBoundingRectangleAsRectangle(element, out System.Drawing.Rectangle rc, out _)
+                    ? (object)new { left = rc.Left, top = rc.Top, width = rc.Width, height = rc.Height }
+                    : null;
+
+                var node = new SubtreeSummaryNode { name = name, automationId = automationId, className = className, controlType = controlType, bounds = bounds };
+                parentList.Add(node);
+
+                // No `remainingBudget > 0` short-circuit here: even at a zero budget, still probe
+                // for at least one child so a genuinely-truncated node is flagged via `truncated`
+                // rather than silently looking identical to a node with no children at all.
+                if (depth < maxDepth)
+                {
+                    if (!TryGetChildrenLimited(element, remainingBudget, out List<AutomationElement> kids, out _))
+                    {
+                        // A real enumeration failure (e.g. this element died mid-walk), not a
+                        // budget/depth limit - `truncated` is the only documented "this isn't the
+                        // complete subtree" signal, so surface it here too instead of silently
+                        // making this node look like a childless leaf.
+                        truncated = true;
+                    }
+                    else if (kids.Count > 0)
+                    {
+                        node.children = new List<SubtreeSummaryNode>();
+                        EnqueueUpToBudget(kids, depth + 1, node.children, ref remainingBudget, ref truncated, queue);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Enqueues as many of <paramref name="candidates"/> as <paramref name="remainingBudget"/>
+        /// allows (reserving the budget immediately, since every enqueued element will eventually
+        /// be turned into an output node), setting <paramref name="truncated"/> if any had to be
+        /// left out.
+        /// </summary>
+        private static void EnqueueUpToBudget(List<AutomationElement> candidates, int depth, List<SubtreeSummaryNode> parentList,
+            ref int remainingBudget, ref bool truncated, Queue<(AutomationElement, int, List<SubtreeSummaryNode>)> queue)
+        {
+            int count = candidates.Count;
+            if (count > remainingBudget)
+            {
+                truncated = true;
+                count = remainingBudget;
+            }
+            for (int i = 0; i < count; i++)
+            {
+                queue.Enqueue((candidates[i], depth, parentList));
+                remainingBudget--;
+            }
+        }
+
+        /// <summary>
+        /// A <see cref="TreeWalker"/> built from the exact same condition <see cref="GetChildren"/>
+        /// passes to <c>FindAll(TreeScope.Children, Condition.TrueCondition)</c> - deliberately
+        /// not the pre-built <see cref="TreeWalker.RawViewWalker"/>, whose underlying condition is
+        /// UI Automation's raw view and can surface implementation/non-control nodes that
+        /// <c>FindAll(..., Condition.TrueCondition)</c> does not. Constructing our own walker from
+        /// the identical <see cref="Condition"/> object <see cref="GetChildren"/> uses guarantees
+        /// this enumerates the same child set, by construction, not by coincidence.
+        /// </summary>
+        private static readonly TreeWalker ChildrenWalker = new TreeWalker(Condition.TrueCondition);
+
+        /// <summary>
+        /// Same enumeration semantics as <see cref="GetChildren"/> (every immediate child, via the
+        /// same <see cref="Condition.TrueCondition"/> condition - see <see cref="ChildrenWalker"/>),
+        /// but walks children one at a time and stops once <paramref name="limit"/> + 1 are found,
+        /// instead of eagerly enumerating the whole list first. An element with far more children
+        /// than the remaining budget doesn't pay the cost of enumerating all of them; the "+1" lets
+        /// the caller tell "exactly <paramref name="limit"/> children" apart from "more than
+        /// <paramref name="limit"/> children" without enumerating further than that.
+        /// </summary>
+        private static bool TryGetChildrenLimited(AutomationElement element, int limit, out List<AutomationElement> children, out string message)
+        {
+            children = null;
+            message = null;
+            try
+            {
+                var results = new List<AutomationElement>();
+                AutomationElement child = ChildrenWalker.GetFirstChild(element);
+                while (child != null && results.Count <= limit)
+                {
+                    results.Add(child);
+                    child = ChildrenWalker.GetNextSibling(child);
+                }
+                children = results;
+                return true;
+            }
+            catch (ElementNotAvailableException ex)
+            {
+                message = $"The element is no longer available (its underlying UI has gone away): {ex.Message}";
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                message = $"The UI Automation provider rejected the operation: {ex.Message}";
+                return false;
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException)
+            {
+                message = $"The UI Automation provider rejected the operation: {ex.Message}";
+                return false;
+            }
+        }
 
         private static readonly Dictionary<UiControlType, ControlType> ControlTypeMap = new Dictionary<UiControlType, ControlType>
         {

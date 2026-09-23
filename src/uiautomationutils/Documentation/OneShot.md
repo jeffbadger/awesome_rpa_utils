@@ -29,6 +29,29 @@ if (uia.GetChildrenSummaryJsonFromWindowHandle(hWnd, out string json, out string
 }
 ```
 
+For an unfamiliar window whose full layout you don't know at all - not just
+its immediate children - `GetDescendantsSummaryJsonFromWindowHandle`
+recurses the whole subtree into the same JSON shape, nesting each element's
+own children under a `children` array:
+
+```csharp
+IntPtr hWnd = window.FindWindowByTitle("Settings", exactMatch: false);
+if (uia.GetDescendantsSummaryJsonFromWindowHandle(hWnd, out string json, out bool truncated, out string message, maxDepth: 8))
+{
+    Logger.Info(json); // [{"name":"...", ..., "children":[{"name":"...", ..., "children":[...]}]}]
+    if (truncated)
+        Logger.Warn("Subtree exceeded maxNodes - result is a partial snapshot.");
+}
+```
+
+`maxDepth` (1-20, default 5) bounds recursion depth only. `maxNodes`
+(1-20000, default 500) bounds the total element count - the actual
+protection against an unexpectedly wide subtree (e.g. a browser-hosted
+control with hundreds of children per level), since a wide-but-shallow tree
+can still contain far more elements than a narrow one ever would at the
+same `maxDepth`. `truncated` reports whether `maxNodes` cut the result
+short.
+
 ## Click a button by AutomationId without a separate find step
 
 ```csharp
