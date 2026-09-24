@@ -118,3 +118,7 @@ Controls queue ownership: `Run` creates a run-scoped queue requiring a `runId`;
 - **This is child-work infrastructure, not Robot Manager.** It does not
   schedule robots, distribute work between machines, implement SLAs, support
   shared UNC/multi-consumer queues, or guarantee exactly-once delivery.
+- **The queue tracks items, not the run.** For run-level control flow - starting,
+  waiting for a delayed retry, stopping after too many consecutive failures,
+  resuming after a crash - pair it with `StateMachineUtils`; a complete worker is
+  in [StateMachineUtils' Working a queue](../statemachineutils/Documentation/WorkingAQueue.md).

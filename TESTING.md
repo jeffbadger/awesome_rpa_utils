@@ -734,6 +734,33 @@ The platform-independent xunit coverage is in
 `src/stackutils/StackUtils.Tests`
 (`dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj`).
 
+### StateMachineUtils (no setup required; Cleanup: dispose the component, and `DiscardPersistedState` any machine name you persisted)
+
+- Load the invoice definition from `Documentation/Definition.md`/`WorkingAQueue.md`; `Start`, `Fire` each trigger,
+  and verify `CurrentState`, `IsFinished`, and the returned `newState`.
+- Fire a trigger the state does not have, a guarded trigger whose guard fails, a trigger after the machine has
+  finished, and a trigger before `Start`. Each must return `True` with `fired` False and the matching
+  `rejectionReason`; an empty trigger must return `False` with a message.
+- Load a definition with a typo (`"trigers"`), a duplicate state, and a transition to an unknown state; verify each
+  is rejected whole and the previous definition keeps working.
+- **Design surface:** drop the component on an automation, wire `StateEntered` to a `StringSwitch` on the event's
+  new-state data, and `Fire` from a button. Confirm the five events appear as event ports, the event payload
+  binds as data, and `CurrentState` binds as a read-only data port.
+- Add a handler to `StateEntered` that itself calls `Fire`; verify a short chain works and a runaway chain stops
+  with `ReentrancyLimit` instead of hanging Robot Studio.
+- Enable persistence, `Start`, `Fire` once, then stop and restart the Robot Runtime; verify `EnablePersistence`
+  reports `restored` True and `CurrentState` is where it stopped. Change the definition and verify the saved run
+  is refused with a message naming `DiscardPersistedState`.
+- Make the state folder read-only (or hold `state.json` open) and `Fire`; verify `False` with a message and an
+  unchanged `CurrentState`, then succeed after removing the block.
+- Run the queue-worker flow in `Documentation/WorkingAQueue.md` against a real `LocalQueueUtils` queue, kill the
+  Runtime mid-item, and verify the restart maps the resumed `Processing` state to `recovered`.
+
+The platform-independent xunit coverage is in
+`src/statemachineutils/StateMachineUtils.Tests`
+(`dotnet test src/statemachineutils/StateMachineUtils.Tests/StateMachineUtils.Tests.csproj`), including
+`QueueWorkerExampleTests`, which runs the worked example straight from its documentation page.
+
 ### DataContractUtils (no external setup; configure properties before initialization)
 
 - Preload typed definitions from design-time JSON and a relative/absolute JSON
