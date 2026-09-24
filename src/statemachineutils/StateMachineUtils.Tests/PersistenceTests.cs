@@ -747,6 +747,152 @@ namespace StateMachineAutomation.Tests
             Assert.True(File.Exists(unrelated)); // only this component's own temp files are touched
         }
 
+        // ---- a saved history is untrusted too: every record must satisfy what this component writes
+
+        /// <summary>A genuine saved run whose history holds start (1), transition (2) and a rejection (3), sequence counter 3.</summary>
+        private string SavedRunWithHistory()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(name);
+            Assert.True(first.Start(out _, out _));
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
+            Assert.True(first.Fire("nonsense", out _, out _, out _, out _)); // recorded in memory only...
+            Assert.True(first.SetContext("k", "v", out _));                  // ...and reaches disk with the next real change
+            first.Dispose();
+            return name;
+        }
+
+        private void EditHistory(string name, Action<System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>, System.Collections.Generic.Dictionary<string, object>> edit)
+        {
+            RewriteSaved(name, fields =>
+            {
+                var entries = JsonSerializer.Deserialize<System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>>(((JsonElement)fields["history"]).GetRawText());
+                edit(entries, fields);
+                fields["history"] = entries;
+            });
+        }
+
+        [Theory]
+        [InlineData("unknownKind", "unknown kind 'teleport'")]
+        [InlineData("missingKind", "unknown kind ''")]
+        [InlineData("missingUtc", "missing or invalid timestamp")]
+        [InlineData("badUtc", "missing or invalid timestamp")]
+        [InlineData("zeroSeq", "sequence number below 1")]
+        [InlineData("negativeSeq", "sequence number below 1")]
+        [InlineData("duplicateSeq", "does not increase")]
+        [InlineData("decreasingSeq", "does not increase")]
+        [InlineData("lastNotSequence", "saved sequence counter is 99")]
+        [InlineData("transitionNoTrigger", "missing its trigger, 'from' or 'to'")]
+        [InlineData("transitionUnknownState", "names state 'Nowhere'")]
+        [InlineData("rejectedNoReason", "missing its trigger or reason")]
+        [InlineData("startNoTo", "has no 'to' state")]
+        [InlineData("hugeDetail", "detail longer than 16384")]
+        [InlineData("longTrigger", "field longer than 128")]
+        public void ACorruptHistoryRecord_IsRefused_WithTheDiscardHint(string corruption, string fragment)
+        {
+            string name = SavedRunWithHistory();
+            EditHistory(name, (entries, top) =>
+            {
+                switch (corruption)
+                {
+                    case "unknownKind": entries[1]["kind"] = "teleport"; break;
+                    case "missingKind": entries[1].Remove("kind"); break;
+                    case "missingUtc": entries[1].Remove("utc"); break;
+                    case "badUtc": entries[1]["utc"] = "yesterday"; break;
+                    case "zeroSeq": entries[0]["seq"] = 0; break;
+                    case "negativeSeq": entries[0]["seq"] = -3; break;
+                    case "duplicateSeq": entries[1]["seq"] = entries[0]["seq"]; break;
+                    case "decreasingSeq": (entries[1]["seq"], entries[2]["seq"]) = (entries[2]["seq"], entries[1]["seq"]); break;
+                    case "lastNotSequence": top["sequence"] = 99; break;
+                    case "transitionNoTrigger": entries[1].Remove("trigger"); break;
+                    case "transitionUnknownState": entries[1]["to"] = "Nowhere"; break;
+                    case "rejectedNoReason": entries[2].Remove("reason"); break;
+                    case "startNoTo": entries[0].Remove("to"); break;
+                    case "hugeDetail": entries[2]["detail"] = new string('d', 16385); break;
+                    case "longTrigger": entries[2]["trigger"] = new string('t', 129); break;
+                }
+            });
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains("invalid history", message);
+            Assert.Contains(fragment, message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void AGenuineSavedHistory_RestoresAndTheNextChangeContinuesTheNumbering()
+        {
+            string name = SavedRunWithHistory();
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+
+            Assert.True(machine.GetHistoryJson(out string json, out _));
+            Assert.Equal(new long[] { 1, 2, 3 }, JsonDocument.Parse(json).RootElement.EnumerateArray().Select(e => e.GetProperty("seq").GetInt64()));
+
+            Assert.True(machine.Fire("abort", out bool fired, out _, out _, out message), message);
+            Assert.True(fired);
+            Assert.True(machine.GetHistoryJson(out json, out _));
+            Assert.Equal(new long[] { 1, 2, 3, 4 }, JsonDocument.Parse(json).RootElement.EnumerateArray().Select(e => e.GetProperty("seq").GetInt64())); // no reuse, no gap
+        }
+
+        [Fact]
+        public void AnUnstartedMachineThatRecordedNotStartedRejections_StillRestores()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = Loaded();
+            Assert.True(first.Fire("validate", out bool fired, out _, out string reason, out _)); // before Start: a NotStarted rejection
+            Assert.False(fired);
+            Assert.Equal("NotStarted", reason);
+            Assert.True(first.EnablePersistence(name, out _, out _, out string message), message); // persists that history with started == false
+            first.Dispose();
+
+            StateMachineUtils second = Loaded();
+            Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
+            Assert.True(restored);
+            Assert.True(second.IsStarted(out bool started, out _));
+            Assert.False(started);
+            Assert.True(second.GetHistoryJson(out string json, out _));
+            JsonElement entry = JsonDocument.Parse(json).RootElement[0];
+            Assert.Equal("rejected", entry.GetProperty("kind").GetString());
+            Assert.Equal("NotStarted", entry.GetProperty("reason").GetString());
+        }
+
+        [Fact]
+        public void HistoryWithReentrancyLimitAndRejectionRecords_RestoresToo()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(name);
+            Assert.True(first.Start(out _, out _));
+            int refusals = 0;
+            first.TransitionRejected += (_, _) => { if (first.Fire("again", out _, out _, out string r, out _) && r == "ReentrancyLimit") refusals++; };
+            Assert.True(first.Fire("nonsense", out _, out _, out _, out _));
+            Assert.True(first.SetContext("k", "v", out _)); // persist the accumulated rejections
+            first.Dispose();
+
+            StateMachineUtils second = Loaded();
+            Assert.True(second.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+            Assert.True(second.GetHistoryJson(out string json, out _, 1000));
+            Assert.Contains(JsonDocument.Parse(json).RootElement.EnumerateArray(), e => e.TryGetProperty("reason", out JsonElement r) && r.GetString() == "ReentrancyLimit");
+        }
+
+        [Fact]
+        public void TheSavedStateFile_IsWrittenIntactWithNoTempFileLeftBehind()
+        {
+            string name = NewMachineName();
+            StateMachineUtils machine = LoadedWithPersistence(name);
+            Assert.True(machine.Start(out _, out _));
+            for (int i = 0; i < 20; i++) Assert.True(machine.SetContext("k" + i, new string('v', 500), out _));
+
+            string folder = Path.Combine(StateMachineCore.BasePath, name);
+            Assert.Empty(Directory.EnumerateFiles(folder, "*.tmp"));
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name))); // complete, parseable JSON
+            Assert.Equal(20, doc.RootElement.GetProperty("context").EnumerateObject().Count());
+        }
+
         [Fact]
         public void Persistence_NeverRecordsContextValuesInHistory()
         {

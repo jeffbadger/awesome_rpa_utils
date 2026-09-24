@@ -938,6 +938,8 @@ namespace StateMachineAutomation
             if (saved.history.Any(h => h == null)) { message = "The saved state has an empty history entry" + discard; return false; }
             if (saved.history.Count > AbsoluteMaximumHistoryEntries) { message = "The saved state has " + saved.history.Count + " history entries, more than the " + AbsoluteMaximumHistoryEntries + " this component ever writes" + discard; return false; }
             if (saved.context.Count > StateMachineCore.MaxContextEntries) { message = "The saved state has " + saved.context.Count + " context keys, more than the " + StateMachineCore.MaxContextEntries + " allowed" + discard; return false; }
+            string historyProblem = ValidateSavedHistory(saved.history, saved.sequence);
+            if (historyProblem != null) { message = "The saved state has an invalid history (" + historyProblem + ")" + discard; return false; }
 
             var snapshot = new Snapshot { Started = saved.started, Sequence = saved.sequence };
             if (saved.started)
@@ -969,6 +971,55 @@ namespace StateMachineAutomation
             snapshot.History = saved.history.Skip(Math.Max(0, saved.history.Count - maximumHistoryEntries)).ToList();
             restored = snapshot;
             return true;
+        }
+
+        private static readonly string[] HistoryKinds = { "start", "reset", "transition", "rejected" };
+
+        /// <summary>
+        /// Checks a saved history against the invariants everything this component writes satisfies, so an edited or
+        /// damaged file cannot smuggle in records that <see cref="GetHistoryJson"/> would then serve as fact and that
+        /// the next change would build on: every entry has a known kind, a parseable timestamp and the fields its kind
+        /// needs, names only states the definition declares, sequence numbers are positive and strictly increasing, and
+        /// the last one equals the top-level sequence counter (every entry is stamped with the counter's new value), so
+        /// the next entry can never reuse or overflow a number. Returns null when valid, otherwise what is wrong.
+        /// </summary>
+        private string ValidateSavedHistory(List<HistoryEntry> history, long sequence)
+        {
+            const int MaxDetail = 16384;
+            long previous = 0;
+            for (int i = 0; i < history.Count; i++)
+            {
+                HistoryEntry h = history[i];
+                string at = "entry " + (i + 1);
+                if (h.seq < 1) return at + " has a sequence number below 1";
+                if (h.seq <= previous) return at + " has sequence number " + h.seq + ", which does not increase on the entry before it";
+                previous = h.seq;
+                if (!HistoryKinds.Contains(h.kind)) return at + " has an unknown kind '" + h.kind + "'";
+                if (string.IsNullOrWhiteSpace(h.utc) || !DateTime.TryParse(h.utc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out _))
+                    return at + " has a missing or invalid timestamp";
+                foreach (string name in new[] { h.trigger, h.reason })
+                    if (name != null && name.Length > MachineDefinition.MaxNameLength) return at + " has a field longer than " + MachineDefinition.MaxNameLength + " characters";
+                if (h.detail != null && h.detail.Length > MaxDetail) return at + " has a detail longer than " + MaxDetail + " characters";
+                foreach (string stateName in new[] { h.from, h.to })
+                    if (!string.IsNullOrEmpty(stateName) && definition.FindState(stateName) == null) return at + " names state '" + stateName + "', which is not a state of this definition";
+
+                switch (h.kind)
+                {
+                    case "start":
+                    case "reset":
+                        if (string.IsNullOrEmpty(h.to)) return at + " (" + h.kind + ") has no 'to' state";
+                        break;
+                    case "transition":
+                        if (string.IsNullOrWhiteSpace(h.trigger) || string.IsNullOrEmpty(h.from) || string.IsNullOrEmpty(h.to)) return at + " (transition) is missing its trigger, 'from' or 'to'";
+                        break;
+                    case "rejected":
+                        if (string.IsNullOrWhiteSpace(h.trigger) || string.IsNullOrWhiteSpace(h.reason)) return at + " (rejected) is missing its trigger or reason";
+                        break;
+                }
+            }
+            if (history.Count > 0 && history[history.Count - 1].seq != sequence)
+                return "its last entry is numbered " + history[history.Count - 1].seq + " but the saved sequence counter is " + sequence;
+            return null;
         }
 
         /// <summary>Writes a snapshot durably. A no-op when persistence is off. The caller only commits the snapshot if this returns true.</summary>

@@ -32,7 +32,8 @@ else          Log("resumed in " + machine.CurrentState);        // picked up whe
 ## Durable first
 
 With persistence enabled, every state change and every context change is
-**written before it is applied**. If the write fails (disk full, permissions,
+**written before it is applied** (and flushed to the disk before the file is swapped in,
+so a power loss right after cannot leave an empty or partial saved state). If the write fails (disk full, permissions,
 antivirus lock) the call returns `False` with a message and **nothing changes** -
 no transition, no context change, no events. You can fix the problem and retry
 the same call. The machine can never be in a state that disk does not know about.
@@ -47,6 +48,7 @@ reach disk with the next real change.
 |---|---|
 | Saved run was made with a **different definition** | `EnablePersistence` returns `False` naming `DiscardPersistedState`. It is never silently resumed into a machine it does not fit. |
 | Saved file is larger than 64 MB, or holds more context keys, longer keys/values, or more history entries than this component would ever write | `False` with a message, same remedy. A saved context is treated as untrusted input and held to the same limits as `SetContext`. |
+| A saved **history record** is invalid: unknown kind, missing or unparseable timestamp, a record missing what its kind needs, a state the definition does not declare, sequence numbers that are not positive and strictly increasing, or a last number that does not match the saved sequence counter | `False` with a message naming the bad entry, same remedy. History is read back by `GetHistoryJson` and numbered onward from, so it is checked as strictly as the rest. |
 | Saved file is corrupt, incomplete (a missing field, a missing or invalid `enteredUtc`), from a newer schema, or names an unknown state | `False` with a message, same remedy. It is never patched up: a missing timestamp is not replaced with "now", and a missing context or history is not treated as empty. |
 | Another component or process already owns that `machineName` | `False` ("already open"). One owner per saved machine. |
 | Enabling after `Start` | `False`: the saved run would be overwritten. |

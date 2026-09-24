@@ -198,8 +198,10 @@ operator and expected value - but **never** the context's actual value).
   exists the call is refused with a message rather than losing it silently.
   A run that had reached a final state is restored *as* finished - call `Reset` to
   begin a new one. A saved file is untrusted input: it is held to the same limits
-  as `SetContext` (1,000 keys, 128-character keys, 4,096-character values) and to
-  10,000 history entries and 64 MB.
+  as `SetContext` (1,000 keys, 128-character keys, 4,096-character values), to
+  10,000 history entries and 64 MB, and every history record must be well formed
+  (known kind, valid timestamp, declared states, strictly increasing sequence
+  numbers ending at the saved counter) or the whole file is refused.
 - **Restoring is silent.** Resuming a saved run raises no events - the machine
   is being picked up, not moved. Read `CurrentState` to see where it stopped.
   A saved run from a *different* definition is refused with a message, never

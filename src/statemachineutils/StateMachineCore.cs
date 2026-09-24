@@ -539,7 +539,14 @@ namespace StateMachineAutomation
             string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                File.WriteAllText(temp, json, new UTF8Encoding(false));
+                // Flush to the physical device before the rename. Without it a power loss right after the rename can
+                // leave a zero-length or partial state.json - exactly the failure this file exists to survive.
+                byte[] bytes = new UTF8Encoding(false).GetBytes(json);
+                using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(true);
+                }
                 File.Move(temp, path, true);
             }
             catch
