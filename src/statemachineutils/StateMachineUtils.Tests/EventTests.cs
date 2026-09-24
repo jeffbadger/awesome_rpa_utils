@@ -244,6 +244,105 @@ namespace StateMachineAutomation.Tests
         }
 
         [Fact]
+        public void ReplacingTheDefinitionFromAnotherThread_WaitsForTheEventBatchInFlight()
+        {
+            StateMachineUtils machine = Started();
+            var log = new List<string>();
+            var handlerRunning = new ManualResetEventSlim(false);
+            var release = new ManualResetEventSlim(false);
+            machine.TransitionFired += (_, e) =>
+            {
+                lock (log) log.Add("fired:" + e.PreviousState + ">" + e.NewState);
+                handlerRunning.Set();
+                release.Wait(TimeSpan.FromSeconds(10));
+            };
+            machine.StateEntered += (_, e) => { lock (log) log.Add("entered:" + e.NewState); };
+
+            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            firing.Start();
+            Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)), "the handler never started");
+
+            bool loaded = false;
+            var replacing = new Thread(() => loaded = machine.LoadDefinitionJson(Defs.Minimal, out _));
+            replacing.Start();
+
+            // The load stops the machine, so it must not run while this transition's events are still being
+            // delivered: the definition and state the remaining handlers describe must still exist.
+            Assert.False(replacing.Join(TimeSpan.FromMilliseconds(300)), "the definition was replaced while an event batch was still being delivered");
+            Assert.Equal("InvoiceFlow", machine.MachineName);
+            Assert.Equal("Validated", machine.CurrentState);
+
+            release.Set();
+            Assert.True(firing.Join(TimeSpan.FromSeconds(5)));
+            Assert.True(replacing.Join(TimeSpan.FromSeconds(5)));
+
+            Assert.True(loaded);
+            lock (log) Assert.Equal(new[] { "fired:Received>Validated", "entered:Validated" }, log); // the batch finished intact first
+            Assert.Equal(string.Empty, machine.MachineName); // the replacement definition has no name
+            Assert.Equal(string.Empty, machine.CurrentState); // then the load stopped the machine
+        }
+
+        [Fact]
+        public void ClearingTheDefinitionFromAnotherThread_AlsoWaitsForTheEventBatchInFlight()
+        {
+            StateMachineUtils machine = Started();
+            var handlerRunning = new ManualResetEventSlim(false);
+            var release = new ManualResetEventSlim(false);
+            machine.StateEntered += (_, _) => { handlerRunning.Set(); release.Wait(TimeSpan.FromSeconds(10)); };
+
+            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            firing.Start();
+            Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)));
+
+            var clearing = new Thread(() => machine.ClearDefinition(out _));
+            clearing.Start();
+            Assert.False(clearing.Join(TimeSpan.FromMilliseconds(300)), "the definition was cleared while an event batch was still being delivered");
+            Assert.Equal("Validated", machine.CurrentState);
+
+            release.Set();
+            Assert.True(firing.Join(TimeSpan.FromSeconds(5)));
+            Assert.True(clearing.Join(TimeSpan.FromSeconds(5)));
+            Assert.Equal(string.Empty, machine.CurrentState);
+        }
+
+        [Theory]
+        [InlineData("load")]
+        [InlineData("clear")]
+        public void ReplacingTheDefinitionFromInsideAnEventHandler_IsRefused_AndTheMachineIsUntouched(string which)
+        {
+            StateMachineUtils machine = Started();
+            bool ok = true;
+            string refusal = null;
+            var remainingEvents = new List<string>();
+            machine.StateExited += (_, _) =>
+            {
+                ok = which == "load" ? machine.LoadDefinitionJson(Defs.Minimal, out refusal) : machine.ClearDefinition(out refusal);
+            };
+            machine.TransitionFired += (_, e) => remainingEvents.Add("fired:" + e.NewState);
+            machine.StateEntered += (_, e) => remainingEvents.Add("entered:" + e.NewState);
+
+            Assert.True(machine.Fire("validate", out bool fired, out string newState, out _, out string message), message);
+
+            Assert.False(ok);
+            Assert.Contains("inside an event handler", refusal);
+            Assert.True(fired);
+            Assert.Equal("Validated", newState);
+            Assert.Equal("Validated", machine.CurrentState); // still running, on the definition the events describe
+            Assert.Equal("InvoiceFlow", machine.MachineName);
+            Assert.Equal(new[] { "fired:Validated", "entered:Validated" }, remainingEvents);
+        }
+
+        [Fact]
+        public void TheDefinitionCanStillBeReplacedNormally_OnceNoHandlerIsRunning()
+        {
+            StateMachineUtils machine = Started();
+            machine.StateEntered += (_, _) => { };
+            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
+            Assert.True(machine.LoadDefinitionJson(Defs.Minimal, out string message), message);
+            Assert.True(machine.ClearDefinition(out message), message);
+        }
+
+        [Fact]
         public void WhileHandlersRun_OtherThreadsCanStillReadTheMachine()
         {
             StateMachineUtils machine = Started();

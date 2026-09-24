@@ -172,6 +172,10 @@ operator and expected value - but **never** the context's actual value).
   past that, `Fire` returns `ReentrancyLimit` (recorded in history, no event,
   so a `TransitionRejected` handler cannot recurse forever) and `Start`/`Reset`
   return `False`.
+- **`LoadDefinitionJson` and `ClearDefinition` are refused from inside an event
+  handler** (`False` with a message): they stop the machine, which must not happen
+  while the batch of events for the previous transition is still being delivered.
+  From another thread they wait for those handlers to finish.
 - **Concurrent callers are serialized, so events always arrive in transition
   order.** A transition and the delivery of its events are one unit: while one
   thread's handlers run, another thread's `Fire`/`Start`/`Reset` waits its turn
@@ -189,6 +193,13 @@ operator and expected value - but **never** the context's actual value).
   move, no events). Declined triggers are recorded in the in-memory history
   but do not trigger a write, so they cannot fail on a full disk; they reach
   disk with the next real change.
+- **Set the context after `EnablePersistence`.** Restoring a saved run replaces the
+  whole run state, so context set beforehand would be discarded; when a saved run
+  exists the call is refused with a message rather than losing it silently.
+  A run that had reached a final state is restored *as* finished - call `Reset` to
+  begin a new one. A saved file is untrusted input: it is held to the same limits
+  as `SetContext` (1,000 keys, 128-character keys, 4,096-character values) and to
+  10,000 history entries and 64 MB.
 - **Restoring is silent.** Resuming a saved run raises no events - the machine
   is being picked up, not moved. Read `CurrentState` to see where it stopped.
   A saved run from a *different* definition is refused with a message, never

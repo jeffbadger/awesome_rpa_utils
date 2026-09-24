@@ -145,8 +145,24 @@ else
         queue.RecoverExpiredLeases(queuePath, out int recovered, out int rejected, out message);
         machine.Fire("recovered", out bool fired, out state, out string reason, out message);
     }
+    else if (state == "Finished" || state == "Stopped")
+    {
+        // The previous run ended on its own terms; this launch is a new run over whatever is in the
+        // queue now. Without this, a restored final state would end the loop below immediately.
+        machine.Reset(true, out state, out message);                 // back to Starting, context cleared
+        machine.SetContext("consecutiveFailures", "0", out message);
+    }
+    // "Suspended" is left alone on purpose: the last run gave up and needs a person (see "Operating
+    // it"), so the loop below exits at once until someone Resets it.
 }
 ```
+
+Two ordering rules in that setup are easy to get wrong. `EnablePersistence` comes
+**after** `LoadDefinitionJson` (it needs the definition to recognize a saved run)
+and **before** `Start`. And `SetContext` comes **after** `EnablePersistence`:
+restoring a saved run replaces the whole run state, so context set beforehand
+would be thrown away - `EnablePersistence` refuses rather than let that happen
+silently.
 
 Restoring is silent - no events fire when a saved run is picked up, because
 nothing changed - so the loop below reads the current state instead of waiting

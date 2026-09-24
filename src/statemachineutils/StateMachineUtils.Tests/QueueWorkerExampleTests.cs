@@ -289,6 +289,62 @@ namespace StateMachineAutomation.Tests
         }
 
         [Fact]
+        public void ARestartAfterAFinishedRun_IsANewRun_NotAnImmediateExit()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = Loaded(DocDefinition());
+            Assert.True(first.EnablePersistence(name, out _, out _, out string message), message);
+            Assert.True(first.SetContext("consecutiveFailures", "0", out message), message);
+            Assert.True(first.Start(out _, out message), message);
+            RunToEnd(first, new FakeQueue(("a", new[] { Outcome.Ok })));
+            Assert.Equal("Finished", first.CurrentState);
+            first.Dispose();
+
+            // The next launch, exactly as the documented setup does it.
+            StateMachineUtils second = Loaded(DocDefinition());
+            Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
+            Assert.True(restored);
+            Assert.Equal("Finished", second.CurrentState);
+            Assert.True(second.IsFinished); // left alone, the loop would exit at once and never look at the new items
+
+            Assert.True(second.Reset(true, out string state, out message), message);
+            Assert.True(second.SetContext("consecutiveFailures", "0", out message), message);
+            Assert.Equal("Starting", state);
+
+            var tomorrow = new FakeQueue(("x", new[] { Outcome.Ok }), ("y", new[] { Outcome.Ok }));
+            RunToEnd(second, tomorrow);
+            Assert.Equal("Finished", second.CurrentState);
+            Assert.Equal(new[] { "x", "y" }, tomorrow.Completed);
+        }
+
+        [Fact]
+        public void ASuspendedRun_StaysSuspendedAcrossARestart_UntilAPersonResetsIt()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = Loaded(DocDefinition());
+            Assert.True(first.EnablePersistence(name, out _, out _, out string message), message);
+            Assert.True(first.SetContext("consecutiveFailures", "0", out message), message);
+            Assert.True(first.Start(out _, out message), message);
+            var queue = new FakeQueue(
+                ("1", new[] { Outcome.Technical }), ("2", new[] { Outcome.Technical }), ("3", new[] { Outcome.Technical }),
+                ("4", new[] { Outcome.Technical }), ("5", new[] { Outcome.Technical }));
+            RunToEnd(first, queue);
+            Assert.Equal("Suspended", first.CurrentState);
+            first.Dispose();
+
+            StateMachineUtils second = Loaded(DocDefinition());
+            Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
+            Assert.True(restored);
+            Assert.Equal("Suspended", second.CurrentState); // the documented setup deliberately leaves this one alone
+            Assert.True(second.IsFinished);                 // so the loop exits at once until someone acts
+
+            Assert.True(second.Reset(false, out _, out message), message); // the operator, after fixing the cause
+            Assert.True(second.SetContext("consecutiveFailures", "0", out message), message);
+            RunToEnd(second, queue);
+            Assert.Equal("Finished", second.CurrentState);
+        }
+
+        [Fact]
         public void TheFailureCountSurvivesACrash_SoTheBreakerStillTrips()
         {
             string name = NewMachineName();

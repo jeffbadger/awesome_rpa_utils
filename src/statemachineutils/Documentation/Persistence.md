@@ -16,6 +16,14 @@ else          Log("resumed in " + machine.CurrentState);        // picked up whe
   run is restored (`restored == True`) or a fresh one is begun.
 - The state lives in `%LOCALAPPDATA%\AwesomeRpaUtils\StateMachines\<machineName>\`
   (per Windows user, machine-local). `statePath` tells you where.
+- **Set the context after enabling persistence.** Restoring replaces the whole run
+  state with the saved one, so context set *before* `EnablePersistence` would be
+  discarded; when a saved run exists the call is refused with a message instead of
+  losing it silently. (With no saved run, context set beforehand is kept.)
+- **A run that ended stays ended.** Restoring a machine that had reached a final
+  state gives you a machine in that final state, so a restart does not begin a new
+  run by itself. `Reset` starts one; see the setup in
+  [Working a queue](WorkingAQueue.md).
 - **Restoring is silent:** no events fire, because nothing changed. Read
   `CurrentState` to see where the run stopped.
 - What is saved: current state, when it was entered, the context, and the
@@ -38,6 +46,7 @@ reach disk with the next real change.
 | Situation | Result |
 |---|---|
 | Saved run was made with a **different definition** | `EnablePersistence` returns `False` naming `DiscardPersistedState`. It is never silently resumed into a machine it does not fit. |
+| Saved file is larger than 64 MB, or holds more context keys, longer keys/values, or more history entries than this component would ever write | `False` with a message, same remedy. A saved context is treated as untrusted input and held to the same limits as `SetContext`. |
 | Saved file is corrupt, incomplete (a missing field, a missing or invalid `enteredUtc`), from a newer schema, or names an unknown state | `False` with a message, same remedy. It is never patched up: a missing timestamp is not replaced with "now", and a missing context or history is not treated as empty. |
 | Another component or process already owns that `machineName` | `False` ("already open"). One owner per saved machine. |
 | Enabling after `Start` | `False`: the saved run would be overwritten. |
@@ -51,7 +60,10 @@ machine.DiscardPersistedState("InvoiceWorker", out bool discarded, out message);
 ```
 
 `DiscardPersistedState` is refused while this component (or another owner) has
-that machine enabled. Disposing the component releases ownership.
+that machine enabled. Disposing the component releases ownership. It removes only
+the saved state, while holding the ownership lock; the (empty) folder and the lock
+marker file are deliberately left, because deleting them after letting go of the
+lock could race with a new owner acquiring it.
 
 ## Cautions
 

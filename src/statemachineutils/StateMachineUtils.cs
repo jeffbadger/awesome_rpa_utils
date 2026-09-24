@@ -54,6 +54,9 @@ namespace StateMachineAutomation
         private string persistDefinitionHash;
         private FileStream persistLock;
 
+        /// <summary>Largest saved-state file accepted on restore. Instance-level so a test can lower it without affecting other components.</summary>
+        internal int MaxStateFileBytes = 64 * 1024 * 1024;
+
         /// <summary>Time source; tests substitute a controllable clock.</summary>
         internal Func<DateTime> Clock = () => DateTime.UtcNow;
 
@@ -197,13 +200,17 @@ namespace StateMachineAutomation
 
         /// <summary>Replaces the machine's definition with a validated JSON definition.</summary>
         [Category("StateMachine - Definition")]
-        [Description("Parses and validates a JSON definition, then replaces the current one and stops the machine (context is kept). An invalid definition is rejected whole and the previous definition stays in force. Never throws.")]
+        [Description("Parses and validates a JSON definition, then replaces the current one and stops the machine (context is kept). An invalid definition is rejected whole and the previous definition stays in force. Waits for another thread's event handlers to finish; refused when called from inside an event handler. Never throws.")]
         public bool LoadDefinitionJson(string definitionJson, out string message)
         {
             message = null;
             try
             {
                 if (!RequireLive(out message)) return false;
+                if (!RequireNotInsideEvent(nameof(LoadDefinitionJson), out message)) return false;
+                // Replacing the definition stops the machine, so it must not happen in the middle of another
+                // thread's event delivery: take the dispatch lock (waiting for those handlers) before syncRoot.
+                lock (dispatchLock)
                 lock (syncRoot)
                 {
                     if (!RequireDefinitionEditable(true, out message)) return false;
@@ -318,13 +325,15 @@ namespace StateMachineAutomation
 
         /// <summary>Removes every state and transition and stops the machine.</summary>
         [Category("StateMachine - Definition")]
-        [Description("Removes the whole definition and stops the machine (context is kept). Not allowed while persistence is enabled. Never throws.")]
+        [Description("Removes the whole definition and stops the machine (context is kept). Not allowed while persistence is enabled. Waits for another thread's event handlers to finish; refused when called from inside an event handler. Never throws.")]
         public bool ClearDefinition(out string message)
         {
             message = null;
             try
             {
                 if (!RequireLive(out message)) return false;
+                if (!RequireNotInsideEvent(nameof(ClearDefinition), out message)) return false;
+                lock (dispatchLock)
                 lock (syncRoot)
                 {
                     if (!RequireDefinitionEditable(true, out message)) return false;
@@ -804,8 +813,22 @@ namespace StateMachineAutomation
                         Snapshot next;
                         bool didRestore = false;
 
+                        // We hold the ownership lock, so no other writer exists and any temp file left by a crash
+                        // mid-write (state.json.<guid>.tmp) is dead weight: sweep it.
+                        foreach (string stale in Directory.EnumerateFiles(folder, "state.json.*.tmp"))
+                        {
+                            try { File.Delete(stale); } catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { /* best effort; a leftover is harmless */ }
+                        }
+
                         if (File.Exists(path))
                         {
+                            // A restore replaces the whole run state with the saved one. Context set beforehand would be
+                            // dropped without a trace, so refuse and say how to do it safely.
+                            if (state.Context.Count > 0)
+                            {
+                                message = "A saved run exists for '" + machineName.Trim() + "', and restoring it would discard the " + state.Context.Count + " context value(s) already set on this component. Call SetContext after EnablePersistence (or ClearContext first) so nothing is lost silently.";
+                                return false;
+                            }
                             if (!TryLoadSaved(path, hash, out next, out message)) return false;
                             didRestore = true;
                         }
@@ -877,13 +900,15 @@ namespace StateMachineAutomation
                     try { lockStream = new FileStream(Path.Combine(folder, ".machine.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
                     catch (IOException) { message = "The saved state for '" + machineName.Trim() + "' is in use by another StateMachineUtils component or process."; return false; }
 
+                    // Only the saved state is removed, and only while the ownership lock is held. The lock marker
+                    // and the folder are deliberately left behind: deleting them after releasing the lock would race
+                    // with a new owner acquiring it in that gap - on Unix an unlinked-but-open lock file lets the
+                    // next caller create a second lock file, giving two owners - and they cost nothing to keep.
                     using (lockStream)
                     {
                         string path = Path.Combine(folder, "state.json");
                         if (File.Exists(path)) { File.Delete(path); discarded = true; }
                     }
-                    try { File.Delete(Path.Combine(folder, ".machine.lock")); Directory.Delete(folder, false); }
-                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { /* leftover empty folder is harmless; the state itself is gone */ }
                     return true;
                 }
             }
@@ -894,6 +919,8 @@ namespace StateMachineAutomation
         {
             restored = null;
             message = null;
+            long length = new FileInfo(path).Length;
+            if (length > MaxStateFileBytes) { message = "The saved state is " + length + " bytes, larger than the " + MaxStateFileBytes + "-byte limit this component will load; call DiscardPersistedState to start fresh."; return false; }
             PersistedState saved;
             try { saved = JsonSerializer.Deserialize<PersistedState>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
             catch (JsonException ex) { message = "The saved state is corrupt (" + ex.Message + "); call DiscardPersistedState to start fresh."; return false; }
@@ -909,6 +936,8 @@ namespace StateMachineAutomation
             if (saved.history == null) { message = "The saved state is incomplete (it has no 'history')" + discard; return false; }
             if (saved.sequence < 0) { message = "The saved state has an invalid sequence number" + discard; return false; }
             if (saved.history.Any(h => h == null)) { message = "The saved state has an empty history entry" + discard; return false; }
+            if (saved.history.Count > AbsoluteMaximumHistoryEntries) { message = "The saved state has " + saved.history.Count + " history entries, more than the " + AbsoluteMaximumHistoryEntries + " this component ever writes" + discard; return false; }
+            if (saved.context.Count > StateMachineCore.MaxContextEntries) { message = "The saved state has " + saved.context.Count + " context keys, more than the " + StateMachineCore.MaxContextEntries + " allowed" + discard; return false; }
 
             var snapshot = new Snapshot { Started = saved.started, Sequence = saved.sequence };
             if (saved.started)
@@ -928,7 +957,12 @@ namespace StateMachineAutomation
 
             foreach (KeyValuePair<string, string> entry in saved.context)
             {
+                // The same shape SetContext enforces: a saved context is untrusted input, since the file can be
+                // stale or edited, and anything SetContext would refuse must not sneak in through a restore.
+                if (!MachineDefinition.IsValidName(entry.Key, out string keyProblem) || entry.Key != entry.Key.Trim())
+                { message = "The saved state has a context key that " + (keyProblem ?? "has leading or trailing spaces") + discard; return false; }
                 if (entry.Value == null) { message = "The saved state has a null context value for '" + entry.Key + "'" + discard; return false; }
+                if (entry.Value.Length > StateMachineCore.MaxContextValueLength) { message = "The saved state has a value for context key '" + entry.Key + "' longer than " + StateMachineCore.MaxContextValueLength + " characters" + discard; return false; }
                 if (snapshot.Context.ContainsKey(entry.Key)) { message = "The saved state has two context keys that differ only by case ('" + entry.Key + "')" + discard; return false; }
                 snapshot.Context[entry.Key] = entry.Value;
             }
@@ -987,6 +1021,19 @@ namespace StateMachineAutomation
                 if (!disposed) return true;
             }
             message = "This StateMachineUtils component has been disposed.";
+            return false;
+        }
+
+        /// <summary>
+        /// Refuses a call made from inside one of this machine's own event handlers on the current thread.
+        /// The locks are re-entrant, so without this check a handler could replace the definition while the batch
+        /// of events describing the previous transition is still being delivered.
+        /// </summary>
+        private bool RequireNotInsideEvent(string operation, out string message)
+        {
+            message = null;
+            if (fireDepth.Value <= 0) return true;
+            message = operation + " cannot be called from inside an event handler: it replaces the definition and stops the machine while that handler's event batch is still being delivered. Call it from the automation's main flow instead.";
             return false;
         }
 

@@ -561,6 +561,192 @@ namespace StateMachineAutomation.Tests
             Assert.Equal(2, JsonDocument.Parse(json).RootElement.GetArrayLength());
         }
 
+        // ---- DiscardPersistedState must not race a new owner
+
+        [Fact]
+        public void DiscardPersistedState_RemovesOnlyTheState_LeavingTheLockMarkerAndFolderInPlace()
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose();
+            string folder = Path.Combine(StateMachineCore.BasePath, name);
+            Assert.True(File.Exists(Path.Combine(folder, ".machine.lock")));
+
+            StateMachineUtils machine = New();
+            Assert.True(machine.DiscardPersistedState(name, out bool discarded, out string message), message);
+            Assert.True(discarded);
+            Assert.False(File.Exists(StatePath(name)));
+            // Deleting these after releasing the lock could race a new owner (and on Unix, unlinking an open lock
+            // file lets the next caller create a second one), so they must survive.
+            Assert.True(File.Exists(Path.Combine(folder, ".machine.lock")));
+            Assert.True(Directory.Exists(folder));
+
+            StateMachineUtils next = Loaded();
+            Assert.True(next.EnablePersistence(name, out _, out bool restored, out message), message);
+            Assert.False(restored);
+        }
+
+        [Fact]
+        public void DiscardPersistedState_DoesNotBreakOwnership_WhenAnotherComponentAcquiresRightAfter()
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose();
+            StateMachineUtils cleaner = New();
+            Assert.True(cleaner.DiscardPersistedState(name, out _, out string message), message);
+
+            StateMachineUtils owner = LoadedWithPersistence(name);
+            StateMachineUtils intruder = Loaded();
+            Assert.False(intruder.EnablePersistence(name, out _, out _, out message));
+            Assert.Contains("already open", message);
+            Assert.True(File.Exists(Path.Combine(StateMachineCore.BasePath, name, ".machine.lock")));
+            Assert.True(owner.Start(out _, out message), message);
+        }
+
+        // ---- a saved context is untrusted input
+
+        private void RewriteSaved(string name, Action<System.Collections.Generic.Dictionary<string, object>> edit)
+        {
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name)));
+            var fields = doc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => (object)p.Value.Clone());
+            edit(fields);
+            File.WriteAllText(StatePath(name), JsonSerializer.Serialize(fields));
+        }
+
+        private string SavedRun(out string name) { SavedStartedRun(out name); return name; }
+
+        [Theory]
+        [InlineData("count", "context keys, more than")]
+        [InlineData("longKey", "context key that is longer than 128")]
+        [InlineData("longValue", "longer than 4096 characters")]
+        [InlineData("paddedKey", "context key that has leading or trailing spaces")]
+        [InlineData("emptyKey", "context key that is empty")]
+        public void ASavedContextThatBreaksTheLimitsSetContextEnforces_IsRefused(string kind, string fragment)
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields =>
+            {
+                var context = new System.Collections.Generic.Dictionary<string, string>();
+                switch (kind)
+                {
+                    case "count": for (int i = 0; i < StateMachineCore.MaxContextEntries + 1; i++) context["k" + i] = "v"; break;
+                    case "longKey": context[new string('k', 129)] = "v"; break;
+                    case "longValue": context["k"] = new string('v', StateMachineCore.MaxContextValueLength + 1); break;
+                    case "paddedKey": context[" k"] = "v"; break;
+                    case "emptyKey": context[""] = "v"; break;
+                }
+                fields["context"] = context;
+            });
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains(fragment, message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void ASavedContextExactlyAtTheLimits_IsAccepted()
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields =>
+            {
+                var context = new System.Collections.Generic.Dictionary<string, string>();
+                for (int i = 0; i < StateMachineCore.MaxContextEntries - 1; i++) context["k" + i] = "v";
+                context[new string('k', 128) + ""] = new string('v', StateMachineCore.MaxContextValueLength);
+                fields["context"] = context;
+            });
+
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+            Assert.True(machine.GetContextJson(out string json, out _));
+            Assert.Equal(StateMachineCore.MaxContextEntries, JsonDocument.Parse(json).RootElement.EnumerateObject().Count());
+        }
+
+        [Fact]
+        public void ASavedHistoryLargerThanThisComponentEverWrites_IsRefused()
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields =>
+            {
+                fields["history"] = Enumerable.Range(1, 10001).Select(i => new { seq = i, utc = "2026-01-01T00:00:00.0000000Z", kind = "transition" }).ToList();
+            });
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("10001 history entries", message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void ASavedFileLargerThanTheLoadLimit_IsRefusedBeforeItIsRead()
+        {
+            string name = SavedRun(out _);
+            StateMachineUtils machine = Loaded();
+            machine.MaxStateFileBytes = 50; // per component, so no other test is affected
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("larger than the 50-byte limit", message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        // ---- restoring must not silently drop what the caller already set
+
+        [Fact]
+        public void RestoringASavedRun_IsRefused_WhenContextWasSetBeforehand_RatherThanDroppingItSilently()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(name);
+            Assert.True(first.SetContext("saved", "1", out _));
+            Assert.True(first.Start(out _, out _));
+            first.Dispose();
+
+            StateMachineUtils second = Loaded();
+            Assert.True(second.SetContext("precious", "keep me", out _));
+            Assert.False(second.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains("SetContext after EnablePersistence", message);
+            Assert.True(second.GetContext("precious", out bool stillThere, out string value, out _));
+            Assert.True(stillThere); // nothing was lost: the refusal left the component as it was
+            Assert.Equal("keep me", value);
+
+            Assert.True(second.ClearContext(out _));
+            Assert.True(second.EnablePersistence(name, out _, out restored, out message), message);
+            Assert.True(restored);
+        }
+
+        [Fact]
+        public void ContextSetBeforehand_IsKept_WhenThereIsNoSavedRunToRestore()
+        {
+            string name = NewMachineName();
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.SetContext("preset", "v", out _));
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.False(restored);
+            Assert.True(machine.GetContext("preset", out bool exists, out _, out _));
+            Assert.True(exists);
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name)));
+            Assert.Equal("v", doc.RootElement.GetProperty("context").GetProperty("preset").GetString()); // and it is persisted too
+        }
+
+        // ---- a crash mid-write leaves temp files behind
+
+        [Fact]
+        public void TempFilesLeftByACrashMidWrite_AreSweptWhenPersistenceIsEnabled()
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose();
+            string folder = Path.Combine(StateMachineCore.BasePath, name);
+            string stale = Path.Combine(folder, "state.json." + Guid.NewGuid().ToString("N") + ".tmp");
+            File.WriteAllText(stale, "half a snapshot");
+            string unrelated = Path.Combine(folder, "notes.txt");
+            File.WriteAllText(unrelated, "mine");
+
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+            Assert.False(File.Exists(stale));
+            Assert.True(File.Exists(unrelated)); // only this component's own temp files are touched
+        }
+
         [Fact]
         public void Persistence_NeverRecordsContextValuesInHistory()
         {

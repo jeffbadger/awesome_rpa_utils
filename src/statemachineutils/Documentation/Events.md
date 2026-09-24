@@ -46,6 +46,11 @@ That means:
   recurse forever) and `Start`/`Reset` return `False`. Use a flat loop that reads
   `CurrentState` and calls `Fire` - see [Working a queue](WorkingAQueue.md).
   Short, bounded chains of a few transitions are fine.
+- **Do not replace the definition from a handler.** `LoadDefinitionJson` and
+  `ClearDefinition` stop the machine, which would pull the rug out from under the
+  event batch still being delivered, so they are refused (`False` with a message)
+  when called from inside one of this machine's handlers. From another thread they
+  simply wait for the handlers to finish.
 - **Do not make a handler wait for another thread that fires the same
   machine.** That thread is queued behind the handler, so the two would wait on
   each other. Have the handler start work and return, and let the other thread
