@@ -893,6 +893,132 @@ namespace StateMachineAutomation.Tests
             Assert.Equal(20, doc.RootElement.GetProperty("context").EnumerateObject().Count());
         }
 
+        // ---- every required top-level field must be PRESENT, not merely parse to a default
+
+        [Theory]
+        [InlineData("schemaVersion")]
+        [InlineData("machineName")]
+        [InlineData("definitionHash")]
+        [InlineData("started")]
+        [InlineData("currentState")]
+        [InlineData("enteredUtc")]
+        [InlineData("sequence")]
+        [InlineData("context")]
+        [InlineData("history")]
+        public void ASnapshotMissingAnyRequiredTopLevelField_IsRefusedAsIncomplete(string field)
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields => fields.Remove(field));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains("incomplete", message);
+            Assert.Contains("no '" + field + "'", message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void ARunningSnapshotWhoseStartedFlagWasLost_IsNotSilentlyRestoredAsUnstarted_OrRewritten()
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields => fields.Remove("started"));
+            string damaged = File.ReadAllText(StatePath(name));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains("no 'started'", message);
+            Assert.True(machine.IsStarted(out bool started, out _));
+            Assert.False(started);
+            Assert.Equal(damaged, File.ReadAllText(StatePath(name))); // the damaged file was neither used nor overwritten
+        }
+
+        [Fact]
+        public void SeveralMissingFields_AreAllNamedInOneMessage()
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields => { fields.Remove("started"); fields.Remove("sequence"); });
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("no 'started' and no 'sequence'", message);
+        }
+
+        [Fact]
+        public void ASnapshotThatIsNotStartedButNamesACurrentState_IsRefusedAsInconsistent()
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose(); // saved, never started
+            RewriteSaved(name, fields => fields["currentState"] = "Validated");
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("inconsistent", message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        // ---- the saved machine name must match the requested one
+
+        [Fact]
+        public void AStateFileCopiedFromAnotherMachinesFolder_IsRefused_EvenWithTheSameDefinition()
+        {
+            string original = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(original);
+            Assert.True(first.Start(out _, out _));
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
+            first.Dispose();
+
+            string other = NewMachineName();
+            Directory.CreateDirectory(Path.Combine(StateMachineCore.BasePath, other));
+            File.Copy(StatePath(original), StatePath(other)); // same definition, so the hash matches; only the name differs
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(other, out string path, out bool restored, out string message));
+            Assert.Null(path);
+            Assert.False(restored);
+            Assert.Contains("belongs to machine '" + original + "', not '" + other + "'", message);
+            Assert.Contains("DiscardPersistedState", message);
+            Assert.True(machine.IsStarted(out bool started, out _));
+            Assert.False(started); // nothing from the other machine's run leaked in
+        }
+
+        [Fact]
+        public void AnEmptyMachineNameInTheFile_IsRefusedToo()
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields => fields["machineName"] = "");
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("belongs to machine ''", message);
+        }
+
+        [Fact]
+        public void TheMachineNameComparison_IgnoresCase_SoWindowsFolderCaseDoesNotCauseAFalseRefusal()
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields => fields["machineName"] = name.ToUpperInvariant());
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+        }
+
+        [Fact]
+        public void ThePersistedFile_RecordsTheTrimmedMachineName_SoSurroundingSpacesInTheRequestStillMatch()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = Loaded();
+            Assert.True(first.EnablePersistence("  " + name + "  ", out _, out _, out string message), message);
+            Assert.True(first.Start(out _, out _));
+            first.Dispose();
+
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name)));
+            Assert.Equal(name, doc.RootElement.GetProperty("machineName").GetString());
+
+            StateMachineUtils second = Loaded();
+            Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
+            Assert.True(restored);
+        }
+
         [Fact]
         public void Persistence_NeverRecordsContextValuesInHistory()
         {

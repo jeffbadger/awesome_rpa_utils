@@ -829,7 +829,7 @@ namespace StateMachineAutomation
                                 message = "A saved run exists for '" + machineName.Trim() + "', and restoring it would discard the " + state.Context.Count + " context value(s) already set on this component. Call SetContext after EnablePersistence (or ClearContext first) so nothing is lost silently.";
                                 return false;
                             }
-                            if (!TryLoadSaved(path, hash, out next, out message)) return false;
+                            if (!TryLoadSaved(path, machineName.Trim(), hash, out next, out message)) return false;
                             didRestore = true;
                         }
                         else next = state.Clone();
@@ -915,7 +915,7 @@ namespace StateMachineAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { discarded = false; message = NeverThrowsGuard.Failure(nameof(DiscardPersistedState), ex); return false; }
         }
 
-        private bool TryLoadSaved(string path, string definitionHash, out Snapshot restored, out string message)
+        private bool TryLoadSaved(string path, string requestedName, string definitionHash, out Snapshot restored, out string message)
         {
             restored = null;
             message = null;
@@ -925,24 +925,43 @@ namespace StateMachineAutomation
             try { saved = JsonSerializer.Deserialize<PersistedState>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
             catch (JsonException ex) { message = "The saved state is corrupt (" + ex.Message + "); call DiscardPersistedState to start fresh."; return false; }
             if (saved == null) { message = "The saved state is empty; call DiscardPersistedState to start fresh."; return false; }
-            if (saved.schemaVersion != PersistedSchemaVersion) { message = "The saved state uses schema version " + saved.schemaVersion + ", which this component does not understand; call DiscardPersistedState to start fresh."; return false; }
-            if (!string.Equals(saved.definitionHash, definitionHash, StringComparison.Ordinal)) { message = "The saved state was made with a different definition; call DiscardPersistedState to abandon it, or load the original definition."; return false; }
 
             // Every field this component writes must be present and well-formed. A file that parses as JSON but
             // is missing pieces (truncated by hand or by another tool) is corrupt, not "a fresh machine": accepting
-            // it would silently reset the context or history, or invent a time-in-state, with nothing to notice.
+            // it would silently reset the context or history, invent a time-in-state, or - for a missing 'started' -
+            // restore a running machine as unstarted and then rewrite the damaged file over the real one.
             const string discard = "; call DiscardPersistedState to start fresh.";
-            if (saved.context == null) { message = "The saved state is incomplete (it has no 'context')" + discard; return false; }
-            if (saved.history == null) { message = "The saved state is incomplete (it has no 'history')" + discard; return false; }
-            if (saved.sequence < 0) { message = "The saved state has an invalid sequence number" + discard; return false; }
+            var missing = new List<string>();
+            if (saved.schemaVersion == null) missing.Add("schemaVersion");
+            if (saved.machineName == null) missing.Add("machineName");
+            if (saved.definitionHash == null) missing.Add("definitionHash");
+            if (saved.started == null) missing.Add("started");
+            if (saved.currentState == null) missing.Add("currentState");
+            if (saved.enteredUtc == null) missing.Add("enteredUtc");
+            if (saved.sequence == null) missing.Add("sequence");
+            if (saved.context == null) missing.Add("context");
+            if (saved.history == null) missing.Add("history");
+            if (missing.Count > 0) { message = "The saved state is incomplete (it has no " + string.Join(" and no ", missing.Select(m => "'" + m + "'")) + ")" + discard; return false; }
+
+            if (saved.schemaVersion.Value != PersistedSchemaVersion) { message = "The saved state uses schema version " + saved.schemaVersion.Value + ", which this component does not understand" + discard; return false; }
+            // The folder name is the machine's identity. A state.json copied in from another machine's folder would
+            // otherwise resume under the wrong name whenever the two share a definition.
+            if (!string.Equals(saved.machineName, requestedName, StringComparison.OrdinalIgnoreCase))
+            { message = "The saved state belongs to machine '" + saved.machineName + "', not '" + requestedName + "' (was the file copied or renamed?)" + discard; return false; }
+            if (!string.Equals(saved.definitionHash, definitionHash, StringComparison.Ordinal)) { message = "The saved state was made with a different definition; call DiscardPersistedState to abandon it, or load the original definition."; return false; }
+
+            bool savedStarted = saved.started.Value;
+            long savedSequence = saved.sequence.Value;
+            if (savedSequence < 0) { message = "The saved state has an invalid sequence number" + discard; return false; }
+            if (!savedStarted && saved.currentState.Length != 0) { message = "The saved state is inconsistent: it is not started but names a current state ('" + saved.currentState + "')" + discard; return false; }
             if (saved.history.Any(h => h == null)) { message = "The saved state has an empty history entry" + discard; return false; }
             if (saved.history.Count > AbsoluteMaximumHistoryEntries) { message = "The saved state has " + saved.history.Count + " history entries, more than the " + AbsoluteMaximumHistoryEntries + " this component ever writes" + discard; return false; }
             if (saved.context.Count > StateMachineCore.MaxContextEntries) { message = "The saved state has " + saved.context.Count + " context keys, more than the " + StateMachineCore.MaxContextEntries + " allowed" + discard; return false; }
-            string historyProblem = ValidateSavedHistory(saved.history, saved.sequence);
+            string historyProblem = ValidateSavedHistory(saved.history, savedSequence);
             if (historyProblem != null) { message = "The saved state has an invalid history (" + historyProblem + ")" + discard; return false; }
 
-            var snapshot = new Snapshot { Started = saved.started, Sequence = saved.sequence };
-            if (saved.started)
+            var snapshot = new Snapshot { Started = savedStarted, Sequence = savedSequence };
+            if (savedStarted)
             {
                 if (string.IsNullOrWhiteSpace(saved.currentState)) { message = "The saved state is incomplete (a started machine has no 'currentState')" + discard; return false; }
                 StateDef current = definition.FindState(saved.currentState);

@@ -58,13 +58,15 @@ namespace StateMachineAutomation
     /// <summary>The persisted form of a machine's run state. Lowercase property names are deliberate.</summary>
     internal sealed class PersistedState
     {
-        public int schemaVersion { get; set; }
+        // Nullable on purpose: a required field that is absent from the file must be detectable as absent,
+        // not silently read as false/0 (which is how a damaged file could otherwise restore as "not started").
+        public int? schemaVersion { get; set; }
         public string machineName { get; set; }
         public string definitionHash { get; set; }
-        public bool started { get; set; }
+        public bool? started { get; set; }
         public string currentState { get; set; }
         public string enteredUtc { get; set; }
-        public long sequence { get; set; }
+        public long? sequence { get; set; }
         public Dictionary<string, string> context { get; set; }
         public List<HistoryEntry> history { get; set; }
     }

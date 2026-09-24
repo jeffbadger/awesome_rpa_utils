@@ -197,7 +197,9 @@ operator and expected value - but **never** the context's actual value).
   whole run state, so context set beforehand would be discarded; when a saved run
   exists the call is refused with a message rather than losing it silently.
   A run that had reached a final state is restored *as* finished - call `Reset` to
-  begin a new one. A saved file is untrusted input: it is held to the same limits
+  begin a new one. A saved file must carry all of its fields (an absent `started` is
+  refused, not read as "not started") and the machine name it was saved under, or
+  it is refused. A saved file is untrusted input: it is held to the same limits
   as `SetContext` (1,000 keys, 128-character keys, 4,096-character values), to
   10,000 history entries and 64 MB, and every history record must be well formed
   (known kind, valid timestamp, declared states, strictly increasing sequence
