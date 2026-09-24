@@ -1,0 +1,53 @@
+using System;
+
+namespace StateMachineAutomation
+{
+    /// <summary>
+    /// Describes a state change. Used by <c>StateExited</c>, <c>TransitionFired</c>, <c>StateEntered</c>
+    /// and <c>MachineFinished</c>. Every property is a non-null string so it wires cleanly to a Robot
+    /// Studio data port; an empty string means "not applicable" (for example the initial entry into a
+    /// machine has no previous state and no trigger).
+    /// </summary>
+    public sealed class StateMachineTransitionEventArgs : EventArgs
+    {
+        /// <summary>The state the machine was in before the change, or an empty string for the initial entry.</summary>
+        public string PreviousState { get; }
+
+        /// <summary>The state the machine is in after the change.</summary>
+        public string NewState { get; }
+
+        /// <summary>The trigger that caused the change, or an empty string for a Start/Reset.</summary>
+        public string Trigger { get; }
+
+        internal StateMachineTransitionEventArgs(string previousState, string newState, string trigger)
+        {
+            PreviousState = previousState ?? string.Empty;
+            NewState = newState ?? string.Empty;
+            Trigger = trigger ?? string.Empty;
+        }
+    }
+
+    /// <summary>Describes a trigger the machine declined to act on (<c>TransitionRejected</c>).</summary>
+    public sealed class StateMachineRejectedEventArgs : EventArgs
+    {
+        /// <summary>The state the machine was in (and still is).</summary>
+        public string State { get; }
+
+        /// <summary>The trigger that was rejected.</summary>
+        public string Trigger { get; }
+
+        /// <summary>A stable code: <c>NoTransition</c>, <c>GuardFailed</c>, <c>Finished</c> or <c>NotStarted</c>.</summary>
+        public string Reason { get; }
+
+        /// <summary>Human-readable detail. Never contains context values, only guard keys and operators.</summary>
+        public string Detail { get; }
+
+        internal StateMachineRejectedEventArgs(string state, string trigger, string reason, string detail)
+        {
+            State = state ?? string.Empty;
+            Trigger = trigger ?? string.Empty;
+            Reason = reason ?? string.Empty;
+            Detail = detail ?? string.Empty;
+        }
+    }
+}
