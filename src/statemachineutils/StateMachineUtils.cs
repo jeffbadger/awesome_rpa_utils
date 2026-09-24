@@ -681,6 +681,7 @@ namespace StateMachineAutomation
                     if (!state.Context.ContainsKey(trimmedKey) && state.Context.Count >= StateMachineCore.MaxContextEntries) { message = "The context is full (" + StateMachineCore.MaxContextEntries + " keys)."; return false; }
                     Snapshot next = state.Clone();
                     next.Context = new Dictionary<string, string>(state.Context, StringComparer.OrdinalIgnoreCase) { [trimmedKey] = value };
+                    EnforceHistoryLimit(next);
                     if (!PersistLocked(next, out message)) return false;
                     state = next;
                     return true;
@@ -726,6 +727,7 @@ namespace StateMachineAutomation
                     var copy = new Dictionary<string, string>(state.Context, StringComparer.OrdinalIgnoreCase);
                     copy.Remove(trimmedKey);
                     next.Context = copy;
+                    EnforceHistoryLimit(next);
                     if (!PersistLocked(next, out message)) return false;
                     state = next;
                     removed = true;
@@ -749,6 +751,7 @@ namespace StateMachineAutomation
                     if (state.Context.Count == 0) return true;
                     Snapshot next = state.Clone();
                     next.Context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    EnforceHistoryLimit(next);
                     if (!PersistLocked(next, out message)) return false;
                     state = next;
                     return true;
@@ -832,7 +835,7 @@ namespace StateMachineAutomation
                             if (!TryLoadSaved(path, machineName.Trim(), hash, out next, out message)) return false;
                             didRestore = true;
                         }
-                        else next = state.Clone();
+                        else { next = state.Clone(); EnforceHistoryLimit(next); }
 
                         // Publish the persistence fields first so the initial write goes through the same
                         // durable-first path as every later change, then roll them back if it fails.
@@ -957,7 +960,7 @@ namespace StateMachineAutomation
             if (saved.history.Any(h => h == null)) { message = "The saved state has an empty history entry" + discard; return false; }
             if (saved.history.Count > AbsoluteMaximumHistoryEntries) { message = "The saved state has " + saved.history.Count + " history entries, more than the " + AbsoluteMaximumHistoryEntries + " this component ever writes" + discard; return false; }
             if (saved.context.Count > StateMachineCore.MaxContextEntries) { message = "The saved state has " + saved.context.Count + " context keys, more than the " + StateMachineCore.MaxContextEntries + " allowed" + discard; return false; }
-            string historyProblem = ValidateSavedHistory(saved.history, savedSequence);
+            string historyProblem = ValidateSavedHistory(saved.history, savedSequence, savedStarted);
             if (historyProblem != null) { message = "The saved state has an invalid history (" + historyProblem + ")" + discard; return false; }
 
             var snapshot = new Snapshot { Started = savedStarted, Sequence = savedSequence };
@@ -1002,16 +1005,25 @@ namespace StateMachineAutomation
         /// the last one equals the top-level sequence counter (every entry is stamped with the counter's new value), so
         /// the next entry can never reuse or overflow a number. Returns null when valid, otherwise what is wrong.
         /// </summary>
-        private string ValidateSavedHistory(List<HistoryEntry> history, long sequence)
+        private string ValidateSavedHistory(List<HistoryEntry> history, long sequence, bool started)
         {
             const int MaxDetail = 16384;
+            // An empty history is only ever legitimate for a machine that has never recorded anything: not started, counter
+            // zero. A started machine always has at least its start entry, and a counter above zero means entries existed.
+            // Accepting an empty list otherwise would let an edit erase the audit trail and still resume.
+            if (history.Count == 0 && (started || sequence != 0))
+                return started
+                    ? "a started machine has no history entries, but it always has at least its start entry"
+                    : "there are no history entries, but the saved sequence counter is " + sequence;
             long previous = 0;
             for (int i = 0; i < history.Count; i++)
             {
                 HistoryEntry h = history[i];
                 string at = "entry " + (i + 1);
                 if (h.seq < 1) return at + " has a sequence number below 1";
-                if (h.seq <= previous) return at + " has sequence number " + h.seq + ", which does not increase on the entry before it";
+                // Every entry is stamped with the counter's next value and only the oldest are ever dropped, so the
+                // retained entries run consecutively; a gap or repeat means records were removed, added or reordered.
+                if (i > 0 && h.seq != previous + 1) return at + " has sequence number " + h.seq + " but the entry before it is " + previous + " (sequence numbers must run consecutively)";
                 previous = h.seq;
                 if (!HistoryKinds.Contains(h.kind)) return at + " has an unknown kind '" + h.kind + "'";
                 if (string.IsNullOrWhiteSpace(h.utc) || !DateTime.TryParse(h.utc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out _))
@@ -1123,10 +1135,10 @@ namespace StateMachineAutomation
             return true;
         }
 
-        /// <summary>After the definition is replaced: back to "not started" with no history, context kept.</summary>
+        /// <summary>After the definition is replaced: back to "not started" with no history, context kept. The sequence counter restarts with the history it numbered, so a stopped machine is indistinguishable from a fresh one and can still be persisted.</summary>
         private void StopMachineLocked()
         {
-            Snapshot stopped = new Snapshot { Context = state.Context, Sequence = state.Sequence };
+            Snapshot stopped = new Snapshot { Context = state.Context, Sequence = 0 };
             state = stopped;
         }
 
@@ -1163,6 +1175,18 @@ namespace StateMachineAutomation
         {
             try { fireDepth.Value--; }
             catch (ObjectDisposedException) { /* the component was disposed by a handler; nothing left to count */ }
+        }
+
+        /// <summary>
+        /// Drops history beyond the current limit from a snapshot that is about to be committed, so nothing this
+        /// component persists or serves ever exceeds <see cref="MaximumHistoryEntries"/>. Appends already do this; the
+        /// context changes and the first write after enabling persistence must too, or a lowered limit would leave
+        /// the old, longer history sitting on disk until the next transition.
+        /// </summary>
+        private void EnforceHistoryLimit(Snapshot snapshot)
+        {
+            if (snapshot.History.Count > maximumHistoryEntries)
+                snapshot.History = snapshot.History.Skip(snapshot.History.Count - maximumHistoryEntries).ToList();
         }
 
         private static string JoinProblems(List<string> problems) =>

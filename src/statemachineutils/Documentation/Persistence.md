@@ -48,7 +48,7 @@ reach disk with the next real change.
 |---|---|
 | Saved run was made with a **different definition** | `EnablePersistence` returns `False` naming `DiscardPersistedState`. It is never silently resumed into a machine it does not fit. |
 | Saved file is larger than 64 MB, or holds more context keys, longer keys/values, or more history entries than this component would ever write | `False` with a message, same remedy. A saved context is treated as untrusted input and held to the same limits as `SetContext`. |
-| A saved **history record** is invalid: unknown kind, missing or unparseable timestamp, a record missing what its kind needs, a state the definition does not declare, sequence numbers that are not positive and strictly increasing, or a last number that does not match the saved sequence counter | `False` with a message naming the bad entry, same remedy. History is read back by `GetHistoryJson` and numbered onward from, so it is checked as strictly as the rest. |
+| A saved **history record** is invalid: unknown kind, missing or unparseable timestamp, a record missing what its kind needs, a state the definition does not declare, sequence numbers that do not run consecutively, a last number that does not match the saved sequence counter, or an **empty history** where one cannot be (a started machine always has at least its start entry, and a counter above zero means entries existed) | `False` with a message naming the bad entry, same remedy. History is read back by `GetHistoryJson` and numbered onward from, so it is checked as strictly as the rest. |
 | The saved file records a **different machine name** than the one requested (a `state.json` copied or renamed in from another machine's folder) | `False` naming both names, same remedy. The folder name is the machine's identity, so a run is never resumed under the wrong one, even when two machines share a definition. |
 | Saved file is corrupt, incomplete (any of the nine top-level fields absent - including `started`, which would otherwise read as "not started" - or a missing or invalid `enteredUtc`), inconsistent (not started yet naming a current state), from a newer schema, or names an unknown state | `False` with a message, same remedy. It is never patched up: a missing timestamp is not replaced with "now", and a missing context or history is not treated as empty. |
 | Another component or process already owns that `machineName` | `False` ("already open"). One owner per saved machine. |
@@ -79,4 +79,5 @@ lock could race with a new owner acquiring it.
 - Every change writes the whole state, including up to `MaximumHistoryEntries`
   history entries. Leave it at the default 100 unless you need a longer trail.
   Lowering `MaximumHistoryEntries` hides older entries immediately but does not
-  rewrite the saved file by itself; the next real change trims it.
+  rewrite the saved file by itself; the next change that is saved - a transition
+  or a context change - trims it.

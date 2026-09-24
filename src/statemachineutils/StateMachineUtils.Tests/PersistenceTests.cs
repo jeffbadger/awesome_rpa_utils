@@ -779,8 +779,9 @@ namespace StateMachineAutomation.Tests
         [InlineData("badUtc", "missing or invalid timestamp")]
         [InlineData("zeroSeq", "sequence number below 1")]
         [InlineData("negativeSeq", "sequence number below 1")]
-        [InlineData("duplicateSeq", "does not increase")]
-        [InlineData("decreasingSeq", "does not increase")]
+        [InlineData("duplicateSeq", "run consecutively")]
+        [InlineData("decreasingSeq", "run consecutively")]
+        [InlineData("gapInSequence", "run consecutively")]
         [InlineData("lastNotSequence", "saved sequence counter is 99")]
         [InlineData("transitionNoTrigger", "missing its trigger, 'from' or 'to'")]
         [InlineData("transitionUnknownState", "names state 'Nowhere'")]
@@ -803,6 +804,7 @@ namespace StateMachineAutomation.Tests
                     case "negativeSeq": entries[0]["seq"] = -3; break;
                     case "duplicateSeq": entries[1]["seq"] = entries[0]["seq"]; break;
                     case "decreasingSeq": (entries[1]["seq"], entries[2]["seq"]) = (entries[2]["seq"], entries[1]["seq"]); break;
+                    case "gapInSequence": entries[2]["seq"] = 7; top["sequence"] = 7; break;
                     case "lastNotSequence": top["sequence"] = 99; break;
                     case "transitionNoTrigger": entries[1].Remove("trigger"); break;
                     case "transitionUnknownState": entries[1]["to"] = "Nowhere"; break;
@@ -1017,6 +1019,120 @@ namespace StateMachineAutomation.Tests
             StateMachineUtils second = Loaded();
             Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
             Assert.True(restored);
+        }
+
+        // ---- an empty history is only legitimate for a machine that has never recorded anything
+
+        [Fact]
+        public void AStartedSnapshotWithAnEmptyHistory_IsRefused_NotResumedWithItsAuditTrailErased()
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields => fields["history"] = new object[0]);
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains("invalid history", message);
+            Assert.Contains("a started machine has no history entries", message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void AnUnstartedSnapshotWithANonzeroCounterButNoHistory_IsRefused()
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose(); // saved, never started: history empty, counter 0
+            RewriteSaved(name, fields => fields["sequence"] = 12);
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("saved sequence counter is 12", message);
+        }
+
+        [Fact]
+        public void TheUntouchedUnstartedSnapshot_StillRestores_WithItsEmptyHistory()
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose();
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+            Assert.True(machine.GetHistoryJson(out string json, out _));
+            Assert.Equal("[]", json);
+        }
+
+        [Fact]
+        public void ARunThatWasStoppedByReplacingTheDefinition_CanStillBePersistedAndRestored()
+        {
+            // Load/Clear discard the history, so the counter must restart with it: otherwise this machine would save
+            // "no history but a nonzero counter" - the very shape the empty-history rule refuses.
+            string name = NewMachineName();
+            StateMachineUtils first = Started();
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
+            Assert.True(first.LoadDefinitionJson(Defs.Minimal, out string message), message);
+            Assert.True(first.EnablePersistence(name, out _, out _, out message), message);
+            first.Dispose();
+
+            StateMachineUtils second = Loaded(Defs.Minimal);
+            Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
+            Assert.True(restored);
+            Assert.True(second.Start(out _, out message), message);
+            Assert.True(second.GetHistoryJson(out string json, out _));
+            Assert.Equal(1, JsonDocument.Parse(json).RootElement[0].GetProperty("seq").GetInt64()); // numbering restarted with the history
+        }
+
+        // ---- the history limit applies to everything that is persisted, not only to transitions
+
+        [Theory]
+        [InlineData("setContext")]
+        [InlineData("removeContext")]
+        [InlineData("clearContext")]
+        public void LoweringTheHistoryLimit_IsEnforcedOnTheNextPersistedChange_EvenWhenItIsOnlyAContextChange(string change)
+        {
+            string name = NewMachineName();
+            const string cycle = """
+                { "initial": "A", "states": [ "A", "B" ],
+                  "transitions": [ { "from": "A", "trigger": "go", "to": "B" }, { "from": "B", "trigger": "back", "to": "A" } ] }
+                """;
+            int OnDisk() => JsonDocument.Parse(File.ReadAllText(StatePath(name))).RootElement.GetProperty("history").GetArrayLength();
+
+            StateMachineUtils machine = LoadedWithPersistence(name, cycle);
+            Assert.True(machine.Start(out _, out _));
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.True(machine.Fire("go", out _, out _, out _, out _));
+                Assert.True(machine.Fire("back", out _, out _, out _, out _));
+            }
+            Assert.True(machine.SetContext("seed", "1", out _));
+            Assert.Equal(7, OnDisk());
+
+            machine.MaximumHistoryEntries = 2;
+            Assert.Equal(7, OnDisk()); // configuration alone still never rewrites the file
+
+            bool ok = change switch
+            {
+                "setContext" => machine.SetContext("k", "v", out _),
+                "removeContext" => machine.RemoveContext("seed", out _, out _),
+                _ => machine.ClearContext(out _)
+            };
+            Assert.True(ok);
+            Assert.Equal(2, OnDisk()); // a context-only change is a real change: it trims what is stored too
+        }
+
+        [Fact]
+        public void TheFirstWriteAfterEnablingPersistence_HonorsAHistoryLimitLoweredEarlier()
+        {
+            string name = NewMachineName();
+            StateMachineUtils machine = Loaded();
+            for (int i = 0; i < 5; i++) Assert.True(machine.Fire("validate", out _, out _, out _, out _)); // NotStarted rejections, kept in memory
+            machine.MaximumHistoryEntries = 2;                                                              // lowered afterwards
+
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.False(restored);
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name)));
+            Assert.Equal(2, doc.RootElement.GetProperty("history").GetArrayLength());
+            Assert.Equal(5, doc.RootElement.GetProperty("sequence").GetInt64()); // the counter keeps counting; only the oldest entries go
+            Assert.Equal(new long[] { 4, 5 }, doc.RootElement.GetProperty("history").EnumerateArray().Select(e => e.GetProperty("seq").GetInt64()));
         }
 
         [Fact]
