@@ -417,6 +417,150 @@ namespace StateMachineAutomation.Tests
             Assert.Equal(3, JsonDocument.Parse(history).RootElement.GetArrayLength());
         }
 
+        // ---- a saved file that parses as JSON but is not something this component wrote
+
+        private string SavedStartedRun(out string name)
+        {
+            name = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(name);
+            Assert.True(first.Start(out _, out _));
+            first.Dispose();
+            return File.ReadAllText(StatePath(name));
+        }
+
+        [Theory]
+        [InlineData("\"enteredUtc\": \"", "\"enteredUtc\": \"not-a-time\", \"ignored\": \"", "invalid 'enteredUtc'")]
+        [InlineData("\"enteredUtc\": \"", "\"enteredUtc\": \"\", \"ignored\": \"", "invalid 'enteredUtc'")]
+        public void AMissingOrInvalidTimestamp_IsRefused_NotReplacedWithTheCurrentTime(string find, string replace, string fragment)
+        {
+            string json = SavedStartedRun(out string name);
+            File.WriteAllText(StatePath(name), json.Replace(find, replace));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains(fragment, message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void ASnapshotWithNoTimestampAtAll_IsRefused()
+        {
+            string json = SavedStartedRun(out string name);
+            using JsonDocument doc = JsonDocument.Parse(json);
+            var fields = doc.RootElement.EnumerateObject().Where(p => p.Name != "enteredUtc").ToDictionary(p => p.Name, p => p.Value.Clone());
+            File.WriteAllText(StatePath(name), JsonSerializer.Serialize(fields));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("enteredUtc", message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Theory]
+        [InlineData("context", "no 'context'")]
+        [InlineData("history", "no 'history'")]
+        [InlineData("currentState", "no 'currentState'")]
+        public void ASnapshotMissingARequiredField_IsRefusedAsIncomplete(string field, string fragment)
+        {
+            string json = SavedStartedRun(out string name);
+            using JsonDocument doc = JsonDocument.Parse(json);
+            var fields = doc.RootElement.EnumerateObject().Where(p => p.Name != field).ToDictionary(p => p.Name, p => p.Value.Clone());
+            File.WriteAllText(StatePath(name), JsonSerializer.Serialize(fields));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains("incomplete", message);
+            Assert.Contains(fragment, message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void ASnapshotWithANullContextValue_IsRefused()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(name);
+            Assert.True(first.SetContext("k", "v", out _));
+            first.Dispose();
+            File.WriteAllText(StatePath(name), File.ReadAllText(StatePath(name)).Replace("\"k\": \"v\"", "\"k\": null"));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("null context value for 'k'", message);
+        }
+
+        [Fact]
+        public void ASnapshotWithContextKeysThatDifferOnlyByCase_IsRefused()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(name);
+            Assert.True(first.SetContext("k", "v", out _));
+            first.Dispose();
+            File.WriteAllText(StatePath(name), File.ReadAllText(StatePath(name)).Replace("\"k\": \"v\"", "\"k\": \"v\", \"K\": \"w\""));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("differ only by case", message);
+        }
+
+        [Fact]
+        public void ASnapshotWithANegativeSequence_IsRefused()
+        {
+            string json = SavedStartedRun(out string name);
+            File.WriteAllText(StatePath(name), json.Replace("\"sequence\": 1", "\"sequence\": -5"));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("invalid sequence", message);
+        }
+
+        [Fact]
+        public void AnUnstartedSnapshot_NeedsNoStateOrTimestamp_AndStillRestores()
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose(); // saved but never started
+
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+            Assert.True(machine.IsStarted(out bool started, out _));
+            Assert.False(started);
+        }
+
+        // ---- the history limit is a configuration change, so it must never rewrite persisted state on its own
+
+        [Fact]
+        public void LoweringTheHistoryLimit_HidesEntriesAtOnce_ButOnlyTheNextRealChangeRewritesTheFile()
+        {
+            string name = NewMachineName();
+            const string cycle = """
+                { "initial": "A", "states": [ "A", "B" ],
+                  "transitions": [ { "from": "A", "trigger": "go", "to": "B" }, { "from": "B", "trigger": "back", "to": "A" } ] }
+                """;
+            StateMachineUtils machine = LoadedWithPersistence(name, cycle);
+            Assert.True(machine.Start(out _, out _));
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.True(machine.Fire("go", out _, out _, out _, out _));
+                Assert.True(machine.Fire("back", out _, out _, out _, out _));
+            }
+            int OnDisk() => JsonDocument.Parse(File.ReadAllText(StatePath(name))).RootElement.GetProperty("history").GetArrayLength();
+            Assert.Equal(7, OnDisk()); // start + 6 transitions
+            string before = File.ReadAllText(StatePath(name));
+
+            machine.MaximumHistoryEntries = 2;
+
+            Assert.Equal(before, File.ReadAllText(StatePath(name))); // configuration alone never touches the file
+            Assert.True(machine.GetHistoryJson(out string json, out _));
+            Assert.Equal(2, JsonDocument.Parse(json).RootElement.GetArrayLength()); // ...but reads honor the limit now
+
+            Assert.True(machine.Fire("go", out _, out _, out _, out _));
+            Assert.Equal(2, OnDisk()); // the next real change trims what is stored
+            Assert.True(machine.GetHistoryJson(out json, out _));
+            Assert.Equal(2, JsonDocument.Parse(json).RootElement.GetArrayLength());
+        }
+
         [Fact]
         public void Persistence_NeverRecordsContextValuesInHistory()
         {

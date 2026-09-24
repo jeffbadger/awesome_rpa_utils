@@ -39,7 +39,7 @@ namespace StateMachineAutomation
         /// <summary>A stable code: <c>NoTransition</c>, <c>GuardFailed</c>, <c>Finished</c> or <c>NotStarted</c>.</summary>
         public string Reason { get; }
 
-        /// <summary>Human-readable detail. Never contains context values, only guard keys and operators.</summary>
+        /// <summary>Human-readable detail. For a failed guard it names the guard as declared in the definition (key, operator and expected value) but never the context's actual value.</summary>
         public string Detail { get; }
 
         internal StateMachineRejectedEventArgs(string state, string trigger, string reason, string detail)

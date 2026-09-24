@@ -37,6 +37,11 @@ namespace StateMachineAutomation
         }
 
         private readonly object syncRoot = new object();
+        // Held across a state change AND the delivery of its events, so concurrent callers cannot commit a
+        // second transition between the first one's commit and its handlers (which would deliver events
+        // out of order and let a handler see a later state than the event it received). Always taken before
+        // syncRoot, never the other way round; readers only ever take syncRoot, so they are never blocked by handlers.
+        private readonly object dispatchLock = new object();
         private readonly ThreadLocal<int> fireDepth = new ThreadLocal<int>();
         private MachineDefinition definition = new MachineDefinition();
         private Snapshot state = new Snapshot();
@@ -89,7 +94,7 @@ namespace StateMachineAutomation
 
         /// <summary>Gets or sets how many history entries the machine keeps (oldest are dropped first).</summary>
         [Category("StateMachine - Configuration")]
-        [Description("Maximum number of history entries kept (transitions, rejections, starts). Valid range: 1 through 10,000. Default: 100.")]
+        [Description("Maximum number of history entries kept (transitions, rejections, starts). Valid range: 1 through 10,000. Default: 100. Lowering it hides older entries immediately and discards them at the next change.")]
         [DefaultValue(DefaultMaximumHistoryEntries)]
         public int MaximumHistoryEntries
         {
@@ -98,16 +103,10 @@ namespace StateMachineAutomation
             {
                 if (value < 1 || value > AbsoluteMaximumHistoryEntries)
                     throw new ArgumentOutOfRangeException(nameof(value), "MaximumHistoryEntries must be between 1 and 10,000.");
-                lock (syncRoot)
-                {
-                    maximumHistoryEntries = value;
-                    if (state.History.Count > value)
-                    {
-                        Snapshot trimmed = state.Clone();
-                        trimmed.History = state.History.Skip(state.History.Count - value).ToList();
-                        state = trimmed;
-                    }
-                }
+                // Only the limit changes here. The stored history is never rewritten by a configuration change:
+                // rewriting it would have to be persisted too (and a property setter cannot report a failed
+                // write), so instead reads honor the limit immediately and the next real change trims the store.
+                lock (syncRoot) maximumHistoryEntries = value;
             }
         }
 
@@ -362,28 +361,31 @@ namespace StateMachineAutomation
                 depthTaken = true;
 
                 var pending = new List<Action>();
-                lock (syncRoot)
+                lock (dispatchLock)
                 {
-                    if (!isReset && state.Started) { message = "The machine is already started; call Reset to restart it."; return false; }
-                    var report = new DefinitionReport();
-                    definition.Validate(report);
-                    if (!report.Valid) { message = "The definition is not valid: " + JoinProblems(report.Errors); return false; }
+                    lock (syncRoot)
+                    {
+                        if (!isReset && state.Started) { message = "The machine is already started; call Reset to restart it."; return false; }
+                        var report = new DefinitionReport();
+                        definition.Validate(report);
+                        if (!report.Valid) { message = "The definition is not valid: " + JoinProblems(report.Errors); return false; }
 
-                    string initial = definition.FindState(definition.Initial).Name;
-                    Snapshot next = state.Clone();
-                    next.Started = true;
-                    next.Current = initial;
-                    next.EnteredUtc = Clock();
-                    next.History = new List<HistoryEntry>();
-                    if (clearContext) next.Context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    AddHistory(next, isReset ? "reset" : "start", null, null, initial, null, null);
-                    if (!PersistLocked(next, out message)) return false;
+                        string initial = definition.FindState(definition.Initial).Name;
+                        Snapshot next = state.Clone();
+                        next.Started = true;
+                        next.Current = initial;
+                        next.EnteredUtc = Clock();
+                        next.History = new List<HistoryEntry>();
+                        if (clearContext) next.Context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        AddHistory(next, isReset ? "reset" : "start", null, null, initial, null, null);
+                        if (!PersistLocked(next, out message)) return false;
 
-                    state = next;
-                    currentState = initial;
-                    pending.Add(() => RaiseSafely(StateEntered, new StateMachineTransitionEventArgs(string.Empty, initial, string.Empty)));
+                        state = next;
+                        currentState = initial;
+                        pending.Add(() => RaiseSafely(StateEntered, new StateMachineTransitionEventArgs(string.Empty, initial, string.Empty)));
+                    }
+                    foreach (Action raise in pending) raise();
                 }
-                foreach (Action raise in pending) raise();
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { currentState = null; message = NeverThrowsGuard.Failure(operation, ex); return false; }
@@ -392,7 +394,7 @@ namespace StateMachineAutomation
 
         /// <summary>Fires a trigger.</summary>
         [Category("StateMachine - Run")]
-        [Description("Fires a trigger. A declined trigger (no transition, guard failed, machine finished or not started) is a normal outcome: the call returns True with fired False and a rejectionReason (NoTransition, GuardFailed, Finished, NotStarted, ReentrancyLimit). False plus a message means bad input or a persistence failure, and the machine is unchanged. Events are raised synchronously on this thread after the change is committed. Never throws.")]
+        [Description("Fires a trigger. A declined trigger (no transition, guard failed, machine finished or not started) is a normal outcome: the call returns True with fired False and a rejectionReason (NoTransition, GuardFailed, Finished, NotStarted, ReentrancyLimit). False plus a message means bad input or a persistence failure, and the machine is unchanged. Events are raised synchronously on this thread after the change is committed; concurrent Fire/Start/Reset calls from other threads wait until those handlers finish, so events always arrive in transition order. Never throws.")]
         public bool Fire(string trigger, out bool fired, out string newState, out string rejectionReason, out string message)
         {
             fired = false;
@@ -424,53 +426,56 @@ namespace StateMachineAutomation
                 depthTaken = true;
 
                 var pending = new List<Action>();
-                lock (syncRoot)
+                lock (dispatchLock)
                 {
-                    if (definition.States.Count == 0) { message = "No definition has been loaded; call LoadDefinitionJson or AddState first."; return false; }
-
-                    Snapshot current = state;
-                    string reason = null;
-                    string detail = null;
-                    TransitionDef transition = null;
-
-                    if (!current.Started) { reason = "NotStarted"; detail = "The machine has not been started; call Start."; }
-                    else if (IsFinalLocked(current)) { reason = "Finished"; detail = "The machine is in final state '" + current.Current + "' and accepts no more triggers."; }
-                    else transition = StateMachineCore.FindTransition(definition, current.Current, trimmedTrigger, current.Context, out reason, out detail);
-
-                    if (transition == null)
+                    lock (syncRoot)
                     {
-                        Snapshot rejected = current.Clone();
-                        AddHistory(rejected, "rejected", trimmedTrigger, current.Started ? current.Current : null, null, reason, detail);
-                        state = rejected;
-                        newState = current.Current;
-                        rejectionReason = reason;
-                        string rejectedFrom = current.Current;
-                        pending.Add(() => RaiseSafely(TransitionRejected, new StateMachineRejectedEventArgs(rejectedFrom, trimmedTrigger, reason, detail)));
-                    }
-                    else
-                    {
-                        string from = current.Current;
-                        StateDef target = definition.FindState(transition.To);
-                        string to = target.Name;
-                        string firedTrigger = transition.Trigger;
+                        if (definition.States.Count == 0) { message = "No definition has been loaded; call LoadDefinitionJson or AddState first."; return false; }
 
-                        Snapshot next = current.Clone();
-                        next.Current = to;
-                        next.EnteredUtc = Clock();
-                        AddHistory(next, "transition", firedTrigger, from, to, null, null);
-                        if (!PersistLocked(next, out message)) return false;
+                        Snapshot current = state;
+                        string reason = null;
+                        string detail = null;
+                        TransitionDef transition = null;
 
-                        state = next;
-                        fired = true;
-                        newState = to;
-                        pending.Add(() => RaiseSafely(StateExited, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
-                        pending.Add(() => RaiseSafely(TransitionFired, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
-                        pending.Add(() => RaiseSafely(StateEntered, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
-                        if (target.Final)
-                            pending.Add(() => RaiseSafely(MachineFinished, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
+                        if (!current.Started) { reason = "NotStarted"; detail = "The machine has not been started; call Start."; }
+                        else if (IsFinalLocked(current)) { reason = "Finished"; detail = "The machine is in final state '" + current.Current + "' and accepts no more triggers."; }
+                        else transition = StateMachineCore.FindTransition(definition, current.Current, trimmedTrigger, current.Context, out reason, out detail);
+
+                        if (transition == null)
+                        {
+                            Snapshot rejected = current.Clone();
+                            AddHistory(rejected, "rejected", trimmedTrigger, current.Started ? current.Current : null, null, reason, detail);
+                            state = rejected;
+                            newState = current.Current;
+                            rejectionReason = reason;
+                            string rejectedFrom = current.Current;
+                            pending.Add(() => RaiseSafely(TransitionRejected, new StateMachineRejectedEventArgs(rejectedFrom, trimmedTrigger, reason, detail)));
+                        }
+                        else
+                        {
+                            string from = current.Current;
+                            StateDef target = definition.FindState(transition.To);
+                            string to = target.Name;
+                            string firedTrigger = transition.Trigger;
+
+                            Snapshot next = current.Clone();
+                            next.Current = to;
+                            next.EnteredUtc = Clock();
+                            AddHistory(next, "transition", firedTrigger, from, to, null, null);
+                            if (!PersistLocked(next, out message)) return false;
+
+                            state = next;
+                            fired = true;
+                            newState = to;
+                            pending.Add(() => RaiseSafely(StateExited, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
+                            pending.Add(() => RaiseSafely(TransitionFired, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
+                            pending.Add(() => RaiseSafely(StateEntered, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
+                            if (target.Final)
+                                pending.Add(() => RaiseSafely(MachineFinished, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
+                        }
                     }
+                    foreach (Action raise in pending) raise();
                 }
-                foreach (Action raise in pending) raise();
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -638,7 +643,8 @@ namespace StateMachineAutomation
                 if (maxEntries < 1 || maxEntries > AbsoluteMaximumHistoryEntries) { message = "maxEntries must be between 1 and 10,000."; return false; }
                 lock (syncRoot)
                 {
-                    IEnumerable<HistoryEntry> slice = state.History.Skip(Math.Max(0, state.History.Count - maxEntries));
+                    int take = Math.Min(maxEntries, maximumHistoryEntries);
+                    IEnumerable<HistoryEntry> slice = state.History.Skip(Math.Max(0, state.History.Count - take));
                     json = JsonSerializer.Serialize(slice.ToList(), StateMachineCore.CompactOptions);
                     return true;
                 }
@@ -895,19 +901,38 @@ namespace StateMachineAutomation
             if (saved.schemaVersion != PersistedSchemaVersion) { message = "The saved state uses schema version " + saved.schemaVersion + ", which this component does not understand; call DiscardPersistedState to start fresh."; return false; }
             if (!string.Equals(saved.definitionHash, definitionHash, StringComparison.Ordinal)) { message = "The saved state was made with a different definition; call DiscardPersistedState to abandon it, or load the original definition."; return false; }
 
+            // Every field this component writes must be present and well-formed. A file that parses as JSON but
+            // is missing pieces (truncated by hand or by another tool) is corrupt, not "a fresh machine": accepting
+            // it would silently reset the context or history, or invent a time-in-state, with nothing to notice.
+            const string discard = "; call DiscardPersistedState to start fresh.";
+            if (saved.context == null) { message = "The saved state is incomplete (it has no 'context')" + discard; return false; }
+            if (saved.history == null) { message = "The saved state is incomplete (it has no 'history')" + discard; return false; }
+            if (saved.sequence < 0) { message = "The saved state has an invalid sequence number" + discard; return false; }
+            if (saved.history.Any(h => h == null)) { message = "The saved state has an empty history entry" + discard; return false; }
+
             var snapshot = new Snapshot { Started = saved.started, Sequence = saved.sequence };
             if (saved.started)
             {
+                if (string.IsNullOrWhiteSpace(saved.currentState)) { message = "The saved state is incomplete (a started machine has no 'currentState')" + discard; return false; }
                 StateDef current = definition.FindState(saved.currentState);
-                if (current == null) { message = "The saved state names '" + saved.currentState + "', which is not a state of this definition; call DiscardPersistedState to start fresh."; return false; }
+                if (current == null) { message = "The saved state names '" + saved.currentState + "', which is not a state of this definition" + discard; return false; }
                 snapshot.Current = current.Name;
-                if (!DateTime.TryParse(saved.enteredUtc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime entered)) entered = Clock();
+                if (string.IsNullOrWhiteSpace(saved.enteredUtc)
+                    || !DateTime.TryParse(saved.enteredUtc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime entered))
+                {
+                    message = "The saved state has a missing or invalid 'enteredUtc' timestamp ('" + saved.enteredUtc + "')" + discard;
+                    return false;
+                }
                 snapshot.EnteredUtc = entered.ToUniversalTime();
             }
-            if (saved.context != null)
-                snapshot.Context = new Dictionary<string, string>(saved.context.Where(kv => kv.Value != null).ToDictionary(kv => kv.Key, kv => kv.Value), StringComparer.OrdinalIgnoreCase);
-            if (saved.history != null)
-                snapshot.History = saved.history.Skip(Math.Max(0, saved.history.Count - maximumHistoryEntries)).ToList();
+
+            foreach (KeyValuePair<string, string> entry in saved.context)
+            {
+                if (entry.Value == null) { message = "The saved state has a null context value for '" + entry.Key + "'" + discard; return false; }
+                if (snapshot.Context.ContainsKey(entry.Key)) { message = "The saved state has two context keys that differ only by case ('" + entry.Key + "')" + discard; return false; }
+                snapshot.Context[entry.Key] = entry.Value;
+            }
+            snapshot.History = saved.history.Skip(Math.Max(0, saved.history.Count - maximumHistoryEntries)).ToList();
             restored = snapshot;
             return true;
         }

@@ -205,19 +205,89 @@ namespace StateMachineAutomation.Tests
         }
 
         [Fact]
-        public void TheReentrancyCounter_IsPerThread()
+        public void ConcurrentFires_AreSerialized_SoAnotherThreadCannotSlipInBetweenACommitAndItsEvents()
         {
             StateMachineUtils machine = Started();
-            bool otherThreadFired = false;
+            var log = new List<string>();
+            var handlerRunning = new ManualResetEventSlim(false);
+            var release = new ManualResetEventSlim(false);
+            machine.StateEntered += (_, e) =>
+            {
+                lock (log) log.Add("entered:" + e.NewState);
+                if (e.NewState == "Validated")
+                {
+                    handlerRunning.Set();
+                    release.Wait(TimeSpan.FromSeconds(10)); // hold the first transition's handlers open
+                }
+            };
+
+            var first = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            first.Start();
+            Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)), "the first handler never started");
+
+            bool secondFired = false;
+            var second = new Thread(() => secondFired = machine.Fire("abort", out bool f, out _, out _, out _) && f);
+            second.Start();
+
+            // While the first transition's handlers are still running, the second Fire must not be able to
+            // commit: it waits, so the machine is still in the state the first handler was told about.
+            Assert.False(second.Join(TimeSpan.FromMilliseconds(300)), "a second thread committed a transition while the first one's handlers were still running");
+            Assert.Equal("Validated", machine.CurrentState);
+
+            release.Set();
+            Assert.True(first.Join(TimeSpan.FromSeconds(5)));
+            Assert.True(second.Join(TimeSpan.FromSeconds(5)));
+
+            Assert.True(secondFired);
+            Assert.Equal("Failed", machine.CurrentState);
+            lock (log) Assert.Equal(new[] { "entered:Validated", "entered:Failed" }, log); // delivered in transition order
+        }
+
+        [Fact]
+        public void WhileHandlersRun_OtherThreadsCanStillReadTheMachine()
+        {
+            StateMachineUtils machine = Started();
+            string read = null;
+            bool joined = false;
             machine.StateEntered += (_, _) =>
             {
-                var worker = new Thread(() => otherThreadFired = machine.Fire("abort", out bool f, out _, out _, out _) && f);
-                worker.Start();
-                worker.Join(TimeSpan.FromSeconds(5));
+                var reader = new Thread(() => read = machine.CurrentState);
+                reader.Start();
+                joined = reader.Join(TimeSpan.FromSeconds(5));
             };
             Assert.True(machine.Fire("validate", out _, out _, out _, out _));
-            Assert.True(otherThreadFired);
-            Assert.Equal("Failed", machine.CurrentState);
+            Assert.True(joined, "a reader was blocked by a running handler");
+            Assert.Equal("Validated", read);
+        }
+
+        [Fact]
+        public void ConcurrentFiresFromManyThreads_NeverInterleaveTheirEventBatches()
+        {
+            const string cycle = """
+                { "initial": "A", "states": [ "A", "B" ],
+                  "transitions": [ { "from": "A", "trigger": "go", "to": "B" }, { "from": "B", "trigger": "go", "to": "A" } ] }
+                """;
+            StateMachineUtils machine = Started(cycle);
+            var log = new List<string>();
+            machine.StateExited += (_, e) => { lock (log) log.Add("exited:" + e.PreviousState); };
+            machine.TransitionFired += (_, e) => { lock (log) log.Add("fired:" + e.PreviousState); };
+            machine.StateEntered += (_, e) => { lock (log) log.Add("entered:" + e.NewState); };
+
+            var threads = Enumerable.Range(0, 8).Select(worker => new Thread(() =>
+            {
+                for (int i = 0; i < 50; i++) machine.Fire("go", out _, out _, out _, out _);
+            })).ToList();
+            threads.ForEach(t => t.Start());
+            threads.ForEach(t => Assert.True(t.Join(TimeSpan.FromSeconds(30))));
+
+            // 400 transitions alternate A>B, B>A, ... and each contributes exited/fired/entered as one batch.
+            Assert.Equal(1200, log.Count);
+            for (int i = 0; i < 400; i++)
+            {
+                string from = i % 2 == 0 ? "A" : "B";
+                string to = i % 2 == 0 ? "B" : "A";
+                Assert.Equal(new[] { "exited:" + from, "fired:" + from, "entered:" + to }, log.Skip(i * 3).Take(3));
+            }
         }
     }
 }

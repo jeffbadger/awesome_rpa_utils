@@ -29,16 +29,25 @@ namespace StateMachineAutomation.Tests
         {
             public readonly Queue<Job> Ready = new Queue<Job>();
             public readonly List<Job> Delayed = new List<Job>();
+            public readonly List<Job> Leased = new List<Job>();   // taken but not yet reported: in progress until the lease expires
             public readonly List<string> Completed = new List<string>();
             public readonly List<string> Rejected = new List<string>();
             public int Processed;
+            public Job Current;   // the payload variable of the documented worker: per queue, so tests share no static state
 
             public FakeQueue(params (string id, Outcome[] attempts)[] jobs)
             {
                 foreach ((string id, Outcome[] attempts) in jobs) Ready.Enqueue(new Job { Id = id, Attempts = new Queue<Outcome>(attempts) });
             }
 
-            public void TimePasses() { foreach (Job job in Delayed) Ready.Enqueue(job); Delayed.Clear(); }
+            /// <summary>Delayed retries become due, and any lease left behind by a crashed run expires.</summary>
+            public void TimePasses()
+            {
+                foreach (Job job in Delayed) Ready.Enqueue(job);
+                Delayed.Clear();
+                foreach (Job job in Leased) Ready.Enqueue(job);
+                Leased.Clear();
+            }
         }
 
         private static string DocDefinition([CallerFilePath] string thisFile = "")
@@ -72,8 +81,6 @@ namespace StateMachineAutomation.Tests
 
         // ---- the loop from the documentation, one turn at a time ----
 
-        private static Job current;
-
         private static void Turn(StateMachineUtils machine, FakeQueue queue)
         {
             string state = State(machine);
@@ -86,16 +93,20 @@ namespace StateMachineAutomation.Tests
         private static void Poll(StateMachineUtils machine, FakeQueue queue)
         {
             bool available = queue.Ready.Count > 0;
-            current = available ? queue.Ready.Dequeue() : null;
+            queue.Current = available ? queue.Ready.Dequeue() : null;
+            if (available) queue.Leased.Add(queue.Current);
             Assert.True(machine.SetContext("itemAvailable", available ? "true" : "false", out string message), message);
-            Assert.True(machine.SetContext("itemId", current?.Id ?? "", out message), message);
-            Assert.True(machine.SetContext("delayedCount", queue.Delayed.Count.ToString(), out message), message);
+            Assert.True(machine.SetContext("itemId", queue.Current?.Id ?? "", out message), message);
+            // pendingCount = delayed + inProgress, exactly as the documented poll step computes it
+            Assert.True(machine.SetContext("pendingCount", (queue.Delayed.Count + queue.Leased.Count).ToString(), out message), message);
             Fire(machine, "polled");
         }
 
         private static void ProcessCurrent(StateMachineUtils machine, FakeQueue queue)
         {
             queue.Processed++;
+            Job current = queue.Current;
+            queue.Leased.Remove(current);   // reported to the queue: no longer in progress
             Outcome outcome = current.Attempts.Count > 0 ? current.Attempts.Dequeue() : Outcome.Ok;
             if (outcome == Outcome.Ok)
             {
@@ -255,6 +266,26 @@ namespace StateMachineAutomation.Tests
 
             Fire(second, "recovered");
             Assert.Equal("Idle", second.CurrentState);
+
+            // The crashed run's lease has not expired yet, so the queue shows nothing ready and nothing delayed.
+            // The worker must WAIT for it, not conclude the queue is drained and finish with an item in flight.
+            Turn(second, queue);
+            Assert.Equal("Waiting", second.CurrentState);
+
+            RunToEnd(second, queue);
+            Assert.Equal("Finished", second.CurrentState);
+            Assert.Equal(new[] { "a" }, queue.Completed); // the abandoned item was picked up again and finished exactly once
+        }
+
+        [Fact]
+        public void APollFindingNothingReadyButAnOutstandingLease_GoesToWaiting_NeverFinished()
+        {
+            StateMachineUtils machine = NewWorker();
+            var queue = new FakeQueue();
+            queue.Leased.Add(new Job { Id = "leftover", Attempts = new Queue<Outcome>() });
+            Turn(machine, queue); // Starting -> Idle
+            Turn(machine, queue); // Idle: poll
+            Assert.Equal("Waiting", machine.CurrentState);
         }
 
         [Fact]

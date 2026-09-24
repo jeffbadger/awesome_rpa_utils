@@ -29,7 +29,13 @@ That means:
 
 - a handler sees the **new** state (`machine.CurrentState` already reflects it);
 - a handler may safely call back into the machine, even from another thread;
-- the call that raised the event does not return until every handler has run.
+- the call that raised the event does not return until every handler has run;
+- **concurrent callers take turns.** A transition and its events are one unit:
+  while one thread's handlers run, another thread's `Fire` / `Start` / `Reset`
+  waits, so a handler can never be told about one transition after another
+  thread has already committed the next. Events therefore arrive in exactly the
+  order the transitions happened. Reads (`CurrentState`, history, `CanFire`, the
+  context methods) never wait for handlers.
 
 ## What a handler must not do
 
@@ -40,6 +46,10 @@ That means:
   recurse forever) and `Start`/`Reset` return `False`. Use a flat loop that reads
   `CurrentState` and calls `Fire` - see [Working a queue](WorkingAQueue.md).
   Short, bounded chains of a few transitions are fine.
+- **Do not make a handler wait for another thread that fires the same
+  machine.** That thread is queued behind the handler, so the two would wait on
+  each other. Have the handler start work and return, and let the other thread
+  fire on its own.
 - **Do not rely on a handler's exception being seen.** A handler that throws is
   caught and logged (`Debug.WriteLine`); the other handlers still run and the
   change stands, because it was committed before any event fired.

@@ -375,7 +375,7 @@ namespace StateMachineAutomation
                 if (TryProp(s, "final", out JsonElement f))
                 {
                     if (f.ValueKind == JsonValueKind.True) isFinal = true;
-                    else if (f.ValueKind != JsonValueKind.False && f.ValueKind != JsonValueKind.Null) report.Errors.Add(where + " property 'final' must be true or false.");
+                    else if (f.ValueKind != JsonValueKind.False) report.Errors.Add(where + " property 'final' must be true or false.");
                 }
                 def.States.Add(new StateDef { Name = name, Final = isFinal });
             }

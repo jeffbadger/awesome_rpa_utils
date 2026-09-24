@@ -66,4 +66,5 @@ Oldest first. Each entry: `seq`, `utc`, `kind` (`start`, `reset`, `transition`,
 apply are omitted). Declined triggers are recorded, which makes "why did nothing
 happen?" answerable after the fact. History is bounded by
 `MaximumHistoryEntries` (default 100); the oldest entries are dropped first.
-Details name a failing guard's key and operator but never a context value.
+Details name a failing guard as declared in the definition (key, operator and
+the expected value) but never the context's actual value.

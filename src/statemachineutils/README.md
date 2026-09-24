@@ -56,8 +56,8 @@ All properties are non-null strings (an empty string means "not applicable"):
 
 Payload of `TransitionRejected`: `State`, `Trigger`, `Reason`
 (`NoTransition`, `GuardFailed`, `Finished`, `NotStarted`) and `Detail`
-(human-readable; names the failing guard's key and operator, **never** a
-context value).
+(human-readable; names the failing guard as declared in the definition - key,
+operator and expected value - but **never** the context's actual value).
 
 ## Constructors
 
@@ -172,6 +172,14 @@ context value).
   past that, `Fire` returns `ReentrancyLimit` (recorded in history, no event,
   so a `TransitionRejected` handler cannot recurse forever) and `Start`/`Reset`
   return `False`.
+- **Concurrent callers are serialized, so events always arrive in transition
+  order.** A transition and the delivery of its events are one unit: while one
+  thread's handlers run, another thread's `Fire`/`Start`/`Reset` waits its turn
+  (a second thread can never commit a later transition between the first one's
+  commit and its handlers). Reads - `CurrentState`, `GetHistoryJson`, `CanFire`,
+  the context methods - are never blocked by a running handler. The flip side: a
+  handler must not wait for another thread that fires *this same machine*, since
+  that thread is waiting for the handler.
 - **A subscriber that throws is caught and logged, never propagated.** Other
   subscribers still run and the change stands. The exception is discarded
   after `Debug.WriteLine`; there is no `message` to carry it.
@@ -187,8 +195,9 @@ context value).
   silently resumed; `DiscardPersistedState` abandons it. The definition is
   frozen while persistence is enabled.
 - **Do not store secrets in the context.** Context values are written to disk
-  in plain text when persistence is enabled. History and event details never
-  include context values, only guard keys and operators.
+  in plain text when persistence is enabled. History and event details name a
+  failing guard as declared in the definition (key, operator, expected value)
+  but never include the context's actual values.
 - **One owner per saved machine.** A second component or process enabling the
   same `machineName` gets `False` ("already open"). Disposal releases it.
 - **No timers, by design.** The component starts no threads. To detect a stuck

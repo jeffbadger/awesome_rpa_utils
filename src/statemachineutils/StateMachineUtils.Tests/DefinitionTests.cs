@@ -159,6 +159,7 @@ namespace StateMachineAutomation.Tests
             AssertError("""{ "initial": 5, "states": ["A"] }""", "must be a string");
             AssertError("""{ "initial": "A", "states": [5] }""", "must be a string or an object");
             AssertError("""{ "initial": "A", "states": [ { "name": "A", "final": "yes" } ] }""", "'final' must be true or false");
+            AssertError("""{ "initial": "A", "states": [ { "name": "A", "final": null } ] }""", "'final' must be true or false");
             AssertError("""{ "initial": "A", "states": ["A"], "transitions": {} }""", "must be an array");
             AssertError("""{ "initial": "A", "states": ["A"], "transitions": [ 3 ] }""", "must be an object");
         }

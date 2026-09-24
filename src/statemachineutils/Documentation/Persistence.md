@@ -38,7 +38,7 @@ reach disk with the next real change.
 | Situation | Result |
 |---|---|
 | Saved run was made with a **different definition** | `EnablePersistence` returns `False` naming `DiscardPersistedState`. It is never silently resumed into a machine it does not fit. |
-| Saved file is corrupt, from a newer schema, or names an unknown state | `False` with a message, same remedy. |
+| Saved file is corrupt, incomplete (a missing field, a missing or invalid `enteredUtc`), from a newer schema, or names an unknown state | `False` with a message, same remedy. It is never patched up: a missing timestamp is not replaced with "now", and a missing context or history is not treated as empty. |
 | Another component or process already owns that `machineName` | `False` ("already open"). One owner per saved machine. |
 | Enabling after `Start` | `False`: the saved run would be overwritten. |
 | Changing the definition while enabled | `False`: the saved run belongs to the current definition. |
@@ -56,10 +56,12 @@ that machine enabled. Disposing the component releases ownership.
 ## Cautions
 
 - **Context is saved in plain text.** Never put a password, token or personal
-  data in it. History and event details never contain context values.
+  data in it. History and event details never contain the context's actual values.
 - Persistence keeps the machine's memory, not the world's. After a crash the
   outside world may have moved on - a queue item may have been leased, a form
   half filled. Decide what each state means on resume (the queue-worker example
   maps a resumed `Processing` to a `recovered` trigger).
 - Every change writes the whole state, including up to `MaximumHistoryEntries`
   history entries. Leave it at the default 100 unless you need a longer trail.
+  Lowering `MaximumHistoryEntries` hides older entries immediately but does not
+  rewrite the saved file by itself; the next real change trims it.

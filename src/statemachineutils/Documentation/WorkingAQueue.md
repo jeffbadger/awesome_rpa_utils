@@ -7,7 +7,7 @@ for the **item-level work**. The two divide the job cleanly:
 | Question | Answered by |
 |---|---|
 | Which item is next? Was it completed? How many attempts are left? | `LocalQueueUtils` (leases, retry, reject) |
-| Is the robot starting, working, waiting for a delayed retry, finished, or stopped because too many items in a row failed? Where was it when it crashed? | `StateMachineUtils` |
+| Is the robot starting, working, waiting for work that isn't ready yet, finished, or stopped because too many items in a row failed? Where was it when it crashed? | `StateMachineUtils` |
 
 The machine is what turns "a loop with a handful of flags" into something you
 can read, resume after a crash, and reason about.
@@ -15,8 +15,10 @@ can read, resume after a crash, and reason about.
 ## The behaviour we want
 
 - Open the queue and start working.
-- Take the next item. If there is none but retries are **delayed**, wait and
-  look again. If there is nothing at all, the run is **finished**.
+- Take the next item. If nothing is ready but work is still **outstanding** -
+  retries scheduled for later, or a lease left behind by a crashed run that has
+  not expired yet - wait and look again. Only when nothing is ready *and* nothing
+  is outstanding is the run **finished**.
 - For each item: complete it on success, reject it if its data is bad (a
   business problem, so retrying would be pointless), and retry it if something
   technical went wrong.
@@ -31,7 +33,7 @@ can read, resume after a crash, and reason about.
                  opened
    [Starting] ----------> [Idle] <-------------------------------------+
                            |  ^  \                                     |
-             polled        |  |   \ polled (delayed items)             |
+             polled        |  |   \ polled (work outstanding)             |
         (item taken)       |  |    v                                   |
                            v  |  [Waiting] --waitElapsed--> back to Idle
                      [Processing] --succeeded / rejected--> Idle
@@ -63,7 +65,7 @@ can read, resume after a crash, and reason about.
     { "from": "Idle",       "trigger": "polled",      "to": "Processing",
       "guards": [ { "key": "itemAvailable", "op": "equals",      "value": "true" } ] },
     { "from": "Idle",       "trigger": "polled",      "to": "Waiting",
-      "guards": [ { "key": "delayedCount",  "op": "greaterThan", "value": 0 } ] },
+      "guards": [ { "key": "pendingCount",  "op": "greaterThan", "value": 0 } ] },
     { "from": "Idle",       "trigger": "polled",      "to": "Finished" },
 
     { "from": "Waiting",    "trigger": "waitElapsed", "to": "Idle" },
@@ -84,8 +86,9 @@ Three things in that definition are worth understanding, because they are how
 you express decisions without writing code:
 
 1. **`polled` has three transitions from `Idle`, tried in order.** The first
-   whose guards pass wins: an item was taken, else delayed retries exist, else
-   the last, unguarded one is the "nothing left" fallback. This is the machine's
+   whose guards pass wins: an item was taken, else work is still outstanding
+   (delayed retries, or a lease that has not expired), else the last, unguarded
+   one is the "nothing left" fallback. This is the machine's
    if / else-if / else.
 2. **`failed` is the circuit breaker.** The guarded transition to `Suspended`
    comes first; it only passes once `consecutiveFailures` exceeds 4. Otherwise
@@ -105,7 +108,7 @@ text, keys are case-insensitive:
 | Key | Set by | Used by |
 |---|---|---|
 | `itemAvailable` | the poll step, from `TryTakeNext` | `Idle -> Processing` guard |
-| `delayedCount` | the poll step, from `GetCounts` | `Idle -> Waiting` guard |
+| `pendingCount` | the poll step: `delayed + inProgress` from `GetCounts` | `Idle -> Waiting` guard |
 | `consecutiveFailures` | the process step | the circuit breaker guard |
 | `itemId`, `leaseToken` | the poll step | the process step, and crash recovery |
 
@@ -148,6 +151,13 @@ else
 Restoring is silent - no events fire when a saved run is picked up, because
 nothing changed - so the loop below reads the current state instead of waiting
 for an event.
+
+`RecoverExpiredLeases` only returns leases that have **already expired**; an item
+leased by the crashed run stays "in progress" until its lease runs out (up to
+`leaseSeconds` later). That is why the poll step counts in-progress work as
+*pending*: without it, the restarted worker would find nothing ready and nothing
+delayed and declare itself `Finished` while the crashed item was still waiting
+to be handed out again.
 
 ## The loop
 
@@ -196,7 +206,9 @@ void PollQueue()
     machine.SetContext("itemAvailable", itemAvailable ? "true" : "false", out message);
     machine.SetContext("itemId", itemId ?? "", out message);
     machine.SetContext("leaseToken", leaseToken ?? "", out message);
-    machine.SetContext("delayedCount", delayed.ToString(), out message);
+    // Not ready yet, but not gone either: retries scheduled for later, plus any lease still
+    // outstanding (this worker holds none at this point, so it is a leftover from a crash).
+    machine.SetContext("pendingCount", (delayed + inProgress).ToString(), out message);
     currentPayload = payload;                         // an ordinary variable, not context
 
     // The machine decides: Processing, Waiting or Finished. No if/else here.
@@ -325,8 +337,10 @@ D (good).
 | 11 | `Idle` | 5 s later (`waitElapsed`) |
 | 12 | `Processing` | polled: C's retry is due, taken again |
 | 13 | `Idle` | C completed |
-| 14 | `Finished` | polled: nothing ready, nothing delayed; `MachineFinished` tidies completed items older than a week |
+| 14 | `Finished` | polled: nothing ready, nothing pending; `MachineFinished` tidies completed items older than a week |
 
 If the robot's machine loses power at step 6, the restart restores state
-`Processing`, `recovered` sends it to `Idle`, and the queue's own lease timeout
-hands C back out - no item is lost and none is completed twice.
+`Processing` and `recovered` sends it to `Idle`. The poll then finds nothing
+ready but C's lease still outstanding, so the machine goes to `Waiting` rather
+than `Finished`; once the lease expires the queue hands C back out and it is
+processed. No item is lost and none is completed twice.

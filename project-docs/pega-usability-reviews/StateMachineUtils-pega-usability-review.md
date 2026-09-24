@@ -64,6 +64,9 @@ data the automation author supplies, not something the component can predefine.
 - **Handlers do not advance a long loop.** Driving many transitions through
   nested handlers hits the re-entrancy cap; long-running work uses a flat loop
   that reads `CurrentState` (documented prominently, with the example).
+- **Concurrent callers take turns.** A transition and its events are one unit, so
+  events are delivered in transition order; a handler must not wait for another
+  thread that fires the same machine.
 - **Restoring a saved run is silent** (no events), because nothing changed.
   The automation reads `CurrentState` on resume.
 - **Context is text and is persisted in plain text.** Numbers are compared with
