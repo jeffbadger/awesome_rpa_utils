@@ -2,27 +2,36 @@
 
 ```csharp
 machine.Start(out string state, out string message);                    // enters the initial state
-machine.Fire("submit", out bool fired, out state, out string reason, out message);
+machine.Fire("submit", out state, out message);
 ```
 
 ## A declined trigger is not an error
 
 `Fire` returns **`True`** when it worked out what to do - including when the
-answer is "no". Check `fired`:
+answer is "no" - and `message` tells you which:
 
-| `fired` | `rejectionReason` | Meaning |
+| Result | `message` | Meaning |
 |---|---|---|
-| `True` | `null` | The transition happened; `newState` is the state you are now in. |
-| `False` | `NoTransition` | The current state has no transition for that trigger. |
-| `False` | `GuardFailed` | It has some, but every candidate's guards failed. |
-| `False` | `Finished` | The machine is in a final state. |
-| `False` | `NotStarted` | `Start` has not been called. |
-| `False` | `ReentrancyLimit` | Handlers nested `Fire` more than 16 deep (see [Events](Events.md)). |
+| `True` | *(empty)* | The transition happened; `newState` is the state you are now in. |
+| `True` | `NoTransition` | The current state has no transition for that trigger. |
+| `True` | `GuardFailed` | It has some, but every candidate's guards failed. |
+| `True` | `Finished` | The machine is in a final state. |
+| `True` | `NotStarted` | `Start` has not been called. |
+| `True` | `ReentrancyLimit` | Handlers nested `Fire` more than 16 deep (see [Events](Events.md)). |
+| `False` | *error text* | Bad input (an empty trigger, no definition loaded) or a persistence write failure. |
 
 `newState` is the state the machine is (still) in, so you can branch on it
-either way. **`Fire` returns `False` with a `message`** only for bad input (an
-empty trigger, no definition loaded) or a persistence write failure - and then
-the machine is unchanged.
+either way. A `False` result is always an error, and then the machine is
+unchanged. Which guard failed is not in `message` (it is a short code you can
+switch on); it is in the `TransitionRejected` event and in the history.
+
+`FireSimple(trigger, out message)` is the same thing without `newState`:
+
+```csharp
+machine.FireSimple("approve", out message);   // True + empty message: fired
+                                              // True + "GuardFailed": declined
+                                              // False + text: an error
+```
 
 ## Asking without acting
 

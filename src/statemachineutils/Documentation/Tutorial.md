@@ -111,20 +111,29 @@ component keeps the previous one, so a bad edit cannot leave a half-loaded machi
 ## Step 6 - Fire triggers
 
 ```csharp
-machine.Fire("submit", out bool fired, out state, out string reason, out message);
-// fired == true, state == "Submitted", reason == null
+machine.Fire("submit", out state, out message);
+// returns True, message == null (empty), state == "Submitted"
 ```
 
-`Fire` returns `True` whenever it could work out an answer, so **always look at
-`fired`**, not just the return value.
+`Fire` returns `True` whenever it could work out an answer, and an **empty
+`message` means the trigger fired**. Text in `message` means one of two things,
+told apart by the result:
+
+| Result | `message` | Meaning |
+|---|---|---|
+| `True` | empty | It fired. |
+| `True` | `NoTransition`, `GuardFailed`, `Finished` or `NotStarted` | The call worked but the trigger was declined; nothing changed. |
+| `False` | error text | Bad input or a disk problem; nothing changed. |
+
+If you need only the result and message, use `machine.FireSimple("submit", out message)`.
 
 ## Step 7 - See what a "no" looks like
 
 Try something illegal:
 
 ```csharp
-machine.Fire("pay", out fired, out state, out reason, out message);
-// fired == false, state == "Submitted", reason == "NoTransition"
+machine.Fire("pay", out state, out message);
+// returns True, message == "NoTransition", state == "Submitted"
 ```
 
 That is a normal outcome, not an error: `Submitted` has no `pay` transition, so nothing
@@ -141,8 +150,8 @@ text keys and values that your automation fills in:
 ```csharp
 machine.SetContext("amount", "120", out message);
 
-machine.Fire("decide", out fired, out state, out reason, out message);
-// fired == true, state == "Approved"   (120 < 500, so the guarded transition won)
+machine.Fire("decide", out state, out message);
+// message == null (fired), state == "Approved"   (120 < 500, so the guarded transition won)
 ```
 
 Had the amount been `900`, the guard would fail, the next `decide` transition would be
@@ -174,10 +183,10 @@ context, so a trigger whose guard would fail is not listed.
 Finish the claim:
 
 ```csharp
-machine.Fire("pay", out fired, out state, out reason, out message);   // state == "Paid"
+machine.Fire("pay", out state, out message);   // state == "Paid"
 machine.IsInFinalState(out isFinal, out message);                     // true
-machine.Fire("cancel", out fired, out state, out reason, out message);
-// fired == false, reason == "Finished" - a finished machine accepts nothing
+machine.Fire("cancel", out state, out message);
+// returns True, message == "Finished" - a finished machine accepts nothing
 ```
 
 Start another run with `machine.Reset(true, out state, out message)`.
@@ -241,7 +250,7 @@ Drop **StateMachineUtils** on the automation surface and wire it like any compon
 |---|---|
 | Load the definition once at start-up | A string (from an Asset or a Script) into `LoadDefinitionJson`, then `Start` |
 | Report a step's result | An execution link from the step's success/failure into `Fire`, with the trigger name as its argument (`submit`, `approve`) |
-| Branch on the outcome | The `fired` and `rejectionReason` outputs into a Switch |
+| Branch on the outcome | The result of `Fire` and its `message` into a Switch: empty = fired, text = the decline reason |
 | Show or route on where you are | The `CurrentState` and `IsFinished` data ports |
 | Run logic when something changes | `StateEntered`, `TransitionRejected`, `MachineFinished` events into the next step |
 | Pass values to guards | `SetContext` before `Fire` |
@@ -253,7 +262,7 @@ One component holds one machine; drop a second instance for a second machine.
 | Symptom | Likely cause |
 |---|---|
 | `LoadDefinitionJson` returns `False` | Read `message` - it names the exact problem (misspelled property, unknown state, ...). |
-| `Fire` says `fired == false`, `NoTransition` | The trigger is not defined for the current state, or you misspelled it. `GetAvailableTriggersDelimited` shows what is. |
+| `Fire` returns `True` with message `NoTransition` | The trigger is not defined for the current state, or you misspelled it. `GetAvailableTriggersDelimited` shows what is. |
 | `GuardFailed` unexpectedly | The context key is missing or holds different text than you think; `GetContextJson` shows it. Numeric guards need numbers (`"120"`, not `"$120"`). |
 | `NotStarted` | You skipped `Start` (or `Reset`). |
 | `EnablePersistence` refused | Another process owns that name, the definition changed since the run was saved (`DiscardPersistedState`), or you already called `Start`. |

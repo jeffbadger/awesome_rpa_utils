@@ -75,8 +75,8 @@ namespace StateMachineAutomation.Tests
 
         private static void Fire(StateMachineUtils machine, string trigger)
         {
-            Assert.True(machine.Fire(trigger, out bool fired, out _, out string reason, out string message), message);
-            Assert.True(fired, "'" + trigger + "' was declined in " + machine.CurrentState + ": " + reason);
+            Assert.True(machine.Fire(trigger, out _, out string message), message);
+            Assert.True(message == null, "'" + trigger + "' was declined in " + machine.CurrentState + ": " + message);
         }
 
         // ---- the loop from the documentation, one turn at a time ----
@@ -234,8 +234,7 @@ namespace StateMachineAutomation.Tests
 
             Assert.Equal("Stopped", machine.CurrentState);
             Assert.True(machine.IsFinished);
-            Assert.True(machine.Fire("polled", out bool fired, out _, out string reason, out _));
-            Assert.False(fired);
+            Assert.True(machine.Fire("polled", out _, out string reason));
             Assert.Equal("Finished", reason);
         }
 

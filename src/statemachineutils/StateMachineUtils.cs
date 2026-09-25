@@ -424,10 +424,11 @@ namespace StateMachineAutomation
 
         /// <summary>Fires a trigger.</summary>
         [Category("StateMachine - Run")]
-        [Description("Fires a trigger. A declined trigger (no transition, guard failed, machine finished or not started) is a normal outcome: the call returns True with fired False and a rejectionReason (NoTransition, GuardFailed, Finished, NotStarted, ReentrancyLimit). False plus a message means bad input or a persistence failure, and the machine is unchanged. Events are raised synchronously on this thread after the change is committed; concurrent Fire/Start/Reset calls from other threads wait until those handlers finish, so events always arrive in transition order. Never throws.")]
-        public bool Fire(string trigger, out bool fired, out string newState, out string rejectionReason, out string message)
+        [Description("Fires a trigger. True means the call worked: if message is empty the trigger fired (newState is the state entered); if message has text it is the reason the trigger was declined (NoTransition, GuardFailed, Finished, NotStarted or ReentrancyLimit) and newState is the state the machine is still in. False means the call failed (bad input, no definition, or a persistence write failure): message says what was wrong and the machine is unchanged. Events are raised synchronously on this thread after the change is committed; concurrent Fire/Start/Reset calls from other threads wait until those handlers finish, so events always arrive in transition order. Never throws.")]
+        public bool Fire(string trigger, out string newState, out string message)
         {
-            fired = false;
+            bool fired = false;
+            string rejectionReason = null;
             newState = null;
             rejectionReason = null;
             message = null;
@@ -450,7 +451,7 @@ namespace StateMachineAutomation
                         AddHistory(next, "rejected", trimmedTrigger, state.Current, null, "ReentrancyLimit", "Trigger '" + trimmedTrigger + "' was declined: the re-entrancy limit (" + MaxReentrancyDepth + ") was reached.");
                         state = next;
                     }
-                    rejectionReason = "ReentrancyLimit";
+                    message = "ReentrancyLimit";
                     return true;
                 }
                 fireDepth.Value++;
@@ -508,17 +509,26 @@ namespace StateMachineAutomation
                     }
                     foreach (Action raise in pending) raise();
                 }
+                message = fired ? null : rejectionReason;   // empty = fired; text = why it was declined
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                fired = false;
                 newState = null;
-                rejectionReason = null;
                 message = NeverThrowsGuard.Failure(nameof(Fire), ex);
                 return false;
             }
             finally { if (depthTaken) ReleaseDepth(); }
+        }
+
+        /// <summary>The minimal Fire: a trigger in, a result and a message out.</summary>
+        [Category("StateMachine - Run")]
+        [Description("Fires a trigger with just a result and a message. True means the call worked: if message is empty the trigger fired, otherwise message is the reason it was declined (NoTransition, GuardFailed, Finished, NotStarted or ReentrancyLimit) and nothing changed. False means the call failed (bad input, no definition, or a persistence write failure) and message says what was wrong. Use Fire when you also need the state. Never throws.")]
+        public bool FireSimple(string trigger, out string message)
+        {
+            message = null;
+            try { return Fire(trigger, out _, out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(FireSimple), ex); return false; }
         }
 
         /// <summary>Reports whether a trigger would currently fire, without firing it.</summary>
