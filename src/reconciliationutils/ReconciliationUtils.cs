@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
+using System.Text;
+using System.Text.Json;
 
 namespace ReconciliationAutomation
 {
@@ -8,15 +12,15 @@ namespace ReconciliationAutomation
     /// scalar ports. One component instance serves one automation flow.
     /// </summary>
     /// <remarks>
-    /// Work package 1 of the design plan: this class freezes the public contract (signatures, attributes,
-    /// failure sentinels and disposal behavior). Every operation reports that it is not implemented yet
-    /// until the later work packages fill in the behavior.
+    /// Work in progress (see the design plan). The definition operations (setup, JSON load/validate/export, limits) are
+    /// implemented; reconciliation and result reading still report that they are not implemented yet.
     /// </remarks>
     [Description("Reconciles two datasets by business key and reports matches, differences, missing and duplicate records through scalar ports. Under construction: the public contract is frozen but the operations are not implemented yet. Never throws.")]
     public sealed class ReconciliationUtils : Component
     {
         private readonly object syncRoot = new object();
         private bool disposed;
+        private ReconciliationDefinition definition = new ReconciliationDefinition();
 
         /// <summary>Empty constructor required so Pega Robot Studio can create the component.</summary>
         public ReconciliationUtils() { }
@@ -30,7 +34,7 @@ namespace ReconciliationAutomation
         public bool ClearDefinition(out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(ClearDefinition), out message); }
+            try { return ChangeDefinition(nameof(ClearDefinition), d => { d.Keys = new List<KeyMappingDef>(); d.Comparisons = new List<ComparisonDef>(); d.Limits = new ReconciliationLimits(); return null; }, out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ClearDefinition), ex); return false; }
         }
 
@@ -40,7 +44,7 @@ namespace ReconciliationAutomation
         public bool AddKeyMappingSimple(string name, string leftPointer, string rightPointer, out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(AddKeyMappingSimple), out message); }
+            try { return ChangeDefinition(nameof(AddKeyMappingSimple), d => d.TryAddKey(name, leftPointer, rightPointer, false, false), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddKeyMappingSimple), ex); return false; }
         }
 
@@ -50,7 +54,7 @@ namespace ReconciliationAutomation
         public bool AddKeyMapping(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(AddKeyMapping), out message); }
+            try { return ChangeDefinition(nameof(AddKeyMapping), d => d.TryAddKey(name, leftPointer, rightPointer, trim, ignoreCase), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddKeyMapping), ex); return false; }
         }
 
@@ -60,7 +64,7 @@ namespace ReconciliationAutomation
         public bool AddTextComparisonSimple(string name, string leftPointer, string rightPointer, out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(AddTextComparisonSimple), out message); }
+            try { return ChangeDefinition(nameof(AddTextComparisonSimple), d => d.TryAddText(name, leftPointer, rightPointer, false, false, ComparisonNullPolicy.RequireValue), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddTextComparisonSimple), ex); return false; }
         }
 
@@ -70,7 +74,7 @@ namespace ReconciliationAutomation
         public bool AddTextComparison(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, ComparisonNullPolicy nullPolicy, out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(AddTextComparison), out message); }
+            try { return ChangeDefinition(nameof(AddTextComparison), d => d.TryAddText(name, leftPointer, rightPointer, trim, ignoreCase, nullPolicy), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddTextComparison), ex); return false; }
         }
 
@@ -80,7 +84,7 @@ namespace ReconciliationAutomation
         public bool AddDecimalComparisonSimple(string name, string leftPointer, string rightPointer, out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(AddDecimalComparisonSimple), out message); }
+            try { return ChangeDefinition(nameof(AddDecimalComparisonSimple), d => d.TryAddDecimal(name, leftPointer, rightPointer, "0", ComparisonNullPolicy.RequireValue), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddDecimalComparisonSimple), ex); return false; }
         }
 
@@ -90,7 +94,7 @@ namespace ReconciliationAutomation
         public bool AddDecimalComparison(string name, string leftPointer, string rightPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(AddDecimalComparison), out message); }
+            try { return ChangeDefinition(nameof(AddDecimalComparison), d => d.TryAddDecimal(name, leftPointer, rightPointer, absoluteTolerance, nullPolicy), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddDecimalComparison), ex); return false; }
         }
 
@@ -100,7 +104,7 @@ namespace ReconciliationAutomation
         public bool LoadDefinitionJson(string definitionJson, out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(LoadDefinitionJson), out message); }
+            try { return LoadDefinition(definitionJson, out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(LoadDefinitionJson), ex); return false; }
         }
 
@@ -111,7 +115,7 @@ namespace ReconciliationAutomation
         {
             message = null;
             definitionJson = null;
-            try { return NotYetImplemented(nameof(GetDefinitionJson), out message); }
+            try { return GetDefinition(out definitionJson, out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetDefinitionJson), ex); return false; }
         }
 
@@ -123,7 +127,7 @@ namespace ReconciliationAutomation
             message = null;
             errorCount = 0;
             reportJson = null;
-            try { return NotYetImplemented(nameof(ValidateDefinitionJson), out message); }
+            try { return ValidateDefinition(definitionJson, out errorCount, out reportJson, out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ValidateDefinitionJson), ex); return false; }
         }
 
@@ -133,7 +137,7 @@ namespace ReconciliationAutomation
         public bool ConfigureLimits(int maximumRowsPerSide, int maximumInputCharactersPerSide, int maximumResults, int maximumDifferenceDetails, out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(ConfigureLimits), out message); }
+            try { return ChangeDefinition(nameof(ConfigureLimits), d => ApplyLimits(d, maximumRowsPerSide, maximumInputCharactersPerSide, maximumResults, maximumDifferenceDetails), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ConfigureLimits), ex); return false; }
         }
 
@@ -238,13 +242,150 @@ namespace ReconciliationAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ClearResults), ex); return false; }
         }
 
+
+        // ------------------------------------------------------------------ definition
+
+        /// <summary>
+        /// Applies one change to a copy of the definition and swaps it in only if the change was accepted, so a rejected change
+        /// leaves the current definition (and everything derived from it) untouched.
+        /// </summary>
+        private bool ChangeDefinition(string operation, Func<ReconciliationDefinition, Finding> change, out string message)
+        {
+            message = null;
+            lock (syncRoot)
+            {
+                if (disposed) { message = DisposedMessage(operation); return false; }
+                ReconciliationDefinition copy = definition.Clone();
+                Finding problem = change(copy);
+                if (problem != null) { message = operation + " failed: " + problem.Format(); return false; }
+                definition = copy;
+                InvalidateResults();
+                return true;
+            }
+        }
+
+        private static Finding ApplyLimits(ReconciliationDefinition target, int rows, int characters, int results, int differences)
+        {
+            var limits = new ReconciliationLimits
+            {
+                MaximumRowsPerSide = rows,
+                MaximumInputCharactersPerSide = characters,
+                MaximumResults = results,
+                MaximumDifferenceDetails = differences
+            };
+            string problem = limits.FirstProblem();
+            if (problem != null) return new Finding("limits", "InvalidLimit", problem);
+            target.Limits = limits;
+            return null;
+        }
+
+        private bool LoadDefinition(string definitionJson, out string message)
+        {
+            message = null;
+            lock (syncRoot)
+            {
+                if (disposed) { message = DisposedMessage(nameof(LoadDefinitionJson)); return false; }
+            }
+            if (!CheckDefinitionText(nameof(LoadDefinitionJson), definitionJson, out message)) return false;
+
+            var findings = new DefinitionFindings();
+            ReconciliationDefinition parsed = DefinitionParser.Parse(definitionJson, findings);
+            if (parsed == null)
+            {
+                string more = findings.Total > 1 ? " (" + (findings.Total - 1) + " more problem(s); ValidateDefinitionJson lists them all)" : string.Empty;
+                message = nameof(LoadDefinitionJson) + " failed: " + findings.Reported[0].Format() + more;
+                return false;
+            }
+            lock (syncRoot)
+            {
+                if (disposed) { message = DisposedMessage(nameof(LoadDefinitionJson)); return false; }
+                definition = parsed;
+                InvalidateResults();
+                return true;
+            }
+        }
+
+        private bool GetDefinition(out string definitionJson, out string message)
+        {
+            definitionJson = null;
+            message = null;
+            lock (syncRoot)
+            {
+                if (disposed) { message = DisposedMessage(nameof(GetDefinitionJson)); return false; }
+                definitionJson = definition.ToCanonicalJson();
+                return true;
+            }
+        }
+
+        private bool ValidateDefinition(string definitionJson, out int errorCount, out string reportJson, out string message)
+        {
+            errorCount = 0;
+            reportJson = null;
+            message = null;
+            lock (syncRoot)
+            {
+                if (disposed) { message = DisposedMessage(nameof(ValidateDefinitionJson)); return false; }
+            }
+            if (!CheckDefinitionText(nameof(ValidateDefinitionJson), definitionJson, out message)) return false;
+
+            var findings = new DefinitionFindings();
+            DefinitionParser.Parse(definitionJson, findings);
+            errorCount = findings.Total;
+            reportJson = WriteReport(findings);
+            return true; // validation ran; whether the definition is valid is in errorCount and the report
+        }
+
+        private static bool CheckDefinitionText(string operation, string definitionJson, out string message)
+        {
+            message = null;
+            if (definitionJson == null) { message = operation + " failed: definitionJson is required."; return false; }
+            if (definitionJson.Length > ReconciliationDefinition.MaxDefinitionJsonCharacters)
+            {
+                message = operation + " failed: the definition is longer than " + ReconciliationDefinition.MaxDefinitionJsonCharacters + " characters.";
+                return false;
+            }
+            return true;
+        }
+
+        private static string WriteReport(DefinitionFindings findings)
+        {
+            using (var stream = new MemoryStream())
+            {
+                using (var w = new Utf8JsonWriter(stream))
+                {
+                    w.WriteStartObject();
+                    w.WriteBoolean("valid", findings.Total == 0);
+                    w.WriteNumber("errorCount", findings.Total);
+                    w.WriteNumber("reportedCount", findings.Reported.Count);
+                    w.WriteBoolean("truncated", findings.Truncated);
+                    w.WriteStartArray("errors");
+                    foreach (Finding f in findings.Reported)
+                    {
+                        w.WriteStartObject();
+                        w.WriteString("path", f.Path);
+                        w.WriteString("code", f.Code);
+                        w.WriteString("message", f.Message);
+                        w.WriteEndObject();
+                    }
+                    w.WriteEndArray();
+                    w.WriteEndObject();
+                }
+                return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
+        /// <summary>Discards any results and cursors. There are none yet (reconciliation arrives in a later work package); every setup change already calls this.</summary>
+        private void InvalidateResults() { }
+
+        private static string DisposedMessage(string operation) => operation + " failed: the component has been disposed.";
+
         private bool NotYetImplemented(string operation, out string message)
         {
             lock (syncRoot)
             {
                 if (disposed)
                 {
-                    message = operation + " failed: the component has been disposed.";
+                    message = DisposedMessage(operation);
                     return false;
                 }
             }

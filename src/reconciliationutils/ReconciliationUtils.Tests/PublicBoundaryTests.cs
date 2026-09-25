@@ -53,18 +53,62 @@ namespace ReconciliationAutomation.Tests
             }
         }
 
+        /// <summary>Methods that succeed on a live component even when given junk (they take no meaningful input).</summary>
+        private static readonly string[] SucceedsOnAnyInput = { "ClearDefinition", "GetDefinitionJson" };
+
+        /// <summary>Methods whose behavior arrives in a later work package: they still report "not implemented yet".</summary>
+        private static readonly string[] StillStubbed =
+        {
+            "ReconcileJson", "GetSummary", "GetSummaryJson", "ResetResultCursor",
+            "TryReadNextException", "TryReadNextDifference", "GetResultJson", "ClearResults"
+        };
+
+        private static object[] BadArguments(MethodInfo m) =>
+            m.GetParameters().Select(p =>
+            {
+                Type t = p.ParameterType.IsByRef ? p.ParameterType.GetElementType() : p.ParameterType;
+                if (p.IsOut) return t.IsValueType ? Activator.CreateInstance(t) : null;
+                if (t == typeof(string)) return null;
+                if (t == typeof(int)) return int.MinValue;
+                if (t == typeof(bool)) return false;
+                return Activator.CreateInstance(t);
+            }).ToArray();
+
         [Fact]
-        public void EveryMethod_OnFailure_SetsEveryOutputToItsSentinel_AndGivesAMessage()
+        public void EveryMethod_OnFailure_SetsEveryOutputToItsSentinel_AndNamesItselfInTheMessage()
         {
             using var component = new ReconciliationUtils();
-            foreach (MethodInfo m in ConventionTests.PublicMethods())
+            foreach (MethodInfo m in ConventionTests.PublicMethods().Where(m => !SucceedsOnAnyInput.Contains(m.Name)))
             {
-                var (result, message, outs) = Call(component, m);
-                Assert.False(result);                                   // nothing is implemented yet
+                object[] args = BadArguments(m);
+                ParameterInfo[] ps = m.GetParameters();
+                for (int i = 0; i < ps.Length; i++)   // poison the outputs so a method that forgets to set one is caught
+                    if (ps[i].IsOut)
+                    {
+                        Type t = ps[i].ParameterType.GetElementType();
+                        args[i] = t == typeof(string) ? "POISON" : t == typeof(bool) ? (object)true : (object)99;
+                    }
+                bool result = (bool)m.Invoke(component, args);
+                var outs = ps.Select((p, i) => (p, i)).Where(x => x.p.IsOut).ToDictionary(x => x.p.Name, x => args[x.i]);
+                string message = (string)outs["message"];
+                Assert.False(result, m.Name + " should fail on null/out-of-range input");
                 Assert.False(string.IsNullOrWhiteSpace(message), m.Name + " must explain the failure");
-                Assert.Contains(m.Name, message);                       // and name the operation
+                Assert.Contains(m.Name, message);
                 AssertSentinels(m, outs);
             }
+        }
+
+        [Fact]
+        public void TheStubbedMethods_ReportThatTheyAreNotImplementedYet()
+        {
+            using var component = new ReconciliationUtils();
+            foreach (MethodInfo m in ConventionTests.PublicMethods().Where(m => StillStubbed.Contains(m.Name)))
+            {
+                var (result, message, _) = Call(component, m);
+                Assert.False(result);
+                Assert.Contains("not implemented yet", message);
+            }
+            Assert.Equal(StillStubbed.Length, ConventionTests.PublicMethods().Count(m => StillStubbed.Contains(m.Name)));
         }
 
         [Fact]
