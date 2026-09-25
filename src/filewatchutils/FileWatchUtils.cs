@@ -1067,6 +1067,12 @@ namespace FileWatchAutomation
         }
 
         /// <summary>
+        /// Test seam: runs after <see cref="ClaimFile"/>'s first existence check and before it takes the source lock, the exact
+        /// window in which a competing caller can finish its whole claim. Lets a test make that interleaving deterministic.
+        /// </summary>
+        internal Action BeforeClaimLock;
+
+        /// <summary>
         /// Claims a work file by copying it into an in-progress directory, then deleting
         /// the source. A collision - another instance already claiming this exact source,
         /// or an unrelated file already occupying the destination name - returns
@@ -1159,6 +1165,8 @@ namespace FileWatchAutomation
                     message = $"Source file '{sourcePath}' does not exist, or was already claimed by another instance.";
                     return false;
                 }
+
+                BeforeClaimLock?.Invoke();
 
                 // Source-scoped exclusive lock (see <remarks>): the real serialization
                 // point for this method, regardless of which inProgressDirectoryPath each
