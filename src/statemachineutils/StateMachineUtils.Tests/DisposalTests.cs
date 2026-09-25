@@ -32,7 +32,7 @@ namespace StateMachineAutomation.Tests
             message = null;
             switch (name)
             {
-                case "Fire": return m.Fire("validate", out _, out _, out message);
+                case "Fire": return m.Fire("validate", out _, out message);
                 case "FireSimple": return m.FireSimple("validate", out message);
                 case "CanFire": return m.CanFire("validate", out _, out _, out message);
                 case "Start": return m.Start(out _, out message);

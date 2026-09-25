@@ -143,7 +143,7 @@ else
     if (state == "Processing")
     {
         queue.RecoverExpiredLeases(queuePath, out int recovered, out int rejected, out message);
-        bool fired = machine.Fire("recovered", out state, out string reason, out message);
+        machine.Fire("recovered", out state, out message);
     }
     else if (state == "Finished" || state == "Stopped")
     {
@@ -188,7 +188,7 @@ while (true)
     machine.GetCurrentState(out string state, out message);
 
     if (state == "Starting")
-        machine.Fire("opened", out _, out _, out message);
+        machine.Fire("opened", out _, out message);
 
     else if (state == "Idle")
         PollQueue();
@@ -196,7 +196,7 @@ while (true)
     else if (state == "Waiting")
     {
         Pause(5000);
-        machine.Fire("waitElapsed", out _, out _, out message);
+        machine.Fire("waitElapsed", out _, out message);
     }
 
     else if (state == "Processing")
@@ -228,7 +228,7 @@ void PollQueue()
     currentPayload = payload;                         // an ordinary variable, not context
 
     // The machine decides: Processing, Waiting or Finished. No if/else here.
-    bool fired = machine.Fire("polled", out string newState, out string reason, out message);
+    machine.Fire("polled", out string newState, out message);
 }
 ```
 
@@ -246,13 +246,13 @@ void ProcessCurrentItem()
     {
         queue.CompleteItem(queuePath, itemId, leaseToken, out message, resultJson: "{\"posted\":true}");
         machine.SetContext("consecutiveFailures", "0", out message);
-        machine.Fire("succeeded", out _, out _, out message);
+        machine.Fire("succeeded", out _, out message);
     }
     else if (businessProblem != null)
     {
         // Bad data: retrying cannot help. Reject it and move on; it is not a "failure".
         queue.RejectItem(queuePath, itemId, leaseToken, businessProblem, out message);
-        machine.Fire("rejected", out _, out _, out message);
+        machine.Fire("rejected", out _, out message);
     }
     else
     {
@@ -264,7 +264,7 @@ void ProcessCurrentItem()
         machine.SetContext("consecutiveFailures", (failures + 1).ToString(), out message);
 
         // The machine trips the breaker (Suspended) or returns to Idle.
-        machine.Fire("failed", out _, out _, out message);
+        machine.Fire("failed", out _, out message);
     }
 }
 ```

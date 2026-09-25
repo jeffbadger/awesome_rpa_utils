@@ -64,7 +64,7 @@ namespace StateMachineAutomation.Tests
             StateMachineUtils machine = LoadedWithPersistence(name);
             Assert.True(machine.Start(out _, out _));
             Assert.True(machine.SetContext("amount", "7", out _));
-            Assert.True(machine.Fire("validate", out _, out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
 
             using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name)));
             Assert.True(doc.RootElement.GetProperty("started").GetBoolean());
@@ -79,7 +79,7 @@ namespace StateMachineAutomation.Tests
             string name = NewMachineName();
             StateMachineUtils first = LoadedWithPersistence(name);
             Assert.True(first.Start(out _, out _));
-            Assert.True(first.Fire("validate", out _, out _, out _));
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
             Assert.True(first.SetContext("amount", "42", out _));
             first.Dispose();
 
@@ -98,7 +98,7 @@ namespace StateMachineAutomation.Tests
             Assert.True(second.GetHistoryJson(out string history, out _));
             Assert.Equal(2, JsonDocument.Parse(history).RootElement.GetArrayLength());
 
-            bool fired = second.Fire("post", out string newState, out _, out message);
+            Assert.True(second.Fire("post", out bool fired, out string newState, out _, out message), message);
             Assert.True(fired);
             Assert.Equal("Posted", newState);
         }
@@ -211,7 +211,7 @@ namespace StateMachineAutomation.Tests
             Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
             Assert.True(restored);
 
-            bool fired = first.Fire("validate", out _, out _, out message); // first now runs in memory only
+            Assert.True(first.Fire("validate", out bool fired, out _, out _, out message), message); // first now runs in memory only
             Assert.True(fired);
             Assert.Equal("Received", second.CurrentState);
         }
@@ -234,7 +234,7 @@ namespace StateMachineAutomation.Tests
 
             using (BlockWrites(name))
             {
-                bool fired = machine.Fire("validate", out string newState, out string reason, out string message);
+                Assert.False(machine.Fire("validate", out bool fired, out string newState, out string reason, out string message));
                 Assert.False(fired);
                 Assert.Null(newState);
                 Assert.Null(reason);
@@ -252,7 +252,7 @@ namespace StateMachineAutomation.Tests
 
             Assert.True(machine.GetHistoryJson(out string after, out _));
             Assert.Equal(before, after);
-            bool retried = machine.Fire("validate", out string state, out _, out string ok);
+            Assert.True(machine.Fire("validate", out bool retried, out string state, out _, out string ok), ok);
             Assert.True(retried);
             Assert.Equal("Validated", state);
         }
@@ -268,7 +268,7 @@ namespace StateMachineAutomation.Tests
             machine.TransitionFired += (_, _) => raised++;
             machine.StateEntered += (_, _) => raised++;
             using (BlockWrites(name))
-                Assert.False(machine.Fire("validate", out _, out _, out _));
+                Assert.False(machine.Fire("validate", out _, out _, out _, out _));
             Assert.Equal(0, raised);
         }
 
@@ -280,7 +280,7 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.Start(out _, out _));
             using (BlockWrites(name))
             {
-                bool fired = machine.Fire("nonsense", out _, out string reason, out string message);
+                Assert.True(machine.Fire("nonsense", out bool fired, out _, out string reason, out string message), message);
                 Assert.False(fired);
                 Assert.Equal("NoTransition", reason);
             }
@@ -404,8 +404,8 @@ namespace StateMachineAutomation.Tests
             Assert.True(first.Start(out _, out _));
             for (int i = 0; i < 4; i++)
             {
-                Assert.True(first.Fire("go", out _, out _, out _));
-                Assert.True(first.Fire("back", out _, out _, out _));
+                Assert.True(first.Fire("go", out _, out _, out _, out _));
+                Assert.True(first.Fire("back", out _, out _, out _, out _));
             }
             first.Dispose();
 
@@ -542,8 +542,8 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.Start(out _, out _));
             for (int i = 0; i < 3; i++)
             {
-                Assert.True(machine.Fire("go", out _, out _, out _));
-                Assert.True(machine.Fire("back", out _, out _, out _));
+                Assert.True(machine.Fire("go", out _, out _, out _, out _));
+                Assert.True(machine.Fire("back", out _, out _, out _, out _));
             }
             int OnDisk() => JsonDocument.Parse(File.ReadAllText(StatePath(name))).RootElement.GetProperty("history").GetArrayLength();
             Assert.Equal(7, OnDisk()); // start + 6 transitions
@@ -555,7 +555,7 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.GetHistoryJson(out string json, out _));
             Assert.Equal(2, JsonDocument.Parse(json).RootElement.GetArrayLength()); // ...but reads honor the limit now
 
-            Assert.True(machine.Fire("go", out _, out _, out _));
+            Assert.True(machine.Fire("go", out _, out _, out _, out _));
             Assert.Equal(2, OnDisk()); // the next real change trims what is stored
             Assert.True(machine.GetHistoryJson(out json, out _));
             Assert.Equal(2, JsonDocument.Parse(json).RootElement.GetArrayLength());
@@ -755,8 +755,8 @@ namespace StateMachineAutomation.Tests
             string name = NewMachineName();
             StateMachineUtils first = LoadedWithPersistence(name);
             Assert.True(first.Start(out _, out _));
-            Assert.True(first.Fire("validate", out _, out _, out _));
-            Assert.False(first.Fire("nonsense", out _, out _, out _)); // recorded in memory only...
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
+            Assert.True(first.Fire("nonsense", out _, out _, out _, out _)); // recorded in memory only...
             Assert.True(first.SetContext("k", "v", out _));                  // ...and reaches disk with the next real change
             first.Dispose();
             return name;
@@ -834,7 +834,7 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.GetHistoryJson(out string json, out _));
             Assert.Equal(new long[] { 1, 2, 3 }, JsonDocument.Parse(json).RootElement.EnumerateArray().Select(e => e.GetProperty("seq").GetInt64()));
 
-            bool fired = machine.Fire("abort", out _, out _, out message);
+            Assert.True(machine.Fire("abort", out bool fired, out _, out _, out message), message);
             Assert.True(fired);
             Assert.True(machine.GetHistoryJson(out json, out _));
             Assert.Equal(new long[] { 1, 2, 3, 4 }, JsonDocument.Parse(json).RootElement.EnumerateArray().Select(e => e.GetProperty("seq").GetInt64())); // no reuse, no gap
@@ -845,7 +845,7 @@ namespace StateMachineAutomation.Tests
         {
             string name = NewMachineName();
             StateMachineUtils first = Loaded();
-            bool fired = first.Fire("validate", out _, out string reason, out _); // before Start: a NotStarted rejection
+            Assert.True(first.Fire("validate", out bool fired, out _, out string reason, out _)); // before Start: a NotStarted rejection
             Assert.False(fired);
             Assert.Equal("NotStarted", reason);
             Assert.True(first.EnablePersistence(name, out _, out _, out string message), message); // persists that history with started == false
@@ -869,8 +869,8 @@ namespace StateMachineAutomation.Tests
             StateMachineUtils first = LoadedWithPersistence(name);
             Assert.True(first.Start(out _, out _));
             int refusals = 0;
-            first.TransitionRejected += (_, _) => { if (first.Fire("again", out _, out string r, out _) && r == "ReentrancyLimit") refusals++; };
-            Assert.False(first.Fire("nonsense", out _, out _, out _));
+            first.TransitionRejected += (_, _) => { if (first.Fire("again", out _, out _, out string r, out _) && r == "ReentrancyLimit") refusals++; };
+            Assert.True(first.Fire("nonsense", out _, out _, out _, out _));
             Assert.True(first.SetContext("k", "v", out _)); // persist the accumulated rejections
             first.Dispose();
 
@@ -967,7 +967,7 @@ namespace StateMachineAutomation.Tests
             string original = NewMachineName();
             StateMachineUtils first = LoadedWithPersistence(original);
             Assert.True(first.Start(out _, out _));
-            Assert.True(first.Fire("validate", out _, out _, out _));
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
             first.Dispose();
 
             string other = NewMachineName();
@@ -1068,7 +1068,7 @@ namespace StateMachineAutomation.Tests
             // "no history but a nonzero counter" - the very shape the empty-history rule refuses.
             string name = NewMachineName();
             StateMachineUtils first = Started();
-            Assert.True(first.Fire("validate", out _, out _, out _));
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
             Assert.True(first.LoadDefinitionJson(Defs.Minimal, out string message), message);
             Assert.True(first.EnablePersistence(name, out _, out _, out message), message);
             first.Dispose();
@@ -1100,8 +1100,8 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.Start(out _, out _));
             for (int i = 0; i < 3; i++)
             {
-                Assert.True(machine.Fire("go", out _, out _, out _));
-                Assert.True(machine.Fire("back", out _, out _, out _));
+                Assert.True(machine.Fire("go", out _, out _, out _, out _));
+                Assert.True(machine.Fire("back", out _, out _, out _, out _));
             }
             Assert.True(machine.SetContext("seed", "1", out _));
             Assert.Equal(7, OnDisk());
@@ -1124,7 +1124,7 @@ namespace StateMachineAutomation.Tests
         {
             string name = NewMachineName();
             StateMachineUtils machine = Loaded();
-            for (int i = 0; i < 5; i++) Assert.False(machine.Fire("validate", out _, out _, out _)); // NotStarted rejections (Fire is False: it did not fire), kept in memory
+            for (int i = 0; i < 5; i++) Assert.True(machine.Fire("validate", out _, out _, out _, out _)); // NotStarted rejections, kept in memory
             machine.MaximumHistoryEntries = 2;                                                              // lowered afterwards
 
             Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
@@ -1167,7 +1167,7 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
             Assert.True(restored);
 
-            bool fired = machine.Fire("validate", out _, out _, out message); // would need sequence long.MaxValue
+            Assert.False(machine.Fire("validate", out bool fired, out _, out _, out message)); // would need sequence long.MaxValue
             Assert.False(fired);
             Assert.Contains("sequence counter is exhausted", message);
             Assert.Equal("Received", machine.CurrentState);
@@ -1175,7 +1175,7 @@ namespace StateMachineAutomation.Tests
                 Assert.Equal(long.MaxValue - 1, doc.RootElement.GetProperty("sequence").GetInt64()); // never wrapped, never persisted negative
 
             Assert.True(machine.Reset(false, out _, out message), message); // clears the history, so the numbering restarts
-            fired = machine.Fire("validate", out _, out _, out message);
+            Assert.True(machine.Fire("validate", out fired, out _, out _, out message), message);
             Assert.True(fired);
             Assert.True(machine.GetHistoryJson(out string json, out _));
             Assert.Equal(new long[] { 1, 2 }, JsonDocument.Parse(json).RootElement.EnumerateArray().Select(e => e.GetProperty("seq").GetInt64()));
@@ -1187,7 +1187,7 @@ namespace StateMachineAutomation.Tests
             string name = NewMachineName();
             StateMachineUtils machine = LoadedWithPersistence(name);
             Assert.True(machine.Start(out _, out _));
-            Assert.True(machine.Fire("validate", out _, out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
             machine.Dispose();
             StateMachineUtils again = Loaded();
             Assert.True(again.EnablePersistence(name, out _, out bool restored, out string message), message);
@@ -1236,8 +1236,8 @@ namespace StateMachineAutomation.Tests
             string name = NewMachineName();
             StateMachineUtils first = LoadedWithPersistence(name);
             Assert.True(first.Start(out _, out _));
-            Assert.True(first.Fire("validate", out _, out _, out _));
-            Assert.True(first.Fire("abort", out _, out _, out _));
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
+            Assert.True(first.Fire("abort", out _, out _, out _, out _));
             first.Dispose();
             return name;
         }
@@ -1247,7 +1247,7 @@ namespace StateMachineAutomation.Tests
         {
             string name = NewMachineName();
             StateMachineUtils first = Loaded();
-            Assert.False(first.Fire("validate", out _, out _, out _));
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
             Assert.True(first.EnablePersistence(name, out _, out _, out _));
             first.Dispose();
             return name;
@@ -1406,8 +1406,8 @@ namespace StateMachineAutomation.Tests
             string name = NewMachineName();
             StateMachineUtils first = LoadedWithPersistence(name);
             Assert.True(first.Start(out _, out _));
-            Assert.True(first.Fire("abort", out _, out _, out _));
-            bool fired = first.Fire("validate", out _, out string rejection, out _);
+            Assert.True(first.Fire("abort", out _, out _, out _, out _));
+            Assert.True(first.Fire("validate", out bool fired, out _, out string rejection, out _));
             Assert.False(fired);
             Assert.Equal("Finished", rejection);
             Assert.True(first.SetContext("k", "v", out _)); // carries the in-memory rejection to disk
@@ -1496,12 +1496,12 @@ namespace StateMachineAutomation.Tests
         {
             string name = NewMachineName();
             StateMachineUtils m = LoadedWithPersistence(name);
-            Assert.False(m.Fire("validate", out _, out _, out _));      // NotStarted rejection
+            Assert.True(m.Fire("validate", out _, out _, out _, out _));      // NotStarted rejection
             Assert.True(m.Start(out _, out _));                                // start clears that
-            Assert.False(m.Fire("nonsense", out _, out _, out _));      // NoTransition
-            Assert.True(m.Fire("validate", out _, out _, out _));      // transition
+            Assert.True(m.Fire("nonsense", out _, out _, out _, out _));      // NoTransition
+            Assert.True(m.Fire("validate", out _, out _, out _, out _));      // transition
             Assert.True(m.SetContext("amount", "99999", out _));
-            Assert.True(m.Fire("post", out _, out string guardFailedReason, out _)); // guarded -> Failed fallback (fires)
+            Assert.True(m.Fire("post", out _, out _, out string guardFailedReason, out _)); // guarded -> Failed fallback (fires)
             m.Dispose();
 
             StateMachineUtils again = Loaded();
@@ -1520,7 +1520,7 @@ namespace StateMachineAutomation.Tests
             StateMachineUtils machine = LoadedWithPersistence(name, json);
             Assert.True(machine.Start(out _, out _));
             Assert.True(machine.SetContext("token", "s3cr3t-value", out _));
-            Assert.False(machine.Fire("go", out _, out _, out _));
+            Assert.True(machine.Fire("go", out _, out _, out _, out _));
 
             using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name)));
             string history = doc.RootElement.GetProperty("history").GetRawText();

@@ -149,9 +149,9 @@ void RunInit()
     bool ok = InitAllSettings() && InitAllApplications(out string error);
 
     if (ok)
-        machine.Fire("initialized", out _, out _, out message);
+        machine.Fire("initialized", out _, out message);
     else
-        machine.Fire("systemException", out _, out _, out message);   // Init -> EndProcess
+        machine.Fire("systemException", out _, out message);   // Init -> EndProcess
 }
 ```
 
@@ -171,7 +171,7 @@ void RunGetTransactionData()
     machine.SetContext("transactionFound", found ? "true" : "false", out message);
 
     // Found -> ProcessTransaction. Nothing left -> EndProcess. The guard decides.
-    machine.Fire("fetched", out _, out _, out message);
+    machine.Fire("fetched", out _, out message);
 }
 ```
 
@@ -192,13 +192,13 @@ void RunProcessTransaction()
         queue.CompleteItem(queuePath, currentItemId, currentLease, out message);
         machine.SetContext("consecutiveSystemExceptions", "0", out message);   // a success resets the run
         machine.SetContext("maxConsecutiveReached", "false", out message);
-        machine.Fire("success", out _, out _, out message);
+        machine.Fire("success", out _, out message);
     }
     catch (BusinessRuleException ex)
     {
         // Bad data: retrying cannot help, and it says nothing about the robot's health.
         queue.RejectItem(queuePath, currentItemId, currentLease, ex.Message, out message);
-        machine.Fire("businessException", out _, out _, out message);
+        machine.Fire("businessException", out _, out message);
     }
     catch (Exception ex)
     {
@@ -231,7 +231,7 @@ void OnSystemException(string itemId, string lease, string error)
                        count >= MaxConsecutiveSystemExceptions ? "true" : "false", out message);
 
     // Back to Init for a clean restart, or to EndProcess if the limit was reached. The guard decides.
-    machine.Fire("systemException", out _, out _, out message);
+    machine.Fire("systemException", out _, out message);
 }
 ```
 

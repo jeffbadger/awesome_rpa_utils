@@ -422,10 +422,11 @@ namespace StateMachineAutomation
 
         /// <summary>Fires a trigger.</summary>
         [Category("StateMachine - Run")]
-        [Description("Fires a trigger. The result is True only if the trigger fired (newState is the state entered). False means it did not: when the trigger was declined (no transition, guard failed, machine finished or not started) rejectionReason says why (NoTransition, GuardFailed, Finished, NotStarted, ReentrancyLimit) and newState is the state the machine is still in; when rejectionReason is empty the input was bad or a persistence write failed, and the machine is unchanged. message always explains the outcome. Events are raised synchronously on this thread after the change is committed; concurrent Fire/Start/Reset calls from other threads wait until those handlers finish, so events always arrive in transition order. Never throws.")]
-        public bool Fire(string trigger, out string newState, out string rejectionReason, out string message)
+        [Description("Fires a trigger. True means the call worked: if message is empty the trigger fired (newState is the state entered); if message has text it is the reason the trigger was declined (NoTransition, GuardFailed, Finished, NotStarted or ReentrancyLimit) and newState is the state the machine is still in. False means the call failed (bad input, no definition, or a persistence write failure): message says what was wrong and the machine is unchanged. Events are raised synchronously on this thread after the change is committed; concurrent Fire/Start/Reset calls from other threads wait until those handlers finish, so events always arrive in transition order. Never throws.")]
+        public bool Fire(string trigger, out string newState, out string message)
         {
             bool fired = false;
+            string rejectionReason = null;
             newState = null;
             rejectionReason = null;
             message = null;
@@ -448,9 +449,8 @@ namespace StateMachineAutomation
                         AddHistory(next, "rejected", trimmedTrigger, state.Current, null, "ReentrancyLimit", "Trigger '" + trimmedTrigger + "' was declined: the re-entrancy limit (" + MaxReentrancyDepth + ") was reached.");
                         state = next;
                     }
-                    rejectionReason = "ReentrancyLimit";
-                    message = "Trigger '" + trimmedTrigger + "' was declined: the re-entrancy limit (" + MaxReentrancyDepth + ") was reached.";
-                    return false;
+                    message = "ReentrancyLimit";
+                    return true;
                 }
                 fireDepth.Value++;
                 depthTaken = true;
@@ -479,7 +479,6 @@ namespace StateMachineAutomation
                             state = rejected;
                             newState = current.Current;
                             rejectionReason = reason;
-                            message = detail;
                             string rejectedFrom = current.Current;
                             pending.Add(() => RaiseSafely(TransitionRejected, new StateMachineRejectedEventArgs(rejectedFrom, trimmedTrigger, reason, detail)));
                         }
@@ -499,7 +498,6 @@ namespace StateMachineAutomation
                             state = next;
                             fired = true;
                             newState = to;
-                            message = "Fired '" + firedTrigger + "': " + from + " -> " + to + ".";
                             pending.Add(() => RaiseSafely(StateExited, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
                             pending.Add(() => RaiseSafely(TransitionFired, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
                             pending.Add(() => RaiseSafely(StateEntered, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
@@ -509,12 +507,12 @@ namespace StateMachineAutomation
                     }
                     foreach (Action raise in pending) raise();
                 }
-                return fired;
+                message = fired ? null : rejectionReason;   // empty = fired; text = why it was declined
+                return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 newState = null;
-                rejectionReason = null;
                 message = NeverThrowsGuard.Failure(nameof(Fire), ex);
                 return false;
             }
@@ -523,11 +521,11 @@ namespace StateMachineAutomation
 
         /// <summary>The minimal Fire: a trigger in, a result and a message out.</summary>
         [Category("StateMachine - Run")]
-        [Description("Fires a trigger and reports only whether it fired. The result is True only if the transition happened; otherwise message says why (no transition, guard failed, machine finished or not started, or bad input). Use Fire when you also need the new state or a machine-readable rejection reason. Never throws.")]
+        [Description("Fires a trigger with just a result and a message. True means the call worked: if message is empty the trigger fired, otherwise message is the reason it was declined (NoTransition, GuardFailed, Finished, NotStarted or ReentrancyLimit) and nothing changed. False means the call failed (bad input, no definition, or a persistence write failure) and message says what was wrong. Use Fire when you also need the state. Never throws.")]
         public bool FireSimple(string trigger, out string message)
         {
             message = null;
-            try { return Fire(trigger, out _, out _, out message); }
+            try { return Fire(trigger, out _, out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(FireSimple), ex); return false; }
         }
 

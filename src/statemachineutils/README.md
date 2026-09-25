@@ -40,8 +40,8 @@ See the [step-by-step tutorial](Documentation/Tutorial.md) to build your first m
 machine.LoadDefinitionJson(json, out string message);
 machine.SetContext("amount", "2500", out message);
 machine.Start(out string state, out message);                 // Received
-bool fired = machine.Fire("validate", out state, out string reason, out message);
-fired = machine.Fire("post", out state, out reason, out message);   // Posted; fired is the result
+machine.Fire("validate", out state, out message);
+machine.Fire("post", out state, out message);  // Posted
 ```
 
 ## Types
@@ -105,8 +105,8 @@ operator and expected value - but **never** the context's actual value).
 |---|---|---|
 | `Start` | `bool Start(out string currentState, out string message)` | Validates the definition and enters the initial state, raising `StateEntered`. Refused if already started. |
 | `Reset` | `bool Reset(bool clearContext, out string currentState, out string message)` | Returns to the initial state (also starts an unstarted machine), clears history, raises `StateEntered`. |
-| `Fire` | `bool Fire(string trigger, out string newState, out string rejectionReason, out string message)` | Fires a trigger. The result is `True` only if it fired. If declined, the result is `False` with a `rejectionReason`; `message` always says why. |
-| `FireSimple` | `bool FireSimple(string trigger, out string message)` | The minimal `Fire`: a trigger in, a result (did it fire) and a message out. |
+| `Fire` | `bool Fire(string trigger, out string newState, out string message)` | Fires a trigger. `True` means the call worked: an empty `message` means it fired; text is the reason it was declined (`NoTransition`, `GuardFailed`, `Finished`, `NotStarted`, `ReentrancyLimit`). `False` means an error and `message` says what. |
+| `FireSimple` | `bool FireSimple(string trigger, out string message)` | The minimal `Fire`, same result and message rules, without `newState`. |
 | `CanFire` | `bool CanFire(string trigger, out bool canFire, out string rejectionReason, out string message)` | Reports whether a trigger would fire right now, without firing or raising events. |
 
 ### Query
@@ -142,13 +142,15 @@ operator and expected value - but **never** the context's actual value).
 
 ## Notes & Caveats
 
-- **`Fire`'s result means "it fired".** `True` only when the transition happened.
-  When it did not, `message` says why, and `rejectionReason` tells a **declined**
-  trigger (`NoTransition`, `GuardFailed`, `Finished`, `NotStarted` or
-  `ReentrancyLimit`; the machine simply stays where it is) from an **error**
-  (empty `rejectionReason`: bad input such as an empty trigger, no definition
-  loaded, or a persistence write failure; the machine is unchanged). Use
-  `FireSimple` when the result and message are all you need.
+- **A declined trigger is a normal outcome, not a failure.** `Fire` returns
+  `True` (the call worked) and `message` tells you which it was: **empty means the
+  trigger fired**; text is the reason it was declined - `NoTransition`,
+  `GuardFailed`, `Finished`, `NotStarted` or `ReentrancyLimit` - and the machine
+  stays where it was. `False` means an error (empty trigger, no definition
+  loaded, a persistence write failure): `message` says what, and the machine is
+  unchanged. The details of a decline (which guard failed) are in the
+  `TransitionRejected` event and `GetHistoryJson`. `FireSimple` is the same
+  without the `newState` output.
 - **Transitions for one (state, trigger) are tried in the order declared; the
   first whose guards all pass wins.** That gives if/else without an OR
   operator: put the guarded transition first and an unguarded fallback after it.
