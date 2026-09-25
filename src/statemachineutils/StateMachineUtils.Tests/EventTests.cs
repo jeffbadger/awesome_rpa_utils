@@ -332,6 +332,64 @@ namespace StateMachineAutomation.Tests
             Assert.Equal(new[] { "fired:Validated", "entered:Validated" }, remainingEvents);
         }
 
+        /// <summary>Saves a genuine started run (Received -> Validated) under a fresh name and returns the name.</summary>
+        private string SaveARunningMachine()
+        {
+            string name = NewMachineName();
+            StateMachineUtils writer = Loaded();
+            Assert.True(writer.EnablePersistence(name, out _, out _, out string m), m);
+            Assert.True(writer.Start(out _, out m), m);
+            Assert.True(writer.Fire("validate", out _, out _, out _, out m), m);
+            writer.Dispose();
+            return name;
+        }
+
+        [Fact]
+        public void EnablingPersistenceFromAnotherThread_WaitsForTheEventBatchInFlight_BeforeRestoring()
+        {
+            string name = SaveARunningMachine();
+            StateMachineUtils machine = Loaded(); // not started
+            var handlerRunning = new ManualResetEventSlim(false);
+            var release = new ManualResetEventSlim(false);
+            string stateSeenByHandler = null;
+            machine.TransitionRejected += (_, _) => { handlerRunning.Set(); release.Wait(TimeSpan.FromSeconds(10)); stateSeenByHandler = machine.CurrentState; };
+
+            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _, out _)); // declined: NotStarted
+            firing.Start();
+            Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)));
+
+            bool restored = false;
+            var enabling = new Thread(() => machine.EnablePersistence(name, out _, out restored, out _));
+            enabling.Start();
+            Assert.False(enabling.Join(TimeSpan.FromMilliseconds(300)), "the saved run was restored while an event batch was still being delivered");
+            Assert.Equal(string.Empty, machine.CurrentState);
+
+            release.Set();
+            Assert.True(firing.Join(TimeSpan.FromSeconds(5)));
+            Assert.True(enabling.Join(TimeSpan.FromSeconds(5)));
+            Assert.Equal(string.Empty, stateSeenByHandler); // the handler described the machine as it was when it declined
+            Assert.True(restored);
+            Assert.Equal("Validated", machine.CurrentState);
+        }
+
+        [Fact]
+        public void EnablingPersistenceFromInsideAnEventHandler_IsRefused_AndNothingIsRestored()
+        {
+            string name = SaveARunningMachine();
+            StateMachineUtils machine = Loaded();
+            bool ok = true;
+            string refusal = null;
+            machine.TransitionRejected += (_, _) => ok = machine.EnablePersistence(name, out _, out _, out refusal);
+
+            Assert.True(machine.Fire("validate", out bool fired, out _, out _, out _));
+            Assert.False(fired);
+            Assert.False(ok);
+            Assert.Contains("inside an event handler", refusal);
+            Assert.Equal(string.Empty, machine.CurrentState);
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message); // and works normally afterwards
+            Assert.True(restored);
+        }
+
         [Fact]
         public void TheDefinitionCanStillBeReplacedNormally_OnceNoHandlerIsRunning()
         {

@@ -172,8 +172,8 @@ operator and expected value - but **never** the context's actual value).
   past that, `Fire` returns `ReentrancyLimit` (recorded in history, no event,
   so a `TransitionRejected` handler cannot recurse forever) and `Start`/`Reset`
   return `False`.
-- **`LoadDefinitionJson` and `ClearDefinition` are refused from inside an event
-  handler** (`False` with a message): they stop the machine, which must not happen
+- **`LoadDefinitionJson`, `ClearDefinition` and `EnablePersistence` are refused from
+  inside an event handler** (`False` with a message): they stop or replace the machine, which must not happen
   while the batch of events for the previous transition is still being delivered.
   From another thread they wait for those handlers to finish.
 - **Concurrent callers are serialized, so events always arrive in transition

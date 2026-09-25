@@ -829,7 +829,7 @@ namespace StateMachineAutomation
 
         /// <summary>Makes the machine's run state durable so a crashed flow can resume.</summary>
         [Category("StateMachine - Persistence")]
-        [Description("Persists the machine's state, context and history under LocalApplicationData so a flow can resume after a crash or restart. Call after the definition is loaded and before Start. If saved state for this machineName exists and matches the definition it is restored (restored True) without raising events; a saved state from a different definition is refused. From then on every change is written first and only committed if the write succeeds. Never throws.")]
+        [Description("Persists the machine's state, context and history under LocalApplicationData so a flow can resume after a crash or restart. Call after the definition is loaded and before Start. Waits for another thread's event handlers to finish; refused when called from inside an event handler. If saved state for this machineName exists and matches the definition it is restored (restored True) without raising events; a saved state from a different definition is refused. From then on every change is written first and only committed if the write succeeds. Never throws.")]
         public bool EnablePersistence(string machineName, out string statePath, out bool restored, out string message)
         {
             statePath = null;
@@ -838,8 +838,12 @@ namespace StateMachineAutomation
             try
             {
                 if (!RequireLive(out message)) return false;
+                if (!RequireNotInsideEvent(nameof(EnablePersistence), out message)) return false;
                 if (!StateMachineCore.TryResolveMachineFolder(machineName, out string folder, out message)) return false;
 
+                // A restore replaces the run state wholesale, so like LoadDefinitionJson it must wait for another
+                // thread's event delivery (dispatchLock before syncRoot) and cannot run from inside a handler.
+                lock (dispatchLock)
                 lock (syncRoot)
                 {
                     if (!RequireLiveLocked(out message)) return false;
@@ -1104,6 +1108,9 @@ namespace StateMachineAutomation
                         if (!string.IsNullOrEmpty(h.trigger) || !string.IsNullOrEmpty(h.from) || !string.IsNullOrEmpty(h.reason) || !string.IsNullOrEmpty(h.detail))
                             return at + " (" + h.kind + ") carries fields that only a transition or a rejection has";
                         if (!started) return at + " (" + h.kind + ") is in the history of a machine that is not started";
+                        // Start and Reset always enter the definition's initial state.
+                        if (!string.Equals(h.to, definition.Initial, StringComparison.OrdinalIgnoreCase))
+                            return at + " (" + h.kind + ") enters '" + h.to + "', but " + h.kind + " always enters the initial state '" + definition.Initial + "'";
                         lastMoveTo = h.to;
                         break;
                     case "transition":
@@ -1111,6 +1118,9 @@ namespace StateMachineAutomation
                         if (!string.IsNullOrEmpty(h.reason) || !string.IsNullOrEmpty(h.detail)) return at + " (transition) carries a rejection reason or detail";
                         if (!started) return at + " (transition) is in the history of a machine that is not started";
                         // The definition hash already matched, so a recorded move must be one the definition declares.
+                        // A final state declines every trigger before any transition is matched, so a wildcard ('from *') can
+                        // never have moved the machine out of one.
+                        if (definition.FindState(h.from).Final) return at + " (transition) leaves final state '" + h.from + "', which accepts no triggers";
                         if (!definition.Transitions.Any(t => (t.From == MachineDefinition.Wildcard || string.Equals(t.From, h.from, StringComparison.OrdinalIgnoreCase))
                                                              && string.Equals(t.Trigger, h.trigger, StringComparison.OrdinalIgnoreCase)
                                                              && string.Equals(t.To, h.to, StringComparison.OrdinalIgnoreCase)))

@@ -1300,6 +1300,34 @@ namespace StateMachineAutomation.Tests
             Assert.Contains("leaves 'Received' but the machine had just moved to 'Validated'", message);
         }
 
+        [Theory]
+        [InlineData("start")]
+        [InlineData("reset")]
+        public void AStartOrResetRecord_ThatEntersAStateOtherThanTheInitialOne_IsRefused(string kind)
+        {
+            string name = SavedRunWithHistory(); // entry 1 is the start; current state Validated
+            EditHistory(name, (entries, _) => { entries[0]["kind"] = kind; entries[0]["to"] = "Failed"; });
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("always enters the initial state 'Received'", message);
+        }
+
+        [Fact]
+        public void AWildcardMoveOutOfAFinalState_IsRefused()
+        {
+            string name = SavedThreeMoveRun(); // start, validate, abort (Validated -> Failed, final)
+            EditHistory(name, (entries, top) =>
+            {
+                var extra = new System.Collections.Generic.Dictionary<string, object>(entries[2]);
+                extra["seq"] = 4; extra["from"] = "Failed"; extra["to"] = "Failed"; // 'abort' is declared from '*', but a final state accepts nothing
+                entries.Add(extra);
+                top["sequence"] = 4;
+            });
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("leaves final state 'Failed'", message);
+        }
+
         [Fact]
         public void AGenuineThreeMoveRun_ThroughAWildcardTransition_Restores()
         {
