@@ -141,8 +141,8 @@ namespace StateMachineAutomation
 
         /// <summary>Raised when the machine leaves a state.</summary>
         [Category("StateMachine - Events")]
-        [Description("Raised when the machine leaves a state, before TransitionFired and StateEntered. Fires synchronously on the thread that called Fire.")]
-        public event EventHandler<StateMachineTransitionEventArgs> StateExited;
+        [Description("Raised when the machine leaves a state, before TransitionFired and StateEntered. Carries PreviousState, NewState, Trigger and MillisecondsInState (how long the machine was in the state it is leaving). Fires synchronously on the thread that called Fire.")]
+        public event EventHandler<StateMachineExitEventArgs> StateExited;
 
         /// <summary>Raised once per successful transition.</summary>
         [Category("StateMachine - Events")]
@@ -504,13 +504,14 @@ namespace StateMachineAutomation
                             Snapshot next = current.Clone();
                             next.Current = to;
                             next.EnteredUtc = Clock();
+                            double millisecondsInState = Math.Max(0, Math.Round((next.EnteredUtc - current.EnteredUtc).TotalMilliseconds));
                             AddHistory(next, "transition", firedTrigger, from, to, null, null);
                             if (!PersistLocked(next, out message)) return false;
 
                             state = next;
                             fired = true;
                             newState = to;
-                            pending.Add(() => RaiseSafely(StateExited, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
+                            pending.Add(() => RaiseSafely(StateExited, new StateMachineExitEventArgs(from, to, firedTrigger, millisecondsInState)));
                             pending.Add(() => RaiseSafely(TransitionFired, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
                             pending.Add(() => RaiseSafely(StateEntered, new StateMachineTransitionEventArgs(from, to, firedTrigger)));
                             if (target.Final)

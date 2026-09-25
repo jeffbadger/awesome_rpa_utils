@@ -27,6 +27,37 @@ namespace StateMachineAutomation
         }
     }
 
+    /// <summary>
+    /// Describes the state the machine is leaving (<c>StateExited</c>): the same change as
+    /// <see cref="StateMachineTransitionEventArgs"/>, plus how long the machine had been in that state.
+    /// </summary>
+    public sealed class StateMachineExitEventArgs : EventArgs
+    {
+        /// <summary>The state the machine is leaving.</summary>
+        public string PreviousState { get; }
+
+        /// <summary>The state the machine is entering.</summary>
+        public string NewState { get; }
+
+        /// <summary>The trigger that caused the change.</summary>
+        public string Trigger { get; }
+
+        /// <summary>
+        /// Whole milliseconds the machine spent in <see cref="PreviousState"/>, from when it entered that state to when
+        /// this transition was committed. It is measured from the recorded entry time, so for a run restored from
+        /// persistence it includes the time the robot was down.
+        /// </summary>
+        public double MillisecondsInState { get; }
+
+        internal StateMachineExitEventArgs(string previousState, string newState, string trigger, double millisecondsInState)
+        {
+            PreviousState = previousState ?? string.Empty;
+            NewState = newState ?? string.Empty;
+            Trigger = trigger ?? string.Empty;
+            MillisecondsInState = millisecondsInState;
+        }
+    }
+
     /// <summary>Describes a trigger the machine declined to act on (<c>TransitionRejected</c>).</summary>
     public sealed class StateMachineRejectedEventArgs : EventArgs
     {

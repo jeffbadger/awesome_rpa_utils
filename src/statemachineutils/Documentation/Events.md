@@ -12,13 +12,21 @@ For a successful transition the order is always `StateExited`, `TransitionFired`
 `StateEntered`, then `MachineFinished` if the destination is final. The payload
 (`PreviousState`, `NewState`, `Trigger`; or `State`, `Trigger`, `Reason`,
 `Detail` for a rejection) is all non-null text, so it wires to a data port; an
-empty string means "not applicable".
+empty string means "not applicable". `StateExited` adds one number,
+`MillisecondsInState`: how long the machine was in the state it is leaving.
 
 ```csharp
+machine.StateExited       += (s, e) => Log($"left {e.PreviousState} after {e.MillisecondsInState} ms");
 machine.StateEntered      += (s, e) => Log($"{e.PreviousState} -> {e.NewState}");
 machine.TransitionRejected += (s, e) => Log($"{e.Trigger} declined in {e.State}: {e.Reason}");
 machine.MachineFinished   += (s, e) => Notify($"finished in {e.NewState}");
 ```
+
+`MillisecondsInState` is measured from the state's recorded entry time to the moment
+the transition is committed (so it excludes the time your handlers take), it is never
+negative, and for a run restored from persistence it includes the time the robot was
+down. It is only reported on a transition that fired: a declined trigger raises no
+`StateExited`.
 
 ## Threading
 

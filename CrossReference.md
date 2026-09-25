@@ -784,7 +784,7 @@ Models a process as states, triggers, and guarded transitions declared in JSON o
 
 | Event | Type | Description |
 |---|---|---|
-| `StateExited` | `EventHandler<StateMachineTransitionEventArgs>` | Raised when the machine leaves a state, before `TransitionFired` and `StateEntered`. |
+| `StateExited` | `EventHandler<StateMachineExitEventArgs>` | Raised when the machine leaves a state, before `TransitionFired` and `StateEntered`. Also carries `MillisecondsInState`. |
 | `TransitionFired` | `EventHandler<StateMachineTransitionEventArgs>` | Raised once per successful transition. |
 | `StateEntered` | `EventHandler<StateMachineTransitionEventArgs>` | Raised when the machine enters a state - including the initial state on `Start`/`Reset`. |
 | `MachineFinished` | `EventHandler<StateMachineTransitionEventArgs>` | Raised after `StateEntered` when the new state is final. |
