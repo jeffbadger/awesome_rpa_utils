@@ -1328,6 +1328,47 @@ namespace StateMachineAutomation.Tests
             Assert.Contains("leaves final state 'Failed'", message);
         }
 
+        // ---- a field that appears twice is ambiguous, not "last one wins"
+
+        private void EditSavedText(string name, Func<string, string> edit)
+        {
+            string text = File.ReadAllText(StatePath(name));
+            string edited = edit(text);
+            Assert.NotEqual(text, edited); // the edit must have found what it meant to duplicate
+            File.WriteAllText(StatePath(name), edited);
+        }
+
+        [Theory]
+        [InlineData("topFirst", "the saved state has the field 'started' more than once")]
+        [InlineData("topLast", "the saved state has the field 'started' more than once")]
+        [InlineData("topCaseOnly", "more than once")]
+        [InlineData("contextKey", "the saved context has the key")]
+        [InlineData("contextKeyCaseOnly", "differ only by case")] // has its own, older check
+        [InlineData("historyEntryField", "history entry 1 has the field")]
+        public void ADuplicatedFieldInTheSavedFile_IsRefusedAsCorrupt_RatherThanReadAsLastWriteWins(string where, string fragment)
+        {
+            string name = SavedRunWithHistory(); // started, current state Validated, context k=v
+            EditSavedText(name, text =>
+            {
+                switch (where)
+                {
+                    case "topFirst": return "{\"started\":false," + text.TrimStart().Substring(1);
+                    case "topLast": return text.TrimEnd().TrimEnd('}') + ",\"started\":false}";
+                    case "topCaseOnly": return text.TrimEnd().TrimEnd('}') + ",\"Started\":false}";
+                    case "contextKey": return System.Text.RegularExpressions.Regex.Replace(text, "\"k\"\\s*:\\s*\"v\"", "\"k\":\"v\",\"k\":\"x\"");
+                    case "contextKeyCaseOnly": return System.Text.RegularExpressions.Regex.Replace(text, "\"k\"\\s*:\\s*\"v\"", "\"k\":\"v\",\"K\":\"x\"");
+                    default: return System.Text.RegularExpressions.Regex.Replace(text, "\"kind\"\\s*:\\s*\"start\"", "\"kind\":\"start\",\"Kind\":\"reset\"");
+                }
+            });
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains(fragment, message);
+            Assert.Contains("DiscardPersistedState", message);
+            Assert.Equal(string.Empty, machine.CurrentState); // nothing was resumed
+        }
+
         [Fact]
         public void AGenuineThreeMoveRun_ThroughAWildcardTransition_Restores()
         {

@@ -979,8 +979,11 @@ namespace StateMachineAutomation
             message = null;
             long length = new FileInfo(path).Length;
             if (length > MaxStateFileBytes) { message = "The saved state is " + length + " bytes, larger than the " + MaxStateFileBytes + "-byte limit this component will load; call DiscardPersistedState to start fresh."; return false; }
+            string text = File.ReadAllText(path);
+            string duplicate = StateMachineCore.FindDuplicateSavedField(text);
+            if (duplicate != null) { message = "The saved state is corrupt (" + duplicate + ", so which value is right cannot be told); call DiscardPersistedState to start fresh."; return false; }
             PersistedState saved;
-            try { saved = JsonSerializer.Deserialize<PersistedState>(File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+            try { saved = JsonSerializer.Deserialize<PersistedState>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
             catch (JsonException ex) { message = "The saved state is corrupt (" + ex.Message + "); call DiscardPersistedState to start fresh."; return false; }
             if (saved == null) { message = "The saved state is empty; call DiscardPersistedState to start fresh."; return false; }
 

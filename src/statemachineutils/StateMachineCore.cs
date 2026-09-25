@@ -302,6 +302,52 @@ namespace StateMachineAutomation
             return false;
         }
 
+        /// <summary>
+        /// Finds a property that appears twice in a saved state (top level, a history entry, or the context; names compare
+        /// case-insensitively, as the loader does). The deserializer keeps the last of two duplicates, so a damaged or
+        /// hand-edited file could otherwise resume a different run than the one on disk says, with no warning.
+        /// Returns null when there are none or the text is not an object (the deserializer reports that itself).
+        /// </summary>
+        internal static string FindDuplicateSavedField(string json)
+        {
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    JsonElement root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object) return null;
+                    string dup = FirstDuplicate(root);
+                    if (dup != null) return "the saved state has the field '" + dup + "' more than once";
+                    if (TryProp(root, "context", out JsonElement context) && context.ValueKind == JsonValueKind.Object)
+                    {
+                        dup = FirstDuplicate(context, StringComparer.Ordinal); // keys differing only by case are refused with their own message on restore
+                        if (dup != null) return "the saved context has the key '" + dup + "' more than once";
+                    }
+                    if (TryProp(root, "history", out JsonElement history) && history.ValueKind == JsonValueKind.Array)
+                    {
+                        int n = 0;
+                        foreach (JsonElement entry in history.EnumerateArray())
+                        {
+                            n++;
+                            if (entry.ValueKind != JsonValueKind.Object) continue;
+                            dup = FirstDuplicate(entry);
+                            if (dup != null) return "history entry " + n + " has the field '" + dup + "' more than once";
+                        }
+                    }
+                    return null;
+                }
+            }
+            catch (JsonException) { return null; }
+        }
+
+        private static string FirstDuplicate(JsonElement obj, StringComparer comparer = null)
+        {
+            var seen = new HashSet<string>(comparer ?? StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty p in obj.EnumerateObject())
+                if (!seen.Add(p.Name)) return p.Name;
+            return null;
+        }
+
         /// <summary>Flags misspelled and repeated properties: silently ignoring the first or the last of two 'initial' values would be a plausible-looking wrong machine.</summary>
         private static void RejectUnknown(JsonElement obj, string[] allowed, string where, DefinitionReport report)
         {
