@@ -55,7 +55,7 @@ All properties are non-null strings (an empty string means "not applicable"):
 ### `StateMachineExitEventArgs`
 
 Payload of `StateExited`: the same `PreviousState`, `NewState` and `Trigger`, plus
-`MillisecondsInState` (a number): whole milliseconds the machine spent in the state
+`ElapsedMs` (a number): whole milliseconds the machine spent in the state
 it is leaving, measured from when it entered that state. It is never negative, and
 for a run restored from [persistence](Documentation/Persistence.md) it counts from
 the original entry time, so it includes the time the robot was down.
@@ -87,7 +87,7 @@ operator and expected value - but **never** the context's actual value).
 
 | Event | Type | Description |
 |---|---|---|
-| `StateExited` | `EventHandler<StateMachineExitEventArgs>` | Raised when the machine leaves a state, before `TransitionFired` and `StateEntered`. Also carries `MillisecondsInState`. |
+| `StateExited` | `EventHandler<StateMachineExitEventArgs>` | Raised when the machine leaves a state, before `TransitionFired` and `StateEntered`. Also carries `ElapsedMs`. |
 | `TransitionFired` | `EventHandler<StateMachineTransitionEventArgs>` | Raised once per successful transition. |
 | `StateEntered` | `EventHandler<StateMachineTransitionEventArgs>` | Raised when the machine enters a state - including the initial state on `Start`/`Reset`. |
 | `MachineFinished` | `EventHandler<StateMachineTransitionEventArgs>` | Raised after `StateEntered` when the new state is final. |

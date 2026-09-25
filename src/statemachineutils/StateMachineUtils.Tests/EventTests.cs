@@ -548,8 +548,8 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.Fire("post", out _, out message), message);           // leaves Validated after 3000 ms
 
             Assert.Equal(2, exits.Count);
-            Assert.Equal(("Received", "Validated", "validate", 1250.0), (exits[0].PreviousState, exits[0].NewState, exits[0].Trigger, exits[0].MillisecondsInState));
-            Assert.Equal(("Validated", "Posted", "post", 3000.0), (exits[1].PreviousState, exits[1].NewState, exits[1].Trigger, exits[1].MillisecondsInState));
+            Assert.Equal(("Received", "Validated", "validate", 1250.0), (exits[0].PreviousState, exits[0].NewState, exits[0].Trigger, exits[0].ElapsedMs));
+            Assert.Equal(("Validated", "Posted", "post", 3000.0), (exits[1].PreviousState, exits[1].NewState, exits[1].Trigger, exits[1].ElapsedMs));
         }
 
         [Fact]
@@ -560,7 +560,7 @@ namespace StateMachineAutomation.Tests
             machine.Clock = () => now;
             Assert.True(machine.Reset(false, out _, out _));   // re-enters Received at 12:00:00
             double first = -1;
-            machine.StateExited += (_, e) => first = e.MillisecondsInState;
+            machine.StateExited += (_, e) => first = e.ElapsedMs;
             Assert.True(machine.Fire("validate", out _, out _));
             Assert.Equal(0.0, first);                           // same instant: 0, never negative
         }
@@ -573,7 +573,7 @@ namespace StateMachineAutomation.Tests
             machine.Clock = () => now;
             Assert.True(machine.Start(out _, out _));
             double ms = -1;
-            machine.StateExited += (_, e) => ms = e.MillisecondsInState;
+            machine.StateExited += (_, e) => ms = e.ElapsedMs;
             now = now.AddMinutes(-5);                           // a clock adjustment
             Assert.True(machine.Fire("validate", out _, out _));
             Assert.Equal(0.0, ms);
@@ -595,7 +595,7 @@ namespace StateMachineAutomation.Tests
             Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
             Assert.True(restored);
             double ms = -1;
-            second.StateExited += (_, e) => ms = e.MillisecondsInState;
+            second.StateExited += (_, e) => ms = e.ElapsedMs;
             Assert.True(second.Fire("validate", out _, out message), message);
             Assert.Equal(600000.0, ms);                         // 10 minutes since Received was entered, downtime included
         }

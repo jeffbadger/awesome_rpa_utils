@@ -47,14 +47,14 @@ namespace StateMachineAutomation
         /// this transition was committed. It is measured from the recorded entry time, so for a run restored from
         /// persistence it includes the time the robot was down.
         /// </summary>
-        public double MillisecondsInState { get; }
+        public double ElapsedMs { get; }
 
-        internal StateMachineExitEventArgs(string previousState, string newState, string trigger, double millisecondsInState)
+        internal StateMachineExitEventArgs(string previousState, string newState, string trigger, double elapsedMs)
         {
             PreviousState = previousState ?? string.Empty;
             NewState = newState ?? string.Empty;
             Trigger = trigger ?? string.Empty;
-            MillisecondsInState = millisecondsInState;
+            ElapsedMs = elapsedMs;
         }
     }
 
