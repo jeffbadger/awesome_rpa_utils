@@ -119,6 +119,23 @@ namespace StateMachineAutomation
         internal StateDef FindState(string name) =>
             name == null ? null : States.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>The JSON operator name for a <see cref="GuardOperator"/>, or null for None or an undefined value.</summary>
+        internal static string OperatorName(GuardOperator op)
+        {
+            switch (op)
+            {
+                case GuardOperator.Equal: return "equals";
+                case GuardOperator.NotEqual: return "notEquals";
+                case GuardOperator.In: return "in";
+                case GuardOperator.NotIn: return "notIn";
+                case GuardOperator.GreaterThan: return "greaterThan";
+                case GuardOperator.LessThan: return "lessThan";
+                case GuardOperator.Exists: return "exists";
+                case GuardOperator.NotExists: return "notExists";
+                default: return null;
+            }
+        }
+
         internal static string NormalizeOp(string op) =>
             KnownOps.FirstOrDefault(k => string.Equals(k, op, StringComparison.OrdinalIgnoreCase)) ?? op;
 

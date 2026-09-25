@@ -96,7 +96,7 @@ operator and expected value - but **never** the context's actual value).
 | `GetDefinitionJson` | `bool GetDefinitionJson(out string definitionJson, out string message)` | Returns the current definition as JSON. |
 | `AddState` | `bool AddState(string name, out string message, bool isFinal = false)` | Adds a state. |
 | `SetInitialState` | `bool SetInitialState(string name, out string message)` | Sets the state entered on `Start`. |
-| `AddTransition` | `bool AddTransition(string fromState, string trigger, string toState, out string message, string guardKey = null, string guardOp = null, string guardValue = null)` | Adds a transition, optionally with one guard. Use JSON for several guards on one transition. |
+| `AddTransition` | `bool AddTransition(string fromState, string trigger, string toState, out string message, string guardKey = null, GuardOperator guardOp = GuardOperator.None, string guardValue = null)` | Adds a transition, optionally with one guard. `guardOp` is a drop-down (`GuardOperator`: `None`, `Equal`, `NotEqual`, `In`, `NotIn`, `GreaterThan`, `LessThan`, `Exists`, `NotExists`); leave it at `None` for no guard. Use JSON for several guards on one transition. |
 | `ClearDefinition` | `bool ClearDefinition(out string message)` | Removes the whole definition and stops the machine. |
 
 ### Run

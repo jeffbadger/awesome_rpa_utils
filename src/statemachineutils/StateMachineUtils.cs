@@ -303,8 +303,8 @@ namespace StateMachineAutomation
 
         /// <summary>Adds a transition, optionally with one guard.</summary>
         [Category("StateMachine - Definition")]
-        [Description("Adds a transition from a state (or '*' for any non-final state) on a trigger to another state, optionally with one guard (guardKey + guardOp [+ guardValue]). Transitions for the same state and trigger are tried in the order added; the first whose guard passes wins. Use LoadDefinitionJson for several guards on one transition. Never throws.")]
-        public bool AddTransition(string fromState, string trigger, string toState, out string message, string guardKey = null, string guardOp = null, string guardValue = null)
+        [Description("Adds a transition from a state (or '*' for any non-final state) on a trigger to another state, optionally with one guard (guardKey + guardOp [+ guardValue]; leave guardOp at None for no guard). Transitions for the same state and trigger are tried in the order added; the first whose guard passes wins. Use LoadDefinitionJson for several guards on one transition. Never throws.")]
+        public bool AddTransition(string fromState, string trigger, string toState, out string message, string guardKey = null, GuardOperator guardOp = GuardOperator.None, string guardValue = null)
         {
             message = null;
             try
@@ -322,11 +322,13 @@ namespace StateMachineAutomation
                     StateDef to = definition.FindState(transition.To);
                     if (to != null) transition.To = to.Name;
 
-                    bool anyGuardArg = !string.IsNullOrWhiteSpace(guardKey) || !string.IsNullOrWhiteSpace(guardOp) || guardValue != null;
+                    bool anyGuardArg = !string.IsNullOrWhiteSpace(guardKey) || guardOp != GuardOperator.None || guardValue != null;
                     if (anyGuardArg)
                     {
-                        if (string.IsNullOrWhiteSpace(guardKey) || string.IsNullOrWhiteSpace(guardOp)) { message = "A guard needs both guardKey and guardOp (and guardValue for every operator except exists/notExists)."; return false; }
-                        transition.Guards.Add(new GuardDef { Key = guardKey.Trim(), Op = MachineDefinition.NormalizeOp(guardOp.Trim()), Value = guardValue });
+                        if (string.IsNullOrWhiteSpace(guardKey) || guardOp == GuardOperator.None) { message = "A guard needs both guardKey and guardOp (and guardValue for every operator except Exists/NotExists)."; return false; }
+                        string op = MachineDefinition.OperatorName(guardOp);
+                        if (op == null) { message = "guardOp " + (int)guardOp + " is not a known GuardOperator."; return false; }
+                        transition.Guards.Add(new GuardDef { Key = guardKey.Trim(), Op = op, Value = guardValue });
                     }
 
                     var report = new DefinitionReport();

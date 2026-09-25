@@ -67,11 +67,15 @@ machine.AddState("Approved", out message, isFinal: true);
 machine.SetInitialState("Draft", out message);
 machine.AddTransition("Draft",  "submit",  "Review",   out message);
 machine.AddTransition("Review", "approve", "Approved", out message,
-                      guardKey: "reviewer", guardOp: "exists");
+                      guardKey: "reviewer", guardOp: GuardOperator.Exists);
 ```
 
 Add states before the transitions that use them. `AddTransition` takes one
-optional guard; use JSON when a transition needs several. The definition is
+optional guard; use JSON when a transition needs several. `guardOp` is a
+`GuardOperator`, which Robot Studio shows as a drop-down: `Equal`, `NotEqual`,
+`In`, `NotIn`, `GreaterThan`, `LessThan`, `Exists`, `NotExists` (or `None`, the
+default, for no guard). They mean the same as the JSON operators in
+[Context and guards](Context.md). The definition is
 fully validated at `Start`. `GetDefinitionJson` returns what you built.
 
 ## Changing a definition
