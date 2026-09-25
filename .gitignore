@@ -63,3 +63,4 @@ docs/superpowers/
 # RestCodeGenerator output
 generated/
 
+test-results/

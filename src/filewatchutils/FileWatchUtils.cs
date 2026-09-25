@@ -1067,6 +1067,12 @@ namespace FileWatchAutomation
         }
 
         /// <summary>
+        /// Test seam: runs after <see cref="ClaimFile"/>'s first existence check and before it takes the source lock, the exact
+        /// window in which a competing caller can finish its whole claim. Lets a test make that interleaving deterministic.
+        /// </summary>
+        internal Action BeforeClaimLock;
+
+        /// <summary>
         /// Claims a work file by copying it into an in-progress directory, then deleting
         /// the source. A collision - another instance already claiming this exact source,
         /// or an unrelated file already occupying the destination name - returns
@@ -1160,6 +1166,8 @@ namespace FileWatchAutomation
                     return false;
                 }
 
+                BeforeClaimLock?.Invoke();
+
                 // Source-scoped exclusive lock (see <remarks>): the real serialization
                 // point for this method, regardless of which inProgressDirectoryPath each
                 // caller passes.
@@ -1186,6 +1194,17 @@ namespace FileWatchAutomation
 
                 try
                 {
+                    // Re-check the source now that this call holds the lock. A competing caller can
+                    // finish its whole claim (copy, delete the source, release its lock) between the
+                    // existence check above and this call winning the now-free lock; the file is gone
+                    // because it was claimed, and saying so is accurate. Without this the late caller
+                    // would go on to try to copy a vanished file and report a confusing copy failure.
+                    if (!File.Exists(sourcePath))
+                    {
+                        message = $"Source file '{sourcePath}' does not exist, or was already claimed by another instance.";
+                        return false;
+                    }
+
                     // Exclusively claim the destination name too - a second, independent
                     // collision case from losing the source lock above: an unrelated file
                     // (not from a competing ClaimFile call, which the lock above already
