@@ -72,26 +72,36 @@ namespace FileWatchAutomation.Tests
 
             // Append every 50ms for ~300ms, then stop. stableDurationMs (200) is longer than
             // the append interval, so the method must not report stable while writes continue.
+            //
+            // The wait must start only once the writer is actually running: on a busy or cold machine
+            // (a CI runner) the pool thread can start the writer more than 200ms late, and a file
+            // nothing has touched for 200ms IS stable, so calling the wait immediately would
+            // legitimately report stable before the first append. Sync on the first append instead of guessing.
+            using var firstAppendDone = new ManualResetEventSlim(false);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            long lastAppendMs = 0;
             var writer = Task.Run(async () =>
             {
                 for (int i = 0; i < 6; i++)
                 {
                     await Task.Delay(50);
                     File.AppendAllText(path, "x");
+                    if (i == 0) firstAppendDone.Set();
                 }
+                lastAppendMs = clock.ElapsedMilliseconds;
             });
+            Assert.True(firstAppendDone.Wait(System.TimeSpan.FromSeconds(10)), "the writer never started");
 
-            var sw = System.Diagnostics.Stopwatch.StartNew();
             bool result = Fw.WaitForFileStable(path, 200, 5000, 20, out bool timedOut, out string message);
-            sw.Stop();
+            long reportedMs = clock.ElapsedMilliseconds;
 
             await writer;
             Assert.True(result);
             Assert.False(timedOut);
             Assert.Null(message);
-            // Must not have reported stable before the writer actually finished (~300ms) plus
-            // the stable window (200ms) - allow generous slack for CI scheduling jitter.
-            Assert.True(sw.ElapsedMilliseconds >= 300, $"Reported stable too early, after {sw.ElapsedMilliseconds}ms.");
+            // Stable may only be reported after the writer's LAST append (the appends are 50ms apart,
+            // well inside the 200ms window, so no earlier moment can have been quiet for 200ms).
+            Assert.True(reportedMs >= lastAppendMs, $"Reported stable at {reportedMs}ms, before the last append at {lastAppendMs}ms.");
         }
 
         [Fact]
