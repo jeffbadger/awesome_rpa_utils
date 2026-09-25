@@ -21,7 +21,7 @@ namespace StateMachineAutomation.Tests
             "Fire", "FireSimple", "CanFire", "Start", "Reset", "GetCurrentState", "IsStarted", "IsInFinalState",
             "GetAvailableTriggersDelimited", "GetAvailableTriggersJson", "GetSecondsInState", "GetHistoryJson",
             "SetContext", "GetContext", "RemoveContext", "ClearContext", "GetContextJson",
-            "LoadDefinitionJson", "GetDefinitionJson", "AddState", "SetInitialState", "AddTransition", "ClearDefinition",
+            "LoadDefinitionJson", "GetDefinitionJson", "AddState", "SetInitialState", "AddTransition", "AddTransitionSimple", "ClearDefinition",
             "EnablePersistence", "DisablePersistence", "DiscardPersistedState", "SetMaximumHistoryEntries"
         };
 
@@ -53,6 +53,7 @@ namespace StateMachineAutomation.Tests
                 case "GetDefinitionJson": return m.GetDefinitionJson(out _, out message);
                 case "AddState": return m.AddState("Extra", out message);
                 case "SetInitialState": return m.SetInitialState("Received", out message);
+                case "AddTransitionSimple": return m.AddTransitionSimple("Received", "t", "Validated", out message);
                 case "AddTransition": return m.AddTransition("Received", "t", "Validated", out message);
                 case "ClearDefinition": return m.ClearDefinition(out message);
                 case "EnablePersistence": return m.EnablePersistence("smtest-never-created", out _, out _, out message);

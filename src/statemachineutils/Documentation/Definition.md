@@ -65,13 +65,17 @@ machine.AddState("Draft", out message);
 machine.AddState("Review", out message);
 machine.AddState("Approved", out message, isFinal: true);
 machine.SetInitialState("Draft", out message);
-machine.AddTransition("Draft",  "submit",  "Review",   out message);
+machine.AddTransitionSimple("Draft", "submit", "Review", out message);   // no guard: from, trigger, to
 machine.AddTransition("Review", "approve", "Approved", out message,
                       guardKey: "reviewer", guardOp: GuardOperator.Exists);
 ```
 
-Add states before the transitions that use them. `AddTransition` takes one
-optional guard; use JSON when a transition needs several. `guardOp` is a
+Add states before the transitions that use them, and call `SetInitialState` (the
+JSON's `"initial"`). Two methods add a transition: `AddTransitionSimple` takes just
+from, trigger and to and adds an **unconditional** transition; `AddTransition` does the
+same and can also take **one guard** (use it only when the transition needs one).
+Both are checked the same way and follow the same rules on when they may be called
+(see [Changing a definition](#changing-a-definition)). Use JSON when a transition needs several guards. `guardOp` is a
 `GuardOperator`, which Robot Studio shows as a drop-down: `Equal`, `NotEqual`,
 `In`, `NotIn`, `GreaterThan`, `LessThan`, `Exists`, `NotExists` (or `None`, the
 default, for no guard). They mean the same as the JSON operators in
@@ -81,5 +85,15 @@ fully validated at `Start`. `GetDefinitionJson` returns what you built.
 ## Changing a definition
 
 `LoadDefinitionJson` and `ClearDefinition` stop the machine (context is kept).
-`AddState` / `SetInitialState` / `AddTransition` are refused while it is running.
-While [persistence](Persistence.md) is enabled the definition is frozen.
+`AddState` / `SetInitialState` / `AddTransitionSimple` / `AddTransition` are refused
+while it is running (their `message` says so).
+
+While [persistence](Persistence.md) is enabled the definition is frozen: **all six**
+methods above - including `LoadDefinitionJson` and `ClearDefinition` - are refused, because
+the saved run belongs to the current definition. So for a persisted machine the order is:
+
+1. `DisablePersistence` (the saved file is kept).
+2. `ClearDefinition` or `LoadDefinitionJson` to replace the definition (this also stops a
+   running machine). Or, if the machine is not running, just add to it.
+3. If the saved run no longer fits the new definition, `DiscardPersistedState` before
+   calling `EnablePersistence` again; otherwise the restore is refused.
