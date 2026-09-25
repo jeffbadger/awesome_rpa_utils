@@ -1,8 +1,8 @@
 # ReconciliationUtils — Design and Implementation Plan (revision 2)
 
-**Status:** Proposed revision of
+**Status:** Approved revision of
 [`2026-09-25-reconciliationutils-design.md`](2026-09-25-reconciliationutils-design.md);
-implementation has not started. This revision changes scope and API shape after
+implementation proceeds one work package (one pull request) at a time, starting with WP1. This revision changes scope and API shape after
 a review of the first plan; the matching semantics, accounting, exactness and
 failure rules of the first plan are kept unless stated here.
 
@@ -717,18 +717,15 @@ property is indexed matching rather than a quadratic search.
 - [ ] Full exports reproduce definitions, reason codes, referenced values, row
   membership and totals with deterministic ordering and bounded size.
 
-## 13. Decisions for Jeff
+## 13. Decisions (confirmed by Jeff)
 
-1. **Two releases as proposed**, or one release with the work packages above?
-2. **DataTable bridge first in Release 2**, or move it into Release 1 (the seam is
-   already there; it adds one work package but removes the JSON-building step
-   for most Pega flows)?
-3. **Integer keys:** accept JSON integers as keys (with the `7` vs `"007"`
-   caution), or keep strings-only and require callers to convert?
-4. **Simple variants:** the defaults above (no trim, case-sensitive, tolerance 0,
-   `RequireValue`) are the safe ones; confirm.
-5. **Cursors:** confirm two cursors (exception, then differences) instead of an
-   indexed `GetDifferenceAt`.
+1. **Two releases**, as proposed.
+2. **DataTable bridge** is the first item of Release 2 (WP8).
+3. **Integer keys are accepted**, with the `7` vs `"007"` caution documented.
+4. **Simple-variant defaults confirmed:** no trim, case-sensitive, tolerance `"0"`,
+   `RequireValue`.
+5. **Two cursors confirmed** (`TryReadNextException`, then `TryReadNextDifference`),
+   not an indexed `GetDifferenceAt`.
 
 ## 14. Follow-on candidates
 
