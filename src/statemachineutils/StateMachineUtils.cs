@@ -341,6 +341,16 @@ namespace StateMachineAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddTransition), ex); return false; }
         }
 
+        /// <summary>Adds an unconditional transition: from, trigger and to, nothing else.</summary>
+        [Category("StateMachine - Definition")]
+        [Description("Adds an unconditional transition from a state (or '*' for any non-final state) on a trigger to another state. The minimal AddTransition: use AddTransition when the transition needs a guard. Transitions for the same state and trigger are tried in the order added. Never throws.")]
+        public bool AddTransitionSimple(string fromState, string trigger, string toState, out string message)
+        {
+            message = null;
+            try { return AddTransition(fromState, trigger, toState, out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddTransitionSimple), ex); return false; }
+        }
+
         /// <summary>Removes every state and transition and stops the machine.</summary>
         [Category("StateMachine - Definition")]
         [Description("Removes the whole definition and stops the machine (context is kept). Not allowed while persistence is enabled. Waits for another thread's event handlers to finish; refused when called from inside an event handler. Never throws.")]

@@ -752,6 +752,7 @@ Models a process as states, triggers, and guarded transitions declared in JSON o
 |---|---|---|
 | `AddState` | `bool AddState(string name, out string message, bool isFinal = false)` | Adds a state. |
 | `AddTransition` | `bool AddTransition(string fromState, string trigger, string toState, out string message, string guardKey = null, GuardOperator guardOp = GuardOperator.None, string guardValue = null)` | Adds a transition, optionally with one guard. `guardOp` is a drop-down (`GuardOperator`: `None`, `Equal`, `NotEqual`, `In`, `NotIn`, `GreaterThan`, `LessThan`, `Exists`, `NotExists`); leave it at `None` for no guard. Use JSON for several guards on one transition. |
+| `AddTransitionSimple` | `bool AddTransitionSimple(string fromState, string trigger, string toState, out string message)` | The minimal `AddTransition`: an unconditional transition, nothing else. Use `AddTransition` when it needs a guard. |
 | `CanFire` | `bool CanFire(string trigger, out bool canFire, out string rejectionReason, out string message)` | Reports whether a trigger would fire right now, without firing or raising events. |
 | `ClearContext` | `bool ClearContext(out string message)` | Removes every key. |
 | `ClearDefinition` | `bool ClearDefinition(out string message)` | Removes the whole definition and stops the machine. |

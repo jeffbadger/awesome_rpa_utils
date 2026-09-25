@@ -65,12 +65,13 @@ machine.AddState("Draft", out message);
 machine.AddState("Review", out message);
 machine.AddState("Approved", out message, isFinal: true);
 machine.SetInitialState("Draft", out message);
-machine.AddTransition("Draft",  "submit",  "Review",   out message);
+machine.AddTransitionSimple("Draft", "submit", "Review", out message);   // no guard: from, trigger, to
 machine.AddTransition("Review", "approve", "Approved", out message,
                       guardKey: "reviewer", guardOp: GuardOperator.Exists);
 ```
 
-Add states before the transitions that use them. `AddTransition` takes one
+Add states before the transitions that use them. `AddTransitionSimple` adds an
+unconditional transition (from, trigger, to). `AddTransition` takes one
 optional guard; use JSON when a transition needs several. `guardOp` is a
 `GuardOperator`, which Robot Studio shows as a drop-down: `Equal`, `NotEqual`,
 `In`, `NotIn`, `GreaterThan`, `LessThan`, `Exists`, `NotExists` (or `None`, the

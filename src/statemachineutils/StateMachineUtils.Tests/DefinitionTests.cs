@@ -194,6 +194,38 @@ namespace StateMachineAutomation.Tests
         }
 
         [Fact]
+        public void AddTransitionSimple_AddsAnUnconditionalTransition_ThatRunsLikeAnyOther()
+        {
+            StateMachineUtils machine = New();
+            Assert.True(machine.AddState("Draft", out string message), message);
+            Assert.True(machine.AddState("Review", out message), message);
+            Assert.True(machine.SetInitialState("Draft", out message), message);
+            Assert.True(machine.AddTransitionSimple("Draft", "submit", "Review", out message), message);
+            Assert.Null(message);
+
+            Assert.True(machine.GetDefinitionJson(out string definition, out message), message);
+            Assert.DoesNotContain("guards", definition); // unconditional
+
+            Assert.True(machine.Start(out _, out message), message);
+            Assert.True(machine.Fire("submit", out string state, out message), message);
+            Assert.Null(message);
+            Assert.Equal("Review", state);
+        }
+
+        [Fact]
+        public void AddTransitionSimple_ValidatesExactlyLikeAddTransition()
+        {
+            StateMachineUtils machine = New();
+            Assert.True(machine.AddState("A", out string message), message);
+            Assert.False(machine.AddTransitionSimple("A", "t", "Nope", out message));
+            Assert.Contains("not a declared state", message);
+            Assert.False(machine.AddTransitionSimple("Nope", "t", "A", out message));
+            Assert.False(machine.AddTransitionSimple("A", "  ", "A", out message));
+            Assert.False(string.IsNullOrWhiteSpace(message));
+            Assert.True(machine.AddTransitionSimple("*", "abort", "A", out message), message); // the wildcard works here too
+        }
+
+        [Fact]
         public void MethodApi_AppliesTheSameGuardRules()
         {
             StateMachineUtils machine = New();
