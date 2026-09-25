@@ -23,6 +23,12 @@ jobs:
       - name: Test
         # Runs every test project in the solution against the Release build above. A failing test fails the build.
         run: dotnet test src/AwesomeRpaUtils.sln --configuration Release --no-build --maxcpucount:1 --logger "trx;LogFileNamePrefix=ci" --results-directory test-results
+      - name: Test (REST code generator)
+        # Not part of the solution, so it needs its own step.
+        run: dotnet test tools/RestCodeGenerator.Tests/RestCodeGenerator.Tests.csproj --configuration Release --logger "trx;LogFileNamePrefix=ci-restcodegenerator" --results-directory test-results
+      - name: Test (Component Browser)
+        # Not part of the solution either.
+        run: dotnet test component-browser/ComponentBrowser.Tests/ComponentBrowser.Tests.csproj --configuration Release --logger "trx;LogFileNamePrefix=ci-componentbrowser" --results-directory test-results
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
