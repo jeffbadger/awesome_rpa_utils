@@ -14,7 +14,7 @@ invalid input and runtime failures return `False` with a descriptive message.
 - Assembly: `StateMachineAutomation`
 - One component instance is one machine (drop two components for two machines)
 
-See the [Documentation](Documentation/README.md) folder for worked examples.
+See the [step-by-step tutorial](Documentation/Tutorial.md) to build your first machine, and the [Documentation](Documentation/README.md) folder for worked examples.
 
 ## A machine in one screen
 

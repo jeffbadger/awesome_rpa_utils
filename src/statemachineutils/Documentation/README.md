@@ -1,8 +1,10 @@
 # StateMachineUtils worked examples
 
-Start with the queue-worker example if you want to see everything working
-together; the other pages explain one area each.
+New here? Follow the [step-by-step tutorial](Tutorial.md) first. Start with the
+queue-worker example if you want to see everything working together; the other
+pages explain one area each.
 
+- [Tutorial](Tutorial.md) — build and run an expense-claim machine in twelve steps: definition, guards, events, persistence, Robot Studio wiring
 - [Working a queue](WorkingAQueue.md) — a complete, crash-safe worker built from `StateMachineUtils` + `LocalQueueUtils`: circuit breaker, delayed retries, abort, resume
 - [Definition](Definition.md) — the JSON format, the method API, validation and warnings
 - [Running](Running.md) — `Start`, `Fire`, declined triggers, `CanFire`, history
