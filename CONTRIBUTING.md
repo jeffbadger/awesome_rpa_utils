@@ -66,11 +66,16 @@ dotnet test src/AwesomeRpaUtils.sln
 Windows and abort a solution-wide `dotnet test` on Linux/macOS; run the other test
 projects individually there.
 
-**Continuous integration currently builds the solution (Release) and dry-run packs
-the NuGet packages on Windows, but it does not run the tests yet.** So the tests
-are your responsibility: run them before you push, and paste the result (the
-`Passed!` line for each project you touched) into the pull request. Reviewers will
-run them too.
+**Continuous integration runs every test project** on Windows (one project at a time,
+so timing-sensitive tests are not starved by their neighbors) after building the
+solution, and a failing test fails the build. Run the tests locally before you push
+and paste the result (the `Passed!` line for each project you touched) into the pull
+request. The CI test results are also attached to each run as a `test-results`
+artifact.
+
+If a test of yours only fails on the CI runner, do not skip it: find out why. The
+usual causes are timing assumptions (a background task that may start late, a clock
+resolution finer than the platform's) and state shared with another test.
 
 ### Writing good tests
 
