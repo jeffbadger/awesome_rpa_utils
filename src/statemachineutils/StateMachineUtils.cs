@@ -1126,6 +1126,22 @@ namespace StateMachineAutomation
                         if (!string.IsNullOrEmpty(h.to)) return at + " (rejected) names a destination state, but a rejection moves nothing";
                         if (h.reason == "NotStarted" && started) return at + " (rejected) has reason 'NotStarted' but the machine is started";
                         if (h.reason == "Finished" && !started) return at + " (rejected) has reason 'Finished' but the machine is not started";
+                        // Fire records the state the machine was in, and which reason it gives follows from that state: a final
+                        // state declines everything with 'Finished', a non-final one never does. Anything else is a record this
+                        // component could not have written.
+                        if (h.reason == "NotStarted")
+                        {
+                            if (!string.IsNullOrEmpty(h.from)) return at + " (rejected) has reason 'NotStarted' but names a current state";
+                        }
+                        else if (!string.IsNullOrEmpty(h.from))
+                        {
+                            if (lastMoveTo != null && !string.Equals(lastMoveTo, h.from, StringComparison.OrdinalIgnoreCase))
+                                return at + " (rejected) was made in '" + h.from + "' but the machine had just moved to '" + lastMoveTo + "'";
+                            bool wasFinal = definition.FindState(h.from).Final;
+                            if (h.reason == "Finished" && !wasFinal) return at + " (rejected) has reason 'Finished' but '" + h.from + "' is not a final state";
+                            if ((h.reason == "NoTransition" || h.reason == "GuardFailed") && wasFinal) return at + " (rejected) has reason '" + h.reason + "' but '" + h.from + "' is a final state, which declines everything with 'Finished'";
+                        }
+                        else if (h.reason != "ReentrancyLimit") return at + " (rejected) has reason '" + h.reason + "' but names no current state";
                         break;
                 }
             }

@@ -1331,21 +1331,90 @@ namespace StateMachineAutomation.Tests
             Assert.Contains("has reason 'Finished' but the machine is not started", message);
         }
 
+        /// <summary>A genuine run that ends in the final state Failed and then declines a trigger with 'Finished'; the rejection is entry 3.</summary>
+        private string SavedFinishedRunWithRejection()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(name);
+            Assert.True(first.Start(out _, out _));
+            Assert.True(first.Fire("abort", out _, out _, out _, out _));
+            Assert.True(first.Fire("validate", out bool fired, out _, out string rejection, out _));
+            Assert.False(fired);
+            Assert.Equal("Finished", rejection);
+            Assert.True(first.SetContext("k", "v", out _)); // carries the in-memory rejection to disk
+            first.Dispose();
+            return name;
+        }
+
+        [Fact]
+        public void AGenuineFinishedRejection_InAFinalState_Restores()
+        {
+            string name = SavedFinishedRunWithRejection();
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+            Assert.True(machine.IsFinished);
+        }
+
         [Theory]
         [InlineData("NoTransition")]
         [InlineData("GuardFailed")]
-        [InlineData("Finished")]
-        [InlineData("NotStarted")]
-        [InlineData("ReentrancyLimit")]
-        public void EveryDocumentedRejectionCode_IsAcceptedWhereItCanLegitimatelyOccur(string reason)
+        public void ANonFinishedRejectionInAFinalState_IsRefused(string reason)
         {
-            // Unstarted histories can hold NotStarted/ReentrancyLimit; started ones NoTransition/GuardFailed/Finished/ReentrancyLimit.
-            bool unstartedOnly = reason == "NotStarted";
-            string name = unstartedOnly ? SavedUnstartedWithARejection() : SavedRunWithHistory();
-            if (!unstartedOnly && reason != "NoTransition")
-                EditHistory(name, (entries, _) => entries[2]["reason"] = reason);
-            if (reason == "Finished") { /* a started machine in a non-final state cannot have produced this, but the record is well formed */ }
+            string name = SavedFinishedRunWithRejection();
+            EditHistory(name, (entries, _) => entries[entries.Count - 1]["reason"] = reason);
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("is a final state, which declines everything with 'Finished'", message);
+        }
 
+        [Fact]
+        public void AFinishedRejectionInANonFinalState_IsRefused()
+        {
+            string name = SavedRunWithHistory(); // current state Validated (not final); entry 3 is a genuine NoTransition
+            EditHistory(name, (entries, _) => entries[2]["reason"] = "Finished");
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("has reason 'Finished' but 'Validated' is not a final state", message);
+        }
+
+        [Fact]
+        public void ARejectionMadeInADifferentStateThanTheMachineWasIn_IsRefused()
+        {
+            string name = SavedRunWithHistory();
+            EditHistory(name, (entries, _) => entries[2]["from"] = "Received");
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("was made in 'Received' but the machine had just moved to 'Validated'", message);
+        }
+
+        [Fact]
+        public void ANotStartedRejectionThatNamesACurrentState_IsRefused()
+        {
+            string name = SavedUnstartedWithARejection();
+            EditHistory(name, (entries, _) => entries[0]["from"] = "Received");
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("has reason 'NotStarted' but names a current state", message);
+        }
+
+        [Fact]
+        public void NoTransitionAndGuardFailedRejections_AreAcceptedInANonFinalState()
+        {
+            foreach (string reason in new[] { "NoTransition", "GuardFailed" })
+            {
+                string name = SavedRunWithHistory();
+                EditHistory(name, (entries, _) => entries[2]["reason"] = reason);
+                StateMachineUtils machine = Loaded();
+                Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), reason + ": " + message);
+                Assert.True(restored);
+            }
+        }
+
+        [Fact]
+        public void ANotStartedRejection_InAnUnstartedHistory_Restores()
+        {
+            string name = SavedUnstartedWithARejection();
             StateMachineUtils machine = Loaded();
             Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
             Assert.True(restored);
