@@ -213,6 +213,26 @@ namespace StateMachineAutomation.Tests
         }
 
         [Fact]
+        public void StateExited_ElapsedMs_EndsAtTheSameTimestampThatIsSavedAsTheNewStatesEntryTime()
+        {
+            string name = NewMachineName();
+            StateMachineUtils machine = Loaded();
+            DateTime now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            machine.Clock = () => now = now.AddMilliseconds(7);   // every reading of the clock moves it on, like real time passing
+            Assert.True(machine.EnablePersistence(name, out _, out _, out string message), message);
+            Assert.True(machine.Start(out _, out message), message);
+            DateTime SavedEntered() => DateTime.Parse(JsonDocument.Parse(File.ReadAllText(StatePath(name))).RootElement.GetProperty("enteredUtc").GetString(), null, System.Globalization.DateTimeStyles.RoundtripKind);
+
+            DateTime enteredReceived = SavedEntered();
+            double elapsed = -1;
+            machine.StateExited += (_, e) => elapsed = e.ElapsedMs;
+            Assert.True(machine.Fire("validate", out _, out message), message);
+
+            Assert.Equal((SavedEntered() - enteredReceived).TotalMilliseconds, elapsed); // ended exactly at the saved entry time of Validated
+            Assert.True(elapsed > 0);
+        }
+
+        [Fact]
         public void DisablePersistence_ReleasesOwnershipButKeepsTheSavedFile()
         {
             string name = NewMachineName();

@@ -610,5 +610,22 @@ namespace StateMachineAutomation.Tests
             Assert.Equal("NoTransition", message);
             Assert.Equal(0, exits);
         }
+
+        [Fact]
+        public void StateExited_ElapsedMsExcludesHandlerTime_WhichBelongsToTheNewState()
+        {
+            StateMachineUtils machine = Loaded();
+            DateTime now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            machine.Clock = () => now;
+            Assert.True(machine.Start(out _, out _));
+            var exits = new List<double>();
+            machine.StateExited += (_, e) => { exits.Add(e.ElapsedMs); now = now.AddSeconds(10); }; // a slow handler
+            now = now.AddSeconds(1);
+            Assert.True(machine.Fire("validate", out _, out _));   // leaves Received after 1 s
+            now = now.AddSeconds(2);
+            machine.SetContext("amount", "1", out _);
+            Assert.True(machine.Fire("post", out _, out _));       // leaves Validated after 10 s (handler) + 2 s
+            Assert.Equal(new[] { 1000.0, 12000.0 }, exits);
+        }
     }
 }

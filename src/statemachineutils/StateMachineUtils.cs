@@ -141,7 +141,7 @@ namespace StateMachineAutomation
 
         /// <summary>Raised when the machine leaves a state.</summary>
         [Category("StateMachine - Events")]
-        [Description("Raised when the machine leaves a state, before TransitionFired and StateEntered. Carries PreviousState, NewState, Trigger and ElapsedMs (how long the machine was in the state it is leaving). Fires synchronously on the thread that called Fire.")]
+        [Description("Raised when the machine leaves a state, before TransitionFired and StateEntered. Carries PreviousState, NewState, Trigger and ElapsedMs (how long the machine was in the state it is leaving, up to the entry time recorded for the new state). Fires synchronously on the thread that called Fire.")]
         public event EventHandler<StateMachineExitEventArgs> StateExited;
 
         /// <summary>Raised once per successful transition.</summary>

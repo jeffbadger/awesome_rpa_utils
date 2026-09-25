@@ -56,8 +56,9 @@ All properties are non-null strings (an empty string means "not applicable"):
 
 Payload of `StateExited`: the same `PreviousState`, `NewState` and `Trigger`, plus
 `ElapsedMs` (a number): whole milliseconds the machine spent in the state
-it is leaving, measured from when it entered that state. It is never negative, and
-for a run restored from [persistence](Documentation/Persistence.md) it counts from
+it is leaving, from when it entered that state to the entry time recorded for the
+new one (so successive durations add up exactly, and neither a persistence write nor
+your handlers are counted). It is never negative, and for a run restored from [persistence](Documentation/Persistence.md) it counts from
 the original entry time, so it includes the time the robot was down.
 
 ### `StateMachineRejectedEventArgs`

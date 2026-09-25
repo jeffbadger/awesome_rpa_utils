@@ -22,10 +22,12 @@ machine.TransitionRejected += (s, e) => Log($"{e.Trigger} declined in {e.State}:
 machine.MachineFinished   += (s, e) => Notify($"finished in {e.NewState}");
 ```
 
-`ElapsedMs` is measured from the state's recorded entry time to the moment
-the transition is committed (so it excludes the time your handlers take), it is never
-negative, and for a run restored from persistence it includes the time the robot was
-down. It is only reported on a transition that fired: a declined trigger raises no
+`ElapsedMs` runs from the state's recorded entry time to the entry time recorded for
+the new state - the same timestamp that is saved with the run when persistence is on -
+so the durations of successive states add up exactly. It does not count the time a
+persistence write or your handlers take (that time falls in the *new* state). It is
+never negative, and for a run restored from persistence it includes the time the robot
+was down. It is only reported on a transition that fired: a declined trigger raises no
 `StateExited`.
 
 ## Threading

@@ -3,8 +3,8 @@ using System;
 namespace StateMachineAutomation
 {
     /// <summary>
-    /// Describes a state change. Used by <c>StateExited</c>, <c>TransitionFired</c>, <c>StateEntered</c>
-    /// and <c>MachineFinished</c>. Every property is a non-null string so it wires cleanly to a Robot
+    /// Describes a state change. Used by <c>TransitionFired</c>, <c>StateEntered</c> and
+    /// <c>MachineFinished</c> (<c>StateExited</c> uses <see cref="StateMachineExitEventArgs"/>). Every property is a non-null string so it wires cleanly to a Robot
     /// Studio data port; an empty string means "not applicable" (for example the initial entry into a
     /// machine has no previous state and no trigger).
     /// </summary>
@@ -43,9 +43,11 @@ namespace StateMachineAutomation
         public string Trigger { get; }
 
         /// <summary>
-        /// Whole milliseconds the machine spent in <see cref="PreviousState"/>, from when it entered that state to when
-        /// this transition was committed. It is measured from the recorded entry time, so for a run restored from
-        /// persistence it includes the time the robot was down.
+        /// Whole milliseconds the machine spent in <see cref="PreviousState"/>: from that state's recorded entry time to
+        /// the entry time recorded for <see cref="NewState"/> (the very timestamp that is saved with the run when
+        /// persistence is on), so the durations of successive states add up exactly. It does not include the time a
+        /// persistence write or an event handler takes. For a run restored from persistence it counts from the original
+        /// entry time, so it includes the time the robot was down.
         /// </summary>
         public double ElapsedMs { get; }
 
