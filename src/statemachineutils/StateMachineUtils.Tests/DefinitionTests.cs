@@ -154,17 +154,56 @@ namespace StateMachineAutomation.Tests
             }
         }
 
+        [Theory]
+        [InlineData(GuardOperator.Equal, "equals", "x")]
+        [InlineData(GuardOperator.NotEqual, "notEquals", "x")]
+        [InlineData(GuardOperator.In, "in", "x, y")]
+        [InlineData(GuardOperator.NotIn, "notIn", "x, y")]
+        [InlineData(GuardOperator.GreaterThan, "greaterThan", "5")]
+        [InlineData(GuardOperator.LessThan, "lessThan", "5")]
+        [InlineData(GuardOperator.Exists, "exists", null)]
+        [InlineData(GuardOperator.NotExists, "notExists", null)]
+        public void EveryGuardOperatorInTheDropDown_BecomesTheMatchingJsonOperator(GuardOperator op, string json, string value)
+        {
+            StateMachineUtils machine = New();
+            Assert.True(machine.AddState("A", out string message), message);
+            Assert.True(machine.SetInitialState("A", out message), message);
+            Assert.True(machine.AddTransition("A", "t", "A", out message, "k", op, value), message);
+            Assert.True(machine.GetDefinitionJson(out string definition, out message), message);
+            Assert.Contains("\"op\": \"" + json + "\"", definition.Replace("\"op\":\"", "\"op\": \""));
+        }
+
+        [Fact]
+        public void TheGuardOperatorDropDown_CoversEveryOperatorTheJsonFormatKnows()
+        {
+            var fromEnum = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            foreach (GuardOperator op in Enum.GetValues(typeof(GuardOperator)))
+                if (op != GuardOperator.None) fromEnum.Add(MachineDefinition.OperatorName(op));
+            Assert.Equal(MachineDefinition.KnownOps.OrderBy(x => x, StringComparer.Ordinal), fromEnum.OrderBy(x => x, StringComparer.Ordinal));
+        }
+
+        [Fact]
+        public void AGuardWithAKeyButNoOperator_OrAnOperatorButNoKey_IsRefused()
+        {
+            StateMachineUtils machine = New();
+            Assert.True(machine.AddState("A", out string message), message);
+            Assert.False(machine.AddTransition("A", "t", "A", out message, "k"));
+            Assert.Contains("both guardKey and guardOp", message);
+            Assert.False(machine.AddTransition("A", "t", "A", out message, null, GuardOperator.Equal, "x"));
+            Assert.Contains("both guardKey and guardOp", message);
+        }
+
         [Fact]
         public void MethodApi_AppliesTheSameGuardRules()
         {
             StateMachineUtils machine = New();
             Assert.True(machine.AddState("A", out string message), message);
-            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", "exists", "oops"));
+            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", GuardOperator.Exists, "oops"));
             Assert.Contains("takes no value", message);
-            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", "in", "EU,,UK"));
+            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", GuardOperator.In, "EU,,UK"));
             Assert.Contains("empty item", message);
-            Assert.True(machine.AddTransition("A", "t", "A", out message, "k", "in", "EU, UK"), message);
-            Assert.True(machine.AddTransition("A", "t2", "A", out message, "k", "exists"), message);
+            Assert.True(machine.AddTransition("A", "t", "A", out message, "k", GuardOperator.In, "EU, UK"), message);
+            Assert.True(machine.AddTransition("A", "t2", "A", out message, "k", GuardOperator.Exists), message);
         }
 
         [Fact]
@@ -364,7 +403,7 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.AddState("Posted", out message, isFinal: true), message);
             Assert.True(machine.SetInitialState("received", out message), message);
             Assert.True(machine.AddTransition("Received", "validate", "Validated", out message), message);
-            Assert.True(machine.AddTransition("validated", "post", "posted", out message, "amount", "lessThan", "100"), message);
+            Assert.True(machine.AddTransition("validated", "post", "posted", out message, "amount", GuardOperator.LessThan, "100"), message);
             Assert.True(machine.Start(out string state, out message), message);
             Assert.Equal("Received", state);
             Assert.True(machine.GetDefinitionJson(out string json, out message), message);
@@ -388,11 +427,11 @@ namespace StateMachineAutomation.Tests
             Assert.False(machine.AddTransition("A", "t", "Nope", out message));
             Assert.Contains("not a declared state", message);
             Assert.False(machine.AddTransition("Nope", "t", "A", out message));
-            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", null, null));
+            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", GuardOperator.None, null));
             Assert.Contains("both guardKey and guardOp", message);
-            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", "wobbly", "1"));
-            Assert.Contains("unknown operator", message);
-            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", "greaterThan", "abc"));
+            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", (GuardOperator)99, "1"));
+            Assert.Contains("not a known GuardOperator", message);
+            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", GuardOperator.GreaterThan, "abc"));
             Assert.Contains("numeric", message);
         }
 

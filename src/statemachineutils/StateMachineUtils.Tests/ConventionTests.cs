@@ -79,8 +79,9 @@ namespace StateMachineAutomation.Tests
                 foreach (ParameterInfo p in m.GetParameters())
                 {
                     Type t = p.ParameterType.IsByRef ? p.ParameterType.GetElementType() : p.ParameterType;
-                    Assert.True(t == typeof(string) || t == typeof(bool) || t == typeof(int) || t == typeof(double),
-                        m.Name + "." + p.Name + " is " + t.Name + "; only string/bool/int/double are wireable without a proxy object");
+                    // An enum is fine too: the designer shows it as a drop-down (LocalQueueUtils' QueueLifetime does the same).
+                    Assert.True(t == typeof(string) || t == typeof(bool) || t == typeof(int) || t == typeof(double) || t.IsEnum,
+                        m.Name + "." + p.Name + " is " + t.Name + "; only string/bool/int/double or an enum are wireable without a proxy object");
                 }
         }
 
@@ -88,7 +89,8 @@ namespace StateMachineAutomation.Tests
         public void EveryPublicClassInTheAssembly_IsEitherTheComponentOrAnEventArgs()
         {
             foreach (Type t in typeof(StateMachineUtils).Assembly.GetExportedTypes())
-                Assert.True(t == typeof(StateMachineUtils) || typeof(EventArgs).IsAssignableFrom(t), t.Name + " is public but is neither the component nor an EventArgs");
+                Assert.True(t == typeof(StateMachineUtils) || typeof(EventArgs).IsAssignableFrom(t) || t == typeof(GuardOperator),
+                    t.Name + " is public but is neither the component, an EventArgs nor the GuardOperator drop-down");
         }
     }
 }
