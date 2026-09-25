@@ -34,7 +34,7 @@ namespace StateMachineAutomation.Tests
         {
             StateMachineUtils machine = Started();
             List<string> log = Record(machine);
-            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _));
             Assert.Equal(new[]
             {
                 "exited:Received>Validated:validate",
@@ -48,7 +48,7 @@ namespace StateMachineAutomation.Tests
         {
             StateMachineUtils machine = Started(Defs.Minimal);
             List<string> log = Record(machine);
-            Assert.True(machine.Fire("go", out _, out _, out _, out _));
+            Assert.True(machine.Fire("go", out _, out _, out _));
             Assert.Equal("finished:B", log.Last());
             Assert.Equal(4, log.Count);
         }
@@ -58,7 +58,7 @@ namespace StateMachineAutomation.Tests
         {
             StateMachineUtils machine = Started();
             List<string> log = Record(machine);
-            Assert.True(machine.Fire("VALIDATE", out _, out _, out _, out _));
+            Assert.True(machine.Fire("VALIDATE", out _, out _, out _));
             Assert.Contains("fired:Received>Validated:validate", log);
         }
 
@@ -69,7 +69,7 @@ namespace StateMachineAutomation.Tests
         {
             StateMachineUtils machine = Started();
             List<string> log = Record(machine);
-            Assert.True(machine.Fire(trigger, out bool fired, out _, out _, out _));
+            bool fired = machine.Fire(trigger, out _, out _, out _);
             Assert.False(fired);
             Assert.Equal(new[] { $"rejected:Received:{trigger}:{reason}" }, log);
         }
@@ -78,10 +78,10 @@ namespace StateMachineAutomation.Tests
         public void RejectedEvent_CarriesReasonAndDetail()
         {
             StateMachineUtils machine = Started(Defs.Minimal);
-            Assert.True(machine.Fire("go", out _, out _, out _, out _));
+            Assert.True(machine.Fire("go", out _, out _, out _));
             StateMachineRejectedEventArgs seen = null;
             machine.TransitionRejected += (_, e) => seen = e;
-            Assert.True(machine.Fire("go", out _, out _, out _, out _));
+            Assert.False(machine.Fire("go", out _, out _, out _));
             Assert.NotNull(seen);
             Assert.Equal("Finished", seen.Reason);
             Assert.Equal("B", seen.State);
@@ -94,7 +94,7 @@ namespace StateMachineAutomation.Tests
             StateMachineUtils machine = Started();
             string seenInHandler = null;
             machine.StateEntered += (_, _) => seenInHandler = machine.CurrentState;
-            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _));
             Assert.Equal("Validated", seenInHandler);
         }
 
@@ -104,7 +104,7 @@ namespace StateMachineAutomation.Tests
             StateMachineUtils machine = Started();
             int handlerThread = -1;
             machine.StateEntered += (_, _) => handlerThread = Thread.CurrentThread.ManagedThreadId;
-            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _));
             Assert.Equal(Thread.CurrentThread.ManagedThreadId, handlerThread);
         }
 
@@ -120,7 +120,7 @@ namespace StateMachineAutomation.Tests
                 worker.Start();
                 joined = worker.Join(TimeSpan.FromSeconds(5));
             };
-            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _));
             Assert.True(joined, "another thread could not read the machine from inside a handler: the lock was held while raising events");
             Assert.Equal("Validated", fromOtherThread);
         }
@@ -132,7 +132,7 @@ namespace StateMachineAutomation.Tests
             bool laterSubscriberRan = false;
             machine.StateEntered += (_, _) => throw new InvalidOperationException("boom");
             machine.StateEntered += (_, _) => laterSubscriberRan = true;
-            Assert.True(machine.Fire("validate", out bool fired, out string newState, out _, out string message), message);
+            bool fired = machine.Fire("validate", out string newState, out _, out string message);
             Assert.True(fired);
             Assert.Equal("Validated", newState);
             Assert.True(laterSubscriberRan);
@@ -152,10 +152,10 @@ namespace StateMachineAutomation.Tests
             machine.StateEntered += (sender, e) =>
             {
                 order.Add("entered:" + e.NewState);
-                if (e.NewState == "B") nestedFired = machine.Fire("next", out bool f, out _, out _, out _) && f;
+                if (e.NewState == "B") nestedFired = machine.Fire("next", out _, out _, out _);
             };
             machine.MachineFinished += (_, e) => order.Add("finished:" + e.NewState);
-            Assert.True(machine.Fire("next", out _, out _, out _, out _));
+            Assert.True(machine.Fire("next", out _, out _, out _));
             Assert.True(nestedFired);
             Assert.Equal(new[] { "entered:B", "entered:C", "finished:C" }, order);
             Assert.Equal("C", machine.CurrentState);
@@ -192,9 +192,9 @@ namespace StateMachineAutomation.Tests
             machine.TransitionRejected += (_, _) =>
             {
                 rejectedEvents++;
-                if (!machine.Fire("still-nonsense", out _, out _, out _, out _)) nestedFailures++;
+                if (!machine.Fire("still-nonsense", out _, out string nestedReason, out _) && nestedReason == null) nestedFailures++; // only a real error counts; declined is expected
             };
-            Assert.True(machine.Fire("nonsense", out bool fired, out _, out _, out string message), message);
+            bool fired = machine.Fire("nonsense", out _, out _, out string message);
             Assert.False(fired);
             Assert.Equal(16, rejectedEvents);
             Assert.Equal(0, nestedFailures);
@@ -221,12 +221,12 @@ namespace StateMachineAutomation.Tests
                 }
             };
 
-            var first = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            var first = new Thread(() => machine.Fire("validate", out _, out _, out _));
             first.Start();
             Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)), "the first handler never started");
 
             bool secondFired = false;
-            var second = new Thread(() => secondFired = machine.Fire("abort", out bool f, out _, out _, out _) && f);
+            var second = new Thread(() => secondFired = machine.Fire("abort", out _, out _, out _));
             second.Start();
 
             // While the first transition's handlers are still running, the second Fire must not be able to
@@ -258,7 +258,7 @@ namespace StateMachineAutomation.Tests
             };
             machine.StateEntered += (_, e) => { lock (log) log.Add("entered:" + e.NewState); };
 
-            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _));
             firing.Start();
             Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)), "the handler never started");
 
@@ -290,7 +290,7 @@ namespace StateMachineAutomation.Tests
             var release = new ManualResetEventSlim(false);
             machine.StateEntered += (_, _) => { handlerRunning.Set(); release.Wait(TimeSpan.FromSeconds(10)); };
 
-            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _));
             firing.Start();
             Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)));
 
@@ -321,7 +321,7 @@ namespace StateMachineAutomation.Tests
             machine.TransitionFired += (_, e) => remainingEvents.Add("fired:" + e.NewState);
             machine.StateEntered += (_, e) => remainingEvents.Add("entered:" + e.NewState);
 
-            Assert.True(machine.Fire("validate", out bool fired, out string newState, out _, out string message), message);
+            bool fired = machine.Fire("validate", out string newState, out _, out string message);
 
             Assert.False(ok);
             Assert.Contains("inside an event handler", refusal);
@@ -339,7 +339,7 @@ namespace StateMachineAutomation.Tests
             StateMachineUtils writer = Loaded();
             Assert.True(writer.EnablePersistence(name, out _, out _, out string m), m);
             Assert.True(writer.Start(out _, out m), m);
-            Assert.True(writer.Fire("validate", out _, out _, out _, out m), m);
+            Assert.True(writer.Fire("validate", out _, out _, out m), m);
             writer.Dispose();
             return name;
         }
@@ -354,7 +354,7 @@ namespace StateMachineAutomation.Tests
             string stateSeenByHandler = null;
             machine.TransitionRejected += (_, _) => { handlerRunning.Set(); release.Wait(TimeSpan.FromSeconds(10)); stateSeenByHandler = machine.CurrentState; };
 
-            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _, out _)); // declined: NotStarted
+            var firing = new Thread(() => machine.Fire("validate", out _, out _, out _)); // declined: NotStarted
             firing.Start();
             Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)));
 
@@ -381,7 +381,7 @@ namespace StateMachineAutomation.Tests
             string refusal = null;
             machine.TransitionRejected += (_, _) => ok = machine.EnablePersistence(name, out _, out _, out refusal);
 
-            Assert.True(machine.Fire("validate", out bool fired, out _, out _, out _));
+            bool fired = machine.Fire("validate", out _, out _, out _);
             Assert.False(fired);
             Assert.False(ok);
             Assert.Contains("inside an event handler", refusal);
@@ -395,7 +395,7 @@ namespace StateMachineAutomation.Tests
         {
             StateMachineUtils machine = Started();
             machine.StateEntered += (_, _) => { };
-            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _));
             Assert.True(machine.LoadDefinitionJson(Defs.Minimal, out string message), message);
             Assert.True(machine.ClearDefinition(out message), message);
         }
@@ -422,13 +422,13 @@ namespace StateMachineAutomation.Tests
                 if (e.NewState == "Validated") { handlerRunning.Set(); release.Wait(TimeSpan.FromSeconds(10)); }
             };
 
-            var first = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            var first = new Thread(() => machine.Fire("validate", out _, out _, out _));
             first.Start();
             Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)));
 
-            bool returned = true, fired = true;
+            bool returned = true;
             string message = null;
-            Thread second = StartBlocked(() => returned = machine.Fire("abort", out fired, out _, out _, out message)); // passed RequireLive, now queued behind the handler
+            Thread second = StartBlocked(() => returned = machine.Fire("abort", out _, out _, out message)); // passed RequireLive, now queued behind the handler
 
             // Disposal must not wait for handlers (a handler may be marshalling to the very thread disposing us) ...
             var disposer = new Thread(() => machine.Dispose());
@@ -441,7 +441,6 @@ namespace StateMachineAutomation.Tests
 
             // ... and the queued Fire, finally getting its turn, must observe the disposal rather than commit.
             Assert.False(returned);
-            Assert.False(fired);
             Assert.Contains("disposed", message);
             lock (log) Assert.Equal(new[] { "entered:Validated" }, log); // no transition, no events, for the refused call
         }
@@ -453,7 +452,7 @@ namespace StateMachineAutomation.Tests
             var handlerRunning = new ManualResetEventSlim(false);
             var release = new ManualResetEventSlim(false);
             machine.StateEntered += (_, e) => { if (e.NewState == "Validated") { handlerRunning.Set(); release.Wait(TimeSpan.FromSeconds(10)); } };
-            var first = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            var first = new Thread(() => machine.Fire("validate", out _, out _, out _));
             first.Start();
             Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)));
 
@@ -474,10 +473,10 @@ namespace StateMachineAutomation.Tests
         {
             StateMachineUtils machine = Started();
             machine.StateEntered += (_, _) => machine.Dispose(); // the handler tears the component down while Fire is still delivering
-            Assert.True(machine.Fire("validate", out bool fired, out string newState, out _, out string message), message);
+            bool fired = machine.Fire("validate", out string newState, out _, out string message);
             Assert.True(fired); // the transition committed before disposal
             Assert.Equal("Validated", newState);
-            Assert.False(machine.Fire("abort", out _, out _, out _, out message));
+            Assert.False(machine.Fire("abort", out _, out _, out message));
             Assert.Contains("disposed", message);
         }
 
@@ -493,7 +492,7 @@ namespace StateMachineAutomation.Tests
                 reader.Start();
                 joined = reader.Join(TimeSpan.FromSeconds(5));
             };
-            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _));
             Assert.True(joined, "a reader was blocked by a running handler");
             Assert.Equal("Validated", read);
         }
@@ -513,7 +512,7 @@ namespace StateMachineAutomation.Tests
 
             var threads = Enumerable.Range(0, 8).Select(worker => new Thread(() =>
             {
-                for (int i = 0; i < 50; i++) machine.Fire("go", out _, out _, out _, out _);
+                for (int i = 0; i < 50; i++) machine.Fire("go", out _, out _, out _);
             })).ToList();
             threads.ForEach(t => t.Start());
             threads.ForEach(t => Assert.True(t.Join(TimeSpan.FromSeconds(30))));

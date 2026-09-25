@@ -50,20 +50,20 @@ namespace StateMachineAutomation.Tests
             machine.MachineFinished += (s, e) => log.Add($"claim ended in {e.NewState}");
 
             // step 6
-            Assert.True(machine.Fire("submit", out bool fired, out state, out string reason, out message), message);
+            bool fired = machine.Fire("submit", out state, out string reason, out message);
             Assert.True(fired);
             Assert.Equal("Submitted", state);
             Assert.Null(reason);
 
             // step 7
-            Assert.True(machine.Fire("pay", out fired, out state, out reason, out message));
+            fired = machine.Fire("pay", out state, out reason, out message);
             Assert.False(fired);
             Assert.Equal("Submitted", state);
             Assert.Equal("NoTransition", reason);
 
             // step 8
             Assert.True(machine.SetContext("amount", "120", out message), message);
-            Assert.True(machine.Fire("decide", out fired, out state, out reason, out message));
+            fired = machine.Fire("decide", out state, out reason, out message);
             Assert.True(fired);
             Assert.Equal("Approved", state);
 
@@ -77,11 +77,11 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.IsInFinalState(out bool isFinal, out message));
             Assert.False(isFinal);
 
-            Assert.True(machine.Fire("pay", out fired, out state, out reason, out message));
+            fired = machine.Fire("pay", out state, out reason, out message);
             Assert.Equal("Paid", state);
             Assert.True(machine.IsInFinalState(out isFinal, out message));
             Assert.True(isFinal);
-            Assert.True(machine.Fire("cancel", out fired, out state, out reason, out message));
+            fired = machine.Fire("cancel", out state, out reason, out message);
             Assert.False(fired);
             Assert.Equal("Finished", reason);
 
@@ -101,14 +101,14 @@ namespace StateMachineAutomation.Tests
         public void Step8_ALargeAmountGoesToAManager_AndAMissingKeyFailsItsGuard()
         {
             StateMachineUtils machine = Started(Definition);
-            Assert.True(machine.Fire("submit", out _, out _, out _, out _));
+            Assert.True(machine.Fire("submit", out _, out _, out _));
 
             // 900 is not below 500, so the guard fails and the unguarded 'decide' is the one taken (ManagerReview)
             Assert.True(machine.SetContext("amount", "900", out string message));
-            Assert.True(machine.Fire("decide", out bool fired, out string state, out _, out message));
+            bool fired = machine.Fire("decide", out string state, out _, out message);
             Assert.True(fired);
             Assert.Equal("ManagerReview", state);
-            Assert.True(machine.Fire("reject", out _, out state, out _, out _));
+            Assert.True(machine.Fire("reject", out state, out _, out _));
             Assert.Equal("Rejected", state);
         }
 
@@ -119,8 +119,8 @@ namespace StateMachineAutomation.Tests
             {
                 StateMachineUtils machine = Started(Definition);
                 Assert.True(machine.SetContext("amount", "900", out _));
-                foreach (string t in path) Assert.True(machine.Fire(t, out _, out _, out _, out _));
-                Assert.True(machine.Fire("cancel", out bool fired, out string state, out _, out _));
+                foreach (string t in path) Assert.True(machine.Fire(t, out _, out _, out _));
+                bool fired = machine.Fire("cancel", out string state, out _, out _);
                 Assert.True(fired);
                 Assert.Equal("Cancelled", state);
             }
@@ -138,7 +138,7 @@ namespace StateMachineAutomation.Tests
             Assert.False(started);
             Assert.True(first.Start(out _, out message), message);
             Assert.True(first.SetContext("amount", "900", out message), message);
-            Assert.True(first.Fire("submit", out _, out _, out _, out message), message);
+            Assert.True(first.Fire("submit", out _, out _, out message), message);
             first.Dispose(); // "crash"
 
             StateMachineUtils second = New();

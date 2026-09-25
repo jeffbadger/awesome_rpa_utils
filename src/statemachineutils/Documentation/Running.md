@@ -2,15 +2,17 @@
 
 ```csharp
 machine.Start(out string state, out string message);                    // enters the initial state
-machine.Fire("submit", out bool fired, out state, out string reason, out message);
+bool fired = machine.Fire("submit", out state, out string reason, out message);
 ```
 
-## A declined trigger is not an error
+## The result means "it fired"
 
-`Fire` returns **`True`** when it worked out what to do - including when the
-answer is "no". Check `fired`:
+`Fire` returns **`True` only when the transition happened**, and `message` always
+says what happened ("Fired 'submit': Draft -> Review.", or why it did not).
+When it returns `False`, `rejectionReason` tells a *declined* trigger from an
+*error*:
 
-| `fired` | `rejectionReason` | Meaning |
+| Result | `rejectionReason` | Meaning |
 |---|---|---|
 | `True` | `null` | The transition happened; `newState` is the state you are now in. |
 | `False` | `NoTransition` | The current state has no transition for that trigger. |
@@ -20,9 +22,16 @@ answer is "no". Check `fired`:
 | `False` | `ReentrancyLimit` | Handlers nested `Fire` more than 16 deep (see [Events](Events.md)). |
 
 `newState` is the state the machine is (still) in, so you can branch on it
-either way. **`Fire` returns `False` with a `message`** only for bad input (an
-empty trigger, no definition loaded) or a persistence write failure - and then
-the machine is unchanged.
+either way. A `False` result with **no** `rejectionReason` is an error, not a
+decline: bad input (an empty trigger, no definition loaded) or a persistence
+write failure. The machine is unchanged, and `message` says what was wrong.
+
+If you only need to know whether it fired, use the minimal form:
+
+```csharp
+if (!machine.FireSimple("approve", out message))
+    Log(message);          // the reason it did not fire; when it fires, message says "Fired 'approve': ..."
+```
 
 ## Asking without acting
 

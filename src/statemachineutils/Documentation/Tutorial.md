@@ -111,27 +111,28 @@ component keeps the previous one, so a bad edit cannot leave a half-loaded machi
 ## Step 6 - Fire triggers
 
 ```csharp
-machine.Fire("submit", out bool fired, out state, out string reason, out message);
+bool fired = machine.Fire("submit", out state, out string reason, out message);
 // fired == true, state == "Submitted", reason == null
 ```
 
-`Fire` returns `True` whenever it could work out an answer, so **always look at
-`fired`**, not just the return value.
+`Fire`'s result is `True` only when the trigger fired, and `message` says what
+happened (`Fired 'submit': Draft -> Submitted.`). If you need nothing else, use the
+minimal `machine.FireSimple("submit", out message)`.
 
 ## Step 7 - See what a "no" looks like
 
 Try something illegal:
 
 ```csharp
-machine.Fire("pay", out fired, out state, out reason, out message);
+fired = machine.Fire("pay", out state, out reason, out message);
 // fired == false, state == "Submitted", reason == "NoTransition"
 ```
 
-That is a normal outcome, not an error: `Submitted` has no `pay` transition, so nothing
-moved. The reasons are `NoTransition`, `GuardFailed`, `Finished` (already in a final
-state) and `NotStarted`. A method that returns `False` means something else - bad input
-such as an empty trigger, or a disk problem when persistence is on - and `message` says
-what.
+The result is `False` and `message` says why. This is a *declined* trigger, not an
+error: `Submitted` has no `pay` transition, so nothing moved. The reasons are
+`NoTransition`, `GuardFailed`, `Finished` (already in a final state) and `NotStarted`.
+A `False` result with **no** reason is an error instead - bad input such as an empty
+trigger, or a disk problem when persistence is on - and `message` says what.
 
 ## Step 8 - Use the context and guards
 
@@ -141,7 +142,7 @@ text keys and values that your automation fills in:
 ```csharp
 machine.SetContext("amount", "120", out message);
 
-machine.Fire("decide", out fired, out state, out reason, out message);
+fired = machine.Fire("decide", out state, out reason, out message);
 // fired == true, state == "Approved"   (120 < 500, so the guarded transition won)
 ```
 
@@ -174,9 +175,9 @@ context, so a trigger whose guard would fail is not listed.
 Finish the claim:
 
 ```csharp
-machine.Fire("pay", out fired, out state, out reason, out message);   // state == "Paid"
+fired = machine.Fire("pay", out state, out reason, out message);   // state == "Paid"
 machine.IsInFinalState(out isFinal, out message);                     // true
-machine.Fire("cancel", out fired, out state, out reason, out message);
+fired = machine.Fire("cancel", out state, out reason, out message);
 // fired == false, reason == "Finished" - a finished machine accepts nothing
 ```
 
@@ -241,7 +242,7 @@ Drop **StateMachineUtils** on the automation surface and wire it like any compon
 |---|---|
 | Load the definition once at start-up | A string (from an Asset or a Script) into `LoadDefinitionJson`, then `Start` |
 | Report a step's result | An execution link from the step's success/failure into `Fire`, with the trigger name as its argument (`submit`, `approve`) |
-| Branch on the outcome | The `fired` and `rejectionReason` outputs into a Switch |
+| Branch on the outcome | The result of `Fire` (did it fire) and the `rejectionReason` output into a Switch |
 | Show or route on where you are | The `CurrentState` and `IsFinished` data ports |
 | Run logic when something changes | `StateEntered`, `TransitionRejected`, `MachineFinished` events into the next step |
 | Pass values to guards | `SetContext` before `Fire` |

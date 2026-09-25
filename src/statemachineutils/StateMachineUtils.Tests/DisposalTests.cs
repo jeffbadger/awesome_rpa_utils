@@ -18,7 +18,7 @@ namespace StateMachineAutomation.Tests
 
         private static readonly string[] Names =
         {
-            "Fire", "CanFire", "Start", "Reset", "GetCurrentState", "IsStarted", "IsInFinalState",
+            "Fire", "FireSimple", "CanFire", "Start", "Reset", "GetCurrentState", "IsStarted", "IsInFinalState",
             "GetAvailableTriggersDelimited", "GetAvailableTriggersJson", "GetSecondsInState", "GetHistoryJson",
             "SetContext", "GetContext", "RemoveContext", "ClearContext", "GetContextJson",
             "LoadDefinitionJson", "GetDefinitionJson", "AddState", "SetInitialState", "AddTransition", "ClearDefinition",
@@ -32,7 +32,8 @@ namespace StateMachineAutomation.Tests
             message = null;
             switch (name)
             {
-                case "Fire": return m.Fire("validate", out _, out _, out _, out message);
+                case "Fire": return m.Fire("validate", out _, out _, out message);
+                case "FireSimple": return m.FireSimple("validate", out message);
                 case "CanFire": return m.CanFire("validate", out _, out _, out message);
                 case "Start": return m.Start(out _, out message);
                 case "Reset": return m.Reset(false, out _, out message);

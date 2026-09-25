@@ -9,8 +9,8 @@ namespace StateMachineAutomation.Tests
     {
         private static (bool fired, string newState, string reason) Fire(StateMachineUtils machine, string trigger)
         {
-            Assert.True(machine.Fire(trigger, out bool fired, out string newState, out string reason, out string message), message);
-            Assert.Null(message);
+            bool fired = machine.Fire(trigger, out string newState, out string reason, out string message);
+            Assert.False(string.IsNullOrEmpty(message), "message must explain the outcome, fired or declined");
             return (fired, newState, reason);
         }
 
@@ -196,7 +196,7 @@ namespace StateMachineAutomation.Tests
         public void Fire_WithNoDefinition_IsAnErrorNotARejection()
         {
             StateMachineUtils machine = New();
-            Assert.False(machine.Fire("go", out bool fired, out string newState, out string reason, out string message));
+            bool fired = machine.Fire("go", out string newState, out string reason, out string message);
             Assert.False(fired);
             Assert.Null(newState);
             Assert.Null(reason);
@@ -210,7 +210,7 @@ namespace StateMachineAutomation.Tests
         public void Fire_BadTrigger_IsAnErrorWithAMessage(string trigger)
         {
             StateMachineUtils machine = Started();
-            Assert.False(machine.Fire(trigger, out bool fired, out _, out string reason, out string message));
+            bool fired = machine.Fire(trigger, out _, out string reason, out string message);
             Assert.False(fired);
             Assert.Null(reason);
             Assert.Contains("trigger", message);
@@ -547,7 +547,7 @@ namespace StateMachineAutomation.Tests
         {
             StateMachineUtils machine = Started();
             machine.Dispose();
-            Assert.False(machine.Fire("validate", out bool fired, out _, out _, out string message));
+            bool fired = machine.Fire("validate", out _, out _, out string message);
             Assert.False(fired);
             Assert.Contains("disposed", message);
             Assert.False(machine.Start(out _, out message));
@@ -555,6 +555,66 @@ namespace StateMachineAutomation.Tests
             Assert.False(machine.GetHistoryJson(out _, out message));
             Assert.Equal(string.Empty, machine.CurrentState);
             Assert.False(machine.IsFinished);
+        }
+
+        // ---- the result of Fire is "did it fire", and message always says why ----
+
+        [Fact]
+        public void Fire_ResultIsTrueOnlyWhenItFired_AndMessageNamesTheMove()
+        {
+            StateMachineUtils machine = Started();
+            Assert.True(machine.Fire("validate", out string newState, out string reason, out string message));
+            Assert.Equal("Validated", newState);
+            Assert.Null(reason);
+            Assert.Equal("Fired 'validate': Received -> Validated.", message);
+        }
+
+        [Fact]
+        public void Fire_ResultIsFalseWhenDeclined_WithTheReasonAndAMessageThatExplainsIt()
+        {
+            StateMachineUtils machine = Started();
+            Assert.False(machine.Fire("post", out string newState, out string reason, out string message));
+            Assert.Equal("Received", newState);            // still where it was
+            Assert.Equal("NoTransition", reason);           // a decline is told apart from an error by the reason
+            Assert.False(string.IsNullOrWhiteSpace(message));
+            Assert.Contains("post", message);
+        }
+
+        [Fact]
+        public void Fire_AnErrorHasNoReason_SoADeclineAndAnErrorCanBeToldApart()
+        {
+            StateMachineUtils machine = Started();
+            Assert.False(machine.Fire("  ", out _, out string reason, out string message));
+            Assert.Null(reason);
+            Assert.Contains("trigger", message);
+        }
+
+        [Fact]
+        public void FireSimple_ReportsOnlyWhetherItFired_WithAMessage()
+        {
+            StateMachineUtils machine = Started();
+            Assert.False(machine.FireSimple("post", out string message));       // declined
+            Assert.False(string.IsNullOrWhiteSpace(message));
+            Assert.Equal("Received", machine.CurrentState);
+
+            Assert.True(machine.FireSimple("validate", out message));           // fired
+            Assert.Equal("Fired 'validate': Received -> Validated.", message);
+            Assert.Equal("Validated", machine.CurrentState);
+
+            Assert.False(machine.FireSimple("", out message));                  // bad input
+            Assert.Contains("trigger", message);
+        }
+
+        [Fact]
+        public void FireSimple_RaisesTheSameEventsAsFire_AndRecordsDeclinedTriggers()
+        {
+            StateMachineUtils machine = Started();
+            var log = new System.Collections.Generic.List<string>();
+            machine.StateEntered += (_, e) => log.Add("entered:" + e.NewState);
+            machine.TransitionRejected += (_, e) => log.Add("rejected:" + e.Reason);
+            Assert.False(machine.FireSimple("post", out _));
+            Assert.True(machine.FireSimple("validate", out _));
+            Assert.Equal(new[] { "rejected:NoTransition", "entered:Validated" }, log);
         }
     }
 }

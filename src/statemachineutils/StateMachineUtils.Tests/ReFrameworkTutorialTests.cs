@@ -38,7 +38,7 @@ namespace StateMachineAutomation.Tests
 
             private void Fire(string trigger)
             {
-                Assert.True(Machine.Fire(trigger, out bool fired, out _, out string reason, out string message), message);
+                bool fired = Machine.Fire(trigger, out _, out string reason, out string message);
                 Assert.True(fired, "'" + trigger + "' was declined in " + Machine.CurrentState + ": " + reason);
             }
 
@@ -212,7 +212,7 @@ namespace StateMachineAutomation.Tests
         public void AMisorderedTrigger_IsDeclinedAndRecorded_NotAcceptedSilently()
         {
             Robot robot = NewRobot();
-            Assert.True(robot.Machine.Fire("success", out bool fired, out _, out string reason, out _));
+            bool fired = robot.Machine.Fire("success", out _, out string reason, out _);
             Assert.False(fired);
             Assert.Equal("NoTransition", reason); // 'success' means nothing in Init
         }
@@ -270,8 +270,8 @@ namespace StateMachineAutomation.Tests
             foreach (string[] path in new[] { new string[0], new[] { "initialized" } })
             {
                 StateMachineUtils machine = Started(withStop);
-                foreach (string t in path) Assert.True(machine.Fire(t, out _, out _, out _, out _));
-                Assert.True(machine.Fire("stop", out bool fired, out string state, out _, out _));
+                foreach (string t in path) Assert.True(machine.Fire(t, out _, out _, out _));
+                bool fired = machine.Fire("stop", out string state, out _, out _);
                 Assert.True(fired);
                 Assert.Equal("EndProcess", state);
             }
