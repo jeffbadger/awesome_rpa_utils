@@ -2,7 +2,7 @@
 
 A single searchable index of every **PME** — Property, Method, and Event —
 exposed by every component in this repository. Use it to answer "does
-anything in this library already do X" without opening 22 different
+anything in this library already do X" without opening 23 different
 READMEs: `Ctrl+F` for a method name, a keyword from what you're trying to
 do, or a parameter/return type, or jump straight to a component from the
 quick-reference table below.
@@ -35,6 +35,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [ServiceUtils](#serviceutils) | `ServiceAutomation` | 24 (25 rows) | 0 | 0 | Queries, starts, stops, restarts, pauses/resumes, and configures the startup type of Windows services. |
 | [SessionUtils](#sessionutils) | `SessionAutomation` | 31 | 0 | 0 | Reports on and acts on Windows session/workstation state — identity, kind, connect state, lock, idle time. |
 | [StackUtils](#stackutils) | `StackAutomation` | 13 | 1 | 0 | An instance-local, in-memory LIFO stack for variable-count RPA work. |
+| [StateMachineUtils](#statemachineutils) | `StateMachineAutomation` | 27 | 4 | 5 | Models a process as states, triggers, and guarded transitions declared in JSON or method calls, with events on every state change and optional crash-safe persistence. |
 | [TerminalUtils](#terminalutils) | `TerminalAutomation` | 11 | 0 | 0 | Reads a console app's live screen buffer and injects keystrokes into it, for terminal UIs normal UI automation can't see. |
 | [UIAutomationUtils](#uiautomationutils) | `UIAutomation` | 53 (55 rows) | 0 | 0 | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation. |
 | [ValueStoreUtils](#valuestoreutils) | `ValueStoreAutomation` | 49 | 1 | 0 | A freeform key/value bag with forgiving typed conversion and dot-notation access into JSON-shaped values. |
@@ -729,6 +730,63 @@ Provides an instance-local, in-memory LIFO stack for variable-count RPA work.
 | `SetMaximumItems` | `bool SetMaximumItems(int maximumItems, out string message)` | Sets the maximum number of items accepted by this stack. |
 | `TryPeek` | `bool TryPeek(out bool itemAvailable, out StackItemKind itemKind, out string value, out string message)` | Returns the next item without removing it. |
 | `TryPop` | `bool TryPop(out bool itemAvailable, out StackItemKind itemKind, out string value, out string message)` | Removes and returns the next item. |
+
+## StateMachineUtils
+
+Models a process as states, triggers, and guarded transitions declared in JSON or method calls, with events on every state change and optional crash-safe persistence.
+
+**Namespace:** `StateMachineAutomation` | **Assembly:** `StateMachineAutomation`
+
+### Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `CurrentState` | `string` | Read-only. The current state, or an empty string if the machine has not been started. |
+| `IsFinished` | `bool` | Read-only. True once the machine has been started and has reached a final state. |
+| `MachineName` | `string` | Read-only. The `name` from the loaded definition, or an empty string. |
+| `MaximumHistoryEntries` | `int` | History entries kept (1-10,000, default 100); oldest are dropped first. |
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `AddState` | `bool AddState(string name, out string message, bool isFinal = false)` | Adds a state. |
+| `AddTransition` | `bool AddTransition(string fromState, string trigger, string toState, out string message, string guardKey = null, string guardOp = null, string guardValue = null)` | Adds a transition, optionally with one guard. Use JSON for several guards on one transition. |
+| `CanFire` | `bool CanFire(string trigger, out bool canFire, out string rejectionReason, out string message)` | Reports whether a trigger would fire right now, without firing or raising events. |
+| `ClearContext` | `bool ClearContext(out string message)` | Removes every key. |
+| `ClearDefinition` | `bool ClearDefinition(out string message)` | Removes the whole definition and stops the machine. |
+| `DisablePersistence` | `bool DisablePersistence(out string message)` | Stops persisting and releases ownership; the saved file is kept. |
+| `DiscardPersistedState` | `bool DiscardPersistedState(string machineName, out bool discarded, out string message)` | Deletes a machine's saved state. A missing one is `True` with `discarded == False`. |
+| `EnablePersistence` | `bool EnablePersistence(string machineName, out string statePath, out bool restored, out string message)` | Makes state, context and history durable under `%LOCALAPPDATA%\AwesomeRpaUtils\StateMachines\<machineName>`. Call after loading the definition and **before** `Start`; restores a matching saved run. |
+| `Fire` | `bool Fire(string trigger, out bool fired, out string newState, out string rejectionReason, out string message)` | Fires a trigger. A declined trigger is `True` with `fired == False` and a `rejectionReason`. |
+| `GetAvailableTriggersDelimited` | `bool GetAvailableTriggersDelimited(out string triggers, out string message, string delimiter = ",")` | Triggers that would fire right now (guards evaluated), joined by a delimiter. Requires a started machine. |
+| `GetAvailableTriggersJson` | `bool GetAvailableTriggersJson(out string json, out string message)` | The same, as a JSON array. |
+| `GetContext` | `bool GetContext(string key, out bool exists, out string value, out string message)` | Reads a value; a missing key is `True` with `exists == False`. |
+| `GetContextJson` | `bool GetContextJson(out string json, out string message)` | The whole context as a JSON object, keys sorted. |
+| `GetCurrentState` | `bool GetCurrentState(out string currentState, out string message)` | The current state (empty before `Start`). |
+| `GetDefinitionJson` | `bool GetDefinitionJson(out string definitionJson, out string message)` | Returns the current definition as JSON. |
+| `GetHistoryJson` | `bool GetHistoryJson(out string json, out string message, int maxEntries = 100)` | The most recent history entries, oldest first: `{seq, utc, kind, trigger, from, to, reason, detail}`. |
+| `GetSecondsInState` | `bool GetSecondsInState(out double seconds, out string message)` | Seconds since the current state was entered - poll it to detect a stuck step. |
+| `IsInFinalState` | `bool IsInFinalState(out bool isFinal, out string message)` | Whether the machine has reached a final state. |
+| `IsStarted` | `bool IsStarted(out bool isStarted, out string message)` | Whether `Start`/`Reset` has been called. |
+| `LoadDefinitionJson` | `bool LoadDefinitionJson(string definitionJson, out string message)` | Validates and loads a JSON definition, replacing the current one and stopping the machine (context is kept). An invalid definition is rejected whole. |
+| `RemoveContext` | `bool RemoveContext(string key, out bool removed, out string message)` | Removes a key; a missing key is `True` with `removed == False`. |
+| `Reset` | `bool Reset(bool clearContext, out string currentState, out string message)` | Returns to the initial state (also starts an unstarted machine), clears history, raises `StateEntered`. |
+| `SetContext` | `bool SetContext(string key, string value, out string message)` | Sets a text value that guards can test. Keys are case-insensitive. |
+| `SetInitialState` | `bool SetInitialState(string name, out string message)` | Sets the state entered on `Start`. |
+| `SetMaximumHistoryEntries` | `bool SetMaximumHistoryEntries(int maximumEntries, out string message)` | Never-throws form of the `MaximumHistoryEntries` property. |
+| `Start` | `bool Start(out string currentState, out string message)` | Validates the definition and enters the initial state, raising `StateEntered`. Refused if already started. |
+| `ValidateDefinitionJson` | `bool ValidateDefinitionJson(string definitionJson, out string reportJson, out string message)` | Validates without loading. Returns `True` with `{valid, errors, warnings, stateCount, transitionCount}`; an invalid definition is reported inside the JSON. |
+
+### Events
+
+| Event | Type | Description |
+|---|---|---|
+| `StateExited` | `EventHandler<StateMachineTransitionEventArgs>` | Raised when the machine leaves a state, before `TransitionFired` and `StateEntered`. |
+| `TransitionFired` | `EventHandler<StateMachineTransitionEventArgs>` | Raised once per successful transition. |
+| `StateEntered` | `EventHandler<StateMachineTransitionEventArgs>` | Raised when the machine enters a state - including the initial state on `Start`/`Reset`. |
+| `MachineFinished` | `EventHandler<StateMachineTransitionEventArgs>` | Raised after `StateEntered` when the new state is final. |
+| `TransitionRejected` | `EventHandler<StateMachineRejectedEventArgs>` | Raised when a trigger is declined (`NoTransition`, `GuardFailed`, `Finished`, `NotStarted`). |
 
 ## TerminalUtils
 

@@ -1,0 +1,15 @@
+# StateMachineUtils worked examples
+
+Start with the queue-worker example if you want to see everything working
+together; the other pages explain one area each.
+
+- [Working a queue](WorkingAQueue.md) — a complete, crash-safe worker built from `StateMachineUtils` + `LocalQueueUtils`: circuit breaker, delayed retries, abort, resume
+- [Definition](Definition.md) — the JSON format, the method API, validation and warnings
+- [Running](Running.md) — `Start`, `Fire`, declined triggers, `CanFire`, history
+- [Context and guards](Context.md) — the key/value context and every guard operator
+- [Events](Events.md) — what fires when, on which thread, and what not to do in a handler
+- [Persistence](Persistence.md) — resuming a run after a crash, and what is refused
+
+All examples assume a `StateMachineUtils` instance named `machine`, as it would
+appear dropped onto a Pega Robot Studio automation's design surface (or
+instantiated directly: `var machine = new StateMachineUtils();`).
