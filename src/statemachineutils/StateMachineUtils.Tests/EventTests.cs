@@ -627,5 +627,27 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.Fire("post", out _, out _));       // leaves Validated after 10 s (handler) + 2 s
             Assert.Equal(new[] { 1000.0, 12000.0 }, exits);
         }
+
+        [Fact]
+        public void StateExited_ElapsedMs_AddsUpExactly_EvenWhenTheClockHasSubMillisecondTicks()
+        {
+            StateMachineUtils machine = Loaded();
+            DateTime baseTime = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            DateTime now = baseTime;
+            machine.Clock = () => now;
+            now = baseTime.AddTicks(1006000);                 // 100.6 ms: recorded as 100 ms
+            Assert.True(machine.Start(out _, out _));
+            var exits = new List<double>();
+            machine.StateExited += (_, e) => exits.Add(e.ElapsedMs);
+
+            now = baseTime.AddTicks(1012000);                 // 101.2 ms: recorded as 101 ms
+            Assert.True(machine.Fire("validate", out _, out _));
+            machine.SetContext("amount", "1", out _);
+            now = baseTime.AddTicks(1018000);                 // 101.8 ms: recorded as 101 ms
+            Assert.True(machine.Fire("post", out _, out _));
+
+            Assert.Equal(new[] { 1.0, 0.0 }, exits);          // whole numbers ...
+            Assert.Equal(1.0, exits[0] + exits[1]);           // ... that add up to the overall 100 -> 101 ms
+        }
     }
 }

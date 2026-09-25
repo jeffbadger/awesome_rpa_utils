@@ -62,6 +62,11 @@ namespace StateMachineAutomation
         /// <summary>Time source; tests substitute a controllable clock.</summary>
         internal Func<DateTime> Clock = () => DateTime.UtcNow;
 
+        /// <summary>The clock, cut to a whole millisecond: the resolution of a recorded state entry time, so the durations reported between entries add up exactly.</summary>
+        private DateTime ClockMs() => TruncateToMs(Clock());
+
+        private static DateTime TruncateToMs(DateTime value) => new DateTime(value.Ticks - value.Ticks % TimeSpan.TicksPerMillisecond, value.Kind);
+
         /// <summary>Empty constructor required so Pega Robot Studio can create the component.</summary>
         public StateMachineUtils() { }
 
@@ -413,7 +418,7 @@ namespace StateMachineAutomation
                         Snapshot next = state.Clone();
                         next.Started = true;
                         next.Current = initial;
-                        next.EnteredUtc = Clock();
+                        next.EnteredUtc = ClockMs();
                         next.History = new List<HistoryEntry>();
                         next.Sequence = 0; // the history it numbered is gone, so the numbering restarts (and an exhausted counter recovers)
                         if (clearContext) next.Context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -503,8 +508,8 @@ namespace StateMachineAutomation
 
                             Snapshot next = current.Clone();
                             next.Current = to;
-                            next.EnteredUtc = Clock();
-                            double elapsedMs = Math.Max(0, Math.Round((next.EnteredUtc - current.EnteredUtc).TotalMilliseconds));
+                            next.EnteredUtc = ClockMs();
+                            double elapsedMs = Math.Max(0, (next.EnteredUtc - current.EnteredUtc).TotalMilliseconds); // entry times are whole milliseconds, so this is a whole number and successive values add up exactly
                             AddHistory(next, "transition", firedTrigger, from, to, null, null);
                             if (!PersistLocked(next, out message)) return false;
 
@@ -1062,7 +1067,7 @@ namespace StateMachineAutomation
                 StateDef current = definition.FindState(saved.currentState);
                 if (current == null) { message = "The saved state names '" + saved.currentState + "', which is not a state of this definition" + discard; return false; }
                 snapshot.Current = current.Name;
-                snapshot.EnteredUtc = entered.ToUniversalTime();
+                snapshot.EnteredUtc = TruncateToMs(entered.ToUniversalTime()); // entry times are kept to the millisecond (older files may carry finer ticks)
             }
 
             foreach (KeyValuePair<string, string> entry in saved.context)
