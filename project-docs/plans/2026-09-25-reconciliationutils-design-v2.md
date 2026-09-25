@@ -25,7 +25,7 @@ scalar ports so an automation can route them to review or correction.
 | Getting data in was the biggest adoption risk (CSV/Excel/DataTable out of scope). | Release 2 begins with a `ReconcileDataTables` bridge, following the precedent of `DataContractUtils`' DataTable methods. Release 1 is built around a row-reader seam so the bridge adds no matching code. Section 2 states the data-in path per release. |
 | Nested index loop for differences (`GetDifferenceCount` + `GetDifferenceAt(i)`). | A second cursor, `TryReadNextDifference`, reads the differences of the exception just read, mirroring `TryReadNextException`. |
 | Result kind was an enum output (untested port shape in Robot Studio). | `kind` is a stable string code (`Matched`, `Different`, ...), like `Fire`'s message: one Switch on a string. The enum stays internal. |
-| Testing and CI text was out of date. | Aligned with `CONTRIBUTING.md` and the new CI test step (section 1, section 10). |
+| Testing and CI text was out of date. | Aligned with `CONTRIBUTING.md` and the CI test step (section 1, section 10). |
 | Packaging steps said "inspect" for a list that is known to be hardcoded. | The `$releaseAssemblies` list in `scripts/Package-Release.ps1` and the rest of the registration checklist are named work items (work package 6). |
 
 ## 1. Repository constraints
@@ -54,8 +54,10 @@ and the [Pega usability methodology](../pega-usability-reviews/README.md).
   `[Category]` and `[Description]`. Success is `true` with a `null` message.
 - **Tests are required** (see CONTRIBUTING): a `ReconciliationUtils.Tests` xunit
   project (`net10.0-windows`, like the other test projects) registered in
-  `src/AwesomeRpaUtils.sln` so the CI test step runs it (CI runs projects one at
-  a time on Windows). Keep the core platform-independent so the suite also runs
+  `src/AwesomeRpaUtils.sln`. CI runs the tests (one project at a time, on Windows)
+  once the CI test-step change (PR #138) is merged; until then the test result
+  pasted into each PR is the verification. Registering the project is what makes
+  that CI step pick it up. Keep the core platform-independent so the suite also runs
   on Linux/macOS. Every behavior rule gets a test that was seen to fail without
   the code (mutation check); a bug fix gets a regression test.
 - Tests are deterministic: no wall-clock assertions, no sleeps, no shared static
@@ -121,7 +123,7 @@ inputs and the exported report with `ArchiveUtils` when required.
 | Input | JSON arrays | + `ReconcileDataTables` |
 | Keys | composite string/integer keys, per-part trim/ignore-case | same |
 | Rules | none (presence-only), **Text**, **Decimal** | + **Boolean**, **Money**, **CalendarDate**, **Instant** |
-| Results | all eight kinds, summary, exception and difference cursors, `GetResultJson`, definition JSON | + `ExportResultsJson` (versioned envelope), output limit |
+| Results | all seven kinds, summary, exception and difference cursors, `GetResultJson`, definition JSON | + `ExportResultsJson` (versioned envelope), output limit |
 | Limits | rows, input characters, results, difference details | + output characters |
 
 Release 1 is useful on its own: an amount is a Decimal rule and a currency a Text
@@ -419,6 +421,7 @@ results. An incomplete definition with no keys is allowed while building it;
 | `AddCalendarDateComparison` | `string name, string leftPointer, string rightPointer, string leftFormat, string rightFormat, int toleranceDays, ComparisonNullPolicy nullPolicy` | none |
 | `AddInstantComparisonSimple` | `string name, string leftPointer, string rightPointer` | none |
 | `AddInstantComparison` | `string name, string leftPointer, string rightPointer, int toleranceSeconds, ComparisonNullPolicy nullPolicy` | none |
+| `ConfigureTableLimits` | `int maximumColumns, int maximumCells, int maximumValueCharacters` | none |
 | `ConfigureOutputLimit` | `int maximumOutputCharacters` | none |
 | `ExportResultsJson` | `string runLabel` | `string reportJson` |
 
@@ -510,12 +513,27 @@ Initial defaults are design starting points to be validated by measurement:
 | UTF-16 input characters per side (JSON input) | 8,000,000 | 32,000,000 | 1 |
 | Result records | 100,000 | 500,000 | 1 |
 | Difference details across the run | 100,000 | 500,000 | 1 |
+| DataTable columns (per table) | 100 | 1,000 | 2 |
+| DataTable cells (rows × columns, per table) | 2,000,000 | 10,000,000 | 2 |
+| DataTable characters in one string value | 4,096 | 1,000,000 | 2 |
 | UTF-16 output characters (export) | 16,000,000 | 64,000,000 | 2 |
 
 All configurable limits must be positive. Exceeding any one fails the run
 atomically. Never silently truncate, skip excess rows, or publish a
-partial-success report. (`ReconcileDataTables` applies the row limit and a
-cell-count limit derived from it; the input-character limit applies to JSON only.)
+partial-success report.
+
+`ReconcileDataTables` is bounded by concrete limits, checked in this order and
+before any value is interpreted: the **row** limit; the **column** limit
+(`maximumColumns`); the **cell** limit (`rows × columns` must not exceed
+`maximumCells`, computed without overflow); then, while reading, the length of
+each string value (`maximumValueCharacters`) and the running total of string
+characters read per table, which is held to the same
+`maximumInputCharactersPerSide` limit that bounds JSON input. A table with few
+rows but very many columns, or with huge strings, therefore fails before it can
+exhaust memory. Only the columns the definition actually references are read;
+the column and cell limits still apply to the table as supplied. The limits are
+set with `ConfigureTableLimits` (a separate method so no Release 1 signature
+changes), and each failure names the table side and the limit, never the data.
 
 Fixed bounds: 16 key mappings, 128 comparisons, JSON depth 64, pointer length
 1,024 characters, mapping name 128 characters, numeric token 256 characters,
@@ -650,8 +668,10 @@ and waits for review and approval. Stop and report after each PR.
 ### Release 2
 
 **WP8 — DataTable bridge:** `DataTableRowReader`, `ReconcileDataTables`, value
-mapping and limits, docs (Excel/CSV → DataTable → reconcile), tests including
-`DBNull`, numeric column types and unsupported types.
+mapping, `ConfigureTableLimits` and the limit checks above, docs
+(Excel/CSV → DataTable → reconcile), tests including `DBNull`, numeric column
+types, unsupported types, and each limit at and beyond its boundary (many columns
+few rows, few rows huge strings, cell-count overflow).
 
 **WP9 — Boolean and Money:** the two rule kinds, their builders/Simple forms and
 JSON kinds; currency gating tests.
@@ -679,7 +699,7 @@ serialization with a cached proven size, deterministic bytes.
 | Lifecycle | Atomic definition load, setup invalidation, failed setup preservation, failed-run stale-result removal, reset, clear, disposal. | 1 |
 | Results | Stable ordering/IDs, absent vs null values, both cursors incl. exhaustion and restart, invalid IDs, index -1 conventions. | 1 |
 | Limits/failures | Each cap at and beyond its boundary, recoverable injected failures, no partial publication. | 1 |
-| DataTable | `DBNull`, each numeric type, bool, unsupported types, column-name pointers, row limit, table unchanged. | 2 |
+| DataTable | `DBNull`, each numeric type, bool, unsupported types, column-name pointers, row/column/cell/value-size/total-character limits at and beyond the boundary, table unchanged. | 2 |
 | Boolean/null, Money | JSON Boolean only; both/one null; currency normalization and mismatch; no tolerance across currencies. | 2 |
 | Dates | Exact formats, leap days, invalid dates, different offsets for one instant, `Z`, missing offsets, day/second tolerance edges, no local-time dependence. | 2 |
 | Export | Deterministic bytes, absent vs null, bounded size, output-limit failure leaves no report. | 2 |
