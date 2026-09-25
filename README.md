@@ -379,6 +379,12 @@ guards, its actual screen-buffer/attach/write behavior needs a real Windows
 console and is covered only by the manual test plan in
 [TESTING.md](TESTING.md), not by this xunit project.
 
+## Contributing, conduct and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute, the [Code of Conduct](CODE_OF_CONDUCT.md)
+for how we work together, and the [Security Policy](SECURITY.md) for reporting a vulnerability
+privately.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
