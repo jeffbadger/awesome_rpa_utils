@@ -65,7 +65,7 @@ namespace FileWatchAutomation.Tests
         }
 
         [Fact]
-        public async Task WaitForFileStable_ActivelyBeingWritten_DoesNotReportStableUntilWritesStop()
+        public void WaitForFileStable_ActivelyBeingWritten_DoesNotReportStableUntilWritesStop()
         {
             string path = TempFilePath();
             File.WriteAllText(path, "start");
@@ -80,22 +80,24 @@ namespace FileWatchAutomation.Tests
             using var firstAppendDone = new ManualResetEventSlim(false);
             var clock = System.Diagnostics.Stopwatch.StartNew();
             long lastAppendMs = 0;
-            var writer = Task.Run(async () =>
+            // A dedicated thread, not the shared pool: a pool thread can be starved for hundreds of milliseconds.
+            var writerThread = new System.Threading.Thread(() =>
             {
                 for (int i = 0; i < 6; i++)
                 {
-                    await Task.Delay(50);
+                    System.Threading.Thread.Sleep(50);
                     File.AppendAllText(path, "x");
                     if (i == 0) firstAppendDone.Set();
                 }
                 lastAppendMs = clock.ElapsedMilliseconds;
-            });
+            }) { IsBackground = true };
+            writerThread.Start();
             Assert.True(firstAppendDone.Wait(System.TimeSpan.FromSeconds(10)), "the writer never started");
 
             bool result = Fw.WaitForFileStable(path, 200, 5000, 20, out bool timedOut, out string message);
             long reportedMs = clock.ElapsedMilliseconds;
 
-            await writer;
+            writerThread.Join();
             Assert.True(result);
             Assert.False(timedOut);
             Assert.Null(message);
