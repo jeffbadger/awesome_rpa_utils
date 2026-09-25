@@ -270,6 +270,39 @@ namespace FileWatchAutomation.Tests
         }
 
         [Fact]
+        public void ClaimFile_ACallerThatWinsTheLockAfterTheWinnerFinished_ReportsAlreadyClaimed_NotACopyFailure()
+        {
+            // Deterministic version of the race the concurrent tests only hit by luck: the late caller has passed its
+            // first existence check, and then the other caller completes its WHOLE claim (copy, delete the source,
+            // release the lock) before the late caller reaches the lock. The lock is free again, so the late caller
+            // acquires it - and must notice the source is gone instead of trying to copy a vanished file.
+            string source = TempFilePath("late-claim.txt");
+            File.WriteAllText(source, "contested work item");
+            string winnerDirectory = TempSubdirectory("winner");
+            string lateDirectory = TempSubdirectory("late");
+
+            string winnerClaimed = null;
+            bool winnerResult = false;
+            Fw.BeforeClaimLock = () =>
+            {
+                Fw.BeforeClaimLock = null;   // only the late caller's own call is interrupted
+                winnerResult = Fw.ClaimFile(source, winnerDirectory, out winnerClaimed, out _);
+            };
+
+            bool lateResult = Fw.ClaimFile(source, lateDirectory, out string lateClaimed, out string lateMessage);
+
+            Assert.True(winnerResult);
+            Assert.False(lateResult);
+            Assert.Null(lateClaimed);
+            Assert.Equal($"Source file '{source}' does not exist, or was already claimed by another instance.", lateMessage);
+            // Exactly one copy of the work item exists, in the winner's directory; nothing was left behind by the late caller.
+            Assert.True(File.Exists(winnerClaimed));
+            Assert.Empty(Directory.GetFiles(lateDirectory));
+            Assert.False(File.Exists(source));
+            Assert.False(File.Exists(source + ".claiming"));
+        }
+
+        [Fact]
         public async Task ClaimFile_ConcurrentClaimAttemptsToDifferentDirectories_ExactlyOneSucceeds()
         {
             // Regression test for a real gap in an earlier version of ClaimFile: exclusivity

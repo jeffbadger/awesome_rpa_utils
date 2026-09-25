@@ -13,7 +13,26 @@ namespace ComponentBrowser.Tests
         private static string EventLogUtilsReadme => RepoPaths.Combine("src", "eventlogutils", "README.md");
         private static string EventLogUtilsDir => RepoPaths.Combine("src", "eventlogutils");
         private static string ScreenCaptureUtilsReadme => RepoPaths.Combine("src", "screencaptureutils", "README.md");
-        private static string ScreenCaptureUtilsDir => RepoPaths.Combine("src", "screencaptureutils");
+        /// <summary>
+        /// A component folder that has a README but no Documentation/ folder, built in a temp directory. It used to be
+        /// the real ScreenCaptureUtils, which has since gained a Documentation/ folder, so the no-docs case is now
+        /// constructed instead of borrowed from the repository.
+        /// </summary>
+        private sealed class ComponentWithoutDocumentation : System.IDisposable
+        {
+            public string Directory { get; } = Path.Combine(Path.GetTempPath(), "cb-nodocs-" + System.Guid.NewGuid().ToString("N"));
+
+            public ComponentWithoutDocumentation()
+            {
+                System.IO.Directory.CreateDirectory(Directory);
+                File.WriteAllText(Path.Combine(Directory, "README.md"), "# NoDocsAutomation\n\n## Methods\n\n### Actions\n");
+            }
+
+            public void Dispose()
+            {
+                try { System.IO.Directory.Delete(Directory, recursive: true); } catch (IOException) { /* best effort */ }
+            }
+        }
         private static string SessionUtilsReadme => RepoPaths.Combine("src", "sessionutils", "README.md");
         private static string ArchiveUtilsReadme => RepoPaths.Combine("src", "archiveutils", "README.md");
 
@@ -91,18 +110,20 @@ namespace ComponentBrowser.Tests
         }
 
         [Fact]
-        public void ScreenCaptureUtils_HasNoDocumentationFolder_ConfirmingTheNoDocsCaseIsReal()
+        public void TheNoDocsFixture_ReallyHasNoDocumentationFolder()
         {
-            // Ground-truth check before relying on it below: confirms this suite really does
-            // have at least one component with no Documentation/ folder at all, so the
-            // "no worked example" path is exercised against a real case, not assumed.
-            Assert.False(Directory.Exists(Path.Combine(ScreenCaptureUtilsDir, "Documentation")));
+            // Ground-truth check before relying on the fixture below: the "no worked example" path must be
+            // exercised against a component that truly has no Documentation/ folder.
+            using var component = new ComponentWithoutDocumentation();
+            Assert.True(File.Exists(Path.Combine(component.Directory, "README.md")));
+            Assert.False(Directory.Exists(Path.Combine(component.Directory, "Documentation")));
         }
 
         [Fact]
-        public void FindWorkedExamplePath_ScreenCaptureUtilsHasNoDocumentationFolder_ReturnsNullNotError()
+        public void FindWorkedExamplePath_AComponentWithNoDocumentationFolder_ReturnsNullNotError()
         {
-            string path = ReadmeDocParser.FindWorkedExamplePath(ScreenCaptureUtilsDir, "AnyCategory");
+            using var component = new ComponentWithoutDocumentation();
+            string path = ReadmeDocParser.FindWorkedExamplePath(component.Directory, "AnyCategory");
             Assert.Null(path);
         }
 
