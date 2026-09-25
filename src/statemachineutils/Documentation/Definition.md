@@ -70,9 +70,12 @@ machine.AddTransition("Review", "approve", "Approved", out message,
                       guardKey: "reviewer", guardOp: GuardOperator.Exists);
 ```
 
-Add states before the transitions that use them. `AddTransitionSimple` adds an
-unconditional transition (from, trigger, to). `AddTransition` takes one
-optional guard; use JSON when a transition needs several. `guardOp` is a
+Add states before the transitions that use them, and call `SetInitialState` (the
+JSON's `"initial"`). Two methods add a transition: `AddTransitionSimple` takes just
+from, trigger and to and adds an **unconditional** transition; `AddTransition` does the
+same and can also take **one guard** (use it only when the transition needs one).
+Both are checked the same way and follow the same rules on when they may be called
+(see [Changing a definition](#changing-a-definition)). Use JSON when a transition needs several guards; use JSON when a transition needs several. `guardOp` is a
 `GuardOperator`, which Robot Studio shows as a drop-down: `Equal`, `NotEqual`,
 `In`, `NotIn`, `GreaterThan`, `LessThan`, `Exists`, `NotExists` (or `None`, the
 default, for no guard). They mean the same as the JSON operators in
@@ -82,5 +85,8 @@ fully validated at `Start`. `GetDefinitionJson` returns what you built.
 ## Changing a definition
 
 `LoadDefinitionJson` and `ClearDefinition` stop the machine (context is kept).
-`AddState` / `SetInitialState` / `AddTransition` are refused while it is running.
-While [persistence](Persistence.md) is enabled the definition is frozen.
+`AddState` / `SetInitialState` / `AddTransitionSimple` / `AddTransition` are refused
+while it is running (their `message` says so). While [persistence](Persistence.md) is
+enabled the definition is frozen, and the same four are refused. To change a running or
+persisted machine's definition, stop it first (`ClearDefinition` or `LoadDefinitionJson`)
+and, for persistence, call `DisablePersistence`.

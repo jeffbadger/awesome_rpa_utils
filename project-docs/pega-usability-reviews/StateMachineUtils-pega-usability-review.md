@@ -14,7 +14,7 @@ data the automation author supplies, not something the component can predefine.
 
 | Area | Rating | Notes |
 |---|---|---|
-| Definition | Direct | One `LoadDefinitionJson` call (from a Robot Studio asset or file text) or small `AddState`/`AddTransition` calls; whole-definition validation returns a JSON report. |
+| Definition | Direct | One `LoadDefinitionJson` call (from a Robot Studio asset or file text) or small `AddState`/`AddTransitionSimple`/`AddTransition` calls; whole-definition validation returns a JSON report. |
 | Running | Direct | `Fire` returns scalar `fired`/`newState`/`rejectionReason`; a declined trigger is a normal outcome, not a failure, so a step never depends on an exception or on parsing `message`. |
 | Query | Direct | `CanFire`, `GetCurrentState`, `GetAvailableTriggersDelimited`; read-only `CurrentState`/`IsFinished` properties bind to data ports. |
 | Context | Direct | Text key/value; guards are declarative, so no code has to be passed into the component. |

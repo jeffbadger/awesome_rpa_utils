@@ -213,6 +213,21 @@ namespace StateMachineAutomation.Tests
         }
 
         [Fact]
+        public void AddTransitionSimple_IsRefusedWhileRunning_AndWhilePersistenceIsEnabled_LikeAddTransition()
+        {
+            StateMachineUtils running = Started();
+            Assert.False(running.AddTransitionSimple("Received", "extra", "Validated", out string message));
+            Assert.Contains("running", message);
+            Assert.False(running.AddTransition("Received", "extra", "Validated", out string other));
+            Assert.Equal(other, message); // exactly the same refusal
+
+            StateMachineUtils persisted = Loaded();
+            Assert.True(persisted.EnablePersistence(NewMachineName(), out _, out _, out message), message);
+            Assert.False(persisted.AddTransitionSimple("Received", "extra", "Validated", out message));
+            Assert.Contains("Persistence is enabled", message);
+        }
+
+        [Fact]
         public void AddTransitionSimple_ValidatesExactlyLikeAddTransition()
         {
             StateMachineUtils machine = New();
