@@ -1,6 +1,8 @@
 # Contributing to Awesome RPA Utils
 
-Thanks for your interest in contributing!
+Thanks for your interest in contributing! Please read our
+[Code of Conduct](CODE_OF_CONDUCT.md). To report a security problem, follow the
+[Security Policy](SECURITY.md) rather than opening a public issue.
 
 ## Building
 
