@@ -61,7 +61,8 @@ too.
 machine.GetHistoryJson(out string history, out message, maxEntries: 20);
 ```
 
-Oldest first. Each entry: `seq`, `utc`, `kind` (`start`, `reset`, `transition`,
+Oldest first. Sequence numbers (`seq`) run consecutively and restart at 1 whenever the
+history is cleared (`Start`, `Reset`, or replacing the definition). Each entry: `seq`, `utc`, `kind` (`start`, `reset`, `transition`,
 `rejected`), `trigger`, `from`, `to`, `reason`, `detail` (fields that do not
 apply are omitted). Declined triggers are recorded, which makes "why did nothing
 happen?" answerable after the fact. History is bounded by

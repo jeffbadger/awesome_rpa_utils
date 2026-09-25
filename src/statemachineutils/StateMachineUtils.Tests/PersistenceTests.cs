@@ -1135,6 +1135,99 @@ namespace StateMachineAutomation.Tests
             Assert.Equal(new long[] { 4, 5 }, doc.RootElement.GetProperty("history").EnumerateArray().Select(e => e.GetProperty("seq").GetInt64()));
         }
 
+        // ---- the sequence counter has a ceiling that restore and the increment agree on
+
+        private string SavedRunWithSequence(long sequence)
+        {
+            string name = SavedRun(out _);
+            RewriteSaved(name, fields =>
+            {
+                fields["sequence"] = sequence;
+                fields["history"] = new[] { new { seq = sequence, utc = "2026-01-01T00:00:00.0000000Z", kind = "start", to = "Received" } };
+            });
+            return name;
+        }
+
+        [Theory]
+        [InlineData(long.MaxValue)]
+        public void ASavedSequenceAtLongMaxValue_IsRefused_BecauseTheNextIncrementWouldWrap(long sequence)
+        {
+            string name = SavedRunWithSequence(sequence);
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("invalid sequence number", message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void ASavedSequenceExactlyAtTheCeiling_Restores_ThenTheNextChangeIsRefusedNotWrapped_AndResetRecovers()
+        {
+            string name = SavedRunWithSequence(long.MaxValue - 1);
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+
+            Assert.False(machine.Fire("validate", out bool fired, out _, out _, out message)); // would need sequence long.MaxValue
+            Assert.False(fired);
+            Assert.Contains("sequence counter is exhausted", message);
+            Assert.Equal("Received", machine.CurrentState);
+            using (JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name))))
+                Assert.Equal(long.MaxValue - 1, doc.RootElement.GetProperty("sequence").GetInt64()); // never wrapped, never persisted negative
+
+            Assert.True(machine.Reset(false, out _, out message), message); // clears the history, so the numbering restarts
+            Assert.True(machine.Fire("validate", out fired, out _, out _, out message), message);
+            Assert.True(fired);
+            Assert.True(machine.GetHistoryJson(out string json, out _));
+            Assert.Equal(new long[] { 1, 2 }, JsonDocument.Parse(json).RootElement.EnumerateArray().Select(e => e.GetProperty("seq").GetInt64()));
+        }
+
+        [Fact]
+        public void EverythingTheComponentWrites_IsWithinTheCeilingItRestoresUpTo()
+        {
+            string name = NewMachineName();
+            StateMachineUtils machine = LoadedWithPersistence(name);
+            Assert.True(machine.Start(out _, out _));
+            Assert.True(machine.Fire("validate", out _, out _, out _, out _));
+            machine.Dispose();
+            StateMachineUtils again = Loaded();
+            Assert.True(again.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+        }
+
+        // ---- enteredUtc is required of every snapshot, running or not
+
+        [Theory]
+        [InlineData("garbage")]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void AnUnstartedSnapshotWithAMalformedTimestamp_IsRefused_NotRewrittenOverTheDamage(string timestamp)
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose(); // saved, never started
+            RewriteSaved(name, fields => fields["enteredUtc"] = timestamp);
+            string damaged = File.ReadAllText(StatePath(name));
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains("invalid 'enteredUtc'", message);
+            Assert.Contains("DiscardPersistedState", message);
+            Assert.Equal(damaged, File.ReadAllText(StatePath(name)));
+        }
+
+        [Fact]
+        public void AnUnstartedSnapshot_IsWrittenWithAFixedParseableTimestamp_NotATimeZoneDependentOne()
+        {
+            string name = NewMachineName();
+            LoadedWithPersistence(name).Dispose();
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(StatePath(name)));
+            Assert.Equal("0001-01-01T00:00:00.0000000Z", doc.RootElement.GetProperty("enteredUtc").GetString());
+
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+        }
+
         [Fact]
         public void Persistence_NeverRecordsContextValuesInHistory()
         {

@@ -342,6 +342,87 @@ namespace StateMachineAutomation.Tests
             Assert.True(machine.ClearDefinition(out message), message);
         }
 
+        /// <summary>Runs <paramref name="wait"/> on a thread and returns once that thread is provably blocked waiting for a lock.</summary>
+        private static Thread StartBlocked(Action wait)
+        {
+            var thread = new Thread(() => wait());
+            thread.Start();
+            Assert.True(SpinWait.SpinUntil(() => (thread.ThreadState & ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(5)), "the thread never blocked");
+            return thread;
+        }
+
+        [Fact]
+        public void AFireWaitingForTheDispatchLock_WhenTheComponentIsDisposed_RefusesInsteadOfMutatingIt()
+        {
+            StateMachineUtils machine = Started();
+            var log = new List<string>();
+            var handlerRunning = new ManualResetEventSlim(false);
+            var release = new ManualResetEventSlim(false);
+            machine.StateEntered += (_, e) =>
+            {
+                lock (log) log.Add("entered:" + e.NewState);
+                if (e.NewState == "Validated") { handlerRunning.Set(); release.Wait(TimeSpan.FromSeconds(10)); }
+            };
+
+            var first = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            first.Start();
+            Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)));
+
+            bool returned = true, fired = true;
+            string message = null;
+            Thread second = StartBlocked(() => returned = machine.Fire("abort", out fired, out _, out _, out message)); // passed RequireLive, now queued behind the handler
+
+            // Disposal must not wait for handlers (a handler may be marshalling to the very thread disposing us) ...
+            var disposer = new Thread(() => machine.Dispose());
+            disposer.Start();
+            Assert.True(disposer.Join(TimeSpan.FromSeconds(5)), "Dispose blocked behind a running handler");
+
+            release.Set();
+            Assert.True(first.Join(TimeSpan.FromSeconds(5)));
+            Assert.True(second.Join(TimeSpan.FromSeconds(5)));
+
+            // ... and the queued Fire, finally getting its turn, must observe the disposal rather than commit.
+            Assert.False(returned);
+            Assert.False(fired);
+            Assert.Contains("disposed", message);
+            lock (log) Assert.Equal(new[] { "entered:Validated" }, log); // no transition, no events, for the refused call
+        }
+
+        [Fact]
+        public void ALoadWaitingForTheDispatchLock_WhenTheComponentIsDisposed_RefusesToo()
+        {
+            StateMachineUtils machine = Started();
+            var handlerRunning = new ManualResetEventSlim(false);
+            var release = new ManualResetEventSlim(false);
+            machine.StateEntered += (_, e) => { if (e.NewState == "Validated") { handlerRunning.Set(); release.Wait(TimeSpan.FromSeconds(10)); } };
+            var first = new Thread(() => machine.Fire("validate", out _, out _, out _, out _));
+            first.Start();
+            Assert.True(handlerRunning.Wait(TimeSpan.FromSeconds(5)));
+
+            bool loaded = true;
+            string message = null;
+            Thread loading = StartBlocked(() => loaded = machine.LoadDefinitionJson(Defs.Minimal, out message));
+            machine.Dispose();
+            release.Set();
+            Assert.True(first.Join(TimeSpan.FromSeconds(5)));
+            Assert.True(loading.Join(TimeSpan.FromSeconds(5)));
+
+            Assert.False(loaded);
+            Assert.Contains("disposed", message);
+        }
+
+        [Fact]
+        public void ADisposedComponent_NeverThrows_EvenWhenAHandlerDisposesItMidCall()
+        {
+            StateMachineUtils machine = Started();
+            machine.StateEntered += (_, _) => machine.Dispose(); // the handler tears the component down while Fire is still delivering
+            Assert.True(machine.Fire("validate", out bool fired, out string newState, out _, out string message), message);
+            Assert.True(fired); // the transition committed before disposal
+            Assert.Equal("Validated", newState);
+            Assert.False(machine.Fire("abort", out _, out _, out _, out message));
+            Assert.Contains("disposed", message);
+        }
+
         [Fact]
         public void WhileHandlersRun_OtherThreadsCanStillReadTheMachine()
         {

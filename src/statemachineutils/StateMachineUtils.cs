@@ -22,6 +22,8 @@ namespace StateMachineAutomation
         private const int AbsoluteMaximumHistoryEntries = 10000;
         private const int MaxReentrancyDepth = 16;
         private const int PersistedSchemaVersion = 1;
+        // Restore and the increment share this ceiling so the component can never write a counter it would then refuse to read.
+        private const long MaxSequence = long.MaxValue - 1;
 
         /// <summary>The run state of the machine. Treated as immutable: every change builds a new instance and swaps it in only after any persistence write succeeded.</summary>
         private sealed class Snapshot
@@ -213,6 +215,7 @@ namespace StateMachineAutomation
                 lock (dispatchLock)
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (!RequireDefinitionEditable(true, out message)) return false;
                     DefinitionReport report = StateMachineCore.ParseDefinition(definitionJson);
                     if (!report.Valid) { message = "The definition is not valid: " + JoinProblems(report.Errors); return false; }
@@ -234,7 +237,11 @@ namespace StateMachineAutomation
             try
             {
                 if (!RequireLive(out message)) return false;
-                lock (syncRoot) definitionJson = definition.ToJson(true);
+                lock (syncRoot)
+                {
+                    if (!RequireLiveLocked(out message)) return false;
+                    definitionJson = definition.ToJson(true);
+                }
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetDefinitionJson), ex); return false; }
@@ -251,6 +258,7 @@ namespace StateMachineAutomation
                 if (!RequireLive(out message)) return false;
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (!RequireDefinitionEditable(false, out message)) return false;
                     if (!MachineDefinition.IsValidName(name, out string problem)) { message = "name " + problem + "."; return false; }
                     string trimmed = name.Trim();
@@ -275,6 +283,7 @@ namespace StateMachineAutomation
                 if (!RequireLive(out message)) return false;
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (!RequireDefinitionEditable(false, out message)) return false;
                     StateDef found = definition.FindState(name?.Trim());
                     if (found == null) { message = "'" + name + "' is not a declared state; call AddState first."; return false; }
@@ -297,6 +306,7 @@ namespace StateMachineAutomation
                 if (!RequireLive(out message)) return false;
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (!RequireDefinitionEditable(false, out message)) return false;
                     if (definition.Transitions.Count >= MachineDefinition.MaxTransitions) { message = "A machine may have at most " + MachineDefinition.MaxTransitions + " transitions."; return false; }
 
@@ -336,6 +346,7 @@ namespace StateMachineAutomation
                 lock (dispatchLock)
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (!RequireDefinitionEditable(true, out message)) return false;
                     definition = new MachineDefinition();
                     StopMachineLocked();
@@ -374,6 +385,7 @@ namespace StateMachineAutomation
                 {
                     lock (syncRoot)
                     {
+                        if (!RequireLiveLocked(out message)) return false;
                         if (!isReset && state.Started) { message = "The machine is already started; call Reset to restart it."; return false; }
                         var report = new DefinitionReport();
                         definition.Validate(report);
@@ -385,6 +397,7 @@ namespace StateMachineAutomation
                         next.Current = initial;
                         next.EnteredUtc = Clock();
                         next.History = new List<HistoryEntry>();
+                        next.Sequence = 0; // the history it numbered is gone, so the numbering restarts (and an exhausted counter recovers)
                         if (clearContext) next.Context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                         AddHistory(next, isReset ? "reset" : "start", null, null, initial, null, null);
                         if (!PersistLocked(next, out message)) return false;
@@ -423,6 +436,7 @@ namespace StateMachineAutomation
                     // fires again would otherwise recurse without bound.
                     lock (syncRoot)
                     {
+                        if (!RequireLiveLocked(out message)) return false;
                         newState = state.Current;
                         Snapshot next = state.Clone();
                         AddHistory(next, "rejected", trimmedTrigger, state.Current, null, "ReentrancyLimit", "Trigger '" + trimmedTrigger + "' was declined: the re-entrancy limit (" + MaxReentrancyDepth + ") was reached.");
@@ -439,6 +453,7 @@ namespace StateMachineAutomation
                 {
                     lock (syncRoot)
                     {
+                        if (!RequireLiveLocked(out message)) return false;
                         if (definition.States.Count == 0) { message = "No definition has been loaded; call LoadDefinitionJson or AddState first."; return false; }
 
                         Snapshot current = state;
@@ -512,6 +527,7 @@ namespace StateMachineAutomation
                 if (!MachineDefinition.IsValidName(trigger, out string problem)) { message = "trigger " + problem + "."; return false; }
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (definition.States.Count == 0) { message = "No definition has been loaded; call LoadDefinitionJson or AddState first."; return false; }
                     if (!state.Started) { rejectionReason = "NotStarted"; return true; }
                     if (IsFinalLocked(state)) { rejectionReason = "Finished"; return true; }
@@ -536,7 +552,11 @@ namespace StateMachineAutomation
             try
             {
                 if (!RequireLive(out message)) return false;
-                lock (syncRoot) currentState = state.Current;
+                lock (syncRoot)
+                {
+                    if (!RequireLiveLocked(out message)) return false;
+                    currentState = state.Current;
+                }
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { currentState = null; message = NeverThrowsGuard.Failure(nameof(GetCurrentState), ex); return false; }
@@ -552,7 +572,11 @@ namespace StateMachineAutomation
             try
             {
                 if (!RequireLive(out message)) return false;
-                lock (syncRoot) isStarted = state.Started;
+                lock (syncRoot)
+                {
+                    if (!RequireLiveLocked(out message)) return false;
+                    isStarted = state.Started;
+                }
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { isStarted = false; message = NeverThrowsGuard.Failure(nameof(IsStarted), ex); return false; }
@@ -568,7 +592,11 @@ namespace StateMachineAutomation
             try
             {
                 if (!RequireLive(out message)) return false;
-                lock (syncRoot) isFinal = IsFinalLocked(state);
+                lock (syncRoot)
+                {
+                    if (!RequireLiveLocked(out message)) return false;
+                    isFinal = IsFinalLocked(state);
+                }
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { isFinal = false; message = NeverThrowsGuard.Failure(nameof(IsInFinalState), ex); return false; }
@@ -613,6 +641,7 @@ namespace StateMachineAutomation
             if (!RequireLive(out message)) return false;
             lock (syncRoot)
             {
+                if (!RequireLiveLocked(out message)) return false;
                 if (!state.Started) { message = "The machine has not been started; call Start."; return false; }
                 available = IsFinalLocked(state) ? new List<string>() : StateMachineCore.AvailableTriggers(definition, state.Current, state.Context);
                 return true;
@@ -631,6 +660,7 @@ namespace StateMachineAutomation
                 if (!RequireLive(out message)) return false;
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (!state.Started) { message = "The machine has not been started; call Start."; return false; }
                     seconds = Math.Max(0, (Clock() - state.EnteredUtc).TotalSeconds);
                     return true;
@@ -652,6 +682,7 @@ namespace StateMachineAutomation
                 if (maxEntries < 1 || maxEntries > AbsoluteMaximumHistoryEntries) { message = "maxEntries must be between 1 and 10,000."; return false; }
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     int take = Math.Min(maxEntries, maximumHistoryEntries);
                     IEnumerable<HistoryEntry> slice = state.History.Skip(Math.Max(0, state.History.Count - take));
                     json = JsonSerializer.Serialize(slice.ToList(), StateMachineCore.CompactOptions);
@@ -677,6 +708,7 @@ namespace StateMachineAutomation
                 if (value.Length > StateMachineCore.MaxContextValueLength) { message = "value is longer than " + StateMachineCore.MaxContextValueLength + " characters."; return false; }
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     string trimmedKey = key.Trim();
                     if (!state.Context.ContainsKey(trimmedKey) && state.Context.Count >= StateMachineCore.MaxContextEntries) { message = "The context is full (" + StateMachineCore.MaxContextEntries + " keys)."; return false; }
                     Snapshot next = state.Clone();
@@ -702,7 +734,11 @@ namespace StateMachineAutomation
             {
                 if (!RequireLive(out message)) return false;
                 if (!MachineDefinition.IsValidName(key, out string problem)) { message = "key " + problem + "."; return false; }
-                lock (syncRoot) exists = state.Context.TryGetValue(key.Trim(), out value);
+                lock (syncRoot)
+                {
+                    if (!RequireLiveLocked(out message)) return false;
+                    exists = state.Context.TryGetValue(key.Trim(), out value);
+                }
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { exists = false; value = null; message = NeverThrowsGuard.Failure(nameof(GetContext), ex); return false; }
@@ -721,6 +757,7 @@ namespace StateMachineAutomation
                 if (!MachineDefinition.IsValidName(key, out string problem)) { message = "key " + problem + "."; return false; }
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     string trimmedKey = key.Trim();
                     if (!state.Context.ContainsKey(trimmedKey)) return true;
                     Snapshot next = state.Clone();
@@ -748,6 +785,7 @@ namespace StateMachineAutomation
                 if (!RequireLive(out message)) return false;
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (state.Context.Count == 0) return true;
                     Snapshot next = state.Clone();
                     next.Context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -772,6 +810,7 @@ namespace StateMachineAutomation
                 if (!RequireLive(out message)) return false;
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     var sorted = new SortedDictionary<string, string>(state.Context, StringComparer.OrdinalIgnoreCase);
                     json = JsonSerializer.Serialize(sorted, StateMachineCore.CompactOptions);
                     return true;
@@ -797,6 +836,7 @@ namespace StateMachineAutomation
 
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (persistStatePath != null) { message = "Persistence is already enabled for this component; call DisablePersistence first."; return false; }
                     if (state.Started) { message = "Enable persistence before Start, so a saved state can be restored instead of overwritten."; return false; }
                     var report = new DefinitionReport();
@@ -877,7 +917,11 @@ namespace StateMachineAutomation
             try
             {
                 if (!RequireLive(out message)) return false;
-                lock (syncRoot) ClearPersistenceFields(true);
+                lock (syncRoot)
+                {
+                    if (!RequireLiveLocked(out message)) return false;
+                    ClearPersistenceFields(true);
+                }
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(DisablePersistence), ex); return false; }
@@ -896,6 +940,7 @@ namespace StateMachineAutomation
                 if (!StateMachineCore.TryResolveMachineFolder(machineName, out string folder, out message)) return false;
                 lock (syncRoot)
                 {
+                    if (!RequireLiveLocked(out message)) return false;
                     if (persistFolder != null && string.Equals(persistFolder, folder, StringComparison.OrdinalIgnoreCase)) { message = "Persistence is enabled for '" + machineName.Trim() + "' on this component; call DisablePersistence first."; return false; }
                     if (!Directory.Exists(folder)) return true;
 
@@ -955,13 +1000,24 @@ namespace StateMachineAutomation
 
             bool savedStarted = saved.started.Value;
             long savedSequence = saved.sequence.Value;
-            if (savedSequence < 0) { message = "The saved state has an invalid sequence number" + discard; return false; }
+            // The counter's ceiling is refused, not just negatives: the next history entry increments it, and a value
+            // at long.MaxValue would wrap to a negative number that a later restore refuses.
+            if (savedSequence < 0 || savedSequence > MaxSequence) { message = "The saved state has an invalid sequence number (" + savedSequence + ")" + discard; return false; }
             if (!savedStarted && saved.currentState.Length != 0) { message = "The saved state is inconsistent: it is not started but names a current state ('" + saved.currentState + "')" + discard; return false; }
             if (saved.history.Any(h => h == null)) { message = "The saved state has an empty history entry" + discard; return false; }
             if (saved.history.Count > AbsoluteMaximumHistoryEntries) { message = "The saved state has " + saved.history.Count + " history entries, more than the " + AbsoluteMaximumHistoryEntries + " this component ever writes" + discard; return false; }
             if (saved.context.Count > StateMachineCore.MaxContextEntries) { message = "The saved state has " + saved.context.Count + " context keys, more than the " + StateMachineCore.MaxContextEntries + " allowed" + discard; return false; }
             string historyProblem = ValidateSavedHistory(saved.history, savedSequence, savedStarted);
             if (historyProblem != null) { message = "The saved state has an invalid history (" + historyProblem + ")" + discard; return false; }
+
+            // The timestamp is a required field of every snapshot, so it must parse whether or not the machine is
+            // running; it only means something (time in the current state) for a run that has started.
+            if (string.IsNullOrWhiteSpace(saved.enteredUtc)
+                || !DateTime.TryParse(saved.enteredUtc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime entered))
+            {
+                message = "The saved state has a missing or invalid 'enteredUtc' timestamp ('" + saved.enteredUtc + "')" + discard;
+                return false;
+            }
 
             var snapshot = new Snapshot { Started = savedStarted, Sequence = savedSequence };
             if (savedStarted)
@@ -970,12 +1026,6 @@ namespace StateMachineAutomation
                 StateDef current = definition.FindState(saved.currentState);
                 if (current == null) { message = "The saved state names '" + saved.currentState + "', which is not a state of this definition" + discard; return false; }
                 snapshot.Current = current.Name;
-                if (string.IsNullOrWhiteSpace(saved.enteredUtc)
-                    || !DateTime.TryParse(saved.enteredUtc, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime entered))
-                {
-                    message = "The saved state has a missing or invalid 'enteredUtc' timestamp ('" + saved.enteredUtc + "')" + discard;
-                    return false;
-                }
                 snapshot.EnteredUtc = entered.ToUniversalTime();
             }
 
@@ -1067,7 +1117,11 @@ namespace StateMachineAutomation
                     definitionHash = persistDefinitionHash,
                     started = snapshot.Started,
                     currentState = snapshot.Current,
-                    enteredUtc = snapshot.EnteredUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                    // A snapshot that was never started has no entry time; write a fixed value rather than converting
+                    // DateTime.MinValue, whose UTC form depends on the machine's time zone.
+                    enteredUtc = snapshot.Started
+                        ? snapshot.EnteredUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)
+                        : new DateTime(0, DateTimeKind.Utc).ToString("O", CultureInfo.InvariantCulture),
                     sequence = snapshot.Sequence,
                     context = new Dictionary<string, string>(snapshot.Context),
                     history = snapshot.History
@@ -1097,11 +1151,19 @@ namespace StateMachineAutomation
 
         private bool RequireLive(out string message)
         {
+            lock (syncRoot) return RequireLiveLocked(out message);
+        }
+
+        /// <summary>
+        /// The liveness check for use INSIDE a critical section. A check made before taking the locks is only a fast
+        /// path: a caller can pass it, wait for the dispatch lock while another thread disposes the component, and then
+        /// mutate a disposed component and report success. Every critical section therefore re-checks under syncRoot,
+        /// which Dispose also takes, so a call either finishes before disposal or observes it.
+        /// </summary>
+        private bool RequireLiveLocked(out string message)
+        {
             message = null;
-            lock (syncRoot)
-            {
-                if (!disposed) return true;
-            }
+            if (!disposed) return true;
             message = "This StateMachineUtils component has been disposed.";
             return false;
         }
@@ -1152,6 +1214,8 @@ namespace StateMachineAutomation
         /// <summary>Appends a history entry to <paramref name="snapshot"/> (a fresh clone the caller owns), dropping the oldest beyond the cap.</summary>
         private void AddHistory(Snapshot snapshot, string kind, string trigger, string from, string to, string reason, string detail)
         {
+            if (snapshot.Sequence >= MaxSequence)
+                throw new InvalidOperationException("The history sequence counter is exhausted; call Reset, which clears the history and restarts the numbering.");
             snapshot.Sequence++;
             var list = new List<HistoryEntry>(snapshot.History.Count + 1);
             int keep = Math.Max(0, maximumHistoryEntries - 1);
@@ -1170,12 +1234,8 @@ namespace StateMachineAutomation
             snapshot.History = list;
         }
 
-        /// <summary>Undoes one re-entrancy increment. A handler may dispose the component mid-call, which disposes the counter, so this must not throw.</summary>
-        private void ReleaseDepth()
-        {
-            try { fireDepth.Value--; }
-            catch (ObjectDisposedException) { /* the component was disposed by a handler; nothing left to count */ }
-        }
+        /// <summary>Undoes one re-entrancy increment.</summary>
+        private void ReleaseDepth() => fireDepth.Value--;
 
         /// <summary>
         /// Drops history beyond the current limit from a snapshot that is about to be committed, so nothing this
@@ -1197,12 +1257,18 @@ namespace StateMachineAutomation
         {
             if (disposing)
             {
+                // Deliberately NOT under dispatchLock. Waiting there would make Dispose block for as long as any handler
+                // runs, and a handler that marshals to the thread calling Dispose (Robot Studio tearing down on its UI
+                // thread) would then deadlock. syncRoot is enough: it is held by every mutation and every critical
+                // section re-checks `disposed` under it (RequireLiveLocked), so an operation that already committed
+                // finishes first and one still waiting for its turn observes disposal and refuses.
                 lock (syncRoot)
                 {
                     disposed = true;
                     ClearPersistenceFields(true);
                 }
-                fireDepth.Dispose();
+                // fireDepth is intentionally not disposed: it holds no unmanaged resources (it does not track its
+                // values), and disposing it would make a concurrent Fire's counter access throw mid-call.
             }
             base.Dispose(disposing);
         }

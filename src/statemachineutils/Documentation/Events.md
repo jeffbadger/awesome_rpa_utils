@@ -55,6 +55,9 @@ That means:
   machine.** That thread is queued behind the handler, so the two would wait on
   each other. Have the handler start work and return, and let the other thread
   fire on its own.
+- **Disposing from a handler is safe.** The transition that raised the event has already
+  committed and its remaining handlers still run; every later call reports the component
+  as disposed. `Dispose` itself never waits for handlers to finish.
 - **Do not rely on a handler's exception being seen.** A handler that throws is
   caught and logged (`Debug.WriteLine`); the other handlers still run and the
   change stands, because it was committed before any event fired.

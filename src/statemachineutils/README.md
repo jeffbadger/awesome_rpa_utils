@@ -214,6 +214,11 @@ operator and expected value - but **never** the context's actual value).
   in plain text when persistence is enabled. History and event details name a
   failing guard as declared in the definition (key, operator, expected value)
   but never include the context's actual values.
+- **Disposing never waits for handlers.** `Dispose` does not block behind a running event
+  handler (a handler may be marshalling to the very thread that is disposing the
+  component). A call that was already queued behind that handler when disposal
+  happened is refused with a "disposed" message instead of running against a disposed
+  component; one that had already committed finishes normally.
 - **One owner per saved machine.** A second component or process enabling the
   same `machineName` gets `False` ("already open"). Disposal releases it.
 - **No timers, by design.** The component starts no threads. To detect a stuck
