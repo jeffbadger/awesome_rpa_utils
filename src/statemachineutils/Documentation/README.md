@@ -5,6 +5,7 @@ queue-worker example if you want to see everything working together; the other
 pages explain one area each.
 
 - [Tutorial](Tutorial.md) — build and run an expense-claim machine in twelve steps: definition, guards, events, persistence, Robot Studio wiring
+- [Reproducing the UiPath REFramework](UiPathReFramework.md) — Init / Get Transaction Data / Process Transaction / End Process with business and system exceptions, retries and a consecutive-failure limit, plus crash-safe resume
 - [Working a queue](WorkingAQueue.md) — a complete, crash-safe worker built from `StateMachineUtils` + `LocalQueueUtils`: circuit breaker, delayed retries, abort, resume
 - [Definition](Definition.md) — the JSON format, the method API, validation and warnings
 - [Running](Running.md) — `Start`, `Fire`, declined triggers, `CanFire`, history
