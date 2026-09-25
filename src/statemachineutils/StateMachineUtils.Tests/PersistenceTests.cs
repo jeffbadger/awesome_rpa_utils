@@ -199,6 +199,20 @@ namespace StateMachineAutomation.Tests
         }
 
         [Fact]
+        public void WithPersistenceEnabled_LoadAndClearAreRefused_SoDisablePersistenceComesFirst()
+        {
+            string name = NewMachineName();
+            StateMachineUtils machine = LoadedWithPersistence(name);
+            Assert.False(machine.LoadDefinitionJson(Defs.Minimal, out string message));
+            Assert.Contains("DisablePersistence", message);
+            Assert.False(machine.ClearDefinition(out message));
+            Assert.Contains("DisablePersistence", message);
+
+            Assert.True(machine.DisablePersistence(out message), message);
+            Assert.True(machine.LoadDefinitionJson(Defs.Minimal, out message), message); // now the definition can be replaced
+        }
+
+        [Fact]
         public void DisablePersistence_ReleasesOwnershipButKeepsTheSavedFile()
         {
             string name = NewMachineName();
