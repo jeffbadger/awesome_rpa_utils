@@ -22,7 +22,7 @@ jobs:
         run: dotnet build src/AwesomeRpaUtils.sln --configuration Release --no-restore
       - name: Test
         # Runs every test project in the solution against the Release build above. A failing test fails the build.
-        run: dotnet test src/AwesomeRpaUtils.sln --configuration Release --no-build --logger "trx;LogFileNamePrefix=ci" --results-directory test-results
+        run: dotnet test src/AwesomeRpaUtils.sln --configuration Release --no-build --maxcpucount:1 --logger "trx;LogFileNamePrefix=ci" --results-directory test-results
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

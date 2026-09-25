@@ -239,10 +239,23 @@ namespace CommandLineAutomation.Tests
         {
             // Matches RunShellCommand's own "null allowedPrograms = no guardrail" behavior,
             // not "nothing is allowed" — verified indirectly: a program that would be
-            // rejected by ANY non-empty allowlist is not rejected here.
-            Assert.False(_cli.RunShellCommandFlat("this-is-not-a-real-command-xyz", out _, out _, out _, out _, out _, out string message,
-                allowedProgramsCsv: ""));
-            Assert.DoesNotContain("not in allowedPrograms", message ?? string.Empty);
+            // rejected by ANY non-empty allowlist is not rejected here. The shell does run
+            // it (so the call itself succeeds, message is empty) and reports the unknown
+            // command through a nonzero exit code, exactly like any other command that fails.
+            bool ok = _cli.RunShellCommandFlat("this-is-not-a-real-command-xyz", out int exitCode, out _, out _, out bool timedOut, out _, out string message,
+                allowedProgramsCsv: "");
+            if (IsWindows)
+            {
+                Assert.True(ok);
+                Assert.Null(message);
+                Assert.False(timedOut);
+                Assert.NotEqual(0, exitCode);
+            }
+            else
+            {
+                Assert.False(ok);                       // there is no cmd.exe to run it with
+                Assert.DoesNotContain("not in allowedPrograms", message ?? string.Empty);
+            }
         }
 
         // --- Non-Windows live test: RunFlat works cross-platform against a real child process ---
