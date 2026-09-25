@@ -649,5 +649,24 @@ namespace StateMachineAutomation.Tests
             Assert.Equal(new[] { 1.0, 0.0 }, exits);          // whole numbers ...
             Assert.Equal(1.0, exits[0] + exits[1]);           // ... that add up to the overall 100 -> 101 ms
         }
+
+        [Fact]
+        public void StateExited_AfterABackwardsClockAdjustment_OnlyTheSpanningDurationIsZero_LaterOnesAreNotInflated()
+        {
+            StateMachineUtils machine = Loaded();
+            DateTime now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            machine.Clock = () => now;
+            Assert.True(machine.Start(out _, out _));
+            var exits = new List<double>();
+            machine.StateExited += (_, e) => exits.Add(e.ElapsedMs);
+
+            now = now.AddMinutes(-5);                              // clock set back to 11:55
+            Assert.True(machine.Fire("validate", out _, out _));   // spans the adjustment: 0, never negative
+            machine.SetContext("amount", "1", out _);
+            now = now.AddMinutes(1);                               // 11:56, one real minute after Validated was entered
+            Assert.True(machine.Fire("post", out _, out _));
+
+            Assert.Equal(new[] { 0.0, 60000.0 }, exits);
+        }
     }
 }

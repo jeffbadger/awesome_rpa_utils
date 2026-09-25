@@ -46,7 +46,7 @@ namespace StateMachineAutomation
         /// Whole milliseconds the machine spent in <see cref="PreviousState"/>: from that state's recorded entry time to
         /// the entry time recorded for <see cref="NewState"/> (the very timestamp that is saved with the run when
         /// persistence is on). Entry times are recorded to the millisecond, so the durations of successive states add up
-        /// exactly. It does not include the time a
+        /// exactly (a system clock set backwards makes the one spanning duration 0, never negative). It does not include the time a
         /// persistence write or an event handler takes. For a run restored from persistence it counts from the original
         /// entry time, so it includes the time the robot was down.
         /// </summary>

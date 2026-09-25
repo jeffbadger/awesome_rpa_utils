@@ -27,7 +27,10 @@ the new state - the same timestamp that is saved with the run when persistence i
 so the durations of successive states add up exactly. It does not count the time a
 persistence write or your handlers take (that time falls in the *new* state). It is
 never negative, and for a run restored from persistence it includes the time the robot
-was down. It is only reported on a transition that fired: a declined trigger raises no
+was down. If the system clock is set backwards, the one duration that spans the
+adjustment is reported as 0 (never negative); later durations are measured against the
+adjusted clock, so they are not inflated, and only that one spanning interval breaks the
+"adds up" property. It is only reported on a transition that fired: a declined trigger raises no
 `StateExited`.
 
 ## Threading
