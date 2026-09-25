@@ -37,6 +37,8 @@ they are tried in order and the first that passes wins.
 | `exists` | the key is present (even with an empty value) | none |
 | `notExists` | the key is absent | none |
 
+A value on `exists` / `notExists`, or an empty item in an `in` / `notIn` list (`"EU,,UK"`, a trailing comma), is rejected when the definition is loaded rather than silently ignored.
+
 Numbers are parsed with the invariant culture (`10.5`, `1e3`); a value that
 is not a number fails a numeric guard rather than throwing. A guard `value`
 written as a JSON number or boolean is accepted and treated as its text.

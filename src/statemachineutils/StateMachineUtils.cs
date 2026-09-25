@@ -125,7 +125,13 @@ namespace StateMachineAutomation
             {
                 if (!RequireLive(out message)) return false;
                 if (maximumEntries < 1 || maximumEntries > AbsoluteMaximumHistoryEntries) { message = "maximumEntries must be between 1 and 10,000."; return false; }
-                MaximumHistoryEntries = maximumEntries;
+                lock (syncRoot)
+                {
+                    // Same guarantee as every other public method: re-check under the lock Dispose takes, rather than
+                    // trusting the fast-path check above, so a disposed component is never changed and reported as success.
+                    if (!RequireLiveLocked(out message)) return false;
+                    maximumHistoryEntries = maximumEntries;
+                }
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(SetMaximumHistoryEntries), ex); return false; }
@@ -1007,7 +1013,7 @@ namespace StateMachineAutomation
             if (saved.history.Any(h => h == null)) { message = "The saved state has an empty history entry" + discard; return false; }
             if (saved.history.Count > AbsoluteMaximumHistoryEntries) { message = "The saved state has " + saved.history.Count + " history entries, more than the " + AbsoluteMaximumHistoryEntries + " this component ever writes" + discard; return false; }
             if (saved.context.Count > StateMachineCore.MaxContextEntries) { message = "The saved state has " + saved.context.Count + " context keys, more than the " + StateMachineCore.MaxContextEntries + " allowed" + discard; return false; }
-            string historyProblem = ValidateSavedHistory(saved.history, savedSequence, savedStarted);
+            string historyProblem = ValidateSavedHistory(saved.history, savedSequence, savedStarted, saved.currentState);
             if (historyProblem != null) { message = "The saved state has an invalid history (" + historyProblem + ")" + discard; return false; }
 
             // The timestamp is a required field of every snapshot, so it must parse whether or not the machine is
@@ -1046,6 +1052,8 @@ namespace StateMachineAutomation
         }
 
         private static readonly string[] HistoryKinds = { "start", "reset", "transition", "rejected" };
+        // The only rejection codes schema version 1 ever writes; anything else is not from this component.
+        private static readonly string[] RejectionReasons = { "NoTransition", "GuardFailed", "Finished", "NotStarted", "ReentrancyLimit" };
 
         /// <summary>
         /// Checks a saved history against the invariants everything this component writes satisfies, so an edited or
@@ -1055,7 +1063,7 @@ namespace StateMachineAutomation
         /// the last one equals the top-level sequence counter (every entry is stamped with the counter's new value), so
         /// the next entry can never reuse or overflow a number. Returns null when valid, otherwise what is wrong.
         /// </summary>
-        private string ValidateSavedHistory(List<HistoryEntry> history, long sequence, bool started)
+        private string ValidateSavedHistory(List<HistoryEntry> history, long sequence, bool started, string savedCurrentState)
         {
             const int MaxDetail = 16384;
             // An empty history is only ever legitimate for a machine that has never recorded anything: not started, counter
@@ -1066,6 +1074,7 @@ namespace StateMachineAutomation
                     ? "a started machine has no history entries, but it always has at least its start entry"
                     : "there are no history entries, but the saved sequence counter is " + sequence;
             long previous = 0;
+            string lastMoveTo = null;
             for (int i = 0; i < history.Count; i++)
             {
                 HistoryEntry h = history[i];
@@ -1084,20 +1093,44 @@ namespace StateMachineAutomation
                 foreach (string stateName in new[] { h.from, h.to })
                     if (!string.IsNullOrEmpty(stateName) && definition.FindState(stateName) == null) return at + " names state '" + stateName + "', which is not a state of this definition";
 
+                // What each kind may carry is fixed: a reason only ever rides on a rejection, a destination only on a
+                // move. Free text an edited file could otherwise attach would be served by GetHistoryJson as if this
+                // component had produced it.
                 switch (h.kind)
                 {
                     case "start":
                     case "reset":
                         if (string.IsNullOrEmpty(h.to)) return at + " (" + h.kind + ") has no 'to' state";
+                        if (!string.IsNullOrEmpty(h.trigger) || !string.IsNullOrEmpty(h.from) || !string.IsNullOrEmpty(h.reason) || !string.IsNullOrEmpty(h.detail))
+                            return at + " (" + h.kind + ") carries fields that only a transition or a rejection has";
+                        if (!started) return at + " (" + h.kind + ") is in the history of a machine that is not started";
+                        lastMoveTo = h.to;
                         break;
                     case "transition":
                         if (string.IsNullOrWhiteSpace(h.trigger) || string.IsNullOrEmpty(h.from) || string.IsNullOrEmpty(h.to)) return at + " (transition) is missing its trigger, 'from' or 'to'";
+                        if (!string.IsNullOrEmpty(h.reason) || !string.IsNullOrEmpty(h.detail)) return at + " (transition) carries a rejection reason or detail";
+                        if (!started) return at + " (transition) is in the history of a machine that is not started";
+                        // The definition hash already matched, so a recorded move must be one the definition declares.
+                        if (!definition.Transitions.Any(t => (t.From == MachineDefinition.Wildcard || string.Equals(t.From, h.from, StringComparison.OrdinalIgnoreCase))
+                                                             && string.Equals(t.Trigger, h.trigger, StringComparison.OrdinalIgnoreCase)
+                                                             && string.Equals(t.To, h.to, StringComparison.OrdinalIgnoreCase)))
+                            return at + " (transition) records '" + h.from + "' -> '" + h.to + "' on '" + h.trigger + "', which the definition does not declare";
+                        // Moves chain: each starts where the previous one ended (when the previous one is still retained).
+                        if (lastMoveTo != null && !string.Equals(lastMoveTo, h.from, StringComparison.OrdinalIgnoreCase))
+                            return at + " (transition) leaves '" + h.from + "' but the machine had just moved to '" + lastMoveTo + "'";
+                        lastMoveTo = h.to;
                         break;
                     case "rejected":
                         if (string.IsNullOrWhiteSpace(h.trigger) || string.IsNullOrWhiteSpace(h.reason)) return at + " (rejected) is missing its trigger or reason";
+                        if (!RejectionReasons.Contains(h.reason)) return at + " (rejected) has unknown reason '" + h.reason + "'";
+                        if (!string.IsNullOrEmpty(h.to)) return at + " (rejected) names a destination state, but a rejection moves nothing";
+                        if (h.reason == "NotStarted" && started) return at + " (rejected) has reason 'NotStarted' but the machine is started";
+                        if (h.reason == "Finished" && !started) return at + " (rejected) has reason 'Finished' but the machine is not started";
                         break;
                 }
             }
+            if (started && lastMoveTo != null && !string.Equals(lastMoveTo, savedCurrentState, StringComparison.OrdinalIgnoreCase))
+                return "the last recorded move ends in '" + lastMoveTo + "' but the saved current state is '" + savedCurrentState + "'";
             if (history.Count > 0 && history[history.Count - 1].seq != sequence)
                 return "its last entry is numbered " + history[history.Count - 1].seq + " but the saved sequence counter is " + sequence;
             return null;
@@ -1149,9 +1182,21 @@ namespace StateMachineAutomation
 
         // ================================================================= helpers
 
+        /// <summary>
+        /// Test seam, invoked between a method's fast-path liveness check and its own critical section - the exact window in
+        /// which another thread can dispose the component. Lets a test dispose there deterministically and prove that every
+        /// public method re-checks under the lock. Null in production.
+        /// </summary>
+        internal Action AfterLivenessCheck;
+
         private bool RequireLive(out string message)
         {
-            lock (syncRoot) return RequireLiveLocked(out message);
+            lock (syncRoot)
+            {
+                if (!RequireLiveLocked(out message)) return false;
+            }
+            AfterLivenessCheck?.Invoke();
+            return true;
         }
 
         /// <summary>

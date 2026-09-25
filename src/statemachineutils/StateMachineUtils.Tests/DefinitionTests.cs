@@ -117,6 +117,56 @@ namespace StateMachineAutomation.Tests
             Assert.True(report.Valid, string.Join("; ", report.Errors));
         }
 
+        [Theory]
+        [InlineData("exists", "yes")]
+        [InlineData("notExists", "yes")]
+        [InlineData("exists", "")]
+        public void ExistsAndNotExistsGuards_RejectAValue_RatherThanSilentlyIgnoringIt(string op, string value)
+        {
+            string json = "{ \"initial\": \"A\", \"states\": [\"A\"], \"transitions\": [ { \"from\": \"A\", \"trigger\": \"t\", \"to\": \"A\", \"guards\": [ { \"key\": \"k\", \"op\": \"" + op + "\", \"value\": \"" + value + "\" } ] } ] }";
+            AssertError(json, "takes no value");
+        }
+
+        [Theory]
+        [InlineData("EU,,UK")]
+        [InlineData("EU,")]
+        [InlineData(",EU")]
+        [InlineData(",")]
+        [InlineData("")]
+        [InlineData("EU, ,UK")]
+        public void InAndNotInGuards_RejectAnEmptyListItem(string list)
+        {
+            foreach (string op in new[] { "in", "notIn" })
+            {
+                string json = "{ \"initial\": \"A\", \"states\": [\"A\"], \"transitions\": [ { \"from\": \"A\", \"trigger\": \"t\", \"to\": \"A\", \"guards\": [ { \"key\": \"k\", \"op\": \"" + op + "\", \"value\": \"" + list + "\" } ] } ] }";
+                AssertError(json, "empty item");
+            }
+        }
+
+        [Fact]
+        public void InGuards_AcceptWellFormedLists_IncludingSpacesAndASingleItem()
+        {
+            foreach (string list in new[] { "EU", "EU, UK", " EU , UK , US " })
+            {
+                string json = "{ \"initial\": \"A\", \"states\": [\"A\"], \"transitions\": [ { \"from\": \"A\", \"trigger\": \"t\", \"to\": \"A\", \"guards\": [ { \"key\": \"k\", \"op\": \"in\", \"value\": \"" + list + "\" } ] } ] }";
+                DefinitionReport report = Parse(json);
+                Assert.True(report.Valid, list + ": " + string.Join("; ", report.Errors));
+            }
+        }
+
+        [Fact]
+        public void MethodApi_AppliesTheSameGuardRules()
+        {
+            StateMachineUtils machine = New();
+            Assert.True(machine.AddState("A", out string message), message);
+            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", "exists", "oops"));
+            Assert.Contains("takes no value", message);
+            Assert.False(machine.AddTransition("A", "t", "A", out message, "k", "in", "EU,,UK"));
+            Assert.Contains("empty item", message);
+            Assert.True(machine.AddTransition("A", "t", "A", out message, "k", "in", "EU, UK"), message);
+            Assert.True(machine.AddTransition("A", "t2", "A", out message, "k", "exists"), message);
+        }
+
         [Fact]
         public void GuardValues_AcceptNumbersAndBooleans()
         {

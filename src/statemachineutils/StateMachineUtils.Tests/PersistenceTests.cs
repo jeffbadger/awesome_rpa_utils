@@ -1228,6 +1228,149 @@ namespace StateMachineAutomation.Tests
             Assert.True(restored);
         }
 
+        // ---- a saved history record may only carry what its kind carries, and must agree with the definition and with itself
+
+        /// <summary>Start (to Received), validate (Received to Validated), abort (Validated to Failed, via the wildcard); ends final in Failed.</summary>
+        private string SavedThreeMoveRun()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = LoadedWithPersistence(name);
+            Assert.True(first.Start(out _, out _));
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
+            Assert.True(first.Fire("abort", out _, out _, out _, out _));
+            first.Dispose();
+            return name;
+        }
+
+        /// <summary>An unstarted machine whose history holds one NotStarted rejection.</summary>
+        private string SavedUnstartedWithARejection()
+        {
+            string name = NewMachineName();
+            StateMachineUtils first = Loaded();
+            Assert.True(first.Fire("validate", out _, out _, out _, out _));
+            Assert.True(first.EnablePersistence(name, out _, out _, out _));
+            first.Dispose();
+            return name;
+        }
+
+        [Theory]
+        [InlineData("unknownReason", "unknown reason 'Because'")]
+        [InlineData("reasonOnTransition", "carries a rejection reason or detail")]
+        [InlineData("detailOnTransition", "carries a rejection reason or detail")]
+        [InlineData("fieldsOnStart", "carries fields that only a transition or a rejection has")]
+        [InlineData("triggerOnStart", "carries fields that only a transition or a rejection has")]
+        [InlineData("destinationOnRejection", "names a destination state")]
+        [InlineData("notStartedInStartedHistory", "has reason 'NotStarted' but the machine is started")]
+        [InlineData("undeclaredTransition", "which the definition does not declare")]
+        [InlineData("lastMoveMismatch", "last recorded move ends in 'Validated' but the saved current state is 'Received'")]
+        public void AHistoryRecordThatDisagreesWithItsKindOrTheDefinition_IsRefused(string corruption, string fragment)
+        {
+            string name = SavedRunWithHistory(); // start(1) validate(2) rejected NoTransition(3); current state Validated
+            EditHistory(name, (entries, top) =>
+            {
+                switch (corruption)
+                {
+                    case "unknownReason": entries[2]["reason"] = "Because"; break;
+                    case "reasonOnTransition": entries[1]["reason"] = "NoTransition"; break;
+                    case "detailOnTransition": entries[1]["detail"] = "made up"; break;
+                    case "fieldsOnStart": entries[0]["detail"] = "made up"; break;
+                    case "triggerOnStart": entries[0]["trigger"] = "validate"; break;
+                    case "destinationOnRejection": entries[2]["to"] = "Failed"; break;
+                    case "notStartedInStartedHistory": entries[2]["reason"] = "NotStarted"; break;
+                    case "undeclaredTransition": entries[1]["trigger"] = "post"; break;   // 'post' exists, but not from Received
+                    case "lastMoveMismatch": top["currentState"] = "Received"; break;
+                }
+            });
+
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out bool restored, out string message));
+            Assert.False(restored);
+            Assert.Contains("invalid history", message);
+            Assert.Contains(fragment, message);
+            Assert.Contains("DiscardPersistedState", message);
+        }
+
+        [Fact]
+        public void AMoveThatDoesNotStartWhereTheLastOneEnded_IsRefused_EvenWhenTheWildcardMakesItDeclared()
+        {
+            string name = SavedThreeMoveRun();
+            EditHistory(name, (entries, _) => entries[2]["from"] = "Received"); // 'abort' is declared from '*', but the machine was in Validated
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("leaves 'Received' but the machine had just moved to 'Validated'", message);
+        }
+
+        [Fact]
+        public void AGenuineThreeMoveRun_ThroughAWildcardTransition_Restores()
+        {
+            string name = SavedThreeMoveRun();
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+            Assert.Equal("Failed", machine.CurrentState);
+            Assert.True(machine.IsFinished);
+        }
+
+        [Fact]
+        public void AStartOrTransitionRecordInAnUnstartedMachinesHistory_IsRefused()
+        {
+            string name = SavedUnstartedWithARejection();
+            EditHistory(name, (entries, _) => { entries[0]["kind"] = "start"; entries[0]["to"] = "Received"; foreach (string f in new[] { "trigger", "reason", "detail", "from" }) entries[0].Remove(f); });
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("is in the history of a machine that is not started", message);
+        }
+
+        [Fact]
+        public void AFinishedRejectionInAnUnstartedMachinesHistory_IsRefused()
+        {
+            string name = SavedUnstartedWithARejection();
+            EditHistory(name, (entries, _) => entries[0]["reason"] = "Finished");
+            StateMachineUtils machine = Loaded();
+            Assert.False(machine.EnablePersistence(name, out _, out _, out string message));
+            Assert.Contains("has reason 'Finished' but the machine is not started", message);
+        }
+
+        [Theory]
+        [InlineData("NoTransition")]
+        [InlineData("GuardFailed")]
+        [InlineData("Finished")]
+        [InlineData("NotStarted")]
+        [InlineData("ReentrancyLimit")]
+        public void EveryDocumentedRejectionCode_IsAcceptedWhereItCanLegitimatelyOccur(string reason)
+        {
+            // Unstarted histories can hold NotStarted/ReentrancyLimit; started ones NoTransition/GuardFailed/Finished/ReentrancyLimit.
+            bool unstartedOnly = reason == "NotStarted";
+            string name = unstartedOnly ? SavedUnstartedWithARejection() : SavedRunWithHistory();
+            if (!unstartedOnly && reason != "NoTransition")
+                EditHistory(name, (entries, _) => entries[2]["reason"] = reason);
+            if (reason == "Finished") { /* a started machine in a non-final state cannot have produced this, but the record is well formed */ }
+
+            StateMachineUtils machine = Loaded();
+            Assert.True(machine.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+        }
+
+        // ---- and the write side keeps to the same rules (the file it writes must always be one it would restore)
+
+        [Fact]
+        public void EveryKindOfRecordTheComponentCanWrite_RoundTripsThroughRestore()
+        {
+            string name = NewMachineName();
+            StateMachineUtils m = LoadedWithPersistence(name);
+            Assert.True(m.Fire("validate", out _, out _, out _, out _));      // NotStarted rejection
+            Assert.True(m.Start(out _, out _));                                // start clears that
+            Assert.True(m.Fire("nonsense", out _, out _, out _, out _));      // NoTransition
+            Assert.True(m.Fire("validate", out _, out _, out _, out _));      // transition
+            Assert.True(m.SetContext("amount", "99999", out _));
+            Assert.True(m.Fire("post", out _, out _, out string guardFailedReason, out _)); // guarded -> Failed fallback (fires)
+            m.Dispose();
+
+            StateMachineUtils again = Loaded();
+            Assert.True(again.EnablePersistence(name, out _, out bool restored, out string message), message);
+            Assert.True(restored);
+        }
+
         [Fact]
         public void Persistence_NeverRecordsContextValuesInHistory()
         {

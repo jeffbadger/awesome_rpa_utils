@@ -185,9 +185,18 @@ namespace StateMachineAutomation
             {
                 if (!IsValidName(g.Key, out string keyProblem)) { report.Errors.Add(label + " has a guard whose key " + keyProblem + "."); continue; }
                 if (!KnownOps.Contains(g.Op)) { report.Errors.Add(label + " guard '" + g.Key + "' uses unknown operator '" + g.Op + "' (expected one of: " + string.Join(", ", KnownOps) + ")."); continue; }
-                if (g.Op == "exists" || g.Op == "notExists") continue;
+                if (g.Op == "exists" || g.Op == "notExists")
+                {
+                    // A value here would be silently ignored, which is how a designer who meant `equals` ends up with a
+                    // guard that always passes; treat it like any other misspelling and say so.
+                    if (g.Value != null) report.Errors.Add(label + " guard '" + g.Key + " " + g.Op + "' takes no value, but '" + g.Value + "' was given (did you mean 'equals'?).");
+                    continue;
+                }
                 if (g.Value == null) { report.Errors.Add(label + " guard '" + g.Key + " " + g.Op + "' requires a value."); continue; }
                 if (g.Value.Length > MaxGuardValueLength) report.Errors.Add(label + " guard '" + g.Key + "' has a value longer than " + MaxGuardValueLength + " characters.");
+                // An empty item in a list ("EU,,UK", a trailing comma) would silently match an empty context value.
+                if ((g.Op == "in" || g.Op == "notIn") && g.Value.Split(',').Any(item => item.Trim().Length == 0))
+                    report.Errors.Add(label + " guard '" + g.Key + " " + g.Op + "' has an empty item in its list ('" + g.Value + "').");
                 if ((g.Op == "greaterThan" || g.Op == "lessThan") && !StateMachineCore.TryParseNumber(g.Value, out _))
                     report.Errors.Add(label + " guard '" + g.Key + " " + g.Op + "' needs a numeric value but got '" + g.Value + "'.");
             }
