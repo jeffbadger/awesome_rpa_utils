@@ -12,13 +12,26 @@ For a successful transition the order is always `StateExited`, `TransitionFired`
 `StateEntered`, then `MachineFinished` if the destination is final. The payload
 (`PreviousState`, `NewState`, `Trigger`; or `State`, `Trigger`, `Reason`,
 `Detail` for a rejection) is all non-null text, so it wires to a data port; an
-empty string means "not applicable".
+empty string means "not applicable". `StateExited` adds one number,
+`ElapsedMs`: how long the machine was in the state it is leaving.
 
 ```csharp
+machine.StateExited       += (s, e) => Log($"left {e.PreviousState} after {e.ElapsedMs} ms");
 machine.StateEntered      += (s, e) => Log($"{e.PreviousState} -> {e.NewState}");
 machine.TransitionRejected += (s, e) => Log($"{e.Trigger} declined in {e.State}: {e.Reason}");
 machine.MachineFinished   += (s, e) => Notify($"finished in {e.NewState}");
 ```
+
+`ElapsedMs` runs from the state's recorded entry time to the entry time recorded for
+the new state - the same timestamp that is saved with the run when persistence is on -
+so the durations of successive states add up exactly. It does not count the time a
+persistence write or your handlers take (that time falls in the *new* state). It is
+never negative, and for a run restored from persistence it includes the time the robot
+was down. If the system clock is set backwards, the one duration that spans the
+adjustment is reported as 0 (never negative); later durations are measured against the
+adjusted clock, so they are not inflated, and only that one spanning interval breaks the
+"adds up" property. It is only reported on a transition that fired: a declined trigger raises no
+`StateExited`.
 
 ## Threading
 

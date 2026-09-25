@@ -28,6 +28,8 @@ else          Log("resumed in " + machine.CurrentState);        // picked up whe
   `CurrentState` to see where the run stopped.
 - What is saved: current state, when it was entered, the context, and the
   history. `GetSecondsInState` keeps counting from the original entry time.
+  State entry times are kept to the millisecond, so `StateExited`'s `ElapsedMs` is always
+  a whole number (a file with finer timestamps is read to the millisecond).
 
 ## Durable first
 
@@ -71,7 +73,8 @@ marker file are deliberately left, because deleting them after letting go of the
 lock could race with a new owner acquiring it.
 
 ## Cautions
-
+ State entry times are kept to the millisecond, so `StateExited`
+  `ElapsedMs` is always a whole number (an older file with finer timestamps is read to the millisecond).
 - **Context is saved in plain text.** Never put a password, token or personal
   data in it. History and event details never contain the context's actual values.
 - Persistence keeps the machine's memory, not the world's. After a crash the

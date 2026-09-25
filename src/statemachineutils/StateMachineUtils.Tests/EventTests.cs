@@ -527,5 +527,146 @@ namespace StateMachineAutomation.Tests
                 Assert.Equal(new[] { "exited:" + from, "fired:" + from, "entered:" + to }, log.Skip(i * 3).Take(3));
             }
         }
+
+        // ---- StateExited carries how long the machine was in the state it is leaving ----
+
+        [Fact]
+        public void StateExited_CarriesTheMillisecondsSpentInTheStateBeingLeft()
+        {
+            StateMachineUtils machine = Loaded();
+            DateTime now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            machine.Clock = () => now;
+            Assert.True(machine.Start(out _, out _)); // enters Received at 12:00:00.000
+
+            var exits = new List<StateMachineExitEventArgs>();
+            machine.StateExited += (_, e) => exits.Add(e);
+
+            now = now.AddMilliseconds(1250);
+            Assert.True(machine.Fire("validate", out _, out string message), message); // leaves Received after 1250 ms
+            now = now.AddSeconds(3);
+            machine.SetContext("amount", "1", out _);
+            Assert.True(machine.Fire("post", out _, out message), message);           // leaves Validated after 3000 ms
+
+            Assert.Equal(2, exits.Count);
+            Assert.Equal(("Received", "Validated", "validate", 1250.0), (exits[0].PreviousState, exits[0].NewState, exits[0].Trigger, exits[0].ElapsedMs));
+            Assert.Equal(("Validated", "Posted", "post", 3000.0), (exits[1].PreviousState, exits[1].NewState, exits[1].Trigger, exits[1].ElapsedMs));
+        }
+
+        [Fact]
+        public void StateExited_MillisecondsRestartForEachState_AndAreZeroWhenNoTimePassed()
+        {
+            StateMachineUtils machine = Started();
+            DateTime now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            machine.Clock = () => now;
+            Assert.True(machine.Reset(false, out _, out _));   // re-enters Received at 12:00:00
+            double first = -1;
+            machine.StateExited += (_, e) => first = e.ElapsedMs;
+            Assert.True(machine.Fire("validate", out _, out _));
+            Assert.Equal(0.0, first);                           // same instant: 0, never negative
+        }
+
+        [Fact]
+        public void StateExited_MillisecondsIsNeverNegative_EvenIfTheClockWentBackwards()
+        {
+            StateMachineUtils machine = Loaded();
+            DateTime now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            machine.Clock = () => now;
+            Assert.True(machine.Start(out _, out _));
+            double ms = -1;
+            machine.StateExited += (_, e) => ms = e.ElapsedMs;
+            now = now.AddMinutes(-5);                           // a clock adjustment
+            Assert.True(machine.Fire("validate", out _, out _));
+            Assert.Equal(0.0, ms);
+        }
+
+        [Fact]
+        public void StateExited_ForARestoredRun_CountsFromTheOriginalEntryTime_IncludingDowntime()
+        {
+            string name = NewMachineName();
+            var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            StateMachineUtils first = Loaded();
+            first.Clock = () => t0;
+            Assert.True(first.EnablePersistence(name, out _, out _, out string message), message);
+            Assert.True(first.Start(out _, out message), message);
+            first.Dispose();                                    // the crash
+
+            StateMachineUtils second = Loaded();
+            second.Clock = () => t0.AddMinutes(10);
+            Assert.True(second.EnablePersistence(name, out _, out bool restored, out message), message);
+            Assert.True(restored);
+            double ms = -1;
+            second.StateExited += (_, e) => ms = e.ElapsedMs;
+            Assert.True(second.Fire("validate", out _, out message), message);
+            Assert.Equal(600000.0, ms);                         // 10 minutes since Received was entered, downtime included
+        }
+
+        [Fact]
+        public void StateExited_IsNotRaisedForADeclinedTrigger_SoNoMillisecondsAreReported()
+        {
+            StateMachineUtils machine = Started();
+            int exits = 0;
+            machine.StateExited += (_, _) => exits++;
+            Assert.True(machine.Fire("nonsense", out _, out string message));
+            Assert.Equal("NoTransition", message);
+            Assert.Equal(0, exits);
+        }
+
+        [Fact]
+        public void StateExited_ElapsedMsExcludesHandlerTime_WhichBelongsToTheNewState()
+        {
+            StateMachineUtils machine = Loaded();
+            DateTime now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            machine.Clock = () => now;
+            Assert.True(machine.Start(out _, out _));
+            var exits = new List<double>();
+            machine.StateExited += (_, e) => { exits.Add(e.ElapsedMs); now = now.AddSeconds(10); }; // a slow handler
+            now = now.AddSeconds(1);
+            Assert.True(machine.Fire("validate", out _, out _));   // leaves Received after 1 s
+            now = now.AddSeconds(2);
+            machine.SetContext("amount", "1", out _);
+            Assert.True(machine.Fire("post", out _, out _));       // leaves Validated after 10 s (handler) + 2 s
+            Assert.Equal(new[] { 1000.0, 12000.0 }, exits);
+        }
+
+        [Fact]
+        public void StateExited_ElapsedMs_AddsUpExactly_EvenWhenTheClockHasSubMillisecondTicks()
+        {
+            StateMachineUtils machine = Loaded();
+            DateTime baseTime = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            DateTime now = baseTime;
+            machine.Clock = () => now;
+            now = baseTime.AddTicks(1006000);                 // 100.6 ms: recorded as 100 ms
+            Assert.True(machine.Start(out _, out _));
+            var exits = new List<double>();
+            machine.StateExited += (_, e) => exits.Add(e.ElapsedMs);
+
+            now = baseTime.AddTicks(1012000);                 // 101.2 ms: recorded as 101 ms
+            Assert.True(machine.Fire("validate", out _, out _));
+            machine.SetContext("amount", "1", out _);
+            now = baseTime.AddTicks(1018000);                 // 101.8 ms: recorded as 101 ms
+            Assert.True(machine.Fire("post", out _, out _));
+
+            Assert.Equal(new[] { 1.0, 0.0 }, exits);          // whole numbers ...
+            Assert.Equal(1.0, exits[0] + exits[1]);           // ... that add up to the overall 100 -> 101 ms
+        }
+
+        [Fact]
+        public void StateExited_AfterABackwardsClockAdjustment_OnlyTheSpanningDurationIsZero_LaterOnesAreNotInflated()
+        {
+            StateMachineUtils machine = Loaded();
+            DateTime now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            machine.Clock = () => now;
+            Assert.True(machine.Start(out _, out _));
+            var exits = new List<double>();
+            machine.StateExited += (_, e) => exits.Add(e.ElapsedMs);
+
+            now = now.AddMinutes(-5);                              // clock set back to 11:55
+            Assert.True(machine.Fire("validate", out _, out _));   // spans the adjustment: 0, never negative
+            machine.SetContext("amount", "1", out _);
+            now = now.AddMinutes(1);                               // 11:56, one real minute after Validated was entered
+            Assert.True(machine.Fire("post", out _, out _));
+
+            Assert.Equal(new[] { 0.0, 60000.0 }, exits);
+        }
     }
 }
