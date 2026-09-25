@@ -26,6 +26,13 @@ jobs:
       - name: Test (REST code generator)
         # Not part of the solution, so it needs its own step.
         run: dotnet test tools/RestCodeGenerator.Tests/RestCodeGenerator.Tests.csproj --configuration Release --logger "trx;LogFileNamePrefix=ci-restcodegenerator" --results-directory test-results
+      - name: Build REST code generator and Component Browser (Release)
+        # Neither is in the solution. The Component Browser's end-to-end test runs Package-Release.ps1 -NoBuild,
+        # which stages both from their Release output, exactly as the release workflow builds them.
+        run: |
+          dotnet build tools/RestCodeGenerator/RestCodeGenerator.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build component-browser/ComponentBrowser.csproj --configuration Release
       - name: Test (Component Browser)
         # Not part of the solution either.
         run: dotnet test component-browser/ComponentBrowser.Tests/ComponentBrowser.Tests.csproj --configuration Release --logger "trx;LogFileNamePrefix=ci-componentbrowser" --results-directory test-results

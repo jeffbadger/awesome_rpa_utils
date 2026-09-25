@@ -66,9 +66,13 @@ dotnet test src/AwesomeRpaUtils.sln
 Windows and abort a solution-wide `dotnet test` on Linux/macOS; run the other test
 projects individually there.
 
-**Continuous integration runs every test project** on Windows (one project at a time,
-so timing-sensitive tests are not starved by their neighbors) after building the
-solution, and a failing test fails the build. Run the tests locally before you push
+**Continuous integration runs the tests** on Windows after building: every test
+project in `src/AwesomeRpaUtils.sln` (one project at a time, so timing-sensitive
+tests are not starved by their neighbors), plus the two test projects that live
+outside the solution, `tools/RestCodeGenerator.Tests` and
+`component-browser/ComponentBrowser.Tests`. A failing test fails the build. A new
+test project must be added to the solution (or to the workflow, if it cannot live
+there), or CI will not run it. Run the tests locally before you push
 and paste the result (the `Passed!` line for each project you touched) into the pull
 request. The CI test results are also attached to each run as a `test-results`
 artifact.
