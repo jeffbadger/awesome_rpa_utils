@@ -13,9 +13,9 @@ namespace ReconciliationAutomation
     /// </summary>
     /// <remarks>
     /// Work in progress (see the design plan). The definition operations (setup, JSON load/validate/export, limits) are
-    /// implemented; reconciliation and result reading still report that they are not implemented yet.
+    /// implemented, and <c>ReconcileJson</c> runs a reconciliation; the result-reading methods still report that they are not implemented yet.
     /// </remarks>
-    [Description("Reconciles two datasets by business key and reports matches, differences, missing and duplicate records through scalar ports. Under construction: the definition operations work; running a reconciliation and reading its results are not implemented yet. Never throws.")]
+    [Description("Reconciles two datasets by business key and reports matches, differences, missing and duplicate records through scalar ports. Under construction: the definition operations and ReconcileJson work; reading the results is not implemented yet. Never throws.")]
     public sealed class ReconciliationUtils : Component
     {
         private readonly object syncRoot = new object();

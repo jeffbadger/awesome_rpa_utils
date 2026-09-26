@@ -205,5 +205,28 @@ namespace ReconciliationAutomation.Tests
                     Assert.Equal(d.Value.StartsWith("-") ? d.Value.Substring(1) : "-" + d.Value, swappedDeltas[d.Key]);        // right minus left flips sign
             }
         }
+
+        [Fact]
+        public void ASnapshot_IsADeepCopy_SoChangingTheObjectsItWasBuiltFromNeverChangesIt()
+        {
+            var members = new List<ResultMember> { new ResultMember("Left", 0, new[] { "k" }) };
+            var differences = new List<ComparisonOutcome> { new ComparisonOutcome { RuleName = "Amount" } };
+            var source = new ReconciliationResult { Id = "r000001", Kind = ResultKind.Different, NormalizedKey = new[] { "k" }, Members = members, Differences = differences };
+            var summary = new ReconciliationSummary { LeftRowCount = 1 };
+
+            var snapshot = new ReconciliationSnapshot(new List<ReconciliationResult> { source }, summary);
+            source.Id = "changed"; source.Kind = ResultKind.Matched; source.NormalizedKey[0] = "x";
+            members.Clear(); differences[0].RuleName = "changed"; summary.LeftRowCount = 99;
+
+            ReconciliationResult held = snapshot.Results[0];
+            Assert.Equal("r000001", held.Id);
+            Assert.Equal(ResultKind.Different, held.Kind);
+            Assert.Equal("k", held.NormalizedKey[0]);
+            Assert.Single(held.Members);
+            Assert.Equal("Amount", held.Differences[0].RuleName);
+            Assert.Equal(1, snapshot.Summary.LeftRowCount);
+            Assert.False(held.Members is List<ResultMember>);           // read-only wrappers, not the builder's lists
+            Assert.False(snapshot.Results is List<ReconciliationResult>);
+        }
     }
 }

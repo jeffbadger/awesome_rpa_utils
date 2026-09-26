@@ -4,11 +4,10 @@ A Pega Robot Studio-ready component (`ReconciliationUtils`) that reconciles two
 datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
-> **Status: under construction.** Work package 2 of the
+> **Status: under construction.** Work package 4 of the
 > [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md)
-> is in: the **definition** operations work (setup methods, JSON load/validate/export,
-> limits). `ReconcileJson` and the result-reading methods still report that they are not
-> implemented yet. Do not use the component until the first release notes say otherwise.
+> is in: the **definition** operations and `ReconcileJson` work. The result-reading methods
+> still report that they are not implemented yet. Do not use the component until the first release notes say otherwise.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ReconciliationAutomation`
@@ -17,7 +16,7 @@ through scalar ports so an automation can route them to review or correction.
 ## Method reference (frozen contract)
 
 All 19 Release 1 methods, with their final signatures. The **Definition** methods are
-implemented. The **Run** and **Results** methods are not yet: each returns `False` with a
+implemented. `ReconcileJson` runs a reconciliation; the **Results** methods are not implemented yet: each returns `False` with a
 message saying so. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
 operation; success has no message. The
@@ -102,8 +101,7 @@ side is invalid) or `AllowBothNull` (two nulls are equal).
 
 ## How comparisons work
 
-These are the rules `ReconcileJson` will apply to each pair of records that share a key (the rules themselves are implemented and tested;
-running a whole reconciliation arrives with the next work package). Each rule reports **equal**, **different** or **invalid**, with a
+These are the rules `ReconcileJson` applies to each pair of records that share a key. Each rule reports **equal**, **different** or **invalid**, with a
 stable reason code and an explanation that never quotes a text value.
 
 - **Every rule evaluates every pair**; one mismatch never stops the others.

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ReconciliationAutomation
 {
@@ -70,6 +71,17 @@ namespace ReconciliationAutomation
         internal int LeftRowIndex => SingleRow("Left");
         internal int RightRowIndex => SingleRow("Right");
 
+        /// <summary>A private copy with its own key arrays and read-only member and difference lists (what a snapshot holds).</summary>
+        internal ReconciliationResult Frozen()
+        {
+            var copy = (ReconciliationResult)MemberwiseClone();
+            copy.NormalizedKey = NormalizedKey == null ? null : (string[])NormalizedKey.Clone();
+            copy.Members = new System.Collections.ObjectModel.ReadOnlyCollection<ResultMember>(Members.Select(m =>
+                new ResultMember(m.Side, m.Row, m.OriginalKey == null ? null : (string[])m.OriginalKey.Clone())).ToList());
+            copy.Differences = new System.Collections.ObjectModel.ReadOnlyCollection<ComparisonOutcome>(Differences.Select(d => d.Copy()).ToList());
+            return copy;
+        }
+
         private int SingleRow(string side)
         {
             int found = -1;
@@ -92,6 +104,8 @@ namespace ReconciliationAutomation
         internal int InvalidLeftRowCount, InvalidRightRowCount;
         internal int AmbiguousKeyCount, AmbiguousLeftRowCount, AmbiguousRightRowCount;
         internal int ResultCount, ExceptionCount, DifferenceCount;
+
+        internal ReconciliationSummary Copy() => (ReconciliationSummary)MemberwiseClone();
 
         internal bool AllMatched => ExceptionCount == 0;
         internal bool BothInputsEmpty => LeftRowCount == 0 && RightRowCount == 0;
@@ -116,8 +130,9 @@ namespace ReconciliationAutomation
     {
         internal ReconciliationSnapshot(IReadOnlyList<ReconciliationResult> results, ReconciliationSummary summary)
         {
-            Results = results;
-            Summary = summary;
+            // Deep copies, so nothing the run's builders still hold (or a later caller) can change a published snapshot.
+            Results = new System.Collections.ObjectModel.ReadOnlyCollection<ReconciliationResult>(results.Select(r => r.Frozen()).ToList());
+            Summary = summary.Copy();
         }
 
         internal IReadOnlyList<ReconciliationResult> Results { get; }
