@@ -80,6 +80,7 @@ namespace ReconciliationAutomation
             while (i < token.Length && IsDigit(token[i])) i++;
             int integerDigits = i - integerStart;
             if (integerDigits == 0) { error = "it is not a number"; return false; }
+            if (integerDigits > 1 && token[integerStart] == '0') { error = "it is not a number"; return false; }
 
             int fractionStart = i;
             int fractionDigits = 0;
