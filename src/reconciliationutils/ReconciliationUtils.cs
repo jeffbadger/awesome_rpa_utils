@@ -121,6 +121,46 @@ namespace ReconciliationAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddDecimalComparison), ex); return false; }
         }
 
+        /// <summary>Adds a Boolean comparison: both sides must be JSON true or false (not yes, 0 or 1), and a value is required on both sides.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Adds a Boolean comparison: both sides must be JSON true or false (not yes, 0 or 1), and a value is required on both sides. Never throws.")]
+        public bool AddBooleanComparisonSimple(string name, string leftPointer, string rightPointer, out string message)
+        {
+            message = null;
+            try { return ChangeDefinition(nameof(AddBooleanComparisonSimple), d => d.TryAddBoolean(name, leftPointer, rightPointer, ComparisonNullPolicy.RequireValue), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddBooleanComparisonSimple), ex); return false; }
+        }
+
+        /// <summary>Adds a Boolean comparison (JSON true or false only) with a choice of null policy.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Adds a Boolean comparison (JSON true or false only) with a choice of null policy. Never throws.")]
+        public bool AddBooleanComparison(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy, out string message)
+        {
+            message = null;
+            try { return ChangeDefinition(nameof(AddBooleanComparison), d => d.TryAddBoolean(name, leftPointer, rightPointer, nullPolicy), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddBooleanComparison), ex); return false; }
+        }
+
+        /// <summary>Adds an exact money comparison (tolerance 0, a value is required on both sides). Each side needs a three-letter currency; different currencies never compare amounts.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Adds an exact money comparison (tolerance 0, a value is required on both sides). Each side needs a three-letter currency; different currencies never compare amounts. Never throws.")]
+        public bool AddMoneyComparisonSimple(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, out string message)
+        {
+            message = null;
+            try { return ChangeDefinition(nameof(AddMoneyComparisonSimple), d => d.TryAddMoney(name, leftPointer, rightPointer, leftCurrencyPointer, rightCurrencyPointer, "0", ComparisonNullPolicy.RequireValue), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddMoneyComparisonSimple), ex); return false; }
+        }
+
+        /// <summary>Adds a money comparison with an absolute tolerance (invariant decimal text) and a null policy. Each side needs a three-letter currency; different currencies are a CurrencyMismatch and the amounts are not compared.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Adds a money comparison with an absolute tolerance (invariant decimal text) and a null policy. Each side needs a three-letter currency; different currencies are a CurrencyMismatch and the amounts are not compared. Never throws.")]
+        public bool AddMoneyComparison(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, out string message)
+        {
+            message = null;
+            try { return ChangeDefinition(nameof(AddMoneyComparison), d => d.TryAddMoney(name, leftPointer, rightPointer, leftCurrencyPointer, rightCurrencyPointer, absoluteTolerance, nullPolicy), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddMoneyComparison), ex); return false; }
+        }
+
         /// <summary>Replaces the whole definition from JSON. An invalid definition is rejected whole and the previous one stays in force.</summary>
         [Category("Reconciliation - Definition")]
         [Description("Replaces the whole definition from JSON. An invalid definition is rejected whole and the previous one stays in force. Never throws.")]
@@ -584,7 +624,8 @@ namespace ReconciliationAutomation
                 }
                 foreach (ComparisonDef c in d.Comparisons)
                 {
-                    if (c.LeftSegments.Length != 1 || c.RightSegments.Length != 1) { failure = "comparison '" + c.Name + "' must use pointers that each name exactly one column, such as /Amount"; return false; }
+                    if (c.LeftSegments.Length != 1 || c.RightSegments.Length != 1
+                        || (c.Kind == RuleKind.Money && (c.LeftCurrencySegments.Length != 1 || c.RightCurrencySegments.Length != 1))) { failure = "comparison '" + c.Name + "' must use pointers that each name exactly one column, such as /Amount"; return false; }
                 }
 
                 if (!DataTableInput.TryRead(leftTable, "Left", ColumnPointers(d, true), d.Limits, tableLimits, out DataTableInput leftInput, out failure)) return false;
@@ -598,7 +639,11 @@ namespace ReconciliationAutomation
         private static IEnumerable<string[]> ColumnPointers(ReconciliationDefinition d, bool leftSide)
         {
             foreach (KeyMappingDef k in d.Keys) yield return leftSide ? k.LeftSegments : k.RightSegments;
-            foreach (ComparisonDef c in d.Comparisons) yield return leftSide ? c.LeftSegments : c.RightSegments;
+            foreach (ComparisonDef c in d.Comparisons)
+            {
+                yield return leftSide ? c.LeftSegments : c.RightSegments;
+                if (c.Kind == RuleKind.Money) yield return leftSide ? c.LeftCurrencySegments : c.RightCurrencySegments;
+            }
         }
 
         private delegate bool InputLoader(ReconciliationDefinition definition, out IRowSource left, out IRowSource right, out string failure);

@@ -31,7 +31,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [LocalQueueUtils](#localqueueutils) | `LocalQueueAutomation` | 21 | 0 | 0 | A persistent, machine-local work queue with a lease/process/complete loop, for variable-count work without a Pega collection proxy. |
 | [MouseUtils](#mouseutils) | `MouseAutomation` | 92 (99 rows) | 0 | 0 | Moves, clicks, drags, and scrolls the mouse; controls cursor appearance, visibility, and confinement. |
 | [OcrUtils](#ocrutils) | `OcrAutomation` | 11 | 0 | 0 | Recognizes text from the screen or an image file via `Windows.Media.Ocr`. |
-| [ReconciliationUtils](#reconciliationutils) | `ReconciliationAutomation` | 21 | 0 | 0 | Reconciles two JSON datasets or DataTables by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing. |
+| [ReconciliationUtils](#reconciliationutils) | `ReconciliationAutomation` | 25 | 0 | 0 | Reconciles two JSON datasets or DataTables by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal, text, Boolean and currency-gated money comparison and scalar results for routing. |
 | [ScreenCaptureUtils](#screencaptureutils) | `ScreenCaptureAutomation` | 28 (34 rows) | 0 | 0 | Captures the screen/region/window to file or clipboard; compares against a baseline; annotates/redacts saved screenshots. |
 | [ServiceUtils](#serviceutils) | `ServiceAutomation` | 24 (25 rows) | 0 | 0 | Queries, starts, stops, restarts, pauses/resumes, and configures the startup type of Windows services. |
 | [SessionUtils](#sessionutils) | `SessionAutomation` | 31 | 0 | 0 | Reports on and acts on Windows session/workstation state — identity, kind, connect state, lock, idle time. |
@@ -581,7 +581,7 @@ Pega Robot Studio-ready component that recognizes text from a screen region or a
 
 ## ReconciliationUtils
 
-Reconciles two JSON datasets or DataTables by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing.
+Reconciles two JSON datasets or DataTables by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal, text, Boolean and currency-gated money comparison and scalar results for routing.
 
 **Namespace:** `ReconciliationAutomation` | **Assembly:** `ReconciliationAutomation`
 
@@ -589,10 +589,14 @@ Reconciles two JSON datasets or DataTables by business key and reports matches, 
 
 | Method | Signature | Description |
 |---|---|---|
+| `AddBooleanComparison` | `bool AddBooleanComparison(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy, out string message)` | Adds a Boolean comparison (JSON true or false only) with a choice of null policy. |
+| `AddBooleanComparisonSimple` | `bool AddBooleanComparisonSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds a Boolean comparison: both sides must be JSON true or false (not yes, 0 or 1), and a value is required on both sides. |
 | `AddDecimalComparison` | `bool AddDecimalComparison(string name, string leftPointer, string rightPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, out string message)` | Adds a decimal comparison with an absolute tolerance given as invariant decimal text (for example 0.01) and a null policy. |
 | `AddDecimalComparisonSimple` | `bool AddDecimalComparisonSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds an exact decimal comparison (tolerance 0, a value is required on both sides). |
 | `AddKeyMapping` | `bool AddKeyMapping(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, out string message)` | Adds a business-key part with a choice of trimming and case-insensitive matching. The pointers are restricted JSON Pointers such as /invoiceNumber. |
 | `AddKeyMappingSimple` | `bool AddKeyMappingSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds a business-key part matched exactly (no trimming, case-sensitive). The pointers are restricted JSON Pointers such as /invoiceNumber. |
+| `AddMoneyComparison` | `bool AddMoneyComparison(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, out string message)` | Adds a money comparison with an absolute tolerance (invariant decimal text) and a null policy. Each side needs a three-letter currency; different currencies are a CurrencyMismatch and the amounts are not compared. |
+| `AddMoneyComparisonSimple` | `bool AddMoneyComparisonSimple(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, out string message)` | Adds an exact money comparison (tolerance 0, a value is required on both sides). Each side needs a three-letter currency; different currencies never compare amounts. |
 | `AddTextComparison` | `bool AddTextComparison(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, ComparisonNullPolicy nullPolicy, out string message)` | Adds a text comparison with a choice of trimming, case-insensitive comparison and null policy. |
 | `AddTextComparisonSimple` | `bool AddTextComparisonSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds an exact text comparison (no trimming, case-sensitive, a value is required on both sides). |
 | `ClearDefinition` | `bool ClearDefinition(out string message)` | Restores the default definition (no keys, no comparisons, default limits) and clears any results. |

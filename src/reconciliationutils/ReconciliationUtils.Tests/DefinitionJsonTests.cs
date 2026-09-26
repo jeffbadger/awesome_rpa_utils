@@ -177,8 +177,8 @@ namespace ReconciliationAutomation.Tests
         }
 
         [Theory]
-        [InlineData("\"kind\":\"Money\"", "UnknownKind")]              // Release 2 kinds are unknown to this version
-        [InlineData("\"kind\":\"Boolean\"", "UnknownKind")]
+        [InlineData("\"kind\":\"Fuzzy\"", "UnknownKind")]              // kinds a later release may add are unknown to this one
+        [InlineData("\"kind\":\"Percentage\"", "UnknownKind")]
         [InlineData("\"kind\":\"CalendarDate\"", "UnknownKind")]
         [InlineData("\"kind\":\"Instant\"", "UnknownKind")]
         [InlineData("\"kind\":\"text\"", "UnknownKind")]              // case-sensitive
@@ -186,14 +186,14 @@ namespace ReconciliationAutomation.Tests
         [InlineData("\"kind\":null", "InvalidType")]
         [InlineData("\"kind\":true", "InvalidType")]
         [InlineData("\"kind\":{}", "InvalidType")]
-        public void AComparisonKind_MustBeTextOrDecimal(string kind, string code)
+        public void AComparisonKind_MustBeOneTheVersionSupports(string kind, string code)
         {
             string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\"," + kind + ",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
             Assert.Equal(code, FirstCode(Validate(json, out _)));
         }
 
         [Theory]
-        [InlineData("\"kind\":\"Money\"")]
+        [InlineData("\"kind\":\"Fuzzy\"")]
         [InlineData("\"kind\":7")]
         [InlineData("")]                                              // no kind at all
         public void AComparisonWhoseKindCannotBeSelected_StillHasItsOtherPropertiesChecked(string kind)
@@ -208,7 +208,7 @@ namespace ReconciliationAutomation.Tests
         [Fact]
         public void AComparisonWhoseKindCannotBeSelected_ReportsARepeatedProperty()
         {
-            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"name\":\"D\",\"kind\":\"Money\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"name\":\"D\",\"kind\":\"Fuzzy\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
             Assert.Equal(new[] { "DuplicateProperty", "UnknownKind" }, Codes(Validate(json, out _)).OrderBy(x => x));
         }
 
@@ -270,7 +270,7 @@ namespace ReconciliationAutomation.Tests
         [Fact]
         public void AComparisonWithARepeatedProperty_AndAnUnknownKind_ReportsBoth()
         {
-            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"name\":\"D\",\"kind\":\"Money\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"name\":\"D\",\"kind\":\"Fuzzy\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
             Assert.Equal(new[] { "DuplicateProperty", "UnknownKind" }, Codes(Validate(json, out _)).OrderBy(x => x));
         }
 
@@ -311,7 +311,7 @@ namespace ReconciliationAutomation.Tests
             string Comp(int i, string extra = "") => "{\"name\":\"c" + i + "\",\"kind\":\"Text\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"" + extra + "}";
             string comps = string.Join(",", Enumerable.Range(0, 128).Select(i => Comp(i)))
                 + "," + Comp(128, ",\"absoluteTolerance\":\"0\"")                       // 129th: an option of the wrong kind
-                + "," + "{\"name\":\"c129\",\"kind\":\"Money\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}"   // 130th: an unsupported kind
+                + "," + "{\"name\":\"c129\",\"kind\":\"Fuzzy\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}"   // 130th: an unsupported kind
                 + "," + "\"text\"";                                                        // 131st: not an object
             string[] codes = Codes(Validate("{\"schemaVersion\":1,\"comparisons\":[" + comps + "]}", out _));
             Assert.Equal(1, codes.Count(c => c == "TooManyComparisons"));
@@ -397,8 +397,8 @@ namespace ReconciliationAutomation.Tests
         [Fact]
         public void AComparisonWhoseKindCannotBeSelected_StillHasItsCommonFieldValuesChecked()
         {
-            // a Money comparison (unsupported here) with a wrongly typed name, a wrongly typed pointer and a numeric null policy
-            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":5,\"kind\":\"Money\",\"leftPointer\":7,\"rightPointer\":\"/a\",\"nullPolicy\":1}]}";
+            // a Fuzzy comparison (an unknown kind) with a wrongly typed name, a wrongly typed pointer and a numeric null policy
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":5,\"kind\":\"Fuzzy\",\"leftPointer\":7,\"rightPointer\":\"/a\",\"nullPolicy\":1}]}";
             string report = Validate(json, out int errors);
             Assert.Equal(4, errors);
             Assert.Equal(new[] { "InvalidType", "InvalidType", "UnknownEnumValue", "UnknownKind" }, Codes(report).OrderBy(x => x));
@@ -410,7 +410,7 @@ namespace ReconciliationAutomation.Tests
         [Fact]
         public void AComparisonWhoseKindCannotBeSelected_StillHasItsPointersAndNameChecked_AndItsNameIsTaken()
         {
-            string json = "{\"schemaVersion\":1,\"keys\":[" + KeyItem("Taken") + "],\"comparisons\":[{\"name\":\"taken\",\"kind\":\"Money\",\"leftPointer\":\"bad\",\"rightPointer\":\"/a\"}," + TextItem("TAKEN") + "]}";
+            string json = "{\"schemaVersion\":1,\"keys\":[" + KeyItem("Taken") + "],\"comparisons\":[{\"name\":\"taken\",\"kind\":\"Fuzzy\",\"leftPointer\":\"bad\",\"rightPointer\":\"/a\"}," + TextItem("TAKEN") + "]}";
             string report = Validate(json, out _);
             Assert.Contains("comparisons[0].name", report);          // duplicate of the key
             Assert.Contains("comparisons[0].leftPointer", report);   // bad pointer
@@ -479,7 +479,7 @@ namespace ReconciliationAutomation.Tests
         [Fact]
         public void TheComparisonLimit_CountsDeclaredEntries_NotJustValidOnes()
         {
-            string comps = "{\"name\":\"bad\",\"kind\":\"Money\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}," + string.Join(",", Enumerable.Range(0, 128).Select(i => TextItem("c" + i)));
+            string comps = "{\"name\":\"bad\",\"kind\":\"Fuzzy\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}," + string.Join(",", Enumerable.Range(0, 128).Select(i => TextItem("c" + i)));
             string[] codes = Codes(Validate("{\"schemaVersion\":1,\"comparisons\":[" + comps + "]}", out _));
             Assert.Contains("UnknownKind", codes);
             Assert.Contains("TooManyComparisons", codes);

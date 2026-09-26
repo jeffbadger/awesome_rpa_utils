@@ -780,6 +780,10 @@ The platform-independent xunit coverage is in
   results remain. Pass an empty string (not `[]`) and verify the "use []" message.
 - Confirm no message contains values from the data (put a recognizable marker in a failing field).
 - Hand exceptions to a `LocalQueueUtils` queue as in `Documentation/QueueHandoff.md` and verify one item per exception.
+- **Boolean and Money:** add a Boolean rule and a Money rule (`AddMoneyComparison`) and reconcile rows where the currency differs
+  (`CurrencyMismatch`, no delta), a currency has the wrong shape (`InvalidCurrency`), a Boolean is the text `"yes"` (`InvalidType`)
+  and amounts sit exactly at and just beyond the tolerance. Confirm the four new methods appear with their drop-down and string
+  ports, and that `GetResultJson` shows both currencies.
 - **DataTables:** load an Excel range (or CSV) into a DataTable with the Robot Studio components, reconcile two of them
   with `ReconcileDataTables` and `/Column` pointers, and verify the same results as the JSON path. Confirm the DataTable
   ports accept the producing component's output directly. Include a numeric column, a blank cell (DBNull), a date column

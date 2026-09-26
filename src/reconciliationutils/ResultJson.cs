@@ -82,6 +82,11 @@ namespace ReconciliationAutomation
                         w.WriteBoolean("rightPresent", d.RightPresent);
                         Fragment(w, "leftValue", d.LeftValueJson);
                         Fragment(w, "rightValue", d.RightValueJson);
+                        if (d.Kind == RuleKind.Money)
+                        {
+                            Fragment(w, "leftCurrency", d.LeftCurrencyJson);
+                            Fragment(w, "rightCurrency", d.RightCurrencyJson);
+                        }
                         w.WriteString("leftInterpreted", d.LeftInterpreted);
                         w.WriteString("rightInterpreted", d.RightInterpreted);
                         w.WriteString("delta", d.Delta);

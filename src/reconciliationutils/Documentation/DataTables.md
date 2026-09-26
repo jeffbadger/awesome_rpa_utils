@@ -19,7 +19,7 @@ if (!recon.ReconcileDataTables(erpTable, bankTable, out int exceptionCount, out 
 
 ## Pointers and columns
 
-- A pointer must be exactly one segment, the column name: `/Amount`. Deeper pointers such as `/a/b` are refused with a
+- A pointer must be exactly one segment, the column name: `/Amount`. This includes the currency pointers of a Money rule. Deeper pointers such as `/a/b` are refused with a
   message naming the mapping. For a column whose name contains a slash, write `~1`: the column `Ref/No` is `/Ref~1No`.
 - Column names are matched exactly, including case. Left and right may use different names, as above.
 - A referenced column that a table does not have is read as **missing on every row**, exactly like a missing JSON property.
