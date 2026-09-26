@@ -4,10 +4,10 @@ A Pega Robot Studio-ready component (`ReconciliationUtils`) that reconciles two
 datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
-> **Status: under construction.** Work package 4 of the
+> **Status: under construction.** Work package 5 of the
 > [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md)
-> is in: the **definition** operations and `ReconcileJson` work. The result-reading methods
-> still report that they are not implemented yet. Do not use the component until the first release notes say otherwise.
+> is in: definition, `ReconcileJson` and the result readers all work. Documentation and release
+> packaging are still to come. Do not use the component until the first release notes say otherwise.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ReconciliationAutomation`
@@ -16,8 +16,7 @@ through scalar ports so an automation can route them to review or correction.
 ## Method reference (frozen contract)
 
 All 19 Release 1 methods, with their final signatures. The **Definition** methods are
-implemented. `ReconcileJson` runs a reconciliation; the **Results** methods are not implemented yet: each returns `False` with a
-message saying so. On any failure a method sets every output to its failure value (null
+implemented, and so are **Run** and **Results**. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
 operation; success has no message. The
 [plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) adds the rest.
@@ -135,6 +134,26 @@ stable reason code and an explanation that never quotes a text value.
 - Run counts are checked against the accounting equations before results are published; a failed check fails the run.
 - A run replaces the previous results atomically. A failed run leaves none, and changing the setup discards them.
 - `MaximumResults` and `MaximumDifferenceDetails` are enforced while building, so an oversized run fails instead of truncating.
+
+## Reading the results
+
+```text
+ReconcileJson(...)                         -> exceptionCount
+GetSummary / GetSummaryJson                -> counts (any time after a run)
+loop: TryReadNextException(...)            -> hasItem, resultId, kind, keyJson, leftRowIndex, rightRowIndex, reason, differenceCount
+  inner loop: TryReadNextDifference(...)   -> hasItem, ruleName, reasonCode, leftValueJson, rightValueJson, explanation
+GetResultJson(resultId)                    -> everything about one result, including every member of a duplicate group
+```
+
+- Only exceptions are read (everything except **Matched**), in result order. `reason` is the stable reason code (null when there is none).
+- `TryReadNextDifference` reads the differences of the exception read most recently; reading the next exception restarts it. Exceptions with no
+  field differences (missing record, invalid row, duplicate group) have `differenceCount` 0 and an exhausted inner cursor.
+- A row index is `-1` when that side has no row or several (a duplicate group; see `GetResultJson`).
+- A missing field value is a null string; a JSON null is the text `null`.
+- An exhausted cursor returns `True` with `hasItem` `False` and stays exhausted until `ResetResultCursor` or a new successful run.
+- Before a completed run (or after a failed run, a setup change or `ClearResults`) every reader returns `False` with a "no results" message.
+  `ClearResults` always succeeds. A bad result ID is a failure that leaves the results and cursors alone.
+- Messages never contain source values; the values come only through the value outputs and `GetResultJson`.
 
 ## Not released yet
 
