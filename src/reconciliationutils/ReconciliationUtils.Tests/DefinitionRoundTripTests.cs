@@ -151,23 +151,40 @@ namespace ReconciliationAutomation.Tests
             return c;
         }
 
-        /// <summary>A component holding as many large Text rules as fit, plus one more whose size is tuned so the canonical form is exactly <paramref name="target"/> characters.</summary>
+        /// <summary>The canonical length of a component with <paramref name="rules"/> filler rules and one final rule (a one-character-longer name, pointers "/k").</summary>
+        private static int MeasuredLength(int rules, int pointerLength)
+        {
+            using ReconciliationUtils c = Filled(rules, pointerLength);
+            Assert.NotNull(c);
+            Assert.True(c.AddTextComparisonSimple("Z", "/k", "/k", out string m), m);
+            Assert.True(c.GetDefinitionJson(out string json, out m), m);
+            return json.Length;
+        }
+
+        /// <summary>
+        /// A component whose canonical form is exactly <paramref name="target"/> characters once one tuned rule is added (or refused when the target is past the limit).
+        /// The canonical length is linear in the rule count, the pointer length and the tuned rule's pointer, so three measurements give it and the fixture is found by
+        /// arithmetic; only the one component that is returned is actually built.
+        /// </summary>
         private static ReconciliationUtils WithCanonicalLength(int target, out bool accepted, out string message)
         {
+            int empty = MeasuredLength(0, 1000);                                              // the frame and the tuned rule alone
+            int perRule1000 = MeasuredLength(1, 1000) - empty;                                // one filler rule at 1,000-character pointers
             for (int pointerLength = 1000; pointerLength >= 900; pointerLength--)
+            {
+                int perRule = perRule1000 + 2 * (pointerLength - 1000);                       // two pointers per rule
                 for (int rules = 127; rules >= 60; rules--)
                     for (int nameLength = 1; nameLength <= 2; nameLength++)
                     {
-                        using ReconciliationUtils probe = Filled(rules, pointerLength);
-                        if (probe == null || !probe.AddTextComparisonSimple(new string('Z', nameLength), "/k", "/k", out _)) continue;   // this many rules already leaves no room
-                        Assert.True(probe.GetDefinitionJson(out string measured, out _));
-                        int extra = target - measured.Length;                                   // each pointer character adds one character to each of the two pointers
+                        int extra = target - (empty + (nameLength - 1) + rules * perRule);   // what the tuned rule's two pointers must add
                         if (extra < 0 || extra % 2 != 0 || extra / 2 > 1020) continue;
                         ReconciliationUtils c = Filled(rules, pointerLength);
+                        Assert.NotNull(c);                                                    // the arithmetic said the fillers alone fit
                         string pointer = "/k" + new string('k', extra / 2);
                         accepted = c.AddTextComparisonSimple(new string('Z', nameLength), pointer, pointer, out message);
                         return c;
                     }
+            }
             throw new InvalidOperationException("could not tune the fixture to " + target);
         }
 
