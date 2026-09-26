@@ -780,6 +780,11 @@ The platform-independent xunit coverage is in
   results remain. Pass an empty string (not `[]`) and verify the "use []" message.
 - Confirm no message contains values from the data (put a recognizable marker in a failing field).
 - Hand exceptions to a `LocalQueueUtils` queue as in `Documentation/QueueHandoff.md` and verify one item per exception.
+- **DataTables:** load an Excel range (or CSV) into a DataTable with the Robot Studio components, reconcile two of them
+  with `ReconcileDataTables` and `/Column` pointers, and verify the same results as the JSON path. Confirm the DataTable
+  ports accept the producing component's output directly. Include a numeric column, a blank cell (DBNull), a date column
+  used as a key (the row must be an `InvalidRecord`, not an error) and a column the definition names that the table lacks
+  (the run must succeed, with `MissingField` differences or `InvalidRecord`/`MissingKey` rows, never a failure or OnlyLeft/OnlyRight). Lower `ConfigureTableLimits` and verify the failure.
 
 The platform-independent xunit coverage is in
 `src/reconciliationutils/ReconciliationUtils.Tests`

@@ -52,4 +52,14 @@ namespace ReconciliationAutomation
         /// <summary>Reads the field at a parsed restricted JSON pointer (see <see cref="JsonPointer"/>).</summary>
         FieldValue Read(string[] pointerSegments);
     }
+
+    /// <summary>A dataset the matching reads: a number of rows, each readable through <see cref="IRowReader"/>. JSON input and DataTable input both are one.</summary>
+    internal interface IRowSource
+    {
+        /// <summary>The number of rows, including rows that are not objects.</summary>
+        int RowCount { get; }
+
+        /// <summary>A reader for the row at a zero-based source index.</summary>
+        IRowReader RowAt(int index);
+    }
 }

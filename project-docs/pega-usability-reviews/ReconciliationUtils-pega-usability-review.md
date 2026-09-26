@@ -16,7 +16,7 @@ method calls or one JSON text; results come out as counts, two scalar cursors, o
 | Area | Rating | Notes |
 |---|---|---|
 | Definition | Direct | `Add...Simple` methods take three strings; the full forms add `bool` trim/ignore-case and a drop-down null policy; the whole definition can be one JSON asset validated with `ValidateDefinitionJson`. |
-| Running | Direct | One call, `ReconcileJson(left, right)`; `True` means the run completed even with mismatches, so a step never depends on parsing `message`. |
+| Running | Chainable | `ReconcileJson(left, right)` takes two strings; `ReconcileDataTables(left, right)` takes two DataTables, which Robot Studio's Excel, CSV and SQL components already produce, so the producer connects directly with no proxy or JSON step; `True` means the run completed even with mismatches, so a step never depends on parsing `message`. |
 | Summary | Direct | `GetSummary` returns four `int` ports; `GetSummaryJson` returns the rest. |
 | Exceptions | Direct | `TryReadNextException` follows the `TryTakeNext` idea: `hasItem` is the `While` condition, `kind` feeds a `StringSwitch`, row indices are `int` with a documented `-1`. |
 | Differences | Direct | `TryReadNextDifference` is an inner cursor over the exception just read, replacing a `GetDifferenceCount`/`GetDifferenceAt(i)` index loop. |
@@ -48,7 +48,9 @@ method calls or one JSON text; results come out as counts, two scalar cursors, o
 - The exception cursor is stateful (one per component instance). Two independent readers of
   the same results need two instances or a `ResetResultCursor` between passes; this is
   documented in ResultsAndCounts and is the price of scalar ports.
-- Datasets must arrive as JSON text. Until the DataTable bridge (planned, Release 2), a
-  DataTable must be serialized first.
-- Pointers are typed strings; a typo is caught only when a run reports the field missing
-  (`MissingField`), not at design time. `ValidateDefinitionJson` catches malformed pointers.
+- Datasets arrive as JSON text or as DataTables. A DataTable's date and time cells are
+  unsupported values (put dates in a text column until the date comparison rules arrive), and
+  `double`/`float` cells carry binary rounding; both are documented in DataTables.md.
+- A DataTable pointer names one column (`/Amount`), not a path. A mistyped or missing column is
+  read as a missing field on every row (not a failure, matching JSON), so it appears in the summary
+  counts; check `invalidLeftRowCount`/`invalidRightRowCount` after a run.

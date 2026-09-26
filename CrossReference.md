@@ -31,7 +31,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [LocalQueueUtils](#localqueueutils) | `LocalQueueAutomation` | 21 | 0 | 0 | A persistent, machine-local work queue with a lease/process/complete loop, for variable-count work without a Pega collection proxy. |
 | [MouseUtils](#mouseutils) | `MouseAutomation` | 92 (99 rows) | 0 | 0 | Moves, clicks, drags, and scrolls the mouse; controls cursor appearance, visibility, and confinement. |
 | [OcrUtils](#ocrutils) | `OcrAutomation` | 11 | 0 | 0 | Recognizes text from the screen or an image file via `Windows.Media.Ocr`. |
-| [ReconciliationUtils](#reconciliationutils) | `ReconciliationAutomation` | 19 | 0 | 0 | Reconciles two JSON datasets by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing. |
+| [ReconciliationUtils](#reconciliationutils) | `ReconciliationAutomation` | 21 | 0 | 0 | Reconciles two JSON datasets or DataTables by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing. |
 | [ScreenCaptureUtils](#screencaptureutils) | `ScreenCaptureAutomation` | 28 (34 rows) | 0 | 0 | Captures the screen/region/window to file or clipboard; compares against a baseline; annotates/redacts saved screenshots. |
 | [ServiceUtils](#serviceutils) | `ServiceAutomation` | 24 (25 rows) | 0 | 0 | Queries, starts, stops, restarts, pauses/resumes, and configures the startup type of Windows services. |
 | [SessionUtils](#sessionutils) | `SessionAutomation` | 31 | 0 | 0 | Reports on and acts on Windows session/workstation state — identity, kind, connect state, lock, idle time. |
@@ -581,7 +581,7 @@ Pega Robot Studio-ready component that recognizes text from a screen region or a
 
 ## ReconciliationUtils
 
-Reconciles two JSON datasets by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing.
+Reconciles two JSON datasets or DataTables by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing.
 
 **Namespace:** `ReconciliationAutomation` | **Assembly:** `ReconciliationAutomation`
 
@@ -598,11 +598,13 @@ Reconciles two JSON datasets by business key and reports matches, differences, r
 | `ClearDefinition` | `bool ClearDefinition(out string message)` | Restores the default definition (no keys, no comparisons, default limits) and clears any results. |
 | `ClearResults` | `bool ClearResults(out string message)` | Discards the last run's results. Succeeds even when there are none. |
 | `ConfigureLimits` | `bool ConfigureLimits(int maximumRowsPerSide, int maximumInputCharactersPerSide, int maximumResults, int maximumDifferenceDetails, out string message)` | Sets the resource limits: rows per side, input characters per side, result records and difference details. A run that exceeds a limit fails whole. |
+| `ConfigureTableLimits` | `bool ConfigureTableLimits(int maximumColumns, int maximumCells, int maximumValueCharacters, out string message)` | Sets the DataTable limits used by ReconcileDataTables: columns per table, cells (rows x columns) per table and characters in one text value. Defaults 100, 2,000,000 and 4,096. |
 | `GetDefinitionJson` | `bool GetDefinitionJson(out string definitionJson, out string message)` | Returns the current definition, including limits, as canonical JSON. |
 | `GetResultJson` | `bool GetResultJson(string resultId, out string resultJson, out string message)` | Returns the full detail of one result, including every member of a duplicate-key group. |
 | `GetSummary` | `bool GetSummary(out int leftRowCount, out int rightRowCount, out int matchedPairCount, out int exceptionCount, out string message)` | Returns the headline counts of the last completed run. |
 | `GetSummaryJson` | `bool GetSummaryJson(out string summaryJson, out string message)` | Returns every count of the last completed run as JSON. |
 | `LoadDefinitionJson` | `bool LoadDefinitionJson(string definitionJson, out string message)` | Replaces the whole definition from JSON. An invalid definition is rejected whole and the previous one stays in force. |
+| `ReconcileDataTables` | `bool ReconcileDataTables(DataTable leftTable, DataTable rightTable, out int exceptionCount, out string message)` | Reconciles two DataTables (for example loaded from Excel, CSV or a database). A pointer names one column, such as /Amount. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched. The tables are read, never modified. |
 | `ReconcileJson` | `bool ReconcileJson(string leftJson, string rightJson, out int exceptionCount, out string message)` | Reconciles two JSON arrays of objects. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched. |
 | `ResetResultCursor` | `bool ResetResultCursor(out string message)` | Restarts exception and difference reading from the first exception. |
 | `TryReadNextDifference` | `bool TryReadNextDifference(out bool hasItem, out string ruleName, out string reasonCode, out string leftValueJson, out string rightValueJson, out string explanation, out string message)` | Reads the next field difference of the exception most recently read. hasItem is False when there are no more. A missing value is null; a JSON null is the text null. |
