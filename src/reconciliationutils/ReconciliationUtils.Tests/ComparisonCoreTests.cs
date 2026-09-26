@@ -111,6 +111,50 @@ namespace ReconciliationAutomation.Tests
             AssertInvalid(Eval(Text(), wrong, S("5")), "InvalidType");
         }
 
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(true, false)]
+        [InlineData(false, true)]
+        [InlineData(true, true)]
+        public void Text_AStringWithNoText_IsAProblem_NotANullReference_WhateverTheTrimAndCaseSettings(bool trim, bool ignoreCase)
+        {
+            // FieldValue promises text for a string; a row source that breaks the promise must not crash the rule or be read as a value
+            var noText = new FieldValue(FieldKind.String, null);
+            ComparisonDef rule = Text(trim: trim, ignoreCase: ignoreCase);
+            ComparisonOutcome left = Eval(rule, noText, S("x"));
+            AssertInvalid(left, "InvalidType");
+            Assert.Contains("no text", left.Explanation);
+            AssertInvalid(Eval(rule, S("x"), noText), "InvalidType");
+            AssertInvalid(Eval(rule, noText, noText), "InvalidType");           // two of them are NOT "equal": there is nothing to compare
+            AssertInvalid(Eval(Text(trim: trim, ignoreCase: ignoreCase, policy: ComparisonNullPolicy.AllowBothNull), noText, noText), "InvalidType");
+        }
+
+        [Theory]
+        [InlineData("Integer")]
+        [InlineData("Number")]
+        [InlineData("String")]
+        [InlineData("Boolean")]
+        public void EveryRuleKind_ATypedValueWithNoText_IsAProblem_NotAnException(string kindName)
+        {
+            var noText = new FieldValue((FieldKind)System.Enum.Parse(typeof(FieldKind), kindName), null);
+            AssertInvalid(Eval(Dec(), noText, I("1")), "InvalidType");
+            AssertInvalid(Eval(Dec(), I("1"), noText), "InvalidType");
+            AssertInvalid(Eval(Text(), noText, S("x")), "InvalidType");
+            ComparisonOutcome o = Eval(Dec(), noText, noText);
+            Assert.Equal(ComparisonState.Invalid, o.State);
+            Assert.NotNull(o.LeftValueJson);                                     // and the report about it is still well formed
+            using (System.Text.Json.JsonDocument.Parse(o.LeftValueJson)) { }
+        }
+
+        [Fact]
+        public void ANullMarker_IsStillNull_NotAStringWithNoText()
+        {
+            // Null and Missing legitimately have no text; the guard must not touch them
+            AssertInvalid(Eval(Text(), Null, S("x")), "NullNotAllowed");
+            AssertInvalid(Eval(Text(), Missing, S("x")), "MissingField");
+            AssertEqual(Eval(Text(policy: ComparisonNullPolicy.AllowBothNull), Null, Null));
+        }
+
         [Fact]
         public void Text_TheExplanation_NeverQuotesTheValues()
         {

@@ -131,6 +131,15 @@ namespace ReconciliationAutomation
                     return side;
             }
 
+            // A string, number or Boolean always carries its text. A row source that breaks that contract (a DataTable reader with a bad
+            // cell) must produce a comparison problem, not a null reference or, worse, a null treated as an ordinary empty value.
+            if (value.Text == null && (value.Kind == FieldKind.String || value.Kind == FieldKind.Integer || value.Kind == FieldKind.Number || value.Kind == FieldKind.Boolean))
+            {
+                side.BadCode = "InvalidType";
+                side.BadReason = "the value has no text (a malformed value from the row source)";
+                return side;
+            }
+
             if (rule.Kind == RuleKind.Text)
             {
                 if (value.Kind != FieldKind.String)
