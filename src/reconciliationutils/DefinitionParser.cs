@@ -41,6 +41,8 @@ namespace ReconciliationAutomation
     {
         private static readonly string[] RootProperties = { "schemaVersion", "keys", "comparisons", "limits" };
         private static readonly string[] KeyProperties = { "name", "leftPointer", "rightPointer", "trim", "ignoreCase" };
+        /// <summary>The options every comparison has, whatever its kind: used to check a comparison whose kind cannot be selected.</summary>
+        private static readonly string[] CommonComparisonProperties = { "name", "kind", "leftPointer", "rightPointer", "nullPolicy" };
         private static readonly string[] TextProperties = { "name", "kind", "leftPointer", "rightPointer", "trim", "ignoreCase", "nullPolicy" };
         private static readonly string[] DecimalProperties = { "name", "kind", "leftPointer", "rightPointer", "absoluteTolerance", "nullPolicy" };
         private static readonly string[] LimitProperties = { "maximumRowsPerSide", "maximumInputCharactersPerSide", "maximumResults", "maximumDifferenceDetails" };
@@ -159,19 +161,21 @@ namespace ReconciliationAutomation
                     continue;
                 }
 
-                // The kind decides which options are allowed, so read it first from the raw object.
-                string kindText = item.TryGetProperty("kind", out JsonElement kindElement) && kindElement.ValueKind == JsonValueKind.String ? kindElement.GetString() : null;
+                // The kind decides which options are allowed, so read it first from the raw object. Absent, wrongly typed and
+                // unsupported are three different problems and are reported as such.
+                bool hasKind = item.TryGetProperty("kind", out JsonElement kindElement);
+                string kindText = hasKind && kindElement.ValueKind == JsonValueKind.String ? kindElement.GetString() : null;
                 string[] allowed;
                 RuleKind kind;
                 if (kindText == "Text") { kind = RuleKind.Text; allowed = TextProperties; }
                 else if (kindText == "Decimal") { kind = RuleKind.Decimal; allowed = DecimalProperties; }
                 else
                 {
-                    string why = kindText == null
-                        ? "kind is required and must be a string: Text or Decimal"
-                        : "the kind '" + kindText + "' is not supported by this version; use Text or Decimal";
-                    findings.Add(path + ".kind", kindText == null ? "MissingProperty" : "UnknownKind", why);
-                    ReadObject(item, path, null, null, findings); // still report repeated properties
+                    if (!hasKind) findings.Add(path + ".kind", "MissingProperty", "kind is required: Text or Decimal");
+                    else if (kindElement.ValueKind != JsonValueKind.String) findings.Add(path + ".kind", "InvalidType", "kind must be a string: Text or Decimal");
+                    else findings.Add(path + ".kind", "UnknownKind", "the kind '" + kindText + "' is not supported by this version; use Text or Decimal");
+                    // Still check the rest against the options every comparison has, so a repeated or misspelled property is reported too.
+                    ReadObject(item, path, CommonComparisonProperties, null, findings);
                     continue;
                 }
 

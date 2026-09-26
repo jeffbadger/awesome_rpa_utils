@@ -161,6 +161,53 @@ namespace ReconciliationAutomation.Tests
             Assert.Equal("DepthLimit", failure.Code);
         }
 
+        [Fact]
+        public void ANumberToken_IsBoundedAt256Characters()
+        {
+            Assert.True(TryParse("[{\"k\":" + new string('1', 256) + "}]", out JsonInput ok, out _));
+            ok.Dispose();
+            Assert.False(TryParse("[{\"k\":" + new string('1', 257) + "}]", out _, out InputFailure failure));
+            Assert.Equal("NumberTooLong", failure.Code);
+            Assert.Contains("256", failure.Message);
+            Assert.StartsWith("Left input", failure.Message);
+        }
+
+        [Theory]
+        [InlineData("-{0}")]                                        // the sign counts
+        [InlineData("{0}.5")]                                       // so does a fraction
+        [InlineData("1e{0}")]                                       // and an exponent
+        public void TheNumberBound_CountsTheWholeToken(string shape)
+        {
+            // the digits are sized so that the whole token is 257 characters
+            string Token(int digits) => string.Format(shape, new string('1', digits));
+            int extra = Token(1).Length - 1;
+            string over = Token(257 - extra);
+            Assert.Equal(257, over.Length);
+            Assert.False(TryParse("[{\"k\":" + over + "}]", out _, out InputFailure failure));
+            Assert.Equal("NumberTooLong", failure.Code);
+            Assert.True(TryParse("[{\"k\":" + Token(256 - extra) + "}]", out JsonInput ok, out _));
+            ok.Dispose();
+        }
+
+        [Fact]
+        public void ALongNumber_AnywhereInTheInput_IsCaught_EvenNestedOrInAnArray()
+        {
+            string longNumber = new string('9', 300);
+            Assert.False(TryParse("[{\"a\":{\"b\":[1," + longNumber + "]}}]", out _, out InputFailure nested));
+            Assert.Equal("NumberTooLong", nested.Code);
+            Assert.False(TryParse("[" + longNumber + "]", out _, out InputFailure topLevel));
+            Assert.Equal("NumberTooLong", topLevel.Code);
+        }
+
+        [Fact]
+        public void ALongNumber_IsRejectedBeforeAnyTreeIsBuilt_WithoutEchoingIt()
+        {
+            string longNumber = "8" + new string('7', 400);
+            Assert.False(TryParse("[{\"k\":" + longNumber + "}]", out JsonInput input, out InputFailure failure));
+            Assert.Null(input);
+            Assert.DoesNotContain("7777", failure.Message);
+        }
+
         [Theory]
         [InlineData("[{\"secret\":\"4111-1111-1111-1111\",]")]
         [InlineData("[{\"secret\":\"4111-1111-1111-1111\"} \"SSN 078-05-1120\"]")]

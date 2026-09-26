@@ -182,11 +182,34 @@ namespace ReconciliationAutomation.Tests
         [InlineData("\"kind\":\"CalendarDate\"", "UnknownKind")]
         [InlineData("\"kind\":\"Instant\"", "UnknownKind")]
         [InlineData("\"kind\":\"text\"", "UnknownKind")]              // case-sensitive
-        [InlineData("\"kind\":7", "MissingProperty")]
+        [InlineData("\"kind\":7", "InvalidType")]                  // present but not a string: a type error, not "missing"
+        [InlineData("\"kind\":null", "InvalidType")]
+        [InlineData("\"kind\":true", "InvalidType")]
+        [InlineData("\"kind\":{}", "InvalidType")]
         public void AComparisonKind_MustBeTextOrDecimal(string kind, string code)
         {
             string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\"," + kind + ",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
             Assert.Equal(code, FirstCode(Validate(json, out _)));
+        }
+
+        [Theory]
+        [InlineData("\"kind\":\"Money\"")]
+        [InlineData("\"kind\":7")]
+        [InlineData("")]                                              // no kind at all
+        public void AComparisonWhoseKindCannotBeSelected_StillHasItsOtherPropertiesChecked(string kind)
+        {
+            string body = "{\"name\":\"C\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\",\"bogus\":1" + (kind == "" ? "" : "," + kind) + "}";
+            string report = Validate("{\"schemaVersion\":1,\"comparisons\":[" + body + "]}", out int errors);
+            Assert.Equal(2, errors);                                   // the kind problem and the unknown property
+            Assert.Contains("UnknownProperty", Codes(report));
+            Assert.Contains("comparisons[0].bogus", report);
+        }
+
+        [Fact]
+        public void AComparisonWhoseKindCannotBeSelected_ReportsARepeatedProperty()
+        {
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"name\":\"D\",\"kind\":\"Money\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
+            Assert.Equal(new[] { "UnknownKind", "DuplicateProperty" }, Codes(Validate(json, out _)));
         }
 
         [Fact]

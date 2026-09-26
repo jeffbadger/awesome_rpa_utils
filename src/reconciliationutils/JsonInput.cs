@@ -27,6 +27,9 @@ namespace ReconciliationAutomation
     {
         internal const int MaxDepth = 64;
 
+        /// <summary>The longest number token accepted, in characters. It bounds the memory one number can hold and any later conversion of it.</summary>
+        internal const int MaxNumberTokenLength = 256;
+
         private readonly JsonDocument document;
         private readonly List<JsonElement> rows;
 
@@ -121,6 +124,12 @@ namespace ReconciliationAutomation
                     if ((reader.TokenType == JsonTokenType.StartObject || reader.TokenType == JsonTokenType.StartArray) && reader.CurrentDepth + 1 > MaxDepth)
                     {
                         failure = new InputFailure("DepthLimit", side + " input is nested deeper than the limit of " + MaxDepth + ".");
+                        return false;
+                    }
+
+                    if (reader.TokenType == JsonTokenType.Number && reader.ValueSpan.Length > MaxNumberTokenLength)
+                    {
+                        failure = new InputFailure("NumberTooLong", side + " input has a number longer than " + MaxNumberTokenLength + " characters" + Position(reader) + ".");
                         return false;
                     }
 

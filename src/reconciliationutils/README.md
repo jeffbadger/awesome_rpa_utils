@@ -59,7 +59,7 @@ loaded from JSON produce identical text.
 - Unknown properties, repeated properties, wrong types and numeric enum values are errors.
   `ValidateDefinitionJson` reports every problem (path, code, message; up to 100) without
   changing anything: `errorCount` is 0 for a valid definition.
-- Input JSON is read with bounds (characters, depth 64, rows), rejects repeated property names
+- Input JSON is read with bounds (characters, depth 64, rows, and 256 characters per number), rejects repeated property names
   anywhere, and never echoes the data in an error message.
 
 ### Definition
