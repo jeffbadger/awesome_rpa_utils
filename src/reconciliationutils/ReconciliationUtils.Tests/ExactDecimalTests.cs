@@ -84,19 +84,18 @@ namespace ReconciliationAutomation.Tests
         // ---------------------------------------------------------------- never rounds, never overflows
 
         [Theory]
-        [InlineData("0.00000000000000000000000000001")]                         // 29 decimal places
-        [InlineData("1.00000000000000000000000000001")]                         // 29 places, so it would have to be rounded
-        [InlineData("79228162514264337593543950336")]                           // decimal.MaxValue + 1
-        [InlineData("-79228162514264337593543950336")]
-        [InlineData("100000000000000000000000000000")]                         // 1e29
-        [InlineData("79228162514264337593543950335.5")]                         // one place past the largest value
-        [InlineData("1.23456789012345678901234567891")]                         // 29 decimal places, the last not a zero
-        [InlineData("12345678901234567890123456789012345678901234567890")]
-        public void AValueThatCannotBeHeldExactly_IsRejected_NotRounded(string text)
+        [InlineData("0.00000000000000000000000000001", "decimal places")]                         // 29 decimal places
+        [InlineData("1.00000000000000000000000000001", "decimal places")]                         // 29 places, so it would have to be rounded
+        [InlineData("79228162514264337593543950336", "too large")]                                // decimal.MaxValue + 1
+        [InlineData("-79228162514264337593543950336", "too large")]
+        [InlineData("100000000000000000000000000000", "too large")]                               // 1e29
+        [InlineData("79228162514264337593543950335.5", "too large")]                              // one place past the largest value
+        [InlineData("1.23456789012345678901234567891", "decimal places")]                         // 29 decimal places, the last not a zero
+        [InlineData("12345678901234567890123456789012345678901234567890", "too large")]
+        public void AValueThatCannotBeHeldExactly_IsRejected_NotRounded(string text, string expectedReason)
         {
             Assert.False(ExactDecimal.TryParseText(text, out _, out string error));
-            Assert.Contains("exact", error + " exact");   // (every rejection explains itself; the wording differs by cause)
-            Assert.False(string.IsNullOrWhiteSpace(error));
+            Assert.Contains(expectedReason, error);       // and it says which limit it hit
         }
 
         [Fact]
@@ -157,6 +156,37 @@ namespace ReconciliationAutomation.Tests
         {
             Assert.False(ExactDecimal.TryParseJsonNumber(token, out _, out string error));
             Assert.False(string.IsNullOrWhiteSpace(error));
+        }
+
+        [Theory]
+        [InlineData("01")]                          // a leading zero before another digit is not JSON
+        [InlineData("-01")]
+        [InlineData("00")]
+        [InlineData("-00")]
+        [InlineData("00.5")]
+        [InlineData("007")]
+        [InlineData("01e2")]
+        [InlineData("-0123.5")]
+        public void ALeadingZero_IsNotAJsonNumber(string token)
+        {
+            Assert.False(ExactDecimal.TryParseJsonNumber(token, out _, out string error));
+            Assert.Contains("leading zero", error);
+        }
+
+        [Theory]
+        [InlineData("0", "0")]
+        [InlineData("-0", "0")]
+        [InlineData("0.5", "0.5")]
+        [InlineData("-0.05", "-0.05")]
+        [InlineData("10", "10")]                    // a zero that is not leading is fine
+        [InlineData("100.05", "100.05")]
+        [InlineData("0e5", "0")]
+        [InlineData("0.0", "0")]
+        [InlineData("0.00e1", "0")]
+        [InlineData("10e-1", "1")]
+        public void ZerosThatAreNotLeadingDigits_AreFine(string token, string expected)
+        {
+            Assert.Equal(expected, Json(token).ToString());
         }
 
         [Theory]
@@ -280,27 +310,35 @@ namespace ReconciliationAutomation.Tests
         [InlineData("fa-IR")]
         public void ParsingAndPrinting_DoNotDependOnTheCurrentCulture(string cultureName)
         {
-            CultureInfo original = CultureInfo.CurrentCulture;
-            CultureInfo originalUi = CultureInfo.CurrentUICulture;
-            try
+            CultureScope.Run(cultureName, () =>
             {
-                CultureInfo culture;
-                try { culture = new CultureInfo(cultureName); }
-                catch (CultureNotFoundException) { return; }      // a host without this culture data has nothing to prove here
-                CultureInfo.CurrentCulture = culture;
-                CultureInfo.CurrentUICulture = culture;
-
                 Assert.Equal("1234.5", Text("1234.50").ToString());
                 Assert.Equal("-0.25", Text("-0.25").ToString());
                 Assert.Equal("100", Json("1e2").ToString());
                 Assert.Equal("0.2", ExactDecimal.Subtract(Text("0.3"), Text("0.1")).ToString());
                 Assert.False(ExactDecimal.TryParseText("1,5", out _, out _));       // a comma is never a decimal point, whatever the culture
-                Assert.False(ExactDecimal.TryParseText("١٢٣", out _, out _));       // Arabic-Indic digits are not accepted, whatever the culture
+                Assert.False(ExactDecimal.TryParseText("\u0661\u0662\u0663", out _, out _));   // Arabic-Indic digits are not accepted, whatever the culture
+            });
+        }
+
+        [Fact]
+        public void TheCultureHelper_PutsBackBothCultures_EvenWhenTheyDiffer()
+        {
+            CultureInfo formatting = CultureInfo.CurrentCulture;
+            CultureInfo ui = CultureInfo.CurrentUICulture;
+            try
+            {
+                CultureInfo.CurrentCulture = new CultureInfo("fr-FR");
+                CultureInfo.CurrentUICulture = new CultureInfo("de-DE");                 // deliberately different from the formatting culture
+                CultureScope.Run("tr-TR", () => Assert.Equal("tr-TR", CultureInfo.CurrentUICulture.Name));
+                Assert.Equal("fr-FR", CultureInfo.CurrentCulture.Name);
+                Assert.Equal("de-DE", CultureInfo.CurrentUICulture.Name);               // and the UI culture is not overwritten with the formatting one
             }
+            catch (CultureNotFoundException) { /* a host without these cultures has nothing to prove */ }
             finally
             {
-                CultureInfo.CurrentCulture = original;
-                CultureInfo.CurrentUICulture = originalUi;
+                CultureInfo.CurrentCulture = formatting;
+                CultureInfo.CurrentUICulture = ui;
             }
         }
     }

@@ -63,7 +63,7 @@ namespace ReconciliationAutomation
             };
 
             ExactDecimal tolerance = default;
-            if (rule.Kind == RuleKind.Decimal && !ExactDecimal.TryParseText(rule.AbsoluteTolerance, out tolerance, out string toleranceError))
+            if (rule.Kind == RuleKind.Decimal && !rule.TryGetTolerance(out tolerance, out string toleranceError))
                 return Invalid(outcome, "InvalidDecimal", "The rule's tolerance is not a usable decimal (" + toleranceError + ").");
 
             Side l = Interpret(rule, left);

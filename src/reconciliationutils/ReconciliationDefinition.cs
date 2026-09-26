@@ -55,6 +55,35 @@ namespace ReconciliationAutomation
         internal bool Trim;                       // Text
         internal bool IgnoreCase;                 // Text
         internal string AbsoluteTolerance = "0";  // Decimal (invariant decimal text)
+
+        private sealed class ParsedTolerance
+        {
+            internal string Text;
+            internal ExactDecimal Value;
+            internal string Error;
+        }
+
+        private ParsedTolerance parsedTolerance;
+
+        /// <summary>
+        /// The tolerance as an exact number, parsed once and remembered (a run compares every pair against it). Keyed on the text, so
+        /// changing <see cref="AbsoluteTolerance"/> is honored. The remembered result is one immutable object swapped in with a single
+        /// reference assignment, so concurrent readers can never see a half-updated value. A tolerance is validated when a rule is added, so
+        /// a failure here means the rule was built some other way; it is reported, never thrown.
+        /// </summary>
+        internal bool TryGetTolerance(out ExactDecimal value, out string error)
+        {
+            ParsedTolerance parsed = parsedTolerance;
+            if (parsed == null || parsed.Text != AbsoluteTolerance)
+            {
+                parsed = new ParsedTolerance { Text = AbsoluteTolerance };
+                ExactDecimal.TryParseText(AbsoluteTolerance, out parsed.Value, out parsed.Error);
+                parsedTolerance = parsed;
+            }
+            value = parsed.Value;
+            error = parsed.Error;
+            return parsed.Error == null;
+        }
         internal ComparisonNullPolicy NullPolicy = ComparisonNullPolicy.RequireValue;
     }
 

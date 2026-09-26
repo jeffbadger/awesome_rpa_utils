@@ -75,24 +75,14 @@ namespace ReconciliationAutomation.Tests
         [InlineData("ar-SA")]
         public void Text_DoesNotDependOnTheCurrentCulture(string cultureName)
         {
-            CultureInfo original = CultureInfo.CurrentCulture;
-            try
+            CultureScope.Run(cultureName, () =>
             {
-                CultureInfo culture;
-                try { culture = new CultureInfo(cultureName); } catch (CultureNotFoundException) { return; }
-                CultureInfo.CurrentCulture = culture;
-                CultureInfo.CurrentUICulture = culture;
                 ComparisonDef rule = Text(ignoreCase: true);
                 AssertEqual(Eval(rule, S("TITLE"), S("title")));                                 // the Turkish-I trap: I and i still match
                 AssertEqual(Eval(rule, S("I"), S("i")));
                 AssertDifferent(Eval(rule, S("\u0130"), S("i")), "TextMismatch");               // dotted capital I is not i
                 AssertDifferent(Eval(rule, S("I"), S("\u0131")), "TextMismatch");               // dotless i is not I
-            }
-            finally
-            {
-                CultureInfo.CurrentCulture = original;
-                CultureInfo.CurrentUICulture = original;
-            }
+            });
         }
 
         [Fact]
@@ -363,6 +353,32 @@ namespace ReconciliationAutomation.Tests
             Assert.Contains("needs a number or numeric text", o.Explanation);
         }
 
+        [Theory]
+        [InlineData("01")]
+        [InlineData("-01")]
+        [InlineData("00.5")]
+        public void Decimal_AMalformedNumberToken_FromAnyRowSource_IsInvalid_NotComparedAsAValidNumber(string token)
+        {
+            // JsonRowReader only hands over well-formed tokens, but a row reader for another source (a DataTable) might not
+            ComparisonOutcome o = Eval(Dec(), N(token), I("1"));
+            AssertInvalid(o, "InvalidDecimal");
+            Assert.Contains("leading zero", o.Explanation);
+        }
+
+        [Fact]
+        public void Decimal_TheToleranceIsParsedOnce_ButAChangedToleranceIsHonored()
+        {
+            ComparisonDef rule = Dec("0.01");
+            AssertEqual(Eval(rule, S("1.00"), S("1.01")));
+            AssertEqual(Eval(rule, S("1.00"), S("1.01")));         // the cached value is reused
+            rule.AbsoluteTolerance = "0";
+            AssertDifferent(Eval(rule, S("1.00"), S("1.01")), "DecimalMismatch");   // the cache is keyed on the text
+            rule.AbsoluteTolerance = "1e3";
+            AssertInvalid(Eval(rule, S("1.00"), S("1.01")), "InvalidDecimal");
+            rule.AbsoluteTolerance = "0.5";
+            AssertEqual(Eval(rule, S("1.00"), S("1.50")));         // and it recovers
+        }
+
         [Fact]
         public void Decimal_ARuleWithAnUnusableTolerance_IsInvalid_NotAnException()
         {
@@ -379,26 +395,15 @@ namespace ReconciliationAutomation.Tests
         [InlineData("tr-TR")]
         public void Decimal_DoesNotDependOnTheCurrentCulture(string cultureName)
         {
-            CultureInfo original = CultureInfo.CurrentCulture;
-            try
+            CultureScope.Run(cultureName, () =>
             {
-                CultureInfo culture;
-                try { culture = new CultureInfo(cultureName); } catch (CultureNotFoundException) { return; }
-                CultureInfo.CurrentCulture = culture;
-                CultureInfo.CurrentUICulture = culture;
-
                 ComparisonOutcome o = Eval(Dec("0.05"), S("1234.50"), S("1234.56"));
                 AssertDifferent(o, "DecimalMismatch");
                 Assert.Equal("0.06", o.Delta);                                    // a dot, never a locale comma
                 Assert.Equal("1234.5", o.LeftInterpreted);
                 AssertInvalid(Eval(Dec(), S("1,5"), S("1.5")), "InvalidDecimal");  // a comma is never a decimal point
                 AssertInvalid(Eval(Dec(), S("\u0661\u0662\u0663"), I("123")), "InvalidDecimal");   // Arabic-Indic digits are not digits here
-            }
-            finally
-            {
-                CultureInfo.CurrentCulture = original;
-                CultureInfo.CurrentUICulture = original;
-            }
+            });
         }
 
         [Fact]

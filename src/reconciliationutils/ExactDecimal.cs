@@ -80,6 +80,8 @@ namespace ReconciliationAutomation
             while (i < token.Length && IsDigit(token[i])) i++;
             int integerDigits = i - integerStart;
             if (integerDigits == 0) { error = "it is not a number"; return false; }
+            // JSON's integer part is 0 or a digit 1-9 followed by digits: a leading zero before another digit (01, -01, 00.5) is not a JSON number.
+            if (integerDigits > 1 && token[integerStart] == '0') { error = "it is not a JSON number (a leading zero is not allowed)"; return false; }
 
             int fractionStart = i;
             int fractionDigits = 0;
