@@ -4,11 +4,10 @@ A Pega Robot Studio-ready component (`ReconciliationUtils`) that reconciles two
 datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
-> **Status: under construction.** Work package 2 of the
+> **Status: under construction.** Work package 4 of the
 > [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md)
-> is in: the **definition** operations work (setup methods, JSON load/validate/export,
-> limits). `ReconcileJson` and the result-reading methods still report that they are not
-> implemented yet. Do not use the component until the first release notes say otherwise.
+> is in: the **definition** operations and `ReconcileJson` work. The result-reading methods
+> still report that they are not implemented yet. Do not use the component until the first release notes say otherwise.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ReconciliationAutomation`
@@ -17,7 +16,7 @@ through scalar ports so an automation can route them to review or correction.
 ## Method reference (frozen contract)
 
 All 19 Release 1 methods, with their final signatures. The **Definition** methods are
-implemented. The **Run** and **Results** methods are not yet: each returns `False` with a
+implemented. `ReconcileJson` runs a reconciliation; the **Results** methods are not implemented yet: each returns `False` with a
 message saying so. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
 operation; success has no message. The
@@ -102,8 +101,7 @@ side is invalid) or `AllowBothNull` (two nulls are equal).
 
 ## How comparisons work
 
-These are the rules `ReconcileJson` will apply to each pair of records that share a key (the rules themselves are implemented and tested;
-running a whole reconciliation arrives with the next work package). Each rule reports **equal**, **different** or **invalid**, with a
+These are the rules `ReconcileJson` applies to each pair of records that share a key. Each rule reports **equal**, **different** or **invalid**, with a
 stable reason code and an explanation that never quotes a text value.
 
 - **Every rule evaluates every pair**; one mismatch never stops the others.
@@ -123,6 +121,20 @@ stable reason code and an explanation that never quotes a text value.
   representable. Reason for a difference: `DecimalMismatch`.
 - **Original values are kept** as JSON fragments next to the interpreted ones, so a missing field (no value), a null (`null`), an empty
   string (`""`) and a zero (`0`) stay distinguishable; an object or array is described (`"(an object)"`), never copied.
+
+## How reconciliation runs
+
+`ReconcileJson(leftJson, rightJson, out exceptionCount, out message)` parses both datasets, then matches rows by key:
+
+- Rows are grouped by their normalized key (structured, so `["a","bc"]` never collides with `["ab","c"]`). Matching is indexed, so cost grows with the row count, not rows x rows.
+- One key on both sides, one row each: the pair is compared with every rule. **Matched** if all agree, **Different** if any differ, **InvalidComparison** if any value could not be compared (this outranks Different).
+- One side only: **OnlyLeft** / **OnlyRight**.
+- More than one row for a key on either side: one **DuplicateKey** result listing every row. Nothing is guessed or zipped, and a unique row on the other side belongs to that group.
+- A row with no usable key (not an object, key missing, wrong type, empty): **InvalidRecord**.
+- Every input row lands in exactly one result. Results run in left-row order, then remaining right rows, with IDs `r000001`, `r000002`, ...
+- Run counts are checked against the accounting equations before results are published; a failed check fails the run.
+- A run replaces the previous results atomically. A failed run leaves none, and changing the setup discards them.
+- `MaximumResults` and `MaximumDifferenceDetails` are enforced while building, so an oversized run fails instead of truncating.
 
 ## Not released yet
 

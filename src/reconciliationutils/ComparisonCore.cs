@@ -16,6 +16,8 @@ namespace ReconciliationAutomation
     /// <summary>What one comparison rule found for one pair of records.</summary>
     internal sealed class ComparisonOutcome
     {
+        internal ComparisonOutcome Copy() => (ComparisonOutcome)MemberwiseClone();
+
         internal string RuleName { get; set; }
         internal RuleKind Kind { get; set; }
         internal ComparisonState State { get; set; }
