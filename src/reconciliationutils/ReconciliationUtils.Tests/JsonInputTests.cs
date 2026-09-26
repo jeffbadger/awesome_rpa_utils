@@ -235,6 +235,35 @@ namespace ReconciliationAutomation.Tests
             Assert.StartsWith("Left input", failure.Message);
         }
 
+        [Fact]
+        public void APropertyNameThatIsNotValidText_ReportsWhereItIs_WithoutEchoingIt()
+        {
+            // like every other input failure the message carries a position; the name itself is never quoted
+            Assert.False(TryParse("[{\"ok\":1},{\"\\uD800secret\":2}]", out _, out InputFailure failure));
+            Assert.Equal("InvalidText", failure.Code);
+            Assert.Contains("byte offset", failure.Message);
+            Assert.DoesNotContain("secret", failure.Message);
+            // the offset is that of the offending name (the second row's first token), not the start of the document
+            string json = "[{\"ok\":1},{\"\\uD800secret\":2}]";
+            Assert.Contains("byte offset " + json.IndexOf("\"\\uD800", StringComparison.Ordinal), failure.Message);
+        }
+
+        [Theory]
+        [InlineData("[]")]
+        [InlineData("[{}]")]
+        [InlineData("[[]]")]
+        [InlineData("[[{}],[{}]]")]
+        [InlineData("[{\"a\":[]}]")]
+        [InlineData("[{\"a\":[{\"b\":[{\"c\":1}]}]}]")]
+        [InlineData("[1,[2,[3,{\"a\":[4]}]],{\"b\":{\"c\":[]}}]")]
+        [InlineData("[{\"a\":1},{\"a\":2},[],{}]")]
+        public void ValidInputOfEveryNestingShape_IsNeverMisreported(string json)
+        {
+            // objects and arrays nest freely in one another; the duplicate-name bookkeeping must stay balanced through all of it
+            Assert.True(TryParse(json, out JsonInput input, out InputFailure failure), failure?.Code + " " + failure?.Message);
+            input.Dispose();
+        }
+
         [Theory]
         [InlineData("[{\"k\":\"\\uD800\"}]")]
         [InlineData("[{\"k\":\"a\\uDC00b\"}]")]

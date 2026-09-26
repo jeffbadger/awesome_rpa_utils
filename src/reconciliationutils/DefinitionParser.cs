@@ -124,6 +124,8 @@ namespace ReconciliationAutomation
             var stack = new Stack<ScanFrame>();
             var reader = new Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes(json),
                 new JsonReaderOptions { MaxDepth = JsonInput.MaxDepth + 1, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
+            string decoding = "$";                 // where the token being decoded is, kept current so a decoding failure can name it
+            bool decodingAName = false;
             try
             {
                 while (reader.Read())
@@ -133,6 +135,8 @@ namespace ReconciliationAutomation
                     {
                         case JsonTokenType.PropertyName:
                         {
+                            decoding = top.Path;      // the name itself cannot be decoded, so point at the object that holds it
+                            decodingAName = true;
                             string name = reader.GetString();
                             top.CurrentName = name;
                             if (!top.Names.Add(name))
@@ -154,6 +158,8 @@ namespace ReconciliationAutomation
                             if (stack.Count > 0 && stack.Peek().IsArray) stack.Peek().NextIndex++;
                             break;
                         case JsonTokenType.String:
+                            decoding = ChildPath(top);
+                            decodingAName = false;
                             reader.GetString(); // throws InvalidOperationException for text that is not valid UTF-16
                             if (top != null && top.IsArray) top.NextIndex++;
                             break;
@@ -165,7 +171,9 @@ namespace ReconciliationAutomation
             }
             catch (InvalidOperationException)
             {
-                findings.Add("$", "InvalidText", "the definition contains text that is not valid (an unpaired surrogate escape such as \\uD800)");
+                findings.Add(decoding, "InvalidText", decodingAName
+                    ? "a property name in this object is not valid text (an unpaired surrogate escape such as \\uD800)"
+                    : "the value is not valid text (an unpaired surrogate escape such as \\uD800)");
                 return false;
             }
             catch (JsonException)

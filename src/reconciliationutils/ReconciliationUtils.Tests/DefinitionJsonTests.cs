@@ -606,6 +606,35 @@ namespace ReconciliationAutomation.Tests
             Assert.DoesNotContain("failed unexpectedly", message);
         }
 
+        [Theory]
+        [InlineData("{\"schemaVersion\":1,\"keys\":[{\"name\":\"\\uD800\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}]}", "keys[0].name")]
+        [InlineData("{\"schemaVersion\":1,\"keys\":[{\"name\":\"K\",\"leftPointer\":\"/a\",\"rightPointer\":\"\\uDC00\"}]}", "keys[0].rightPointer")]
+        [InlineData("{\"schemaVersion\":1,\"bogus\":{\"deep\":[\"ok\",\"\\uD800\"]}}", "bogus.deep[1]")]
+        [InlineData("{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"kind\":\"Text\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\",\"nullPolicy\":\"\\uD800\"}]}", "comparisons[0].nullPolicy")]
+        [InlineData("{\"schemaVersion\":1,\"limits\":{\"maximumResults\":\"\\uD800\"}}", "limits.maximumResults")]
+        public void InvalidText_IsReportedAtThePathOfTheOffendingValue(string json, string path)
+        {
+            string report = Validate(json, out int errors);
+            Assert.Equal(1, errors);
+            JsonElement finding = JsonDocument.Parse(report).RootElement.GetProperty("errors")[0];
+            Assert.Equal("InvalidText", finding.GetProperty("code").GetString());
+            Assert.Equal(path, finding.GetProperty("path").GetString());
+        }
+
+        [Theory]
+        [InlineData("{\"schemaVersion\":1,\"\\uD800\":1}", "$")]                                                  // a bad name at the root: the root object holds it
+        [InlineData("{\"schemaVersion\":1,\"keys\":[{\"\\uD800\":1}]}", "keys[0]")]                               // in an entry
+        [InlineData("{\"schemaVersion\":1,\"bogus\":{\"a\":{\"\\uDC00\":1}}}", "bogus.a")]
+        public void AnInvalidPropertyName_IsReportedAtTheObjectThatHoldsIt(string json, string path)
+        {
+            string report = Validate(json, out int errors);
+            Assert.Equal(1, errors);
+            JsonElement finding = JsonDocument.Parse(report).RootElement.GetProperty("errors")[0];
+            Assert.Equal("InvalidText", finding.GetProperty("code").GetString());
+            Assert.Equal(path, finding.GetProperty("path").GetString());
+            Assert.Contains("property name", finding.GetProperty("message").GetString());
+        }
+
         [Fact]
         public void AProperSurrogatePair_IsFineInADefinition()
         {

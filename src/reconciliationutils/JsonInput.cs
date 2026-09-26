@@ -101,10 +101,11 @@ namespace ReconciliationAutomation
             var names = new Stack<HashSet<string>>();
             int rows = 0;
             bool sawRoot = false;
+            // One level of slack in the reader so that this scan, not the parser, reports the depth limit. Declared outside the try so a
+            // failure can still say where the reader was.
+            var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { MaxDepth = MaxDepth + 1, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
             try
             {
-                // One level of slack in the reader so that this scan, not the parser, reports the depth limit.
-                var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { MaxDepth = MaxDepth + 1, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
                 while (reader.Read())
                 {
                     if (!sawRoot)
@@ -171,7 +172,7 @@ namespace ReconciliationAutomation
             catch (InvalidOperationException)
             {
                 // A property name that is not valid text (an escaped lone surrogate such as \uD800) cannot be compared or looked up.
-                failure = new InputFailure("InvalidText", side + " input has a property name that is not valid text (an unpaired surrogate escape).");
+                failure = new InputFailure("InvalidText", side + " input has a property name that is not valid text (an unpaired surrogate escape)" + Position(reader) + ".");
                 return false;
             }
         }

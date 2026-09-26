@@ -59,7 +59,7 @@ loaded from JSON produce identical text.
 - Unknown properties, repeated properties, wrong types and numeric enum values are errors. A definition is read with the same depth bound as input (64 levels; a real one is 3 deep), reported as `DepthLimit`.
   `ValidateDefinitionJson` reports every problem (path, code, message; up to 100) without
   changing anything: `errorCount` is 0 for a valid definition.
-- Text must be valid Unicode: an unpaired surrogate (a lone half of an emoji-style pair, whether written as a raw character or as a JSON escape like `\uD800`) is refused in a definition, a name or a pointer (`InvalidText`), and in input it rejects the document (raw character or property name) or makes just that value unsupported data (escaped in a value), so a bad string is never silently turned into a different one. Trimming removes Unicode white space.
+- Text must be valid Unicode: an unpaired surrogate (a lone half of an emoji-style pair, whether written as a raw character or as a JSON escape like `\uD800`) is refused: in a definition JSON document as an `InvalidText` finding (with the path of the value, or of the object holding a bad property name), when adding a name or pointer with a method as `InvalidName` or `InvalidPointer`, and in input it rejects the document (raw character or property name) or makes just that value unsupported data (escaped in a value), so a bad string is never silently turned into a different one. Trimming removes Unicode white space.
 - Input JSON is read with bounds (characters, depth 64, rows, and 256 characters per number), rejects repeated property names
   anywhere, and never echoes the data in an error message.
 
