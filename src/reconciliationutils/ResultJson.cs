@@ -60,25 +60,25 @@ namespace ReconciliationAutomation
         internal static void WriteResult(Utf8JsonWriter w, ReconciliationResult r, long byteCap)
         {
         w.WriteStartObject();
-        w.WriteString("id", r.Id);
-        w.WriteString("kind", r.Kind.ToString());
-        if (r.NormalizedKey == null) w.WriteNull("key"); else { w.WritePropertyName("key"); w.WriteRawValue(ReconciliationKey.ToDisplayJson(r.NormalizedKey), skipInputValidation: false); }
-        w.WriteString("reasonCode", r.ReasonCode);
-        w.WriteString("explanation", r.Explanation);
-        if (r.MappingName != null) w.WriteString("mappingName", r.MappingName);
-        if (r.Pointer != null) w.WriteString("pointer", r.Pointer);
+        Str(w, byteCap, "id", r.Id);
+        Str(w, byteCap, "kind", r.Kind.ToString());
+        if (r.NormalizedKey == null) w.WriteNull("key"); else { string keyJson = ReconciliationKey.ToDisplayJson(r.NormalizedKey); Room(w, byteCap, keyJson); w.WritePropertyName("key"); w.WriteRawValue(keyJson, skipInputValidation: false); }
+        Str(w, byteCap, "reasonCode", r.ReasonCode);
+        Str(w, byteCap, "explanation", r.Explanation);
+        if (r.MappingName != null) Str(w, byteCap, "mappingName", r.MappingName);
+        if (r.Pointer != null) Str(w, byteCap, "pointer", r.Pointer);
 
         w.WriteStartArray("members");
         foreach (ResultMember m in r.Members)
         {
             w.WriteStartObject();
-            w.WriteString("side", m.Side);
+            Str(w, byteCap, "side", m.Side);
             w.WriteNumber("row", m.Row);
             if (m.OriginalKey == null) w.WriteNull("originalKey");
             else
             {
                 w.WriteStartArray("originalKey");
-                foreach (string part in m.OriginalKey) w.WriteStringValue(part);
+                foreach (string part in m.OriginalKey) { Room(w, byteCap, part); w.WriteStringValue(part); }
                 w.WriteEndArray();
             }
             w.WriteEndObject();
@@ -90,23 +90,23 @@ namespace ReconciliationAutomation
         foreach (ComparisonOutcome d in r.Differences)
         {
             w.WriteStartObject();
-            w.WriteString("rule", d.RuleName);
-            w.WriteString("ruleKind", d.Kind.ToString());
-            w.WriteString("state", d.State.ToString());
-            w.WriteString("reasonCode", d.ReasonCode);
-            w.WriteString("explanation", d.Explanation);
+            Str(w, byteCap, "rule", d.RuleName);
+            Str(w, byteCap, "ruleKind", d.Kind.ToString());
+            Str(w, byteCap, "state", d.State.ToString());
+            Str(w, byteCap, "reasonCode", d.ReasonCode);
+            Str(w, byteCap, "explanation", d.Explanation);
             w.WriteBoolean("leftPresent", d.LeftPresent);
             w.WriteBoolean("rightPresent", d.RightPresent);
-            Fragment(w, "leftValue", d.LeftValueJson);
-            Fragment(w, "rightValue", d.RightValueJson);
+            Fragment(w, byteCap, "leftValue", d.LeftValueJson);
+            Fragment(w, byteCap, "rightValue", d.RightValueJson);
             if (d.Kind == RuleKind.Money)
             {
-                Fragment(w, "leftCurrency", d.LeftCurrencyJson);
-                Fragment(w, "rightCurrency", d.RightCurrencyJson);
+                Fragment(w, byteCap, "leftCurrency", d.LeftCurrencyJson);
+                Fragment(w, byteCap, "rightCurrency", d.RightCurrencyJson);
             }
-            w.WriteString("leftInterpreted", d.LeftInterpreted);
-            w.WriteString("rightInterpreted", d.RightInterpreted);
-            w.WriteString("delta", d.Delta);
+            Str(w, byteCap, "leftInterpreted", d.LeftInterpreted);
+            Str(w, byteCap, "rightInterpreted", d.RightInterpreted);
+            Str(w, byteCap, "delta", d.Delta);
             w.WriteEndObject();
             Check(w, byteCap);
         }
@@ -114,10 +114,27 @@ namespace ReconciliationAutomation
         w.WriteEndObject();
         }
 
-        private static void Fragment(Utf8JsonWriter w, string name, string json)
+        /// <summary>
+        /// Refuses, before it is written, a string or fragment that cannot fit: it needs at least one byte per character, so if even that passes the cap the
+        /// output is already over and nothing more is built. Larger overshoots than one value's encoded size are therefore impossible.
+        /// </summary>
+        internal static void Room(Utf8JsonWriter w, long byteCap, string text)
         {
-            if (json == null) w.WriteNull(name);               // a missing field
-            else { w.WritePropertyName(name); w.WriteRawValue(json, skipInputValidation: false); }
+            if (text != null && byteCap != long.MaxValue && w.BytesCommitted + w.BytesPending + text.Length > byteCap) throw new OutputLimitExceededException();
+        }
+
+        private static void Str(Utf8JsonWriter w, long byteCap, string name, string value)
+        {
+            Room(w, byteCap, value);
+            w.WriteString(name, value);
+        }
+
+        private static void Fragment(Utf8JsonWriter w, long byteCap, string name, string json)
+        {
+            if (json == null) { w.WriteNull(name); return; }             // a missing field
+            Room(w, byteCap, json);
+            w.WritePropertyName(name);
+            w.WriteRawValue(json, skipInputValidation: false);
         }
     }
 }

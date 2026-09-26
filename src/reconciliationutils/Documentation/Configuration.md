@@ -23,6 +23,7 @@ change discards existing results.
 | `AddInstantComparison(name, leftPointer, rightPointer, toleranceSeconds, nullPolicy)` | Instants with a tolerance in seconds and a null-policy choice. |
 | `ConfigureLimits(...)` | See [Limits](Limits.md). |
 | `ConfigureTableLimits(...)` | The extra limits for DataTables; see [DataTables](DataTables.md). |
+| `ConfigureOutputLimit(...)` | The size limit of the exported report; see [Export](Export.md). |
 | `ClearDefinition()` | Back to the defaults; also clears results. |
 
 Add at least one key before running. A key may have several parts (add several key mappings); parts are

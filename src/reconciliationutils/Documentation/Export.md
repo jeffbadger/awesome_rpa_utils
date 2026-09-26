@@ -63,7 +63,8 @@ with an unpaired surrogate character is refused. The label is supplied here and 
 A report over the limit is **refused whole**: `False`, a message naming the limit, and no report. Nothing is truncated. The results stay intact, and
 changing this limit does **not** discard them (unlike a change to the definition), so the usual response is to raise the limit and export again, or to
 read the results with the cursors and `GetResultJson` instead. The check is made while the report is written, which stops early rather than building an
-oversized text first; memory during the export is bounded by about three bytes per allowed character.
+oversized text first: a value that cannot fit is refused before it is written, so the report buffer never holds more than the limit (at most three bytes per allowed
+character, because a character can take up to three bytes in UTF-8) plus the encoded size of one value.
 
 A run with many results carrying many differences can exceed the default: each result is a few hundred characters, so 100,000 results can pass 16 million
 characters. `ClearDefinition` restores the default limit; `LoadDefinitionJson` leaves it alone.

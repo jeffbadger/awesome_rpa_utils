@@ -380,8 +380,8 @@ namespace ReconciliationAutomation
 
         /// <summary>
         /// Writes the report into a bounded buffer. A UTF-16 character needs at least one UTF-8 byte and at most three, so the buffer is capped at three
-        /// bytes per allowed character and the writing stops the moment it is passed (after each result member or difference, never after the whole
-        /// report); the exact character count is checked once the report is complete. Called with the lock held.
+        /// bytes per allowed character and the writing stops the moment it is passed: a string or fragment that cannot fit is refused before it is written, and the total is checked after every
+        /// result member and difference. The most the buffer can hold beyond the cap is the encoded size of one value. The exact character count is checked once the report is complete. Called with the lock held.
         /// </summary>
         private bool TryExport(ReconciliationSnapshot run, string label, out string report, out string message)
         {
@@ -397,9 +397,14 @@ namespace ReconciliationAutomation
                     {
                         w.WriteStartObject();
                         w.WriteNumber("schemaVersion", 1);
+                        ResultJson.Room(w, byteCap, label);
                         w.WriteString("runLabel", label);
+                        if (w.BytesCommitted + w.BytesPending > byteCap) throw new ResultJson.OutputLimitExceededException();   // a tiny limit stops here, before the definition is even built
+                        string definitionJson = definition.ToCanonicalJson();            // bounded by the fixed maxima on names, pointers and counts
+                        ResultJson.Room(w, byteCap, definitionJson);
                         w.WritePropertyName("definition");
-                        w.WriteRawValue(definition.ToCanonicalJson(), skipInputValidation: false);
+                        w.WriteRawValue(definitionJson, skipInputValidation: false);
+                        if (w.BytesCommitted + w.BytesPending > byteCap) throw new ResultJson.OutputLimitExceededException();
                         w.WritePropertyName("summary");
                         ResultJson.WriteSummary(w, run.Summary);
                         w.WriteStartArray("results");

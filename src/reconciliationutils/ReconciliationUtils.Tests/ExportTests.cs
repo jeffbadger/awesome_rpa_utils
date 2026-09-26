@@ -291,5 +291,48 @@ namespace ReconciliationAutomation.Tests
             System.Threading.Tasks.Task.WaitAll(writer, reader);
             Assert.Empty(errors);
         }
+
+        [Fact]
+        public void ATinyLimit_StopsBeforeAHugeValueIsWritten_SoMemoryStaysNearTheLimit()
+        {
+            string huge = new string('v', 5000000);                                              // one 5-million-character value on each side
+            using var c = Ran("[{\"id\":\"1\",\"amt\":\"1\",\"note\":\"" + huge + "\"}]", "[{\"id\":\"1\",\"amt\":\"1\",\"note\":\"" + huge + "x\"}]");
+            Assert.True(c.ConfigureOutputLimit(5000, out string m), m);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            Assert.False(c.ExportResultsJson("x", out string json, out m));
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Null(json);
+            Assert.Contains("longer than 5000", m);
+            Assert.True(allocated < 1500000, "allocated " + allocated + " bytes to refuse a 5,000-character report (a 5,000,000-character value is 10 MB as text)");
+            Assert.True(c.GetSummary(out _, out _, out _, out _, out _));                        // still intact
+        }
+
+        [Fact]
+        public void ALimitOfOneCharacter_IsRefusedAtTheEnvelope_BeforeTheDefinitionOrAnyResultIsWritten()
+        {
+            using var c = new ReconciliationUtils();
+            Assert.True(c.AddKeyMappingSimple("Id", "/id", "/id", out string m), m);
+            for (int i = 0; i < 100; i++) Assert.True(c.AddTextComparisonSimple("Rule" + i, "/" + new string('p', 900) + i, "/" + new string('q', 900) + i, out m), m);   // a large definition
+            Assert.True(c.ReconcileJson("[]", "[]", out _, out m), m);
+            Assert.True(c.GetDefinitionJson(out string definition, out m), m);
+            Assert.True(definition.Length > 150000);
+            Assert.True(c.ConfigureOutputLimit(1, out m), m);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            Assert.False(c.ExportResultsJson("run", out _, out m));
+            Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 100000, "the definition should not have been built for a one-character limit");
+            Assert.Contains("longer than 1 characters", m);
+        }
+
+        [Fact]
+        public void ALargeLabelOrDefinition_ThatDoesNotFit_IsRefusedWithoutWritingIt()
+        {
+            using var c = Ran();
+            int size = Export(c, new string('x', 200)).Length;
+            Assert.True(c.ConfigureOutputLimit(size - 1, out string m), m);
+            Assert.False(c.ExportResultsJson(new string('x', 200), out _, out m));
+            Assert.Contains("longer than", m);
+            Assert.True(c.ExportResultsJson("", out string small, out m), m);                    // a shorter label fits under the same limit
+            Assert.True(small.Length <= size - 1);
+        }
     }
 }
