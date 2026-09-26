@@ -10,6 +10,8 @@
 | `maximumResults` | 100,000 | 500,000 | Results a run may build (matched pairs count too). |
 | `maximumDifferenceDetails` | 100,000 | 500,000 | Field difference details kept across the run. |
 
+For `ReconcileDataTables` there are three more (columns, cells, characters in one value; see [DataTables](DataTables.md)), set with `ConfigureTableLimits`.
+
 Also fixed: JSON depth 64, 256 characters per number, and at most 100 findings in a validation report.
 
 ## What happens when a limit is hit

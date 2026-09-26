@@ -4,10 +4,10 @@ A Pega Robot Studio-ready component (`ReconciliationUtils`) that reconciles two
 datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
-> **Status: complete, awaiting its first release.** All 19 methods work. See the
-> [documentation](Documentation/README.md) for a quick start and worked examples, and the
-> [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) for what
-> follows (DataTable bridge, Boolean, money and date rules, export).
+> **Status: released (v0.3.27); Release 2 in progress.** The DataTable bridge (`ReconcileDataTables`,
+> `ConfigureTableLimits`) is the first Release 2 addition; Boolean, money and date rules and results export follow.
+> See the [documentation](Documentation/README.md) for a quick start and worked examples, and the
+> [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) for what remains.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ReconciliationAutomation`
@@ -15,7 +15,7 @@ through scalar ports so an automation can route them to review or correction.
 
 ## Method reference
 
-All 19 methods and their signatures. On any failure a method sets every output to its failure value (null
+All 21 methods and their signatures. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
 operation; success has no message. The
 [plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) adds the rest.
@@ -75,12 +75,14 @@ loaded from JSON produce identical text.
 | `GetDefinitionJson` | `bool GetDefinitionJson(out string definitionJson, out string message)` | Returns the current definition, including limits, as canonical JSON. |
 | `ValidateDefinitionJson` | `bool ValidateDefinitionJson(string definitionJson, out int errorCount, out string reportJson, out string message)` | Validates a JSON definition without loading it. Returns True when validation ran; errorCount is 0 for a valid definition and reportJson lists the findings. |
 | `ConfigureLimits` | `bool ConfigureLimits(int maximumRowsPerSide, int maximumInputCharactersPerSide, int maximumResults, int maximumDifferenceDetails, out string message)` | Sets the resource limits: rows per side, input characters per side, result records and difference details. A run that exceeds a limit fails whole. |
+| `ConfigureTableLimits` | `bool ConfigureTableLimits(int maximumColumns, int maximumCells, int maximumValueCharacters, out string message)` | Sets the DataTable limits used by ReconcileDataTables: columns per table, cells (rows x columns) per table and characters in one text value. Defaults 100, 2,000,000 and 4,096. |
 
 ### Run
 
 | Method | Signature | Description |
 |---|---|---|
 | `ReconcileJson` | `bool ReconcileJson(string leftJson, string rightJson, out int exceptionCount, out string message)` | Reconciles two JSON arrays of objects. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched. |
+| `ReconcileDataTables` | `bool ReconcileDataTables(DataTable leftTable, DataTable rightTable, out int exceptionCount, out string message)` | Reconciles two DataTables (for example loaded from Excel, CSV or a database). A pointer names one column, such as /Amount. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched. The tables are read, never modified. |
 
 ### Results
 
@@ -122,7 +124,7 @@ stable reason code and an explanation that never quotes a text value.
 
 ## How reconciliation runs
 
-`ReconcileJson(leftJson, rightJson, out exceptionCount, out message)` parses both datasets, then matches rows by key:
+`ReconcileJson(leftJson, rightJson, out exceptionCount, out message)` parses both datasets (`ReconcileDataTables` reads two DataTables instead; see [DataTables](Documentation/DataTables.md)), then matches rows by key:
 
 - Rows are grouped by their normalized key (structured, so `["a","bc"]` never collides with `["ab","c"]`). Matching is indexed, so cost grows with the row count, not rows x rows.
 - One key on both sides, one row each: the pair is compared with every rule. **Matched** if all agree, **Different** if any differ, **InvalidComparison** if any value could not be compared (this outranks Different).

@@ -22,7 +22,7 @@ namespace ReconciliationAutomation
         /// Runs a reconciliation. On success <paramref name="snapshot"/> is complete; on failure it is null and <paramref name="failure"/> says why
         /// (a limit that was exceeded, or an internal check that did not hold), without quoting any data. Nothing is partly published.
         /// </summary>
-        internal static bool TryRun(ReconciliationDefinition definition, JsonInput left, JsonInput right, out ReconciliationSnapshot snapshot, out string failure)
+        internal static bool TryRun(ReconciliationDefinition definition, IRowSource left, IRowSource right, out ReconciliationSnapshot snapshot, out string failure)
         {
             snapshot = null;
             failure = null;
@@ -109,7 +109,7 @@ namespace ReconciliationAutomation
 
         // ------------------------------------------------------------------ indexing
 
-        private static RowInfo[] Extract(JsonInput input, IReadOnlyList<KeyMappingDef> keys, bool leftSide)
+        private static RowInfo[] Extract(IRowSource input, IReadOnlyList<KeyMappingDef> keys, bool leftSide)
         {
             var rows = new RowInfo[input.RowCount];
             for (int i = 0; i < rows.Length; i++)
@@ -173,7 +173,7 @@ namespace ReconciliationAutomation
         /// <summary>The result for one key: an ambiguous group, a unique pair (compared), or a lone record.</summary>
         private static ReconciliationResult Group(
             ReconciliationDefinition definition, string[] key, List<int> leftMembers, List<int> rightMembers,
-            RowInfo[] leftRows, RowInfo[] rightRows, JsonInput left, JsonInput right, ReconciliationSummary summary)
+            RowInfo[] leftRows, RowInfo[] rightRows, IRowSource left, IRowSource right, ReconciliationSummary summary)
         {
             int leftCount = leftMembers?.Count ?? 0;
             int rightCount = rightMembers?.Count ?? 0;

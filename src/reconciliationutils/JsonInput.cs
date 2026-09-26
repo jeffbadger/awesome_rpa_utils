@@ -23,7 +23,7 @@ namespace ReconciliationAutomation
     /// property names anywhere, and disallows comments and trailing commas. Failure messages are built from positions and
     /// limits only, because the exception text of a JSON parser can echo the offending data.
     /// </summary>
-    internal sealed class JsonInput : IDisposable
+    internal sealed class JsonInput : IRowSource, IDisposable
     {
         internal const int MaxDepth = 64;
 
@@ -40,10 +40,10 @@ namespace ReconciliationAutomation
         }
 
         /// <summary>The number of array items (rows), including items that are not objects.</summary>
-        internal int RowCount => rows.Count;
+        public int RowCount => rows.Count;
 
         /// <summary>A reader for the row at a zero-based source index.</summary>
-        internal IRowReader RowAt(int index) => new JsonRowReader(rows[index]);
+        public IRowReader RowAt(int index) => new JsonRowReader(rows[index]);
 
         public void Dispose() => document.Dispose();
 

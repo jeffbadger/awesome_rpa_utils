@@ -24,17 +24,20 @@ namespace ReconciliationAutomation.Tests
             "TryReadNextException", "TryReadNextDifference", "GetResultJson", "ClearResults"
         };
 
+        /// <summary>Release 2 is additive; each work package adds its methods here.</summary>
+        private static readonly string[] Release2Methods = { "ReconcileDataTables", "ConfigureTableLimits" };
+
         internal static MethodInfo[] PublicMethods() =>
             typeof(ReconciliationUtils).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                 .Where(m => !m.IsSpecialName)
                 .ToArray();
 
         [Fact]
-        public void ThePublicSurface_IsExactlyTheReleaseOneMethods()
+        public void ThePublicSurface_IsExactlyTheDocumentedMethods()
         {
             // A deliberate tripwire: adding, removing or renaming a public method must be a conscious change to this list
             // (and to the design plan), never a side effect.
-            Assert.Equal(Release1Methods.OrderBy(x => x, StringComparer.Ordinal), PublicMethods().Select(m => m.Name).OrderBy(x => x, StringComparer.Ordinal));
+            Assert.Equal(Release1Methods.Concat(Release2Methods).OrderBy(x => x, StringComparer.Ordinal), PublicMethods().Select(m => m.Name).OrderBy(x => x, StringComparer.Ordinal));
         }
 
         [Fact]
@@ -112,8 +115,8 @@ namespace ReconciliationAutomation.Tests
                 foreach (ParameterInfo p in m.GetParameters())
                 {
                     Type t = p.ParameterType.IsByRef ? p.ParameterType.GetElementType() : p.ParameterType;
-                    Assert.True(t == typeof(string) || t == typeof(bool) || t == typeof(int) || t == typeof(double) || t.IsEnum,
-                        m.Name + "." + p.Name + " is " + t.Name + "; only string/bool/int/double or an enum are wireable without a proxy object");
+                    Assert.True(t == typeof(string) || t == typeof(bool) || t == typeof(int) || t == typeof(double) || t.IsEnum || (m.Name == "ReconcileDataTables" && t == typeof(System.Data.DataTable)),
+                        m.Name + "." + p.Name + " is " + t.Name + "; only string/bool/int/double or an enum are wireable without a proxy object (ReconcileDataTables takes DataTables by design, as DataContractUtils does)");
                 }
         }
 

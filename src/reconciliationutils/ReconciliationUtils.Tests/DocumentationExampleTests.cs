@@ -193,5 +193,50 @@ namespace ReconciliationAutomation.Tests
             JsonElement limits = doc.RootElement.GetProperty("limits");
             Assert.Equal(names.Select(n => rows[n].def), names.Select(n => limits.GetProperty(n).GetInt32()));      // the documented defaults
         }
+
+        [Fact]
+        public void TheDataTablesPage_CallsTheDocumentedMethods_AndItsLimitTableIsTheRealOne()
+        {
+            string page = Page("DataTables.md");
+            var calls = Blocks(page, "csharp").SelectMany(b => Regex.Matches(b, "recon\\.(\\w+)\\(").Cast<Match>().Select(m => m.Groups[1].Value)).ToList();
+            Assert.Equal(new[] { "AddKeyMappingSimple", "AddDecimalComparisonSimple", "ReconcileDataTables" }, calls);
+
+            var rows = Regex.Matches(page, "^\\| `(\\w+)` \\| ([\\d,]+) \\| ([\\d,]+) \\|", RegexOptions.Multiline).Cast<Match>()
+                .ToDictionary(m => m.Groups[1].Value, m => (def: int.Parse(m.Groups[2].Value.Replace(",", "")), max: int.Parse(m.Groups[3].Value.Replace(",", ""))));
+            string[] names = { "maximumColumns", "maximumCells", "maximumValueCharacters" };
+            Assert.Equal(names.OrderBy(n => n), rows.Keys.OrderBy(n => n));
+
+            var defaults = new TableLimits();
+            Assert.Equal(new[] { defaults.MaximumColumns, defaults.MaximumCells, defaults.MaximumValueCharacters }, names.Select(n => rows[n].def));
+            using var c = new ReconciliationUtils();
+            int[] max = names.Select(n => rows[n].max).ToArray();
+            Assert.True(c.ConfigureTableLimits(max[0], max[1], max[2], out string m), m);
+            for (int i = 0; i < 3; i++)
+            {
+                int[] over = (int[])max.Clone();
+                over[i]++;
+                Assert.False(c.ConfigureTableLimits(over[0], over[1], over[2], out _), names[i] + " maximum is not the documented one");
+            }
+        }
+
+        [Fact]
+        public void TheDataTablesPage_TheExampleShapeWorks_AndItsMappingTableMatchesTheCode()
+        {
+            // the page's snippet, with real tables
+            using var recon = new ReconciliationUtils();
+            Assert.True(recon.AddKeyMappingSimple("Invoice", "/Invoice", "/InvoiceId", out string message), message);
+            Assert.True(recon.AddDecimalComparisonSimple("Amount", "/Amount", "/Paid", out message), message);
+            var erp = new System.Data.DataTable(); erp.Columns.Add("Invoice", typeof(string)); erp.Columns.Add("Amount", typeof(decimal)); erp.Rows.Add("A", 1m);
+            var bank = new System.Data.DataTable(); bank.Columns.Add("InvoiceId", typeof(string)); bank.Columns.Add("Paid", typeof(decimal)); bank.Rows.Add("A", 2m);
+            Assert.True(recon.ReconcileDataTables(erp, bank, out int exceptionCount, out message), message);
+            Assert.Equal(1, exceptionCount);
+
+            // every type the page lists as supported maps to the kind the page states
+            string page = Page("DataTables.md");
+            Assert.Contains("`DBNull` | null", page);
+            Assert.Equal(FieldKind.Null, DataTableInput.Map(DBNull.Value).Kind);
+            foreach (string integral in new[] { "sbyte", "byte", "short", "ushort", "int", "uint", "long", "ulong" }) Assert.Contains("`" + integral + "`", page);
+            Assert.Contains("`NaN` and infinity are unsupported", page);
+        }
     }
 }

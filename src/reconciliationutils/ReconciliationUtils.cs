@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Data;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -23,6 +24,7 @@ namespace ReconciliationAutomation
         private ReconciliationDefinition definition = new ReconciliationDefinition();
 
         // The published outcome of the last completed run, or null. Replaced whole, never edited, so a reader can never see it half-built.
+        private TableLimits tableLimits = new TableLimits();      // replaced whole, never edited in place
         private ReconciliationSnapshot results;
         private int exceptionPosition;                 // next index in results to examine
         private ReconciliationResult currentException;   // the exception most recently read; its differences feed the inner cursor
@@ -43,7 +45,12 @@ namespace ReconciliationAutomation
         public bool ClearDefinition(out string message)
         {
             message = null;
-            try { return ChangeDefinition(nameof(ClearDefinition), d => { d.Keys = new List<KeyMappingDef>(); d.Comparisons = new List<ComparisonDef>(); d.Limits = new ReconciliationLimits(); return null; }, out message); }
+            try
+            {
+                if (!ChangeDefinition(nameof(ClearDefinition), d => { d.Keys = new List<KeyMappingDef>(); d.Comparisons = new List<ComparisonDef>(); d.Limits = new ReconciliationLimits(); return null; }, out message)) return false;
+                lock (syncRoot) tableLimits = new TableLimits();       // the DataTable limits go back to their defaults too
+                return true;
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ClearDefinition), ex); return false; }
         }
 
@@ -148,6 +155,39 @@ namespace ReconciliationAutomation
             message = null;
             try { return ChangeDefinition(nameof(ConfigureLimits), d => ApplyLimits(d, maximumRowsPerSide, maximumInputCharactersPerSide, maximumResults, maximumDifferenceDetails), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ConfigureLimits), ex); return false; }
+        }
+
+        /// <summary>Sets the DataTable limits used by ReconcileDataTables: columns per table, cells (rows x columns) per table and characters in one text value.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Sets the DataTable limits used by ReconcileDataTables: columns per table, cells (rows x columns) per table and characters in one text value. Defaults 100, 2,000,000 and 4,096. Never throws.")]
+        public bool ConfigureTableLimits(int maximumColumns, int maximumCells, int maximumValueCharacters, out string message)
+        {
+            message = null;
+            try
+            {
+                var limits = new TableLimits { MaximumColumns = maximumColumns, MaximumCells = maximumCells, MaximumValueCharacters = maximumValueCharacters };
+                string problem = limits.FirstProblem();
+                lock (syncRoot)
+                {
+                    if (disposed) { message = DisposedMessage(nameof(ConfigureTableLimits)); return false; }
+                    if (problem != null) { message = nameof(ConfigureTableLimits) + " failed: " + problem + "."; return false; }
+                    tableLimits = limits;
+                    InvalidateResults();
+                    return true;
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ConfigureTableLimits), ex); return false; }
+        }
+
+        /// <summary>Reconciles two DataTables. A pointer names one column (for example /Amount). True means the run completed, even with mismatches; the tables are read, never modified.</summary>
+        [Category("Reconciliation - Run")]
+        [Description("Reconciles two DataTables (for example loaded from Excel, CSV or a database). A pointer names one column, such as /Amount. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched. The tables are read, never modified. Never throws.")]
+        public bool ReconcileDataTables(DataTable leftTable, DataTable rightTable, out int exceptionCount, out string message)
+        {
+            message = null;
+            exceptionCount = 0;
+            try { return RunTableReconciliation(leftTable, rightTable, out exceptionCount, out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ReconcileDataTables), ex); return false; }
         }
 
         /// <summary>Reconciles two JSON arrays of objects. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched.</summary>
@@ -510,29 +550,81 @@ namespace ReconciliationAutomation
         /// </summary>
         private bool RunReconciliation(string leftJson, string rightJson, out int exceptionCount, out string message)
         {
+            return RunWith(nameof(ReconcileJson), (ReconciliationDefinition d, out IRowSource left, out IRowSource right, out string failure) =>
+            {
+                right = null;
+                failure = null;
+                if (!JsonInput.TryParse(leftJson, "Left", d.Limits, out JsonInput leftInput, out InputFailure leftFailure)) { left = null; failure = leftFailure.Message; return false; }
+                left = leftInput;
+                if (!JsonInput.TryParse(rightJson, "Right", d.Limits, out JsonInput rightInput, out InputFailure rightFailure)) { failure = rightFailure.Message; return false; }
+                right = rightInput;
+                return true;
+            }, out exceptionCount, out message);
+        }
+
+        private bool RunTableReconciliation(DataTable leftTable, DataTable rightTable, out int exceptionCount, out string message)
+        {
+            return RunWith(nameof(ReconcileDataTables), (ReconciliationDefinition d, out IRowSource left, out IRowSource right, out string failure) =>
+            {
+                left = null;
+                right = null;
+                failure = null;
+
+                // In a table, a pointer names exactly one column, so /Amount or /a~1b; anything deeper cannot be a column.
+                foreach (KeyMappingDef k in d.Keys)
+                {
+                    if (k.LeftSegments.Length != 1 || k.RightSegments.Length != 1) { failure = "key mapping '" + k.Name + "' must use pointers that each name exactly one column, such as /Amount"; return false; }
+                }
+                foreach (ComparisonDef c in d.Comparisons)
+                {
+                    if (c.LeftSegments.Length != 1 || c.RightSegments.Length != 1) { failure = "comparison '" + c.Name + "' must use pointers that each name exactly one column, such as /Amount"; return false; }
+                }
+
+                if (!DataTableInput.TryRead(leftTable, "Left", ColumnPointers(d, true), d.Limits, tableLimits, out DataTableInput leftInput, out failure)) return false;
+                if (!DataTableInput.TryRead(rightTable, "Right", ColumnPointers(d, false), d.Limits, tableLimits, out DataTableInput rightInput, out failure)) return false;
+                left = leftInput;
+                right = rightInput;
+                return true;
+            }, out exceptionCount, out message);
+        }
+
+        private static IEnumerable<string[]> ColumnPointers(ReconciliationDefinition d, bool leftSide)
+        {
+            foreach (KeyMappingDef k in d.Keys) yield return leftSide ? k.LeftSegments : k.RightSegments;
+            foreach (ComparisonDef c in d.Comparisons) yield return leftSide ? c.LeftSegments : c.RightSegments;
+        }
+
+        private delegate bool InputLoader(ReconciliationDefinition definition, out IRowSource left, out IRowSource right, out string failure);
+
+        /// <summary>
+        /// The run every entry point shares. The whole call runs under the instance lock, so it is serialized with every setup call. Any earlier results
+        /// are discarded first, so a run that fails leaves nothing behind that could be mistaken for its outcome; a new snapshot is built privately
+        /// and published only when the whole run succeeded.
+        /// </summary>
+        private bool RunWith(string operation, InputLoader load, out int exceptionCount, out string message)
+        {
             exceptionCount = 0;
             message = null;
             lock (syncRoot)
             {
-                if (disposed) { message = DisposedMessage(nameof(ReconcileJson)); return false; }
+                if (disposed) { message = DisposedMessage(operation); return false; }
                 InvalidateResults();                                // stale results must not survive an attempted run, whatever its outcome
 
                 if (definition.Keys.Count == 0)
                 {
-                    message = nameof(ReconcileJson) + " failed: the definition has no key mapping; add one with AddKeyMapping or AddKeyMappingSimple, or load a definition with keys.";
+                    message = operation + " failed: the definition has no key mapping; add one with AddKeyMapping or AddKeyMappingSimple, or load a definition with keys.";
                     return false;
                 }
 
                 ReconciliationDefinition snapshotOfDefinition = definition;   // definitions are replaced whole, never edited in place
-                JsonInput left = null, right = null;
+                IRowSource left = null, right = null;
                 try
                 {
-                    if (!JsonInput.TryParse(leftJson, "Left", snapshotOfDefinition.Limits, out left, out InputFailure leftFailure)) { message = nameof(ReconcileJson) + " failed: " + leftFailure.Message; return false; }
-                    if (!JsonInput.TryParse(rightJson, "Right", snapshotOfDefinition.Limits, out right, out InputFailure rightFailure)) { message = nameof(ReconcileJson) + " failed: " + rightFailure.Message; return false; }
+                    if (!load(snapshotOfDefinition, out left, out right, out string loadFailure)) { message = operation + " failed: " + loadFailure; return false; }
 
                     if (!ReconciliationCore.TryRun(snapshotOfDefinition, left, right, out ReconciliationSnapshot snapshot, out string failure))
                     {
-                        message = nameof(ReconcileJson) + " failed: " + failure + ".";
+                        message = operation + " failed: " + failure + ".";
                         return false;
                     }
                     results = snapshot;                     // the cursors were reset when the run began, under the same lock
@@ -541,8 +633,8 @@ namespace ReconciliationAutomation
                 }
                 finally
                 {
-                    left?.Dispose();        // the parsed inputs are released as soon as the snapshot exists; it holds only what it needs
-                    right?.Dispose();
+                    (left as IDisposable)?.Dispose();       // parsed JSON is released as soon as the snapshot exists; it holds only what it needs
+                    (right as IDisposable)?.Dispose();
                 }
             }
         }

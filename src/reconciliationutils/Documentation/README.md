@@ -1,6 +1,6 @@
 # ReconciliationUtils documentation
 
-`ReconciliationUtils` compares two datasets (two JSON arrays of objects, for example the rows
+`ReconciliationUtils` compares two datasets (two JSON arrays of objects or two DataTables, for example the rows
 of a spreadsheet export and of an application report) by business key, and tells an automation
 exactly which records match, differ, are missing on one side, are ambiguous, or could not be
 compared. Every result comes back through scalar ports, so it can drive a Robot Studio
@@ -9,6 +9,7 @@ compared. Every result comes back through scalar ports, so it can drive a Robot 
 | Page | What it covers |
 |---|---|
 | [QuickStart](QuickStart.md) | The smallest complete flow: define, run, read the summary, walk the exceptions and their differences. |
+| [DataTables](DataTables.md) | Reconciling DataTables directly (Excel, CSV, database results), how cell values are read, and the table limits. |
 | [Configuration](Configuration.md) | Building a definition with methods or JSON, keys, comparisons, validation and the canonical form. |
 | [ComparisonRules](ComparisonRules.md) | Exactly how Text and Decimal comparisons decide equal, different or invalid, with the reason codes. |
 | [ResultsAndCounts](ResultsAndCounts.md) | The seven result kinds, the counts and the accounting equations, both cursors and `GetResultJson`. |
