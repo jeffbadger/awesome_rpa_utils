@@ -209,7 +209,7 @@ namespace ReconciliationAutomation.Tests
         public void AComparisonWhoseKindCannotBeSelected_ReportsARepeatedProperty()
         {
             string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"name\":\"D\",\"kind\":\"Money\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
-            Assert.Equal(new[] { "UnknownKind", "DuplicateProperty" }, Codes(Validate(json, out _)));
+            Assert.Equal(new[] { "DuplicateProperty", "UnknownKind" }, Codes(Validate(json, out _)).OrderBy(x => x));
         }
 
         [Fact]
@@ -271,7 +271,7 @@ namespace ReconciliationAutomation.Tests
         public void AComparisonWithARepeatedProperty_AndAnUnknownKind_ReportsBoth()
         {
             string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"name\":\"D\",\"kind\":\"Money\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
-            Assert.Equal(new[] { "UnknownKind", "DuplicateProperty" }, Codes(Validate(json, out _)));
+            Assert.Equal(new[] { "DuplicateProperty", "UnknownKind" }, Codes(Validate(json, out _)).OrderBy(x => x));
         }
 
         [Fact]
@@ -415,6 +415,106 @@ namespace ReconciliationAutomation.Tests
             Assert.Contains("comparisons[0].name", report);          // duplicate of the key
             Assert.Contains("comparisons[0].leftPointer", report);   // bad pointer
             Assert.Contains("comparisons[1].name", report);          // duplicate of both earlier names
+        }
+
+        // ---------------------------------------------------------------- duplicate kinds, duplicate detection, and limits by position
+
+        [Fact]
+        public void ARepeatedKind_IsReported_AndTheFirstOccurrenceDecidesTheKindConsistently()
+        {
+            // The first kind is Text, the second Decimal. Every other field is read from the first occurrence too, so the
+            // comparison is validated as a Text comparison: its (Text) trim option is fine, and the repeat is the only finding.
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"kind\":\"Text\",\"kind\":\"Decimal\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\",\"trim\":true}]}";
+            string report = Validate(json, out int errors);
+            Assert.Equal(1, errors);
+            Assert.Equal("DuplicateProperty", FirstCode(report));
+            Assert.Contains("comparisons[0].kind", report);
+        }
+
+        [Fact]
+        public void ARepeatedKind_WithTheOtherOrder_IsValidatedAsThatOtherKind()
+        {
+            // First kind Decimal, second Text: now the Text option 'trim' does not belong, so it is an unknown property as well.
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"kind\":\"Decimal\",\"kind\":\"Text\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\",\"trim\":true}]}";
+            Assert.Equal(new[] { "DuplicateProperty", "UnknownProperty" }, Codes(Validate(json, out _)).OrderBy(x => x));
+        }
+
+        [Fact]
+        public void ARepeatedKind_EvenWithTheSameValue_IsRejected_AndNeverLoads()
+        {
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"kind\":\"Text\",\"kind\":\"Text\",\"leftPointer\":\"/c\",\"rightPointer\":\"/c\"}]}";
+            using var c = new ReconciliationUtils();
+            Assert.False(c.LoadDefinitionJson(json, out string message));
+            Assert.Contains("DuplicateProperty", message);
+        }
+
+        [Theory]
+        [InlineData("{\"schemaVersion\":1,\"\\u0073chemaVersion\":1}")]                 // the same name written with an escape
+        [InlineData("{\"schemaVersion\":1,\"keys\":[{\"name\":\"K\",\"\\u006eame\":\"L\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}]}")]
+        [InlineData("{\"schemaVersion\":1,\"limits\":{\"maximumResults\":5,\"maximumRe\\u0073ults\":6}}")]
+        public void ARepeatedPropertyWrittenWithAnEscape_IsStillARepeat(string json)
+        {
+            Assert.Contains("DuplicateProperty", Codes(Validate(json, out _)));
+        }
+
+        [Fact]
+        public void ARepeatedPropertyInAnEntryPastTheLimit_IsStillReported()
+        {
+            string keys = string.Join(",", Enumerable.Range(0, 16).Select(i => KeyItem("k" + i)))
+                + ",{\"name\":\"over\",\"name\":\"over2\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}";
+            Assert.Contains("DuplicateProperty", Codes(Validate("{\"schemaVersion\":1,\"keys\":[" + keys + "]}", out _)));
+        }
+
+        [Fact]
+        public void TheKeyLimit_CountsDeclaredEntries_NotJustValidOnes()
+        {
+            // 17 entries, one of them invalid. Only 16 are valid, but 17 were declared: the limit must be reported now, not only
+            // after the invalid entry has been fixed.
+            string keys = KeyItem("bad", "no-slash") + "," + string.Join(",", Enumerable.Range(0, 16).Select(i => KeyItem("k" + i)));
+            string[] codes = Codes(Validate("{\"schemaVersion\":1,\"keys\":[" + keys + "]}", out _));
+            Assert.Contains("InvalidPointer", codes);
+            Assert.Contains("TooManyKeys", codes);
+        }
+
+        [Fact]
+        public void TheComparisonLimit_CountsDeclaredEntries_NotJustValidOnes()
+        {
+            string comps = "{\"name\":\"bad\",\"kind\":\"Money\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}," + string.Join(",", Enumerable.Range(0, 128).Select(i => TextItem("c" + i)));
+            string[] codes = Codes(Validate("{\"schemaVersion\":1,\"comparisons\":[" + comps + "]}", out _));
+            Assert.Contains("UnknownKind", codes);
+            Assert.Contains("TooManyComparisons", codes);
+        }
+
+        [Fact]
+        public void TheLimitIsNotReported_ForExactlyTheMaximumNumberOfEntries()
+        {
+            string keys = string.Join(",", Enumerable.Range(0, 16).Select(i => KeyItem("k" + i)));
+            Assert.Empty(Codes(Validate("{\"schemaVersion\":1,\"keys\":[" + keys + "]}", out _)));
+            string comps = string.Join(",", Enumerable.Range(0, 128).Select(i => TextItem("c" + i)));
+            Assert.Empty(Codes(Validate("{\"schemaVersion\":1,\"comparisons\":[" + comps + "]}", out _)));
+        }
+
+        [Theory]
+        [InlineData("5.0")]
+        [InlineData("1e2")]
+        [InlineData("5.5")]
+        [InlineData("\"5\"")]
+        [InlineData("99999999999")]
+        [InlineData("null")]
+        [InlineData("true")]
+        public void ALimitThatIsNotAWholeNumberInRange_IsAnInvalidType(string value)
+        {
+            string report = Validate("{\"schemaVersion\":1,\"limits\":{\"maximumResults\":" + value + "}}", out int errors);
+            Assert.Equal(1, errors);
+            Assert.Equal("InvalidType", FirstCode(report));
+        }
+
+        [Fact]
+        public void ARepeatedPropertyAndAnInvalidLimit_AreBothReported()
+        {
+            string report = Validate("{\"schemaVersion\":1,\"limits\":{\"maximumResults\":0,\"maximumResults\":5,\"maximumRowsPerSide\":-1}}", out int errors);
+            Assert.Equal(new[] { "DuplicateProperty", "InvalidLimit", "InvalidLimit" }, Codes(report).OrderBy(x => x));
+            Assert.Equal(3, errors);
         }
 
         private static int ErrorCount(string json) { Validate(json, out int n); return n; }

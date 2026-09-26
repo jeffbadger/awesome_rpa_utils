@@ -186,7 +186,9 @@ namespace ReconciliationAutomation
                 string path = "keys[" + index++ + "]";
                 // Entries past the limit are still checked in full so the report stays complete; they are just never added to
                 // the definition. The limit itself is reported once.
-                bool overflow = definition.Keys.Count >= ReconciliationDefinition.MaxKeys;
+                // Counted by position in the array, not by how many entries were valid: an invalid early entry must not let an
+                // over-long list escape the limit (the limit would only appear once the invalid entry was fixed).
+                bool overflow = index > ReconciliationDefinition.MaxKeys;
                 if (overflow && !reportedOverflow)
                 {
                     findings.Add("keys", "TooManyKeys", "a definition may have at most " + ReconciliationDefinition.MaxKeys + " key mappings");
@@ -225,7 +227,7 @@ namespace ReconciliationAutomation
             foreach (JsonElement item in comparisons.EnumerateArray())
             {
                 string path = "comparisons[" + index++ + "]";
-                bool overflow = definition.Comparisons.Count >= ReconciliationDefinition.MaxComparisons;
+                bool overflow = index > ReconciliationDefinition.MaxComparisons;
                 if (overflow && !reportedOverflow)
                 {
                     findings.Add("comparisons", "TooManyComparisons", "a definition may have at most " + ReconciliationDefinition.MaxComparisons + " comparisons");
@@ -237,9 +239,11 @@ namespace ReconciliationAutomation
                     continue;
                 }
 
-                // The kind decides which options are allowed, so read it first from the raw object. Absent, wrongly typed and
-                // unsupported are three different problems and are reported as such.
-                bool hasKind = item.TryGetProperty("kind", out JsonElement kindElement);
+                // The kind decides which options are allowed, so read it first. It comes from the same collected properties as every other
+                // field (first occurrence wins; a repeated kind is reported), never from a separate lookup that could pick another
+                // occurrence. Absent, wrongly typed and unsupported are three different problems and are reported as such.
+                Dictionary<string, JsonElement> raw = Collect(item, path, findings);
+                bool hasKind = raw.TryGetValue("kind", out JsonElement kindElement);
                 string kindText = hasKind && kindElement.ValueKind == JsonValueKind.String ? kindElement.GetString() : null;
                 string[] allowed;
                 RuleKind kind;
@@ -252,13 +256,14 @@ namespace ReconciliationAutomation
                     else findings.Add(path + ".kind", "UnknownKind", "the kind '" + kindText + "' is not supported by this version; use Text or Decimal");
                     // The kind cannot be selected, but the fields every comparison has can still be checked, so those problems are
                     // reported too (and the name still counts for duplicate detection).
-                    var common = ReadObject(item, path, CommonComparisonProperties, null, findings);
-                    ReadCommon(common, path, seen, findings);
-                    ReadNullPolicy(common, path, findings);
+                    RejectUnknown(raw, path, CommonComparisonProperties, null, findings);
+                    ReadCommon(raw, path, seen, findings);
+                    ReadNullPolicy(raw, path, findings);
                     continue;
                 }
 
-                var p = ReadObject(item, path, allowed, kind.ToString(), findings);
+                RejectUnknown(raw, path, allowed, kind.ToString(), findings);
+                var p = raw;
                 CommonFields fields = ReadCommon(p, path, seen, findings);
                 ComparisonNullPolicy policy = ReadNullPolicy(p, path, findings);
                 bool trim = kind == RuleKind.Text && ReadBool(p, "trim", path, findings);
@@ -308,27 +313,38 @@ namespace ReconciliationAutomation
         // ------------------------------------------------------------------ typed readers
 
         /// <summary>
-        /// Collects an object's properties (first occurrence wins), reporting repeated names and, when <paramref name="allowed"/> is
+        /// Collects an object's properties (first occurrence wins), reporting every repeated name, and, when <paramref name="allowed"/> is
         /// given, names that do not belong. <paramref name="kind"/> only sharpens the wording for a rule kind.
         /// </summary>
         private static Dictionary<string, JsonElement> ReadObject(JsonElement obj, string path, string[] allowed, string kind, DefinitionFindings findings)
+        {
+            Dictionary<string, JsonElement> result = Collect(obj, path, findings);
+            if (allowed != null) RejectUnknown(result, path, allowed, kind, findings);
+            return result;
+        }
+
+        /// <summary>The properties of an object with the first occurrence of each name; a repeated name is a finding, whatever its value.</summary>
+        private static Dictionary<string, JsonElement> Collect(JsonElement obj, string path, DefinitionFindings findings)
         {
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (JsonProperty property in obj.EnumerateObject())
             {
                 if (result.ContainsKey(property.Name))
-                {
                     findings.Add(path + "." + property.Name, "DuplicateProperty", "the property '" + property.Name + "' appears more than once");
-                    continue;
-                }
-                result[property.Name] = property.Value;
-                if (allowed != null && !allowed.Contains(property.Name))
-                {
-                    string where = kind == null ? "here" : "in a " + kind + " comparison";
-                    findings.Add(path + "." + property.Name, "UnknownProperty", "'" + property.Name + "' is not an option " + where + " (expected: " + string.Join(", ", allowed) + ")");
-                }
+                else
+                    result[property.Name] = property.Value;
             }
             return result;
+        }
+
+        private static void RejectUnknown(Dictionary<string, JsonElement> properties, string path, string[] allowed, string kind, DefinitionFindings findings)
+        {
+            foreach (string name in properties.Keys)
+            {
+                if (allowed.Contains(name)) continue;
+                string where = kind == null ? "here" : "in a " + kind + " comparison";
+                findings.Add(path + "." + name, "UnknownProperty", "'" + name + "' is not an option " + where + " (expected: " + string.Join(", ", allowed) + ")");
+            }
         }
 
         private static string ReadString(Dictionary<string, JsonElement> p, string name, string path, bool required, DefinitionFindings findings)
