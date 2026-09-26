@@ -1,0 +1,189 @@
+using System;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using Xunit;
+
+namespace ReconciliationAutomation.Tests
+{
+    /// <summary>Every accepted definition must be savable (GetDefinitionJson) and loadable again (LoadDefinitionJson), whatever characters and sizes it has.</summary>
+    public sealed class DefinitionRoundTripTests
+    {
+        private const int Limit = ReconciliationDefinition.MaxDefinitionJsonCharacters;
+
+        private static string Pointer(char c, int length) => "/" + new string(c, length - 1);
+
+        private static void AssertRoundTrips(ReconciliationUtils c)
+        {
+            Assert.True(c.GetDefinitionJson(out string canonical, out string m), m);
+            Assert.True(canonical.Length <= Limit, "an accepted definition serialized to " + canonical.Length + " characters");
+            using var again = new ReconciliationUtils();
+            Assert.True(again.LoadDefinitionJson(canonical, out m), "the definition's own canonical form was rejected: " + m);
+            Assert.True(again.GetDefinitionJson(out string second, out m), m);
+            Assert.Equal(canonical, second);
+            Assert.True(again.ValidateDefinitionJson(canonical, out int errors, out string report, out m), m);
+            Assert.True(errors == 0, report);
+        }
+
+        [Fact]
+        public void TheReportedCase_ThirtyTextRulesWith800ChineseCharacterPointers_SavesAndLoadsAgain()
+        {
+            string chinese = "/" + new string('中', 799);
+            var rules = string.Join(",", Enumerable.Range(0, 30).Select(i => "{\"name\":\"R" + i + "\",\"kind\":\"Text\",\"leftPointer\":\"" + chinese + i + "\",\"rightPointer\":\"" + chinese + i + "\"}"));
+            string input = "{\"schemaVersion\":1,\"comparisons\":[" + rules + "]}";
+            Assert.True(input.Length < 60000);
+            using var c = new ReconciliationUtils();
+            Assert.True(c.LoadDefinitionJson(input, out string m), m);
+            Assert.True(c.GetDefinitionJson(out string canonical, out m), m);
+            Assert.True(canonical.Length < 65000, "non-ASCII text should not be expanded six-fold; was " + canonical.Length);      // was 292,157 before
+            Assert.Contains("中", canonical);
+            AssertRoundTrips(c);
+        }
+
+        [Fact]
+        public void CharactersThatAreEscapedInJson_StillRoundTrip_QuotesBackslashesControlsAndAstralCharacters()
+        {
+            using var c = new ReconciliationUtils();
+            string name = "a\"b\\c\nd\te 🚀 é";
+            Assert.True(c.AddKeyMappingSimple("Key " + name, "/p\"q\\r\ns" + "🚀", "/é中", out string m), m);
+            Assert.True(c.GetDefinitionJson(out string canonical, out m), m);
+            Assert.DoesNotContain("\n", canonical);                                               // a raw newline is never written into a JSON string
+            using (JsonDocument doc = JsonDocument.Parse(canonical))
+                Assert.Equal("Key " + name, doc.RootElement.GetProperty("keys")[0].GetProperty("name").GetString());
+            AssertRoundTrips(c);
+        }
+
+        [Fact]
+        public void ADefinitionSavedByAnEarlierRelease_WithUnicodeEscapes_StillLoads_AndIsNowWrittenWithoutThem()
+        {
+            const string old = "{\"schemaVersion\":1,\"keys\":[{\"name\":\"\\u4e2d\\u6587\",\"leftPointer\":\"/\\u00e9\",\"rightPointer\":\"/\\u00e9\",\"trim\":false,\"ignoreCase\":false}],\"comparisons\":[],\"limits\":{\"maximumRowsPerSide\":50000,\"maximumInputCharactersPerSide\":8000000,\"maximumResults\":100000,\"maximumDifferenceDetails\":100000}}";
+            using var c = new ReconciliationUtils();
+            Assert.True(c.LoadDefinitionJson(old, out string m), m);
+            Assert.True(c.GetDefinitionJson(out string now, out m), m);
+            Assert.Contains("\"name\":\"中文\"", now);
+            Assert.Contains("/é", now);
+            AssertRoundTrips(c);
+            using var reloaded = new ReconciliationUtils();
+            Assert.True(reloaded.LoadDefinitionJson(now, out m), m);
+            Assert.True(reloaded.GetDefinitionJson(out string again, out m), m);
+            Assert.Equal(now, again);
+        }
+
+        [Fact]
+        public void BuildingUpAHugeDefinition_IsRefusedAtTheLimit_NotAcceptedAndThenUnloadable()
+        {
+            using var c = new ReconciliationUtils();
+            Assert.True(c.AddKeyMappingSimple("Id", "/id", "/id", out string m), m);
+            int accepted = 0;
+            string refusal = null;
+            for (int i = 0; i < 128; i++)
+            {
+                // the largest allowed pieces: 128-character names and 1,024-character pointers, on both sides plus both currency pointers
+                string name = "M" + i.ToString("D3") + new string('n', 124);
+                if (!c.AddMoneyComparison(name, Pointer('a', 1024), Pointer('b', 1024), Pointer('c', 1024), Pointer('d', 1024), "0", ComparisonNullPolicy.RequireValue, out m)) { refusal = m; break; }
+                accepted++;
+                if (accepted % 16 == 0) AssertRoundTrips(c);
+            }
+            Assert.NotNull(refusal);                                                              // 128 of these would be about 560,000 characters
+            Assert.Contains("DefinitionTooLarge", refusal);
+            Assert.Contains(Limit.ToString(), refusal);
+            Assert.True(accepted > 30 && accepted < 128);
+            AssertRoundTrips(c);                                                                  // what was accepted before the refusal still saves and loads
+
+            Assert.True(c.GetDefinitionJson(out string before, out m), m);
+            Assert.False(c.AddMoneyComparison("Another", Pointer('a', 1024), Pointer('b', 1024), Pointer('c', 1024), Pointer('d', 1024), "0", ComparisonNullPolicy.RequireValue, out _));
+            Assert.True(c.GetDefinitionJson(out string after, out m), m);
+            Assert.Equal(before, after);                                                          // a refused change changes nothing
+            Assert.True(c.AddBooleanComparisonSimple("Small", "/x", "/x", out m) || m.Contains("DefinitionTooLarge"));   // a tiny rule may or may not fit in what is left, but never breaks the round trip
+            AssertRoundTrips(c);
+        }
+
+        [Fact]
+        public void ALoadedDefinition_WhoseCanonicalFormWouldBeTooLarge_IsRejectedByLoadAndReportedByValidate()
+        {
+            // compact input just under the input limit; the canonical form spells out every default option and grows past the limit
+            string pointer = Pointer('p', 949);
+            var rules = string.Join(",", Enumerable.Range(0, 128).Select(i => "{\"name\":\"R" + i.ToString("D3") + "\",\"kind\":\"Text\",\"leftPointer\":\"" + pointer + "\",\"rightPointer\":\"" + pointer + "\"}"));
+            string input = "{\"schemaVersion\":1,\"comparisons\":[" + rules + "]}";
+            Assert.True(input.Length < Limit, "the input itself must be accepted by the input-size check; was " + input.Length);
+
+            using var c = new ReconciliationUtils();
+            Assert.True(c.AddKeyMappingSimple("Keep", "/k", "/k", out string m), m);
+            Assert.True(c.GetDefinitionJson(out string before, out m), m);
+            Assert.False(c.LoadDefinitionJson(input, out m));
+            Assert.Contains("DefinitionTooLarge", m);
+            Assert.True(c.GetDefinitionJson(out string after, out m), m);
+            Assert.Equal(before, after);                                                          // the previous definition is untouched
+
+            Assert.True(c.ValidateDefinitionJson(input, out int errors, out string report, out m), m);
+            Assert.Equal(1, errors);
+            using JsonDocument doc = JsonDocument.Parse(report);
+            JsonElement finding = doc.RootElement.GetProperty("errors")[0];
+            Assert.Equal("DefinitionTooLarge", finding.GetProperty("code").GetString());
+            Assert.Equal("definition", finding.GetProperty("path").GetString());
+        }
+
+        [Theory]
+        [InlineData('a', 1024, 100)]
+        [InlineData('中', 1024, 100)]
+        [InlineData('é', 700, 128)]
+        [InlineData('"', 400, 128)]           // escaped as two characters
+        [InlineData('\\', 400, 128)]
+        [InlineData('\u0001', 200, 128)]      // a control character: six characters when escaped
+        public void WhateverTheCharacters_EveryAcceptedDefinitionRoundTrips_AndTooLargeOnesAreRefused(char c, int pointerLength, int rules)
+        {
+            using var rec = new ReconciliationUtils();
+            bool refused = false;
+            for (int i = 0; i < rules; i++)
+            {
+                string pointer = "/" + new string(c, pointerLength - 4) + i.ToString("D3");
+                if (!rec.AddTextComparisonSimple("T" + i.ToString("D3"), pointer, pointer, out string m)) { Assert.Contains("DefinitionTooLarge", m); refused = true; break; }
+            }
+            AssertRoundTrips(rec);
+            if (c == '\u0001') Assert.True(refused);                                              // 128 x 2 x 200 control characters x 6 is well past the limit
+        }
+
+        private static ReconciliationUtils Filled(int rules, int pointerLength)
+        {
+            var c = new ReconciliationUtils();
+            for (int i = 0; i < rules; i++)
+                if (!c.AddTextComparisonSimple("F" + i.ToString("D3"), Pointer('x', pointerLength) + i.ToString("D3"), Pointer('y', pointerLength) + i.ToString("D3"), out _)) { c.Dispose(); return null; }   // too many for the limit
+            return c;
+        }
+
+        /// <summary>A component holding as many large Text rules as fit, plus one more whose size is tuned so the canonical form is exactly <paramref name="target"/> characters.</summary>
+        private static ReconciliationUtils WithCanonicalLength(int target, out bool accepted, out string message)
+        {
+            for (int pointerLength = 1000; pointerLength >= 900; pointerLength--)
+                for (int rules = 127; rules >= 60; rules--)
+                    for (int nameLength = 1; nameLength <= 2; nameLength++)
+                    {
+                        using ReconciliationUtils probe = Filled(rules, pointerLength);
+                        if (probe == null || !probe.AddTextComparisonSimple(new string('Z', nameLength), "/k", "/k", out _)) continue;   // this many rules already leaves no room
+                        Assert.True(probe.GetDefinitionJson(out string measured, out _));
+                        int extra = target - measured.Length;                                   // each pointer character adds one character to each of the two pointers
+                        if (extra < 0 || extra % 2 != 0 || extra / 2 > 1020) continue;
+                        ReconciliationUtils c = Filled(rules, pointerLength);
+                        string pointer = "/k" + new string('k', extra / 2);
+                        accepted = c.AddTextComparisonSimple(new string('Z', nameLength), pointer, pointer, out message);
+                        return c;
+                    }
+            throw new InvalidOperationException("could not tune the fixture to " + target);
+        }
+
+        [Fact]
+        public void TheLimitIsInclusive_ExactlyTheLimitIsAccepted_OneCharacterMoreIsRefused()
+        {
+            using ReconciliationUtils atLimit = WithCanonicalLength(Limit, out bool accepted, out string message);
+            Assert.True(accepted, message);
+            Assert.True(atLimit.GetDefinitionJson(out string canonical, out message), message);
+            Assert.Equal(Limit, canonical.Length);
+            AssertRoundTrips(atLimit);                                                            // 256,000 characters loads back (the loader's own limit is inclusive too)
+
+            using ReconciliationUtils over = WithCanonicalLength(Limit + 2, out accepted, out message);
+            Assert.False(accepted);
+            Assert.Contains("DefinitionTooLarge", message);
+            Assert.Contains((Limit + 2).ToString(), message);
+        }
+    }
+}

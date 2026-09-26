@@ -105,7 +105,10 @@ namespace ReconciliationAutomation
                 ReadComparisons(props, definition, seenNames, findings);
                 ReadLimits(props, definition, findings);
 
-                return findings.Total == 0 ? definition : null;
+                if (findings.Total != 0) return null;
+                Finding tooLarge = definition.CheckCanonicalSize();          // an accepted definition must also fit once it is saved again
+                if (tooLarge != null) { findings.Add(tooLarge); return null; }
+                return definition;
             }
         }
 
