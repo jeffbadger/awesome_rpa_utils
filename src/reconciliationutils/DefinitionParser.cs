@@ -45,6 +45,8 @@ namespace ReconciliationAutomation
         private static readonly string[] CommonComparisonProperties = { "name", "kind", "leftPointer", "rightPointer", "nullPolicy" };
         private static readonly string[] TextProperties = { "name", "kind", "leftPointer", "rightPointer", "trim", "ignoreCase", "nullPolicy" };
         private static readonly string[] DecimalProperties = { "name", "kind", "leftPointer", "rightPointer", "absoluteTolerance", "nullPolicy" };
+        private static readonly string[] BooleanProperties = { "name", "kind", "leftPointer", "rightPointer", "nullPolicy" };
+        private static readonly string[] MoneyProperties = { "name", "kind", "leftPointer", "rightPointer", "leftCurrencyPointer", "rightCurrencyPointer", "absoluteTolerance", "nullPolicy" };
         private static readonly string[] LimitProperties = { "maximumRowsPerSide", "maximumInputCharactersPerSide", "maximumResults", "maximumDifferenceDetails" };
 
         /// <summary>Parses <paramref name="json"/>. Returns the definition, or null when there is any finding (see <paramref name="findings"/>).</summary>
@@ -346,11 +348,13 @@ namespace ReconciliationAutomation
                 RuleKind kind;
                 if (kindText == "Text") { kind = RuleKind.Text; allowed = TextProperties; }
                 else if (kindText == "Decimal") { kind = RuleKind.Decimal; allowed = DecimalProperties; }
+                else if (kindText == "Boolean") { kind = RuleKind.Boolean; allowed = BooleanProperties; }
+                else if (kindText == "Money") { kind = RuleKind.Money; allowed = MoneyProperties; }
                 else
                 {
-                    if (!hasKind) findings.Add(path + ".kind", "MissingProperty", "kind is required: Text or Decimal");
-                    else if (kindElement.ValueKind != JsonValueKind.String) findings.Add(path + ".kind", "InvalidType", "kind must be a string: Text or Decimal");
-                    else findings.Add(path + ".kind", "UnknownKind", "the kind '" + kindText + "' is not supported by this version; use Text or Decimal");
+                    if (!hasKind) findings.Add(path + ".kind", "MissingProperty", "kind is required: Text, Decimal, Boolean or Money");
+                    else if (kindElement.ValueKind != JsonValueKind.String) findings.Add(path + ".kind", "InvalidType", "kind must be a string: Text, Decimal, Boolean or Money");
+                    else findings.Add(path + ".kind", "UnknownKind", "the kind '" + kindText + "' is not supported by this version; use Text, Decimal, Boolean or Money");
                     // The kind cannot be selected, but the fields every comparison has can still be checked, so those problems are
                     // reported too (and the name still counts for duplicate detection).
                     RejectUnknown(raw, path, CommonComparisonProperties, null, findings);
@@ -365,13 +369,24 @@ namespace ReconciliationAutomation
                 ComparisonNullPolicy policy = ReadNullPolicy(p, path, findings);
                 bool trim = kind == RuleKind.Text && ReadBool(p, "trim", path, findings);
                 bool ignoreCase = kind == RuleKind.Text && ReadBool(p, "ignoreCase", path, findings);
-                string tolerance = kind == RuleKind.Decimal ? ReadTolerance(p, path, findings) : null;
-                if (!fields.Ok || overflow || (kind == RuleKind.Decimal && tolerance == null)) continue;
+                bool hasTolerance = kind == RuleKind.Decimal || kind == RuleKind.Money;
+                string tolerance = hasTolerance ? ReadTolerance(p, path, findings) : null;
+                string[] leftCurrency = null, rightCurrency = null;
+                string leftCurrencyPointer = null, rightCurrencyPointer = null;
+                bool currencyOk = true;
+                if (kind == RuleKind.Money)
+                {
+                    currencyOk &= ReadPointer(p, "leftCurrencyPointer", path, findings, out leftCurrencyPointer, out leftCurrency);
+                    currencyOk &= ReadPointer(p, "rightCurrencyPointer", path, findings, out rightCurrencyPointer, out rightCurrency);
+                }
+                if (!fields.Ok || overflow || (hasTolerance && tolerance == null) || !currencyOk) continue;
 
                 definition.Comparisons.Add(new ComparisonDef
                 {
                     Name = fields.Name, Kind = kind, LeftPointer = fields.Left, RightPointer = fields.Right,
                     LeftSegments = fields.LeftSegments, RightSegments = fields.RightSegments,
+                    LeftCurrencyPointer = leftCurrencyPointer, RightCurrencyPointer = rightCurrencyPointer,
+                    LeftCurrencySegments = leftCurrency, RightCurrencySegments = rightCurrency,
                     Trim = trim, IgnoreCase = ignoreCase,
                     AbsoluteTolerance = tolerance ?? "0", NullPolicy = policy
                 });
@@ -473,6 +488,17 @@ namespace ReconciliationAutomation
             if (text == nameof(ComparisonNullPolicy.AllowBothNull)) return ComparisonNullPolicy.AllowBothNull;
             findings.Add(path + ".nullPolicy", "UnknownEnumValue", "nullPolicy must be the string RequireValue or AllowBothNull (numbers are not accepted)");
             return ComparisonNullPolicy.RequireValue;
+        }
+
+        /// <summary>Reads a required pointer property. False (with a finding) when it is absent, not a string, or not a valid pointer.</summary>
+        private static bool ReadPointer(Dictionary<string, JsonElement> p, string name, string path, DefinitionFindings findings, out string pointer, out string[] segments)
+        {
+            segments = null;
+            pointer = ReadString(p, name, path, true, findings);
+            if (pointer == null) return false;
+            Finding f = ReconciliationDefinition.CheckPointer(pointer, path + "." + name, out segments);
+            if (f != null) { findings.Add(f); return false; }
+            return true;
         }
 
         private static string ReadTolerance(Dictionary<string, JsonElement> p, string path, DefinitionFindings findings)

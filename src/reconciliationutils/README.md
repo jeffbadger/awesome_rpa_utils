@@ -5,7 +5,7 @@ datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
 > **Status: released (v0.3.27); Release 2 in progress.** The DataTable bridge (`ReconcileDataTables`,
-> `ConfigureTableLimits`) is the first Release 2 addition; Boolean, money and date rules and results export follow.
+> `ConfigureTableLimits`) and the Boolean and Money rules are the first Release 2 additions; date rules and results export follow.
 > See the [documentation](Documentation/README.md) for a quick start and worked examples, and the
 > [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) for what remains.
 
@@ -15,7 +15,7 @@ through scalar ports so an automation can route them to review or correction.
 
 ## Method reference
 
-All 21 methods and their signatures. On any failure a method sets every output to its failure value (null
+All 25 methods and their signatures. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
 operation; success has no message. The
 [plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) adds the rest.
@@ -71,6 +71,10 @@ loaded from JSON produce identical text.
 | `AddTextComparison` | `bool AddTextComparison(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, ComparisonNullPolicy nullPolicy, out string message)` | Adds a text comparison with a choice of trimming, case-insensitive comparison and null policy. |
 | `AddDecimalComparisonSimple` | `bool AddDecimalComparisonSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds an exact decimal comparison (tolerance 0, a value is required on both sides). |
 | `AddDecimalComparison` | `bool AddDecimalComparison(string name, string leftPointer, string rightPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, out string message)` | Adds a decimal comparison with an absolute tolerance given as invariant decimal text (for example 0.01) and a null policy. |
+| `AddBooleanComparisonSimple` | `bool AddBooleanComparisonSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds a Boolean comparison: both sides must be JSON true or false (not yes, 0 or 1), and a value is required on both sides. |
+| `AddBooleanComparison` | `bool AddBooleanComparison(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy, out string message)` | Adds a Boolean comparison (JSON true or false only) with a choice of null policy. |
+| `AddMoneyComparisonSimple` | `bool AddMoneyComparisonSimple(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, out string message)` | Adds an exact money comparison (tolerance 0, a value is required on both sides). Each side needs a three-letter currency; different currencies never compare amounts. |
+| `AddMoneyComparison` | `bool AddMoneyComparison(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, out string message)` | Adds a money comparison with an absolute tolerance (invariant decimal text) and a null policy. Each side needs a three-letter currency; different currencies are a CurrencyMismatch and the amounts are not compared. |
 | `LoadDefinitionJson` | `bool LoadDefinitionJson(string definitionJson, out string message)` | Replaces the whole definition from JSON. An invalid definition is rejected whole and the previous one stays in force. |
 | `GetDefinitionJson` | `bool GetDefinitionJson(out string definitionJson, out string message)` | Returns the current definition, including limits, as canonical JSON. |
 | `ValidateDefinitionJson` | `bool ValidateDefinitionJson(string definitionJson, out int errorCount, out string reportJson, out string message)` | Validates a JSON definition without loading it. Returns True when validation ran; errorCount is 0 for a valid definition and reportJson lists the findings. |
@@ -119,8 +123,13 @@ stable reason code and an explanation that never quotes a text value.
   `|right - left|` is at most the **absolute tolerance** (inclusive; exact, so `0.1` and `0.3` differ by exactly `0.2`). The delta
   (right minus left) is reported as exact text even when it is larger than any decimal, and the tolerance must itself be exactly
   representable. Reason for a difference: `DecimalMismatch`.
+- **Boolean:** both sides must be JSON `true`/`false` (`"yes"`, `1` and `0` are `InvalidType`); a difference is `BooleanMismatch`.
+- **Money:** a Decimal comparison of the amount gated on a three-letter currency (trimmed, upper-cased) on each side. Order of decision:
+  missing field, then `InvalidCurrency`, then an unusable amount, then `CurrencyMismatch` (the amounts are not compared, so no delta), then the
+  null policy and the exact amount comparison within the tolerance.
 - **Original values are kept** as JSON fragments next to the interpreted ones, so a missing field (no value), a null (`null`), an empty
   string (`""`) and a zero (`0`) stay distinguishable; an object or array is described (`"(an object)"`), never copied.
+
 
 ## How reconciliation runs
 

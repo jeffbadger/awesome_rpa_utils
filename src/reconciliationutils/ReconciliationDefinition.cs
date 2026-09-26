@@ -28,7 +28,11 @@ namespace ReconciliationAutomation
     internal enum RuleKind
     {
         Text,
-        Decimal
+        Decimal,
+        /// <summary>Release 2: JSON true/false compared directly.</summary>
+        Boolean,
+        /// <summary>Release 2: an exact amount plus a required currency on each side; different currencies never compare amounts.</summary>
+        Money
     }
 
     /// <summary>One part of the business key.</summary>
@@ -52,9 +56,13 @@ namespace ReconciliationAutomation
         internal string RightPointer;
         internal string[] LeftSegments;
         internal string[] RightSegments;
+        internal string LeftCurrencyPointer;      // Money
+        internal string RightCurrencyPointer;     // Money
+        internal string[] LeftCurrencySegments;   // Money
+        internal string[] RightCurrencySegments;  // Money
         internal bool Trim;                       // Text
         internal bool IgnoreCase;                 // Text
-        internal string AbsoluteTolerance = "0";  // Decimal (invariant decimal text)
+        internal string AbsoluteTolerance = "0";  // Decimal and Money (invariant decimal text)
 
         private sealed class ParsedTolerance
         {
@@ -196,6 +204,33 @@ namespace ReconciliationAutomation
             return null;
         }
 
+        internal Finding TryAddBoolean(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy)
+        {
+            Finding f = CheckComparisonCommon(name, leftPointer, rightPointer, nullPolicy, out string[] left, out string[] right);
+            if (f != null) return f;
+            Comparisons.Add(new ComparisonDef { Name = name, Kind = RuleKind.Boolean, LeftPointer = leftPointer, RightPointer = rightPointer, LeftSegments = left, RightSegments = right, NullPolicy = nullPolicy });
+            return null;
+        }
+
+        internal Finding TryAddMoney(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy)
+        {
+            Finding f = CheckComparisonCommon(name, leftPointer, rightPointer, nullPolicy, out string[] left, out string[] right);
+            if (f != null) return f;
+            f = CheckPointer(leftCurrencyPointer, "leftCurrencyPointer", out string[] leftCurrency);
+            if (f != null) return f;
+            f = CheckPointer(rightCurrencyPointer, "rightCurrencyPointer", out string[] rightCurrency);
+            if (f != null) return f;
+            f = CheckTolerance(absoluteTolerance, "absoluteTolerance");
+            if (f != null) return f;
+            Comparisons.Add(new ComparisonDef
+            {
+                Name = name, Kind = RuleKind.Money, LeftPointer = leftPointer, RightPointer = rightPointer, LeftSegments = left, RightSegments = right,
+                LeftCurrencyPointer = leftCurrencyPointer, RightCurrencyPointer = rightCurrencyPointer, LeftCurrencySegments = leftCurrency, RightCurrencySegments = rightCurrency,
+                AbsoluteTolerance = absoluteTolerance, NullPolicy = nullPolicy
+            });
+            return null;
+        }
+
         private Finding CheckComparisonCommon(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy, out string[] left, out string[] right)
         {
             left = right = null;
@@ -249,12 +284,17 @@ namespace ReconciliationAutomation
                         w.WriteString("kind", c.Kind.ToString());
                         w.WriteString("leftPointer", c.LeftPointer);
                         w.WriteString("rightPointer", c.RightPointer);
+                        if (c.Kind == RuleKind.Money)
+                        {
+                            w.WriteString("leftCurrencyPointer", c.LeftCurrencyPointer);
+                            w.WriteString("rightCurrencyPointer", c.RightCurrencyPointer);
+                        }
                         if (c.Kind == RuleKind.Text)
                         {
                             w.WriteBoolean("trim", c.Trim);
                             w.WriteBoolean("ignoreCase", c.IgnoreCase);
                         }
-                        else
+                        else if (c.Kind == RuleKind.Decimal || c.Kind == RuleKind.Money)
                         {
                             w.WriteString("absoluteTolerance", c.AbsoluteTolerance);
                         }

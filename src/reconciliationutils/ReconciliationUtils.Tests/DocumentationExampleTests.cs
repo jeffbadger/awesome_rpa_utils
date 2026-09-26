@@ -238,5 +238,27 @@ namespace ReconciliationAutomation.Tests
             foreach (string integral in new[] { "sbyte", "byte", "short", "ushort", "int", "uint", "long", "ulong" }) Assert.Contains("`" + integral + "`", page);
             Assert.Contains("`NaN` and infinity are unsupported", page);
         }
+
+        [Fact]
+        public void TheComparisonRulesPage_ListsEveryReasonCodeTheRulesCanProduce()
+        {
+            string source = File.ReadAllText(Path.Combine(ComponentDirectory(), "ComparisonCore.cs"));
+            var codes = Regex.Matches(source, "\"((?:Missing|Null|Invalid|Text|Decimal|Boolean|Currency)[A-Za-z]+)\"").Cast<Match>().Select(m => m.Groups[1].Value)
+                .Where(c => c != "InvalidOperation").Distinct().ToList();
+            Assert.Contains("CurrencyMismatch", codes);
+            Assert.Contains("BooleanMismatch", codes);
+            string page = Page("ComparisonRules.md");
+            foreach (string code in codes)
+                Assert.True(Regex.IsMatch(page, "^\\| `" + code + "` \\|", RegexOptions.Multiline), code + " is produced by the rules but has no row in the ComparisonRules reason-code table");
+        }
+
+        [Fact]
+        public void TheConfigurationPage_MoneyExample_IsAValidDefinitionRule()
+        {
+            string json = Blocks(Page("Configuration.md"), "json").Single(b => b.Contains("\"kind\": \"Money\""));
+            using var c = new ReconciliationUtils();
+            Assert.True(c.ValidateDefinitionJson("{\"schemaVersion\":1,\"comparisons\":[" + json + "]}", out int errors, out string report, out string m), m);
+            Assert.True(errors == 0, report);
+        }
     }
 }

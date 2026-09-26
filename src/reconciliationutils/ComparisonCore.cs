@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 
 namespace ReconciliationAutomation
@@ -35,6 +36,10 @@ namespace ReconciliationAutomation
         internal string LeftValueJson { get; set; }
         internal string RightValueJson { get; set; }
 
+        /// <summary>Money rules only: each side's currency field as a JSON fragment (null when missing).</summary>
+        internal string LeftCurrencyJson { get; set; }
+        internal string RightCurrencyJson { get; set; }
+
         /// <summary>The value after the rule's interpretation (trimmed text, normalized number); null when there is none.</summary>
         internal string LeftInterpreted { get; set; }
         internal string RightInterpreted { get; set; }
@@ -50,7 +55,9 @@ namespace ReconciliationAutomation
     internal static class ComparisonCore
     {
         internal static ComparisonOutcome Evaluate(ComparisonDef rule, IRowReader left, IRowReader right) =>
-            Evaluate(rule, left.Read(rule.LeftSegments), right.Read(rule.RightSegments));
+            rule.Kind == RuleKind.Money
+                ? EvaluateMoney(rule, left.Read(rule.LeftSegments), right.Read(rule.RightSegments), left.Read(rule.LeftCurrencySegments), right.Read(rule.RightCurrencySegments))
+                : Evaluate(rule, left.Read(rule.LeftSegments), right.Read(rule.RightSegments));
 
         internal static ComparisonOutcome Evaluate(ComparisonDef rule, FieldValue left, FieldValue right)
         {
@@ -63,6 +70,10 @@ namespace ReconciliationAutomation
                 LeftValueJson = ValueJson(left),
                 RightValueJson = ValueJson(right)
             };
+
+            // A money rule also needs its currency fields, which this overload does not have: use EvaluateMoney (the row-reader overload does).
+            if (rule.Kind == RuleKind.Money)
+                return Invalid(outcome, "InvalidType", "A money rule needs its currency fields to be evaluated.");
 
             ExactDecimal tolerance = default;
             if (rule.Kind == RuleKind.Decimal && !rule.TryGetTolerance(out tolerance, out string toleranceError))
@@ -87,7 +98,7 @@ namespace ReconciliationAutomation
                 return Invalid(outcome, code, explanation);
             }
 
-            string mismatch = rule.Kind == RuleKind.Text ? "TextMismatch" : "DecimalMismatch";
+            string mismatch = rule.Kind == RuleKind.Text ? "TextMismatch" : rule.Kind == RuleKind.Boolean ? "BooleanMismatch" : "DecimalMismatch";
 
             // With AllowBothNull the nulls are legitimate: two nulls agree, a null against a value is a difference.
             if (l.IsNull && r.IsNull) return outcome.With(ComparisonState.Equal, null, null);
@@ -102,12 +113,93 @@ namespace ReconciliationAutomation
                     : outcome.With(ComparisonState.Different, mismatch, "The text values differ.");
             }
 
+            if (rule.Kind == RuleKind.Boolean)
+                return l.Interpreted == r.Interpreted
+                    ? outcome.With(ComparisonState.Equal, null, null)
+                    : outcome.With(ComparisonState.Different, mismatch, "The Boolean values differ.");
+
+            return CompareAmounts(outcome, l, r, tolerance, mismatch);
+        }
+
+        private static ComparisonOutcome CompareAmounts(ComparisonOutcome outcome, Side l, Side r, ExactDecimal tolerance, string mismatch)
+        {
             ExactDecimal delta = ExactDecimal.Subtract(r.Number, l.Number);          // right minus left, exact even beyond the range of a decimal
             outcome.Delta = delta.ToString();
             return delta.Abs().CompareTo(tolerance) <= 0
                 ? outcome.With(ComparisonState.Equal, null, null)
                 : outcome.With(ComparisonState.Different, mismatch, "The values differ by " + delta + " (right minus left), which is more than the tolerance " + tolerance + ".");
         }
+
+        /// <summary>
+        /// A money comparison: an exact amount (Decimal semantics) gated on a currency on each side. Missing fields come first, then an unusable
+        /// currency (<c>InvalidCurrency</c>), then an unusable amount. Currencies that differ are a mismatch (<c>CurrencyMismatch</c>) and the amounts are
+        /// never compared, so no misleading delta exists; the null policy applies to the amounts only once the currencies are valid and agree.
+        /// </summary>
+        internal static ComparisonOutcome EvaluateMoney(ComparisonDef rule, FieldValue left, FieldValue right, FieldValue leftCurrency, FieldValue rightCurrency)
+        {
+            var outcome = new ComparisonOutcome
+            {
+                RuleName = rule.Name,
+                Kind = rule.Kind,
+                LeftPresent = left.Kind != FieldKind.Missing,
+                RightPresent = right.Kind != FieldKind.Missing,
+                LeftValueJson = ValueJson(left),
+                RightValueJson = ValueJson(right),
+                LeftCurrencyJson = ValueJson(leftCurrency),
+                RightCurrencyJson = ValueJson(rightCurrency)
+            };
+
+            if (!rule.TryGetTolerance(out ExactDecimal tolerance, out string toleranceError))
+                return Invalid(outcome, "InvalidDecimal", "The rule's tolerance is not a usable decimal (" + toleranceError + ").");
+
+            Side l = Interpret(rule, left);
+            Side r = Interpret(rule, right);
+            string lc = CurrencyOf(leftCurrency, out bool lcMissing, out string lcProblem, "left");
+            string rc = CurrencyOf(rightCurrency, out bool rcMissing, out string rcProblem, "right");
+
+            string leftAmountProblem = ProblemOf(rule, l, "left amount");
+            string rightAmountProblem = ProblemOf(rule, r, "right amount");
+            if (leftAmountProblem != null || rightAmountProblem != null || lcProblem != null || rcProblem != null)
+            {
+                var explanation = new List<string>();
+                if (leftAmountProblem != null) explanation.Add(leftAmountProblem);
+                if (rightAmountProblem != null) explanation.Add(rightAmountProblem);
+                if (lcProblem != null) explanation.Add(lcProblem);
+                if (rcProblem != null) explanation.Add(rcProblem);
+                string code = l.IsMissing || r.IsMissing || lcMissing || rcMissing ? "MissingField"
+                    : lcProblem != null || rcProblem != null ? "InvalidCurrency"
+                    : l.BadCode ?? r.BadCode ?? "NullNotAllowed";
+                return Invalid(outcome, code, string.Join(" ", explanation));
+            }
+
+            outcome.LeftInterpreted = l.IsNull ? null : l.Number + " " + lc;
+            outcome.RightInterpreted = r.IsNull ? null : r.Number + " " + rc;
+
+            if (lc != rc)
+                return outcome.With(ComparisonState.Different, "CurrencyMismatch", "The currencies differ, so the amounts are not compared.");
+
+            if (l.IsNull && r.IsNull) return outcome.With(ComparisonState.Equal, null, null);
+            if (l.IsNull || r.IsNull) return outcome.With(ComparisonState.Different, "DecimalMismatch", "One side is null and the other has a value.");
+            return CompareAmounts(outcome, l, r, tolerance, "DecimalMismatch");
+        }
+
+        /// <summary>A currency code: a string of exactly three ASCII letters once trimmed, normalized to upper case. No registry lookup is claimed.</summary>
+        private static string CurrencyOf(FieldValue value, out bool missing, out string problem, string name)
+        {
+            missing = value.Kind == FieldKind.Missing;
+            problem = null;
+            if (missing) { problem = "The " + name + " currency field is missing."; return null; }
+            if (value.Kind != FieldKind.String || value.Text == null) { problem = "The " + name + " currency must be a string of three letters but found " + Describe(value) + "."; return null; }
+            string trimmed = value.Text.Trim();
+            if (trimmed.Length != 3 || !IsAsciiLetter(trimmed[0]) || !IsAsciiLetter(trimmed[1]) || !IsAsciiLetter(trimmed[2]))
+            {
+                problem = "The " + name + " currency is not a three-letter code.";
+                return null;
+            }
+            return trimmed.ToUpperInvariant();
+        }
+
+        private static bool IsAsciiLetter(char c) => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 
         // ------------------------------------------------------------------ one side
 
@@ -154,7 +246,19 @@ namespace ReconciliationAutomation
                 return side;
             }
 
-            // Decimal: a JSON number, or a string of invariant numeric text. Nothing else converts implicitly.
+            if (rule.Kind == RuleKind.Boolean)
+            {
+                if (value.Kind != FieldKind.Boolean)
+                {
+                    side.BadCode = "InvalidType";
+                    side.BadReason = "a Boolean rule needs true or false (not text, and not the numbers 0 or 1) but found " + Describe(value);
+                    return side;
+                }
+                side.Interpreted = value.Text;
+                return side;
+            }
+
+            // Decimal and Money: a JSON number, or a string of invariant numeric text. Nothing else converts implicitly.
             string error;
             bool ok;
             if (value.Kind == FieldKind.Integer || value.Kind == FieldKind.Number) ok = ExactDecimal.TryParseJsonNumber(value.Text, out side.Number, out error);

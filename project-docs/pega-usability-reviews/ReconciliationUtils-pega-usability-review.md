@@ -24,6 +24,10 @@ method calls or one JSON text; results come out as counts, two scalar cursors, o
 
 ## Findings applied
 
+- **Money is its own method.** `AddMoneyComparison[Simple]` takes the currency pointers as required arguments, so a
+  monetary rule cannot be built without currency compatibility; a Decimal rule plus a Text rule remains possible but does
+  not gate the amount. All ports stay strings and the null-policy drop-down. Boolean rules take only strings (and the drop-down).
+
 - **Two cursors instead of an index API.** Robot Studio loops cleanly on a `hasItem` flag;
   a nested counted loop needs extra counter variables and easy off-by-one mistakes. Exhausted
   cursors return `True` with `hasItem` false, so end-of-data is not an error path.

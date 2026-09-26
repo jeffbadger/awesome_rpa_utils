@@ -13,7 +13,12 @@ change discards existing results.
 | `AddTextComparison(name, leftPointer, rightPointer, trim, ignoreCase, nullPolicy)` | Text with trim, case and null-policy choices. |
 | `AddDecimalComparisonSimple(name, leftPointer, rightPointer)` | Exact decimals; tolerance `0`. |
 | `AddDecimalComparison(name, leftPointer, rightPointer, absoluteTolerance, nullPolicy)` | Decimals within an absolute tolerance such as `"0.01"`. |
+| `AddBooleanComparisonSimple(name, leftPointer, rightPointer)` | JSON `true`/`false` on both sides; a value is required. |
+| `AddBooleanComparison(name, leftPointer, rightPointer, nullPolicy)` | Boolean with a null-policy choice. |
+| `AddMoneyComparisonSimple(name, leftPointer, rightPointer, leftCurrencyPointer, rightCurrencyPointer)` | An exact amount gated on a currency per side; tolerance `0`. |
+| `AddMoneyComparison(name, leftPointer, rightPointer, leftCurrencyPointer, rightCurrencyPointer, absoluteTolerance, nullPolicy)` | Money with a tolerance and a null-policy choice. |
 | `ConfigureLimits(...)` | See [Limits](Limits.md). |
+| `ConfigureTableLimits(...)` | The extra limits for DataTables; see [DataTables](DataTables.md). |
 | `ClearDefinition()` | Back to the defaults; also clears results. |
 
 Add at least one key before running. A key may have several parts (add several key mappings); parts are
@@ -47,6 +52,17 @@ duplicates, invalid rows).
 - `GetDefinitionJson` returns the canonical form with every option spelled out. A definition built with methods
   and the same one loaded from JSON produce identical text, so it can be saved and reloaded.
 - Unknown or repeated properties, wrong types and numeric enum values are errors.
+
+In JSON the kinds are `Text`, `Decimal`, `Boolean` and `Money`. Only the options that belong to a kind are allowed (anything else is
+an error): `Boolean` has none beyond the common ones; `Money` requires `leftCurrencyPointer` and `rightCurrencyPointer` and takes
+`absoluteTolerance` like `Decimal`:
+
+```json
+{ "name": "Total", "kind": "Money", "leftPointer": "/total", "rightPointer": "/paidAmount",
+  "leftCurrencyPointer": "/currency", "rightCurrencyPointer": "/currencyCode", "absoluteTolerance": "0.01" }
+```
+
+A definition using `Boolean` or `Money` cannot be loaded by a component release that predates them (it reports an unknown kind).
 
 ## Pointers
 

@@ -50,7 +50,7 @@ TryReadNextException(...)        -> hasItem, resultId, kind, keyJson, leftRowInd
 ## GetResultJson
 
 `GetResultJson("r000004")` returns everything about one result: kind, key, reason, explanation, every member with its
-side, row and original key parts, and every kept difference with values as found, interpreted values and delta. Use it
+side, row and original key parts, and every kept difference with values as found, interpreted values and delta (a Money difference also carries `leftCurrency` and `rightCurrency`, as found). Use it
 for duplicate groups, which the scalar cursor cannot fully describe. A bad or unknown ID is a failure that leaves the
 results and cursors alone.
 
