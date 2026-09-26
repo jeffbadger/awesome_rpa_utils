@@ -302,5 +302,28 @@ namespace ReconciliationAutomation.Tests
             Assert.Equal(ReconciliationLimits.MaxOutputCharacters, int.Parse(row.Groups[2].Value.Replace(",", "")));
             Assert.Equal(new[] { "ExportResultsJson" }, Blocks(page, "csharp").SelectMany(b => Regex.Matches(b, "recon\\.(\\w+)\\(").Cast<Match>().Select(mm => mm.Groups[1].Value)).Distinct());
         }
+
+        [Fact]
+        public void TheExcelGuide_SnippetCallsTheDocumentedMethods_AndItsDefinitionWorksOnExcelShapedTables()
+        {
+            string page = Page("ExcelWorksheets.md");
+            var calls = Blocks(page, "csharp").SelectMany(b => Regex.Matches(b, "recon\\.(\\w+)\\(").Cast<Match>().Select(m => m.Groups[1].Value)).ToList();
+            Assert.Equal(new[] { "AddKeyMappingSimple", "AddDecimalComparison", "AddTextComparison", "ReconcileDataTables" }, calls);
+
+            // the definition printed on the page, applied to tables with the headers it names
+            using var recon = new ReconciliationUtils();
+            Assert.True(recon.AddKeyMappingSimple("Invoice", "/Invoice Number", "/Invoice No", out string message), message);
+            Assert.True(recon.AddDecimalComparison("Amount", "/Amount", "/Paid", "0.01", ComparisonNullPolicy.RequireValue, out message), message);
+            Assert.True(recon.AddTextComparison("Status", "/Status", "/Status", true, true, ComparisonNullPolicy.AllowBothNull, out message), message);
+            var erp = new System.Data.DataTable(); erp.Columns.Add("Invoice Number", typeof(string)); erp.Columns.Add("Amount", typeof(double)); erp.Columns.Add("Status", typeof(string)); erp.Rows.Add("A", 1.0, "Open");
+            var bank = new System.Data.DataTable(); bank.Columns.Add("Invoice No", typeof(string)); bank.Columns.Add("Paid", typeof(double)); bank.Columns.Add("Status", typeof(string)); bank.Rows.Add("A", 1.0, "OPEN");
+            Assert.True(recon.ReconcileDataTables(erp, bank, out int exceptionCount, out message), message);
+            Assert.Equal(0, exceptionCount);
+
+            // the page's default-limit sentence
+            Assert.Contains("50,000 rows, 100 columns, 2,000,000 cells and 4,096 characters", page);
+            Assert.Equal(new[] { 100, 2000000, 4096 }, new[] { TableLimits.DefaultColumns, TableLimits.DefaultCells, TableLimits.DefaultValueCharacters });
+            Assert.Equal(50000, ReconciliationLimits.DefaultRowsPerSide);
+        }
     }
 }
