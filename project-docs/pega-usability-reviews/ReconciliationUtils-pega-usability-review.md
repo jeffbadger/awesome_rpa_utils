@@ -24,6 +24,10 @@ method calls or one JSON text; results come out as counts, two scalar cursors, o
 
 ## Findings applied
 
+- **One export call, one string port.** `ExportResultsJson(runLabel)` returns the whole report as text for a step that saves or forwards it, so
+  the automation needs no loop. The label is a plain string; the size limit is an `int` set once. A report over the limit is refused whole with
+  the results intact, and raising the limit does not force a re-run, so the recovery is one setup call.
+
 - **Two date methods, not one with a unit.** `AddCalendarDateComparison` takes `toleranceDays` and `AddInstantComparison` takes
   `toleranceSeconds`, so a designer never has to know that a "tolerance" changes meaning with an enum. Formats are plain strings
   (`yyyy-MM-dd`) checked when the rule is added, so a typo fails at setup with a message, not on a row; the Simple instant form

@@ -54,6 +54,10 @@ side, row and original key parts, and every kept difference with values as found
 for duplicate groups, which the scalar cursor cannot fully describe. A bad or unknown ID is a failure that leaves the
 results and cursors alone.
 
+## Exporting everything
+
+`ExportResultsJson(runLabel)` returns the definition, the summary and every result as one deterministic report; see [Export](Export.md).
+
 ## When there are no results
 
 Before a completed run, after a failed run, after any accepted setup change, and after `ClearResults`, every reader

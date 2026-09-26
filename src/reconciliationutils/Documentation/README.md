@@ -13,6 +13,7 @@ compared. Every result comes back through scalar ports, so it can drive a Robot 
 | [Configuration](Configuration.md) | Building a definition with methods or JSON, keys, comparisons, validation and the canonical form. |
 | [ComparisonRules](ComparisonRules.md) | Exactly how Text, Decimal, Boolean, Money, calendar-date and instant comparisons decide equal, different or invalid, with the reason codes. |
 | [ResultsAndCounts](ResultsAndCounts.md) | The seven result kinds, the counts and the accounting equations, both cursors and `GetResultJson`. |
+| [Export](Export.md) | Exporting a deterministic JSON report of a run, the run label and the output limit. |
 | [QueueHandoff](QueueHandoff.md) | Turning exceptions into work items (for example in `LocalQueueUtils`) for review or correction. |
 | [Limits](Limits.md) | The four resource limits, their defaults and maximums, and what a run does when one is exceeded. |
 
