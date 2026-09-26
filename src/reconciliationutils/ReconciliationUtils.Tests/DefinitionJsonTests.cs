@@ -517,6 +517,84 @@ namespace ReconciliationAutomation.Tests
             Assert.Equal(3, errors);
         }
 
+        // ---------------------------------------------------------------- duplicates anywhere in the document; undecodable text
+
+        [Fact]
+        public void ARepeatedPropertyInsideAnUnknownNestedValue_IsReported_WithItsPath()
+        {
+            string report = Validate("{\"schemaVersion\":1,\"bogus\":{\"x\":1,\"x\":2}}", out int errors);
+            Assert.Equal(2, errors);
+            Assert.Equal(new[] { "DuplicateProperty", "UnknownProperty" }, Codes(report).OrderBy(x => x));
+            Assert.Contains("bogus.x", report);
+        }
+
+        [Theory]
+        [InlineData("{\"schemaVersion\":1,\"bogus\":[{\"a\":1,\"a\":2}]}", "bogus[0].a")]
+        [InlineData("{\"schemaVersion\":1,\"bogus\":[1,2,{\"a\":1,\"a\":2}]}", "bogus[2].a")]
+        [InlineData("{\"schemaVersion\":1,\"bogus\":[[{\"a\":1}],[{\"b\":1,\"b\":2}]]}", "bogus[1][0].b")]
+        [InlineData("{\"schemaVersion\":1,\"bogus\":{\"p\":{\"q\":{\"r\":1,\"r\":2}}}}", "bogus.p.q.r")]
+        [InlineData("{\"schemaVersion\":1,\"keys\":[{\"name\":\"K\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\",\"trim\":{\"z\":1,\"z\":2}}]}", "keys[0].trim.z")]
+        [InlineData("{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"C\",\"kind\":\"Text\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\",\"nullPolicy\":{\"m\":1,\"m\":2}}]}", "comparisons[0].nullPolicy.m")]
+        public void ARepeatedPropertyAtAnyDepth_IsReported_WithItsPath(string json, string path)
+        {
+            string report = Validate(json, out _);
+            Assert.Contains("DuplicateProperty", Codes(report));
+            Assert.Contains(path, report);
+        }
+
+        [Fact]
+        public void ARepeatedPropertyIsReportedOnce_NotOncePerReader()
+        {
+            string report = Validate("{\"schemaVersion\":1,\"keys\":[{\"name\":\"K\",\"name\":\"L\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}]}", out int errors);
+            Assert.Equal(1, errors);
+            Assert.Equal("keys[0].name", JsonDocument.Parse(report).RootElement.GetProperty("errors")[0].GetProperty("path").GetString());
+        }
+
+        [Fact]
+        public void TheRootLevelRepeat_KeepsItsDollarPath()
+        {
+            Assert.Contains("$.schemaVersion", Validate("{\"schemaVersion\":1,\"schemaVersion\":1}", out _));
+        }
+
+        [Fact]
+        public void EveryRepeatInTheDocument_IsReported_NotJustTheFirst()
+        {
+            string report = Validate("{\"schemaVersion\":1,\"a\":{\"x\":1,\"x\":1},\"b\":{\"y\":1,\"y\":1},\"c\":[{\"z\":1,\"z\":1}]}", out _);
+            Assert.Equal(3, Codes(report).Count(c => c == "DuplicateProperty"));
+        }
+
+        [Fact]
+        public void ARepeatInAMalformedDocument_IsNotReported_OnlyTheMalformedness()
+        {
+            string report = Validate("{\"schemaVersion\":1,\"a\":{\"x\":1,\"x\":2}", out int errors);     // never closed
+            Assert.Equal(1, errors);
+            Assert.Equal("MalformedJson", FirstCode(report));
+        }
+
+        [Theory]
+        [InlineData("{\"schemaVersion\":1,\"bogus\":\"\\uD800\"}")]                          // an unpaired high surrogate in a value
+        [InlineData("{\"schemaVersion\":1,\"bogus\":\"a\\uDC00b\"}")]                        // an unpaired low surrogate
+        [InlineData("{\"schemaVersion\":1,\"\\uD800\":1}")]                                  // in a property name
+        [InlineData("{\"schemaVersion\":1,\"keys\":[{\"name\":\"\\uDC00\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}]}")]
+        [InlineData("{\"schemaVersion\":1,\"bogus\":[\"ok\",\"\\uD800\"]}")]
+        public void TextThatIsNotValid_IsAFinding_NotACrash(string json)
+        {
+            string report = Validate(json, out int errors);
+            Assert.Contains("InvalidText", Codes(report));
+            using var c = new ReconciliationUtils();
+            Assert.False(c.LoadDefinitionJson(json, out string message));
+            Assert.Contains("InvalidText", message);
+            Assert.DoesNotContain("failed unexpectedly", message);
+        }
+
+        [Fact]
+        public void AProperSurrogatePair_IsFineInADefinition()
+        {
+            using var c = new ReconciliationUtils();
+            Assert.True(c.LoadDefinitionJson("{\"schemaVersion\":1,\"keys\":[{\"name\":\"\\uD83C\\uDF89 party\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}]}", out string message), message);
+            Assert.Contains("party", Get(c));
+        }
+
         private static int ErrorCount(string json) { Validate(json, out int n); return n; }
 
         [Fact]

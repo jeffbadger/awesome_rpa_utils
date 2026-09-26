@@ -187,6 +187,35 @@ namespace ReconciliationAutomation.Tests
 
         // ---------------------------------------------------------------- display
 
+        [Fact]
+        public void AKeyWhoseValueIsNotValidText_IsAnInvalidKeyType_NotACrash()
+        {
+            KeyExtraction key = Extract("{\"k\":\"\\uD800\"}", Map("K", "/k"));
+            Assert.False(key.IsValid);
+            Assert.Equal("InvalidKeyType", key.ReasonCode);
+        }
+
+        [Fact]
+        public void TheDisplayKey_EscapesUnpairedSurrogates_AndKeepsProperPairs()
+        {
+            string lone = ReconciliationKey.ToDisplayJson(new[] { "a\uD800b", "\uDC00", "x\uD83C" });      // a lone high, a lone low, a high at the very end
+            Assert.Equal("[\"a\\ud800b\",\"\\udc00\",\"x\\ud83c\"]", lone);
+            using (JsonDocument.Parse(lone)) { }                                                       // and it is valid JSON
+
+            string pair = ReconciliationKey.ToDisplayJson(new[] { "\U0001F389" });
+            Assert.Equal("[\"\U0001F389\"]", pair);                                                     // a proper pair stays as the character
+            using JsonDocument doc = JsonDocument.Parse(pair);
+            Assert.Equal("\U0001F389", doc.RootElement[0].GetString());
+        }
+
+        [Fact]
+        public void APairThatIsSplitByAnUnpairedHalf_IsHandledPartByPart()
+        {
+            string s = "\uD83C\uD83C\uDF89\uDF89";    // high, [high low], low
+            string json = ReconciliationKey.ToDisplayJson(new[] { s });
+            Assert.Equal("[\"\\ud83c\U0001F389\\udf89\"]", json);
+        }
+
         [Theory]
         [InlineData(new[] { "A", "INV-101" }, "[\"A\",\"INV-101\"]")]
         [InlineData(new[] { "he said \"hi\"" }, "[\"he said \\\"hi\\\"\"]")]

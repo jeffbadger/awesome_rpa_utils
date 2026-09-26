@@ -78,10 +78,18 @@ namespace ReconciliationAutomation
             {
                 if (i > 0) builder.Append(',');
                 builder.Append('"');
-                foreach (char c in normalized[i])
+                string part = normalized[i];
+                for (int j = 0; j < part.Length; j++)
                 {
+                    char c = part[j];
                     if (c == '"' || c == '\\') builder.Append('\\').Append(c);
                     else if (c < 0x20) builder.Append("\\u").Append(((int)c).ToString("x4"));
+                    else if (char.IsHighSurrogate(c) && j + 1 < part.Length && char.IsLowSurrogate(part[j + 1]))
+                    {
+                        builder.Append(c).Append(part[j + 1]);   // a proper pair is one valid character: keep it
+                        j++;
+                    }
+                    else if (char.IsSurrogate(c)) builder.Append("\\u").Append(((int)c).ToString("x4"));   // an unpaired half cannot be written as text
                     else builder.Append(c);
                 }
                 builder.Append('"');

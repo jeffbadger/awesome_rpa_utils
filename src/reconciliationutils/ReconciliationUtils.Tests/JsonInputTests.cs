@@ -228,6 +228,40 @@ namespace ReconciliationAutomation.Tests
         }
 
         [Fact]
+        public void APropertyNameThatIsNotValidText_RejectsTheDocument_WithoutThrowing()
+        {
+            Assert.False(TryParse("[{\"\\uD800\":1}]", out _, out InputFailure failure));
+            Assert.Equal("InvalidText", failure.Code);
+            Assert.StartsWith("Left input", failure.Message);
+        }
+
+        [Theory]
+        [InlineData("[{\"k\":\"\\uD800\"}]")]
+        [InlineData("[{\"k\":\"a\\uDC00b\"}]")]
+        [InlineData("[{\"k\":\"\\uDBFF\"}]")]
+        public void AStringValueThatIsNotValidText_IsUnsupportedData_NeverAnException(string json)
+        {
+            Assert.True(TryParse(json, out JsonInput input, out _));   // legal JSON syntax
+            using (input)
+            {
+                FieldValue value = input.RowAt(0).Read(new[] { "k" });  // must not throw
+                Assert.Equal(FieldKind.Unsupported, value.Kind);
+            }
+        }
+
+        [Fact]
+        public void AProperSurrogatePair_InAValue_IsAString()
+        {
+            Assert.True(TryParse("[{\"k\":\"\\uD83C\\uDF89\"}]", out JsonInput input, out _));
+            using (input)
+            {
+                FieldValue value = input.RowAt(0).Read(new[] { "k" });
+                Assert.Equal(FieldKind.String, value.Kind);
+                Assert.Equal("\U0001F389", value.Text);
+            }
+        }
+
+        [Fact]
         public void Unicode_IsPreserved()
         {
             Assert.True(TryParse("[{\"k\":\"日本語 ünï 🎉\"}]", out JsonInput input, out _));

@@ -32,7 +32,8 @@ namespace ReconciliationAutomation
             switch (value.ValueKind)
             {
                 case JsonValueKind.String:
-                    return new FieldValue(FieldKind.String, value.GetString());
+                    try { return new FieldValue(FieldKind.String, value.GetString()); }
+                    catch (System.InvalidOperationException) { return FieldValue.Unsupported; } // an escaped lone surrogate: legal JSON, not decodable text
                 case JsonValueKind.Number:
                     string token = value.GetRawText();
                     return new FieldValue(IsIntegerToken(token) ? FieldKind.Integer : FieldKind.Number, token);

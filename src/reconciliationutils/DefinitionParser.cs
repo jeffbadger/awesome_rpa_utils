@@ -79,6 +79,11 @@ namespace ReconciliationAutomation
                     return null;
                 }
 
+                // Every repeated property name anywhere in the document (including inside values the schema does not know) and any text
+                // that cannot be decoded are found first, in one pass, with their paths. The schema readers below keep the first
+                // occurrence of a repeated name and do not report repeats again.
+                if (!ScanDocument(json, findings)) return null;
+
                 var definition = new ReconciliationDefinition();
                 var props = ReadObject(root, "$", RootProperties, null, findings);
 
@@ -91,6 +96,83 @@ namespace ReconciliationAutomation
 
                 return findings.Total == 0 ? definition : null;
             }
+        }
+
+        private sealed class ScanFrame
+        {
+            internal bool IsArray;
+            internal string Path;              // "$" for the root, otherwise the path of this object/array
+            internal HashSet<string> Names;    // objects only
+            internal string CurrentName;       // objects only: the property whose value is being read
+            internal int NextIndex;            // arrays only
+        }
+
+        /// <summary>
+        /// Walks the whole (already syntactically valid) document once. Reports <c>DuplicateProperty</c> for every repeated name in every
+        /// object, wherever it is, and <c>InvalidText</c> (and stops) for a string or name that is not valid text: an escaped lone
+        /// surrogate such as <c>\uD800</c> is legal JSON syntax but cannot be turned into a string. Returns false when it must stop.
+        /// </summary>
+        private static bool ScanDocument(string json, DefinitionFindings findings)
+        {
+            var stack = new Stack<ScanFrame>();
+            var reader = new Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes(json),
+                new JsonReaderOptions { MaxDepth = JsonInput.MaxDepth + 1, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
+            try
+            {
+                while (reader.Read())
+                {
+                    ScanFrame top = stack.Count > 0 ? stack.Peek() : null;
+                    switch (reader.TokenType)
+                    {
+                        case JsonTokenType.PropertyName:
+                        {
+                            string name = reader.GetString();
+                            top.CurrentName = name;
+                            if (!top.Names.Add(name))
+                                findings.Add(top.Path == "$" ? "$." + name : top.Path + "." + name, "DuplicateProperty", "the property '" + name + "' appears more than once");
+                            break;
+                        }
+                        case JsonTokenType.StartObject:
+                        case JsonTokenType.StartArray:
+                            stack.Push(new ScanFrame
+                            {
+                                IsArray = reader.TokenType == JsonTokenType.StartArray,
+                                Path = ChildPath(top),
+                                Names = reader.TokenType == JsonTokenType.StartObject ? new HashSet<string>(StringComparer.Ordinal) : null
+                            });
+                            break;
+                        case JsonTokenType.EndObject:
+                        case JsonTokenType.EndArray:
+                            stack.Pop();
+                            if (stack.Count > 0 && stack.Peek().IsArray) stack.Peek().NextIndex++;
+                            break;
+                        case JsonTokenType.String:
+                            reader.GetString(); // throws InvalidOperationException for text that is not valid UTF-16
+                            if (top != null && top.IsArray) top.NextIndex++;
+                            break;
+                        default:
+                            if (top != null && top.IsArray) top.NextIndex++;
+                            break;
+                    }
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                findings.Add("$", "InvalidText", "the definition contains text that is not valid (an unpaired surrogate escape such as \\uD800)");
+                return false;
+            }
+            catch (JsonException)
+            {
+                // cannot happen for a document the parser already accepted; nothing more to report here
+            }
+            return true;
+        }
+
+        private static string ChildPath(ScanFrame parent)
+        {
+            if (parent == null) return "$";
+            if (parent.IsArray) return (parent.Path == "$" ? string.Empty : parent.Path) + "[" + parent.NextIndex + "]";
+            return parent.Path == "$" ? parent.CurrentName : parent.Path + "." + parent.CurrentName;
         }
 
         /// <summary>
@@ -313,8 +395,7 @@ namespace ReconciliationAutomation
         // ------------------------------------------------------------------ typed readers
 
         /// <summary>
-        /// Collects an object's properties (first occurrence wins), reporting every repeated name, and, when <paramref name="allowed"/> is
-        /// given, names that do not belong. <paramref name="kind"/> only sharpens the wording for a rule kind.
+        /// Collects an object's properties (first occurrence wins) and, when <paramref name="allowed"/> is given, reports names that do not belong. <paramref name="kind"/> only sharpens the wording for a rule kind.
         /// </summary>
         private static Dictionary<string, JsonElement> ReadObject(JsonElement obj, string path, string[] allowed, string kind, DefinitionFindings findings)
         {
@@ -323,17 +404,15 @@ namespace ReconciliationAutomation
             return result;
         }
 
-        /// <summary>The properties of an object with the first occurrence of each name; a repeated name is a finding, whatever its value.</summary>
+        /// <summary>
+        /// The properties of an object with the FIRST occurrence of each name. Repeated names are reported by <see cref="ScanDocument"/>,
+        /// which covers every object in the document, so they are not reported again here.
+        /// </summary>
         private static Dictionary<string, JsonElement> Collect(JsonElement obj, string path, DefinitionFindings findings)
         {
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (JsonProperty property in obj.EnumerateObject())
-            {
-                if (result.ContainsKey(property.Name))
-                    findings.Add(path + "." + property.Name, "DuplicateProperty", "the property '" + property.Name + "' appears more than once");
-                else
-                    result[property.Name] = property.Value;
-            }
+                if (!result.ContainsKey(property.Name)) result[property.Name] = property.Value;
             return result;
         }
 

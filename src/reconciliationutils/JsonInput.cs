@@ -162,6 +162,12 @@ namespace ReconciliationAutomation
                 failure = new InputFailure("MalformedJson", side + " input is not valid JSON" + Position(ex) + ".");
                 return false;
             }
+            catch (InvalidOperationException)
+            {
+                // A property name that is not valid text (an escaped lone surrogate such as \uD800) cannot be compared or looked up.
+                failure = new InputFailure("InvalidText", side + " input has a property name that is not valid text (an unpaired surrogate escape).");
+                return false;
+            }
         }
 
         private static string Position(JsonException ex) =>
