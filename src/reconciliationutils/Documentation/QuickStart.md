@@ -34,8 +34,14 @@ bad pointer), and then changes nothing. You can also load the whole definition f
 ## 2. Run
 
 ```csharp
+string leftJson = /* the left array above; in Robot Studio, a String variable */ "[ ... ]";
+string rightJson = /* the right array above */ "[ ... ]";
+
 if (!recon.ReconcileJson(leftJson, rightJson, out int exceptionCount, out message))
-    return message;                  // the run could not complete: bad JSON, a limit, no keys ...
+{
+    // The run could not complete (bad JSON, a limit, no keys ...): log `message` and stop the flow.
+    // No results exist from this or any earlier run.
+}
 ```
 
 `True` means the run completed. `exceptionCount` is how many results need attention (0 = everything matched).

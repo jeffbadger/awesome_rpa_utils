@@ -32,8 +32,12 @@ static string ExceptionPayload(string resultId, string kind, string keyJson, int
 ReconcileJson                                   -> exceptionCount
 while TryReadNextException.hasItem:
     payload = ExceptionPayload(resultId, kind, keyJson, leftRowIndex, rightRowIndex, reason)
-    LocalQueueUtils.AddJson(queuePath, payload)
+    LocalQueueUtils.AddJson(queuePath, payload, out itemId, out duplicate, out message)
 ```
+
+`AddJson` also has optional `businessKey`, `priority`, `delaySeconds` and `maximumAttempts` arguments. Passing the
+exception's key as `businessKey` makes a re-run idempotent: an active item with the same key is returned as
+`duplicate` instead of being added twice. Check the `AddJson` result and `message` in the loop as you would any call.
 
 Notes:
 
