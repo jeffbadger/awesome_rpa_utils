@@ -285,6 +285,50 @@ namespace ReconciliationAutomation.Tests
             Assert.Contains("TooManyComparisons", Codes(Validate("{\"schemaVersion\":1,\"comparisons\":[" + Comps(129) + "]}", out _)));
         }
 
+        [Fact]
+        public void EntriesPastTheKeyLimit_AreStillFullyValidated_TheLimitIsReportedOnce()
+        {
+            string Key(int i, string extra = "") => "{\"name\":\"k" + i + "\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"" + extra + "}";
+            string keys = string.Join(",", Enumerable.Range(0, 16).Select(i => Key(i)))
+                + "," + Key(16, ",\"bogus\":1")                                           // 17th: an unknown property
+                + "," + "{\"name\":\"k17\",\"name\":\"dup\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}"   // 18th: a repeated property
+                + "," + "5"                                                                 // 19th: not an object
+                + "," + "{\"name\":\"k99\",\"leftPointer\":\"no-slash\",\"rightPointer\":\"/a\"}";   // 20th: a bad pointer
+            string report = Validate("{\"schemaVersion\":1,\"keys\":[" + keys + "]}", out int errors);
+            string[] codes = Codes(report);
+            Assert.Equal(1, codes.Count(c => c == "TooManyKeys"));
+            Assert.Contains("UnknownProperty", codes);
+            Assert.Contains("DuplicateProperty", codes);
+            Assert.Contains("InvalidType", codes);
+            Assert.Contains("InvalidPointer", codes);
+            Assert.Contains("keys[16].bogus", report);
+            Assert.Contains("keys[19].leftPointer", report);
+        }
+
+        [Fact]
+        public void EntriesPastTheComparisonLimit_AreStillFullyValidated_TheLimitIsReportedOnce()
+        {
+            string Comp(int i, string extra = "") => "{\"name\":\"c" + i + "\",\"kind\":\"Text\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"" + extra + "}";
+            string comps = string.Join(",", Enumerable.Range(0, 128).Select(i => Comp(i)))
+                + "," + Comp(128, ",\"absoluteTolerance\":\"0\"")                       // 129th: an option of the wrong kind
+                + "," + "{\"name\":\"c129\",\"kind\":\"Money\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}"   // 130th: an unsupported kind
+                + "," + "\"text\"";                                                        // 131st: not an object
+            string[] codes = Codes(Validate("{\"schemaVersion\":1,\"comparisons\":[" + comps + "]}", out _));
+            Assert.Equal(1, codes.Count(c => c == "TooManyComparisons"));
+            Assert.Contains("UnknownProperty", codes);
+            Assert.Contains("UnknownKind", codes);
+            Assert.Contains("InvalidType", codes);
+        }
+
+        [Fact]
+        public void AnOverLimitDefinition_IsStillRejectedWhole()
+        {
+            string keys = string.Join(",", Enumerable.Range(0, 17).Select(i => "{\"name\":\"k" + i + "\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}"));
+            using var c = new ReconciliationUtils();
+            Assert.False(c.LoadDefinitionJson("{\"schemaVersion\":1,\"keys\":[" + keys + "]}", out string message));
+            Assert.Contains("TooManyKeys", message);
+        }
+
         private static int ErrorCount(string json) { Validate(json, out int n); return n; }
 
         [Fact]

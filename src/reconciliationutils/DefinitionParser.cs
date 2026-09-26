@@ -110,13 +110,17 @@ namespace ReconciliationAutomation
                 return;
             }
             int index = 0;
+            bool reportedOverflow = false;
             foreach (JsonElement item in keys.EnumerateArray())
             {
                 string path = "keys[" + index++ + "]";
-                if (definition.Keys.Count >= ReconciliationDefinition.MaxKeys)
+                // Entries past the limit are still checked in full (shape, properties, names, pointers) so the report stays complete;
+                // they are just never added to the definition. The limit itself is reported once.
+                bool overflow = definition.Keys.Count >= ReconciliationDefinition.MaxKeys;
+                if (overflow && !reportedOverflow)
                 {
                     findings.Add("keys", "TooManyKeys", "a definition may have at most " + ReconciliationDefinition.MaxKeys + " key mappings");
-                    break;
+                    reportedOverflow = true;
                 }
                 if (item.ValueKind != JsonValueKind.Object)
                 {
@@ -132,9 +136,9 @@ namespace ReconciliationAutomation
                 if (name == null || left == null || right == null) continue;
 
                 var probe = definition.Clone();
-                Finding f = probe.TryAddKey(name, left, right, trim, ignoreCase);
+                Finding f = probe.TryAddKey(name, left, right, trim, ignoreCase, enforceLimit: !overflow);
                 if (f != null) findings.Add(path + "." + f.Path, f.Code, f.Message);
-                else definition.Keys.Add(probe.Keys[probe.Keys.Count - 1]);
+                else if (!overflow) definition.Keys.Add(probe.Keys[probe.Keys.Count - 1]);
             }
         }
 
@@ -147,13 +151,15 @@ namespace ReconciliationAutomation
                 return;
             }
             int index = 0;
+            bool reportedOverflow = false;
             foreach (JsonElement item in comparisons.EnumerateArray())
             {
                 string path = "comparisons[" + index++ + "]";
-                if (definition.Comparisons.Count >= ReconciliationDefinition.MaxComparisons)
+                bool overflow = definition.Comparisons.Count >= ReconciliationDefinition.MaxComparisons;
+                if (overflow && !reportedOverflow)
                 {
                     findings.Add("comparisons", "TooManyComparisons", "a definition may have at most " + ReconciliationDefinition.MaxComparisons + " comparisons");
-                    break;
+                    reportedOverflow = true;
                 }
                 if (item.ValueKind != JsonValueKind.Object)
                 {
@@ -191,10 +197,10 @@ namespace ReconciliationAutomation
 
                 var probe = definition.Clone();
                 Finding f = kind == RuleKind.Text
-                    ? probe.TryAddText(name, left, right, trim, ignoreCase, policy)
-                    : probe.TryAddDecimal(name, left, right, tolerance, policy);
+                    ? probe.TryAddText(name, left, right, trim, ignoreCase, policy, enforceLimit: !overflow)
+                    : probe.TryAddDecimal(name, left, right, tolerance, policy, enforceLimit: !overflow);
                 if (f != null) findings.Add(path + "." + f.Path, f.Code, f.Message);
-                else definition.Comparisons.Add(probe.Comparisons[probe.Comparisons.Count - 1]);
+                else if (!overflow) definition.Comparisons.Add(probe.Comparisons[probe.Comparisons.Count - 1]);
             }
         }
 
