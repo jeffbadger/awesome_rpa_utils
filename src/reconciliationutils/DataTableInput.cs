@@ -129,12 +129,24 @@ namespace ReconciliationAutomation
                 case decimal number:
                     return Number(number.ToString(CultureInfo.InvariantCulture));
                 case double number:
-                    return double.IsFinite(number) ? Number(number.ToString("R", CultureInfo.InvariantCulture)) : FieldValue.UnsupportedBecause("a number that is not finite");
+                    return double.IsFinite(number) ? Floating(number, number.ToString("R", CultureInfo.InvariantCulture)) : FieldValue.UnsupportedBecause("a number that is not finite");
                 case float number:
-                    return float.IsFinite(number) ? Number(number.ToString("R", CultureInfo.InvariantCulture)) : FieldValue.UnsupportedBecause("a number that is not finite");
+                    return float.IsFinite(number) ? Floating(number, number.ToString("R", CultureInfo.InvariantCulture)) : FieldValue.UnsupportedBecause("a number that is not finite");
                 default:
                     return FieldValue.UnsupportedBecause("a value of an unsupported column type");
             }
+        }
+
+        /// <summary>
+        /// A floating-point cell. A whole value that a double holds exactly (below 2^53) is an integer, written as its digits. The shortest round-trip text
+        /// of a float can switch to an exponent (<c>3E+09</c> for 3,000,000,000) and that of a double can be <c>-0</c>, which would make a whole-number key
+        /// invalid or different from the same number written as text. Anything else is a number written as its shortest round-trip text.
+        /// </summary>
+        private static FieldValue Floating(double value, string shortestText)
+        {
+            if (value == Math.Floor(value) && Math.Abs(value) < 9007199254740992.0)
+                return new FieldValue(FieldKind.Integer, ((long)value).ToString(CultureInfo.InvariantCulture));      // (long)-0.0 is 0, so negative zero is "0", not "-0"
+            return Number(shortestText);
         }
 
         private static FieldValue Number(string token) =>

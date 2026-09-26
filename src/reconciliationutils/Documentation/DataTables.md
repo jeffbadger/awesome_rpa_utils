@@ -37,7 +37,7 @@ if (!recon.ReconcileDataTables(erpTable, bankTable, out int exceptionCount, out 
 | `string` | text |
 | `sbyte`, `byte`, `short`, `ushort`, `int`, `uint`, `long`, `ulong` | an integer (its exact digits) |
 | `decimal` | a number, exactly as the decimal prints (`10.00` keeps its scale) |
-| `double`, `float` | a number, as the shortest text that reads back as the same value (`0.1` is `0.1`, not `0.1000000000000000055...`); `NaN` and infinity are unsupported |
+| `double`, `float` | a whole value up to 2^53 (9,007,199,254,740,992) is an **integer**, written as its digits (so a `float` that would print as `3E+09` reads as `3000000000`, and negative zero is `0`, not `-0`); any other value is a number, as the shortest text that reads back as the same value (`0.1` is `0.1`, not `0.1000000000000000055...`); `NaN` and infinity are unsupported |
 | `bool` | a Boolean |
 | anything else (`DateTime`, `DateTimeOffset`, `Guid`, `TimeSpan`, `char`, `byte[]`, objects) | unsupported |
 

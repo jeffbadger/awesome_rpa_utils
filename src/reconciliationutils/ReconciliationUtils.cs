@@ -13,10 +13,12 @@ namespace ReconciliationAutomation
     /// scalar ports. One component instance serves one automation flow.
     /// </summary>
     /// <remarks>
-    /// Build a definition with the <c>Add...</c> methods or load it as JSON, run <c>ReconcileJson</c> on two JSON arrays, then read
-    /// the counts, exceptions and field differences. See the component README and its Documentation folder for worked examples.
+    /// Build a definition with the <c>Add...</c> methods or load it as JSON, run <c>ReconcileJson</c> on two JSON arrays or
+    /// <c>ReconcileDataTables</c> on two DataTables, then read the counts, exceptions and field differences, or export a report with
+    /// <c>ExportResultsJson</c>. Rules compare text, exact decimals, Booleans, currency-gated money, calendar dates and instants. See the
+    /// component README and its Documentation folder for worked examples.
     /// </remarks>
-    [Description("Reconciles two datasets by business key and reports matches, differences, missing and duplicate records through scalar ports. Define keys and comparisons (or load a JSON definition), run ReconcileJson on two JSON arrays, then read counts, exceptions and field differences through scalar ports. Never throws.")]
+    [Description("Reconciles two datasets by business key and reports matches, differences, missing and duplicate records through scalar ports. Define keys and comparisons (or load a JSON definition), run ReconcileJson on two JSON arrays or ReconcileDataTables on two DataTables, then read counts, exceptions and field differences through scalar ports, or export a report with ExportResultsJson. Never throws.")]
     public sealed class ReconciliationUtils : Component
     {
         private readonly object syncRoot = new object();

@@ -107,7 +107,7 @@ To build and create everything this repository produces, run from PowerShell:
 The command creates two self-contained archives — one per target framework,
 each holding the complete release:
 
-- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-three project DLLs built
+- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-four project DLLs built
   for `net8.0-windows` plus three bundled archives:
   `AwesomeRpaUtils-SupportLibraries.zip` (the three NuGet runtime DLLs needed
   by ServiceUtils, packaged in the flavor matching the enclosing archive's
@@ -115,7 +115,7 @@ each holding the complete release:
   [REST code generator](tools/README.md)), and
   `AwesomeRpaUtils-Documentation.zip` (the documentation bundle described
   below).
-- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-three DLLs built
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-four DLLs built
   for `net10.0-windows` with the same three bundled archives (the support
   DLLs in the newest flavor the packages ship, which the .NET 10 runtime
   loads; the .NET 8 runtime only loads the `net8.0` flavor).

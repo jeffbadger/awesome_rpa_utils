@@ -160,5 +160,132 @@ namespace ReconciliationAutomation.Tests
             Assert.True(File.Exists(Path.Combine(RepositoryRoot(), "project-docs", "pega-usability-reviews", "ReconciliationUtils-pega-usability-review.md")));
             Assert.Contains("ReconciliationUtils", Read("src", "AwesomeRpaUtils.sln"));
         }
+
+        // ------------------------------------------------------------------ which calls discard results
+
+        private static ReconciliationUtils WithResults()
+        {
+            var c = new ReconciliationUtils();
+            Assert.True(c.AddKeyMappingSimple("Id", "/id", "/id", out string m), m);
+            Assert.True(c.ReconcileJson("[{\"id\":\"1\"}]", "[{\"id\":\"1\"}]", out _, out m), m);
+            return c;
+        }
+
+        private static bool HasResults(ReconciliationUtils c) => c.GetSummary(out _, out _, out _, out _, out _);
+
+        /// <summary>Applies one named setup or reading call with valid arguments, returning whether it succeeded.</summary>
+        private static bool Apply(ReconciliationUtils c, string name)
+        {
+            string m;
+            const string valid = "{\"schemaVersion\":1,\"keys\":[{\"name\":\"K\",\"leftPointer\":\"/id\",\"rightPointer\":\"/id\"}]}";
+            switch (name)
+            {
+                case "ClearDefinition": return c.ClearDefinition(out m);
+                case "AddKeyMappingSimple": return c.AddKeyMappingSimple("K2", "/a", "/a", out m);
+                case "AddKeyMapping": return c.AddKeyMapping("K2", "/a", "/a", true, true, out m);
+                case "AddTextComparisonSimple": return c.AddTextComparisonSimple("T", "/a", "/a", out m);
+                case "AddTextComparison": return c.AddTextComparison("T", "/a", "/a", true, true, ComparisonNullPolicy.RequireValue, out m);
+                case "AddDecimalComparisonSimple": return c.AddDecimalComparisonSimple("T", "/a", "/a", out m);
+                case "AddDecimalComparison": return c.AddDecimalComparison("T", "/a", "/a", "0.1", ComparisonNullPolicy.RequireValue, out m);
+                case "AddBooleanComparisonSimple": return c.AddBooleanComparisonSimple("T", "/a", "/a", out m);
+                case "AddBooleanComparison": return c.AddBooleanComparison("T", "/a", "/a", ComparisonNullPolicy.RequireValue, out m);
+                case "AddMoneyComparisonSimple": return c.AddMoneyComparisonSimple("T", "/a", "/a", "/c", "/c", out m);
+                case "AddMoneyComparison": return c.AddMoneyComparison("T", "/a", "/a", "/c", "/c", "0.1", ComparisonNullPolicy.RequireValue, out m);
+                case "AddCalendarDateComparisonSimple": return c.AddCalendarDateComparisonSimple("T", "/a", "/a", "yyyy-MM-dd", "yyyy-MM-dd", out m);
+                case "AddCalendarDateComparison": return c.AddCalendarDateComparison("T", "/a", "/a", "yyyy-MM-dd", "yyyy-MM-dd", 1, ComparisonNullPolicy.RequireValue, out m);
+                case "AddInstantComparisonSimple": return c.AddInstantComparisonSimple("T", "/a", "/a", out m);
+                case "AddInstantComparison": return c.AddInstantComparison("T", "/a", "/a", 1, ComparisonNullPolicy.RequireValue, out m);
+                case "LoadDefinitionJson": return c.LoadDefinitionJson(valid, out m);
+                case "ConfigureLimits": return c.ConfigureLimits(100, 100000, 100, 100, out m);
+                case "ConfigureTableLimits": return c.ConfigureTableLimits(10, 100, 10, out m);
+                case "ConfigureOutputLimit": return c.ConfigureOutputLimit(1000000, out m);
+                case "ValidateDefinitionJson": return c.ValidateDefinitionJson(valid, out _, out _, out m);
+                case "GetDefinitionJson": return c.GetDefinitionJson(out _, out m);
+                case "ExportResultsJson": return c.ExportResultsJson("x", out _, out m);
+                case "GetSummary": return c.GetSummary(out _, out _, out _, out _, out m);
+                case "GetSummaryJson": return c.GetSummaryJson(out _, out m);
+                case "ResetResultCursor": return c.ResetResultCursor(out m);
+                case "TryReadNextException": return c.TryReadNextException(out _, out _, out _, out _, out _, out _, out _, out _, out m);
+                case "TryReadNextDifference": return c.TryReadNextDifference(out _, out _, out _, out _, out _, out _, out m);
+                case "GetResultJson": return c.GetResultJson("r000001", out _, out m);
+                default: throw new ArgumentException("no call is defined for " + name);
+            }
+        }
+
+        private static List<string> Listed(string page, string marker)
+        {
+            string line = page.Split('\n').Single(l => l.TrimStart().StartsWith("- **" + marker + "**"));
+            return Regex.Matches(line, "`(\\w+)`").Cast<Match>().Select(m => m.Groups[1].Value).ToList();
+        }
+
+        [Fact]
+        public void TheConfigurationPage_SaysWhichCallsDiscardResults_AndTheCodeDoes_ExactlyThat()
+        {
+            string page = Read("src", "reconciliationutils", "Documentation", "Configuration.md");
+            List<string> discards = Listed(page, "Discards results:"), keeps = Listed(page, "Keeps results:");
+
+            // every public method that is neither a run nor ClearResults appears in exactly one list
+            string[] neither = { "ReconcileJson", "ReconcileDataTables", "ClearResults" };
+            Assert.Equal(ConventionTests.PublicMethods().Select(m => m.Name).Except(neither).OrderBy(n => n, StringComparer.Ordinal), discards.Concat(keeps).OrderBy(n => n, StringComparer.Ordinal));
+            Assert.Empty(discards.Intersect(keeps));
+
+            foreach (string name in discards)
+            {
+                using ReconciliationUtils c = WithResults();
+                Assert.True(HasResults(c));
+                Assert.True(Apply(c, name), name + " should succeed with the arguments used here");
+                Assert.False(HasResults(c), name + " is documented as discarding results but they are still there");
+            }
+            foreach (string name in keeps)
+            {
+                using ReconciliationUtils c = WithResults();
+                Assert.True(Apply(c, name), name + " should succeed");
+                Assert.True(HasResults(c), name + " is documented as keeping results but they are gone");
+            }
+        }
+
+        [Fact]
+        public void ARefusedSetupCall_DiscardsNothing()
+        {
+            using var c = WithResults();
+            Assert.False(c.AddTextComparisonSimple("", "/a", "/a", out _));
+            Assert.False(c.ConfigureLimits(0, 0, 0, 0, out _));
+            Assert.False(c.ConfigureTableLimits(0, 0, 0, out _));
+            Assert.False(c.ConfigureOutputLimit(0, out _));
+            Assert.False(c.LoadDefinitionJson("{", out _));
+            Assert.True(HasResults(c));
+        }
+
+        [Fact]
+        public void TheReleaseAssemblyCount_StatedInTheRootReadme_MatchesTheReleaseScript()
+        {
+            string script = Read("scripts", "Package-Release.ps1");
+            string list = script.Substring(script.IndexOf("$releaseAssemblies = @(", StringComparison.Ordinal));
+            list = list.Substring(0, list.IndexOf("\n)", StringComparison.Ordinal));
+            int count = Regex.Matches(list, "\"\\w+\\.dll\"").Count;
+            var words = new Dictionary<string, int> { ["twenty"] = 20, ["twenty-one"] = 21, ["twenty-two"] = 22, ["twenty-three"] = 23, ["twenty-four"] = 24, ["twenty-five"] = 25, ["twenty-six"] = 26, ["twenty-seven"] = 27, ["twenty-eight"] = 28, ["twenty-nine"] = 29, ["thirty"] = 30 };
+            string readme = Read("README.md");
+            var stated = Regex.Matches(readme, "contains (?:the )?(?:same )?(twenty(?:-\\w+)?|thirty) (?:project )?DLLs").Cast<Match>().Select(m => words[m.Groups[1].Value]).ToList();
+            Assert.Equal(2, stated.Count);
+            Assert.All(stated, n => Assert.Equal(count, n));
+            Assert.Contains("ReconciliationAutomation.dll", list);
+        }
+
+        [Fact]
+        public void EveryComponentProject_IsInTheReleaseScript_UnderItsAssemblyName_AndInTheSolution()
+        {
+            string root = RepositoryRoot();
+            string script = Read("scripts", "Package-Release.ps1");
+            string solution = Read("src", "AwesomeRpaUtils.sln");
+            string csproj = Read("src", "reconciliationutils", "ReconciliationUtils.csproj");
+            string assembly = Regex.Match(csproj, "<AssemblyName>([^<]+)</AssemblyName>").Groups[1].Value;
+            Assert.Equal("ReconciliationAutomation", assembly);
+            Assert.Contains("\"" + assembly + ".dll\"", script);
+            Assert.Contains("\"ReconciliationUtils\", \"reconciliationutils\\ReconciliationUtils.csproj\"", solution);
+            Assert.Contains("\"ReconciliationUtils.Tests\", \"reconciliationutils\\ReconciliationUtils.Tests\\ReconciliationUtils.Tests.csproj\"", solution);
+            Assert.Contains("<None Include=\"README.md\" Pack=\"true\"", csproj);                       // the NuGet package carries the component README
+            Assert.True(File.Exists(Path.Combine(root, "src", "reconciliationutils", "README.md")));
+            Assert.Contains("ReconciliationUtils", Read("CONTRIBUTING.md") + Read("README.md"));
+        }
     }
 }

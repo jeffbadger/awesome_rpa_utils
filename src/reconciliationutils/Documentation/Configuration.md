@@ -77,6 +77,18 @@ an error): `Boolean` has none beyond the common ones; `Money` requires `leftCurr
 
 A definition using `Boolean`, `Money`, `CalendarDate` or `Instant` cannot be loaded by a component release that predates them (it reports an unknown kind).
 
+## Which calls discard results
+
+Results belong to the definition that produced them, so a call that changes what a run would do discards them (and the cursors), and the readers then
+fail until the next run. A call that is refused changes nothing and discards nothing.
+
+- **Discards results:** `ClearDefinition`, `AddKeyMappingSimple`, `AddKeyMapping`, `AddTextComparisonSimple`, `AddTextComparison`, `AddDecimalComparisonSimple`, `AddDecimalComparison`, `AddBooleanComparisonSimple`, `AddBooleanComparison`, `AddMoneyComparisonSimple`, `AddMoneyComparison`, `AddCalendarDateComparisonSimple`, `AddCalendarDateComparison`, `AddInstantComparisonSimple`, `AddInstantComparison`, `LoadDefinitionJson`, `ConfigureLimits`, `ConfigureTableLimits`
+- **Keeps results:** `ConfigureOutputLimit`, `ValidateDefinitionJson`, `GetDefinitionJson`, `ExportResultsJson`, `GetSummary`, `GetSummaryJson`, `ResetResultCursor`, `TryReadNextException`, `TryReadNextDifference`, `GetResultJson`
+
+`ConfigureOutputLimit` keeps results because the output limit bounds only the export: after a report is refused for size, raise the limit and export again
+without re-running. `ClearResults` discards results on purpose, and a failed or successful `ReconcileJson`/`ReconcileDataTables` replaces them. The output
+limit and the table limits are instance settings, not part of the definition JSON: `ClearDefinition` restores both to their defaults, `LoadDefinitionJson` leaves both alone.
+
 ## Pointers
 
 A pointer selects one field: a leading `/` then property names: `/company`, `/customer/id`. Use `~1` for `/` and
