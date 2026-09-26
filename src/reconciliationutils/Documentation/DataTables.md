@@ -43,8 +43,8 @@ if (!recon.ReconcileDataTables(erpTable, bankTable, out int exceptionCount, out 
 
 Read through the usual rules: a number given to a text rule is `InvalidType`, a Boolean given to a decimal rule is
 `InvalidType`, an unsupported value used as a key makes the row an `InvalidRecord`, and an integer key matches its text form
-(`123` and `"123"` are the same key). Dates are not read as dates: put them in a text column and compare them as text (a date
-comparison rule is planned).
+(`123` and `"123"` are the same key). Dates are not read as dates: a `DateTime` or `DateTimeOffset` cell is unsupported, so put dates in a text column and use a calendar-date or
+instant rule, which parse the text with an explicit format (a date rule given a `DateTime` cell is `InvalidType`).
 
 `double` and `float` carry binary rounding, so a value such as `0.1` computed in floating point may differ from a decimal
 `0.1` by a hair. If exactness matters, load the column as `decimal` or as text.

@@ -5,7 +5,7 @@ datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
 > **Status: released (v0.3.27); Release 2 in progress.** The DataTable bridge (`ReconcileDataTables`,
-> `ConfigureTableLimits`) and the Boolean and Money rules are the first Release 2 additions; date rules and results export follow.
+> `ConfigureTableLimits`) the Boolean and Money rules and the calendar-date and instant rules are the Release 2 additions so far; results export follows.
 > See the [documentation](Documentation/README.md) for a quick start and worked examples, and the
 > [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) for what remains.
 
@@ -15,7 +15,7 @@ through scalar ports so an automation can route them to review or correction.
 
 ## Method reference
 
-All 25 methods and their signatures. On any failure a method sets every output to its failure value (null
+All 29 methods and their signatures. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
 operation; success has no message. The
 [plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) adds the rest.
@@ -75,6 +75,10 @@ loaded from JSON produce identical text.
 | `AddBooleanComparison` | `bool AddBooleanComparison(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy, out string message)` | Adds a Boolean comparison (JSON true or false only) with a choice of null policy. |
 | `AddMoneyComparisonSimple` | `bool AddMoneyComparisonSimple(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, out string message)` | Adds an exact money comparison (tolerance 0, a value is required on both sides). Each side needs a three-letter currency; different currencies never compare amounts. |
 | `AddMoneyComparison` | `bool AddMoneyComparison(string name, string leftPointer, string rightPointer, string leftCurrencyPointer, string rightCurrencyPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, out string message)` | Adds a money comparison with an absolute tolerance (invariant decimal text) and a null policy. Each side needs a three-letter currency; different currencies are a CurrencyMismatch and the amounts are not compared. |
+| `AddCalendarDateComparisonSimple` | `bool AddCalendarDateComparisonSimple(string name, string leftPointer, string rightPointer, string leftFormat, string rightFormat, out string message)` | Adds an exact calendar-date comparison: text values read with an explicit format per side (built from yyyy, MM, dd and separators, for example yyyy-MM-dd), compared by day with tolerance 0. A value is required on both sides. |
+| `AddCalendarDateComparison` | `bool AddCalendarDateComparison(string name, string leftPointer, string rightPointer, string leftFormat, string rightFormat, int toleranceDays, ComparisonNullPolicy nullPolicy, out string message)` | Adds a calendar-date comparison with a tolerance in whole calendar days and a null policy. Dates are text read with an explicit format per side (yyyy, MM, dd and separators only); no time zone or culture is involved. |
+| `AddInstantComparisonSimple` | `bool AddInstantComparisonSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds an exact instant comparison: ISO text with an explicit offset or Z (for example 2026-09-26T14:30:00Z or 2026-09-26T10:30:00-04:00), compared as UTC instants with tolerance 0. A value is required on both sides. |
+| `AddInstantComparison` | `bool AddInstantComparison(string name, string leftPointer, string rightPointer, int toleranceSeconds, ComparisonNullPolicy nullPolicy, out string message)` | Adds an instant comparison with a tolerance in whole seconds and a null policy. Values are ISO text with an explicit offset or Z and are compared as UTC instants; a value with no offset is invalid. |
 | `LoadDefinitionJson` | `bool LoadDefinitionJson(string definitionJson, out string message)` | Replaces the whole definition from JSON. An invalid definition is rejected whole and the previous one stays in force. |
 | `GetDefinitionJson` | `bool GetDefinitionJson(out string definitionJson, out string message)` | Returns the current definition, including limits, as canonical JSON. |
 | `ValidateDefinitionJson` | `bool ValidateDefinitionJson(string definitionJson, out int errorCount, out string reportJson, out string message)` | Validates a JSON definition without loading it. Returns True when validation ran; errorCount is 0 for a valid definition and reportJson lists the findings. |
@@ -127,6 +131,9 @@ stable reason code and an explanation that never quotes a text value.
 - **Money:** a Decimal comparison of the amount gated on a three-letter currency (trimmed, upper-cased) on each side. Order of decision:
   missing field, then `InvalidCurrency`, then an unusable amount, then `CurrencyMismatch` (the amounts are not compared, so no delta), then the
   null policy and the exact amount comparison within the tolerance.
+- **Calendar dates and instants:** dates are text, read strictly with an explicit `yyyy`/`MM`/`dd` format per side and compared in whole calendar days;
+  instants are ISO text with an explicit offset or `Z`, converted to UTC and compared exactly in whole seconds. A value with no offset is invalid; no
+  machine culture, time zone or daylight-saving rule is ever used. Reasons: `InvalidDate`, `DateMismatch`.
 - **Original values are kept** as JSON fragments next to the interpreted ones, so a missing field (no value), a null (`null`), an empty
   string (`""`) and a zero (`0`) stay distinguishable; an object or array is described (`"(an object)"`), never copied.
 

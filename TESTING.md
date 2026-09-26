@@ -784,6 +784,11 @@ The platform-independent xunit coverage is in
   (`CurrencyMismatch`, no delta), a currency has the wrong shape (`InvalidCurrency`), a Boolean is the text `"yes"` (`InvalidType`)
   and amounts sit exactly at and just beyond the tolerance. Confirm the four new methods appear with their drop-down and string
   ports, and that `GetResultJson` shows both currencies.
+- **Dates:** add a calendar-date rule (`dd/MM/yyyy` on the left, `yyyy-MM-dd` on the right, tolerance 2) and an instant rule (tolerance 30 s)
+  and reconcile rows with a leap day (`29/02/2024`), an impossible date (`31/02/2024`), the same instant written in two offsets, an instant
+  with no offset (must be `InvalidDate`, never read in the robot's zone), and values exactly at and just beyond each tolerance. Run once on a
+  machine set to a non-English regional format (for example Turkish or Arabic) and once with a different Windows time zone: results must be identical.
+  Confirm a format such as `yyyy-MM-dd HH:mm` is refused when the rule is added.
 - **DataTables:** load an Excel range (or CSV) into a DataTable with the Robot Studio components, reconcile two of them
   with `ReconcileDataTables` and `/Column` pointers, and verify the same results as the JSON path. Confirm the DataTable
   ports accept the producing component's output directly. Include a numeric column, a blank cell (DBNull), a date column

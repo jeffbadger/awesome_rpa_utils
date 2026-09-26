@@ -17,6 +17,10 @@ change discards existing results.
 | `AddBooleanComparison(name, leftPointer, rightPointer, nullPolicy)` | Boolean with a null-policy choice. |
 | `AddMoneyComparisonSimple(name, leftPointer, rightPointer, leftCurrencyPointer, rightCurrencyPointer)` | An exact amount gated on a currency per side; tolerance `0`. |
 | `AddMoneyComparison(name, leftPointer, rightPointer, leftCurrencyPointer, rightCurrencyPointer, absoluteTolerance, nullPolicy)` | Money with a tolerance and a null-policy choice. |
+| `AddCalendarDateComparisonSimple(name, leftPointer, rightPointer, leftFormat, rightFormat)` | Text dates in an explicit format per side, compared by day, tolerance 0. |
+| `AddCalendarDateComparison(name, leftPointer, rightPointer, leftFormat, rightFormat, toleranceDays, nullPolicy)` | Calendar dates with a tolerance in days and a null-policy choice. |
+| `AddInstantComparisonSimple(name, leftPointer, rightPointer)` | ISO instants with an explicit offset or `Z`, compared as UTC instants, tolerance 0. |
+| `AddInstantComparison(name, leftPointer, rightPointer, toleranceSeconds, nullPolicy)` | Instants with a tolerance in seconds and a null-policy choice. |
 | `ConfigureLimits(...)` | See [Limits](Limits.md). |
 | `ConfigureTableLimits(...)` | The extra limits for DataTables; see [DataTables](DataTables.md). |
 | `ClearDefinition()` | Back to the defaults; also clears results. |
@@ -53,7 +57,7 @@ duplicates, invalid rows).
   and the same one loaded from JSON produce identical text, so it can be saved and reloaded.
 - Unknown or repeated properties, wrong types and numeric enum values are errors.
 
-In JSON the kinds are `Text`, `Decimal`, `Boolean` and `Money`. Only the options that belong to a kind are allowed (anything else is
+In JSON the kinds are `Text`, `Decimal`, `Boolean`, `Money`, `CalendarDate` and `Instant`. Only the options that belong to a kind are allowed (anything else is
 an error): `Boolean` has none beyond the common ones; `Money` requires `leftCurrencyPointer` and `rightCurrencyPointer` and takes
 `absoluteTolerance` like `Decimal`:
 
@@ -62,7 +66,15 @@ an error): `Boolean` has none beyond the common ones; `Money` requires `leftCurr
   "leftCurrencyPointer": "/currency", "rightCurrencyPointer": "/currencyCode", "absoluteTolerance": "0.01" }
 ```
 
-A definition using `Boolean` or `Money` cannot be loaded by a component release that predates them (it reports an unknown kind).
+`CalendarDate` takes `leftFormat` and `rightFormat` (default `yyyy-MM-dd`) and `toleranceDays` (default 0); `Instant` takes `toleranceSeconds`
+(default 0). Formats and tolerances are checked when the definition is validated; see [ComparisonRules](ComparisonRules.md).
+
+```json
+{ "name": "Due", "kind": "CalendarDate", "leftPointer": "/due", "rightPointer": "/dueDate",
+  "leftFormat": "dd/MM/yyyy", "rightFormat": "yyyy-MM-dd", "toleranceDays": 2 }
+```
+
+A definition using `Boolean`, `Money`, `CalendarDate` or `Instant` cannot be loaded by a component release that predates them (it reports an unknown kind).
 
 ## Pointers
 
