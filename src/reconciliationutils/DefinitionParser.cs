@@ -47,6 +47,8 @@ namespace ReconciliationAutomation
         private static readonly string[] DecimalProperties = { "name", "kind", "leftPointer", "rightPointer", "absoluteTolerance", "nullPolicy" };
         private static readonly string[] BooleanProperties = { "name", "kind", "leftPointer", "rightPointer", "nullPolicy" };
         private static readonly string[] MoneyProperties = { "name", "kind", "leftPointer", "rightPointer", "leftCurrencyPointer", "rightCurrencyPointer", "absoluteTolerance", "nullPolicy" };
+        private static readonly string[] CalendarDateProperties = { "name", "kind", "leftPointer", "rightPointer", "leftFormat", "rightFormat", "toleranceDays", "nullPolicy" };
+        private static readonly string[] InstantProperties = { "name", "kind", "leftPointer", "rightPointer", "toleranceSeconds", "nullPolicy" };
         private static readonly string[] LimitProperties = { "maximumRowsPerSide", "maximumInputCharactersPerSide", "maximumResults", "maximumDifferenceDetails" };
 
         /// <summary>Parses <paramref name="json"/>. Returns the definition, or null when there is any finding (see <paramref name="findings"/>).</summary>
@@ -350,11 +352,13 @@ namespace ReconciliationAutomation
                 else if (kindText == "Decimal") { kind = RuleKind.Decimal; allowed = DecimalProperties; }
                 else if (kindText == "Boolean") { kind = RuleKind.Boolean; allowed = BooleanProperties; }
                 else if (kindText == "Money") { kind = RuleKind.Money; allowed = MoneyProperties; }
+                else if (kindText == "CalendarDate") { kind = RuleKind.CalendarDate; allowed = CalendarDateProperties; }
+                else if (kindText == "Instant") { kind = RuleKind.Instant; allowed = InstantProperties; }
                 else
                 {
-                    if (!hasKind) findings.Add(path + ".kind", "MissingProperty", "kind is required: Text, Decimal, Boolean or Money");
-                    else if (kindElement.ValueKind != JsonValueKind.String) findings.Add(path + ".kind", "InvalidType", "kind must be a string: Text, Decimal, Boolean or Money");
-                    else findings.Add(path + ".kind", "UnknownKind", "the kind '" + kindText + "' is not supported by this version; use Text, Decimal, Boolean or Money");
+                    if (!hasKind) findings.Add(path + ".kind", "MissingProperty", "kind is required: Text, Decimal, Boolean, Money, CalendarDate or Instant");
+                    else if (kindElement.ValueKind != JsonValueKind.String) findings.Add(path + ".kind", "InvalidType", "kind must be a string: Text, Decimal, Boolean, Money, CalendarDate or Instant");
+                    else findings.Add(path + ".kind", "UnknownKind", "the kind '" + kindText + "' is not supported by this version; use Text, Decimal, Boolean, Money, CalendarDate or Instant");
                     // The kind cannot be selected, but the fields every comparison has can still be checked, so those problems are
                     // reported too (and the name still counts for duplicate detection).
                     RejectUnknown(raw, path, CommonComparisonProperties, null, findings);
@@ -379,7 +383,20 @@ namespace ReconciliationAutomation
                     currencyOk &= ReadPointer(p, "leftCurrencyPointer", path, findings, out leftCurrencyPointer, out leftCurrency);
                     currencyOk &= ReadPointer(p, "rightCurrencyPointer", path, findings, out rightCurrencyPointer, out rightCurrency);
                 }
-                if (!fields.Ok || overflow || (hasTolerance && tolerance == null) || !currencyOk) continue;
+                string leftFormat = DateCore.DefaultFormat, rightFormat = DateCore.DefaultFormat;
+                int dateTolerance = 0;
+                bool dateOk = true;
+                if (kind == RuleKind.CalendarDate)
+                {
+                    dateOk &= ReadFormat(p, "leftFormat", path, findings, out leftFormat);
+                    dateOk &= ReadFormat(p, "rightFormat", path, findings, out rightFormat);
+                    dateOk &= ReadDateTolerance(p, "toleranceDays", path, findings, out dateTolerance);
+                }
+                else if (kind == RuleKind.Instant)
+                {
+                    dateOk &= ReadDateTolerance(p, "toleranceSeconds", path, findings, out dateTolerance);
+                }
+                if (!fields.Ok || overflow || (hasTolerance && tolerance == null) || !currencyOk || !dateOk) continue;
 
                 definition.Comparisons.Add(new ComparisonDef
                 {
@@ -387,6 +404,7 @@ namespace ReconciliationAutomation
                     LeftSegments = fields.LeftSegments, RightSegments = fields.RightSegments,
                     LeftCurrencyPointer = leftCurrencyPointer, RightCurrencyPointer = rightCurrencyPointer,
                     LeftCurrencySegments = leftCurrency, RightCurrencySegments = rightCurrency,
+                    LeftFormat = leftFormat, RightFormat = rightFormat, DateTolerance = dateTolerance,
                     Trim = trim, IgnoreCase = ignoreCase,
                     AbsoluteTolerance = tolerance ?? "0", NullPolicy = policy
                 });
@@ -498,6 +516,31 @@ namespace ReconciliationAutomation
             if (pointer == null) return false;
             Finding f = ReconciliationDefinition.CheckPointer(pointer, path + "." + name, out segments);
             if (f != null) { findings.Add(f); return false; }
+            return true;
+        }
+
+        /// <summary>Reads an optional date format (default yyyy-MM-dd). False, with a finding, when it is not a string or not an allowed format.</summary>
+        private static bool ReadFormat(Dictionary<string, JsonElement> p, string name, string path, DefinitionFindings findings, out string format)
+        {
+            format = DateCore.DefaultFormat;
+            if (!p.TryGetValue(name, out JsonElement v)) return true;
+            if (v.ValueKind != JsonValueKind.String) { findings.Add(path + "." + name, "InvalidType", name + " must be a string, for example yyyy-MM-dd"); return false; }
+            string text = v.GetString();
+            Finding f = ReconciliationDefinition.CheckFormat(text, path + "." + name);
+            if (f != null) { findings.Add(f); return false; }
+            format = text;
+            return true;
+        }
+
+        /// <summary>Reads an optional whole-number tolerance (default 0). False, with a finding, when it is not a whole number of at least 0.</summary>
+        private static bool ReadDateTolerance(Dictionary<string, JsonElement> p, string name, string path, DefinitionFindings findings, out int tolerance)
+        {
+            tolerance = 0;
+            if (!p.TryGetValue(name, out JsonElement v)) return true;
+            if (v.ValueKind != JsonValueKind.Number || !v.TryGetInt32(out int value)) { findings.Add(path + "." + name, "InvalidType", name + " must be a whole number of at least 0"); return false; }
+            Finding f = ReconciliationDefinition.CheckDateTolerance(value, path + "." + name);
+            if (f != null) { findings.Add(f); return false; }
+            tolerance = value;
             return true;
         }
 

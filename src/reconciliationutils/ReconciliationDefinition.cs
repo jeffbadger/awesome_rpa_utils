@@ -32,7 +32,11 @@ namespace ReconciliationAutomation
         /// <summary>Release 2: JSON true/false compared directly.</summary>
         Boolean,
         /// <summary>Release 2: an exact amount plus a required currency on each side; different currencies never compare amounts.</summary>
-        Money
+        Money,
+        /// <summary>Release 2: a date with an explicit format per side, compared in whole days.</summary>
+        CalendarDate,
+        /// <summary>Release 2: an ISO instant with an explicit offset or Z, compared as a UTC instant in whole seconds.</summary>
+        Instant
     }
 
     /// <summary>One part of the business key.</summary>
@@ -60,6 +64,9 @@ namespace ReconciliationAutomation
         internal string RightCurrencyPointer;     // Money
         internal string[] LeftCurrencySegments;   // Money
         internal string[] RightCurrencySegments;  // Money
+        internal string LeftFormat = DateCore.DefaultFormat;    // CalendarDate
+        internal string RightFormat = DateCore.DefaultFormat;   // CalendarDate
+        internal int DateTolerance;               // CalendarDate: days; Instant: seconds
         internal bool Trim;                       // Text
         internal bool IgnoreCase;                 // Text
         internal string AbsoluteTolerance = "0";  // Decimal and Money (invariant decimal text)
@@ -231,6 +238,42 @@ namespace ReconciliationAutomation
             return null;
         }
 
+        internal Finding TryAddCalendarDate(string name, string leftPointer, string rightPointer, string leftFormat, string rightFormat, int toleranceDays, ComparisonNullPolicy nullPolicy)
+        {
+            Finding f = CheckComparisonCommon(name, leftPointer, rightPointer, nullPolicy, out string[] left, out string[] right);
+            if (f != null) return f;
+            f = CheckFormat(leftFormat, "leftFormat") ?? CheckFormat(rightFormat, "rightFormat") ?? CheckDateTolerance(toleranceDays, "toleranceDays");
+            if (f != null) return f;
+            Comparisons.Add(new ComparisonDef
+            {
+                Name = name, Kind = RuleKind.CalendarDate, LeftPointer = leftPointer, RightPointer = rightPointer, LeftSegments = left, RightSegments = right,
+                LeftFormat = leftFormat, RightFormat = rightFormat, DateTolerance = toleranceDays, NullPolicy = nullPolicy
+            });
+            return null;
+        }
+
+        internal Finding TryAddInstant(string name, string leftPointer, string rightPointer, int toleranceSeconds, ComparisonNullPolicy nullPolicy)
+        {
+            Finding f = CheckComparisonCommon(name, leftPointer, rightPointer, nullPolicy, out string[] left, out string[] right)
+                ?? CheckDateTolerance(toleranceSeconds, "toleranceSeconds");
+            if (f != null) return f;
+            Comparisons.Add(new ComparisonDef
+            {
+                Name = name, Kind = RuleKind.Instant, LeftPointer = leftPointer, RightPointer = rightPointer, LeftSegments = left, RightSegments = right,
+                DateTolerance = toleranceSeconds, NullPolicy = nullPolicy
+            });
+            return null;
+        }
+
+        internal static Finding CheckFormat(string format, string path)
+        {
+            string problem = DateCore.CheckFormat(format);
+            return problem == null ? null : new Finding(path, "InvalidFormat", problem);
+        }
+
+        internal static Finding CheckDateTolerance(int tolerance, string path) =>
+            tolerance < 0 ? new Finding(path, "InvalidTolerance", "the tolerance must be a whole number of at least 0") : null;
+
         private Finding CheckComparisonCommon(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy, out string[] left, out string[] right)
         {
             left = right = null;
@@ -297,6 +340,16 @@ namespace ReconciliationAutomation
                         else if (c.Kind == RuleKind.Decimal || c.Kind == RuleKind.Money)
                         {
                             w.WriteString("absoluteTolerance", c.AbsoluteTolerance);
+                        }
+                        else if (c.Kind == RuleKind.CalendarDate)
+                        {
+                            w.WriteString("leftFormat", c.LeftFormat);
+                            w.WriteString("rightFormat", c.RightFormat);
+                            w.WriteNumber("toleranceDays", c.DateTolerance);
+                        }
+                        else if (c.Kind == RuleKind.Instant)
+                        {
+                            w.WriteNumber("toleranceSeconds", c.DateTolerance);
                         }
                         w.WriteString("nullPolicy", c.NullPolicy.ToString());
                         w.WriteEndObject();

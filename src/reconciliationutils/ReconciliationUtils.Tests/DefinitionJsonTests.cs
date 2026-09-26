@@ -179,8 +179,8 @@ namespace ReconciliationAutomation.Tests
         [Theory]
         [InlineData("\"kind\":\"Fuzzy\"", "UnknownKind")]              // kinds a later release may add are unknown to this one
         [InlineData("\"kind\":\"Percentage\"", "UnknownKind")]
-        [InlineData("\"kind\":\"CalendarDate\"", "UnknownKind")]
-        [InlineData("\"kind\":\"Instant\"", "UnknownKind")]
+        [InlineData("\"kind\":\"Date\"", "UnknownKind")]
+        [InlineData("\"kind\":\"Timestamp\"", "UnknownKind")]
         [InlineData("\"kind\":\"text\"", "UnknownKind")]              // case-sensitive
         [InlineData("\"kind\":7", "InvalidType")]                  // present but not a string: a type error, not "missing"
         [InlineData("\"kind\":null", "InvalidType")]

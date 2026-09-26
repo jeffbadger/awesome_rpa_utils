@@ -24,6 +24,11 @@ method calls or one JSON text; results come out as counts, two scalar cursors, o
 
 ## Findings applied
 
+- **Two date methods, not one with a unit.** `AddCalendarDateComparison` takes `toleranceDays` and `AddInstantComparison` takes
+  `toleranceSeconds`, so a designer never has to know that a "tolerance" changes meaning with an enum. Formats are plain strings
+  (`yyyy-MM-dd`) checked when the rule is added, so a typo fails at setup with a message, not on a row; the Simple instant form
+  needs no format at all.
+
 - **Money is its own method.** `AddMoneyComparison[Simple]` takes the currency pointers as required arguments, so a
   monetary rule cannot be built without currency compatibility; a Decimal rule plus a Text rule remains possible but does
   not gate the amount. All ports stay strings and the null-policy drop-down. Boolean rules take only strings (and the drop-down).
@@ -53,7 +58,7 @@ method calls or one JSON text; results come out as counts, two scalar cursors, o
   the same results need two instances or a `ResetResultCursor` between passes; this is
   documented in ResultsAndCounts and is the price of scalar ports.
 - Datasets arrive as JSON text or as DataTables. A DataTable's date and time cells are
-  unsupported values (put dates in a text column until the date comparison rules arrive), and
+  unsupported values (put dates in a text column and use a date rule, which parses the text), and
   `double`/`float` cells carry binary rounding; both are documented in DataTables.md.
 - A DataTable pointer names one column (`/Amount`), not a path. A mistyped or missing column is
   read as a missing field on every row (not a failure, matching JSON), so it appears in the summary

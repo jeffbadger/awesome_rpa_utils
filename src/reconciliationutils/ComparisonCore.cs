@@ -79,8 +79,8 @@ namespace ReconciliationAutomation
             if (rule.Kind == RuleKind.Decimal && !rule.TryGetTolerance(out tolerance, out string toleranceError))
                 return Invalid(outcome, "InvalidDecimal", "The rule's tolerance is not a usable decimal (" + toleranceError + ").");
 
-            Side l = Interpret(rule, left);
-            Side r = Interpret(rule, right);
+            Side l = Interpret(rule, left, true);
+            Side r = Interpret(rule, right, false);
             outcome.LeftInterpreted = l.Interpreted;
             outcome.RightInterpreted = r.Interpreted;
 
@@ -98,7 +98,10 @@ namespace ReconciliationAutomation
                 return Invalid(outcome, code, explanation);
             }
 
-            string mismatch = rule.Kind == RuleKind.Text ? "TextMismatch" : rule.Kind == RuleKind.Boolean ? "BooleanMismatch" : "DecimalMismatch";
+            string mismatch = rule.Kind == RuleKind.Text ? "TextMismatch"
+                : rule.Kind == RuleKind.Boolean ? "BooleanMismatch"
+                : rule.Kind == RuleKind.CalendarDate || rule.Kind == RuleKind.Instant ? "DateMismatch"
+                : "DecimalMismatch";
 
             // With AllowBothNull the nulls are legitimate: two nulls agree, a null against a value is a difference.
             if (l.IsNull && r.IsNull) return outcome.With(ComparisonState.Equal, null, null);
@@ -111,6 +114,24 @@ namespace ReconciliationAutomation
                 return string.Equals(l.Interpreted, r.Interpreted, comparison)
                     ? outcome.With(ComparisonState.Equal, null, null)
                     : outcome.With(ComparisonState.Different, mismatch, "The text values differ.");
+            }
+
+            if (rule.Kind == RuleKind.CalendarDate)
+            {
+                long days = r.Moment - l.Moment;                                             // right minus left, in whole calendar days
+                outcome.Delta = days.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return Math.Abs(days) <= rule.DateTolerance
+                    ? outcome.With(ComparisonState.Equal, null, null)
+                    : outcome.With(ComparisonState.Different, mismatch, "The dates differ by " + outcome.Delta + " day(s) (right minus left), which is more than the tolerance of " + rule.DateTolerance + " day(s).");
+            }
+
+            if (rule.Kind == RuleKind.Instant)
+            {
+                long ticks = r.Moment - l.Moment;                                            // right minus left, exact to the tick
+                outcome.Delta = DateCore.SecondsText(ticks);
+                return Math.Abs(ticks) <= (long)rule.DateTolerance * TimeSpan.TicksPerSecond
+                    ? outcome.With(ComparisonState.Equal, null, null)
+                    : outcome.With(ComparisonState.Different, mismatch, "The instants differ by " + outcome.Delta + " second(s) (right minus left), which is more than the tolerance of " + rule.DateTolerance + " second(s).");
             }
 
             if (rule.Kind == RuleKind.Boolean)
@@ -152,8 +173,8 @@ namespace ReconciliationAutomation
             if (!rule.TryGetTolerance(out ExactDecimal tolerance, out string toleranceError))
                 return Invalid(outcome, "InvalidDecimal", "The rule's tolerance is not a usable decimal (" + toleranceError + ").");
 
-            Side l = Interpret(rule, left);
-            Side r = Interpret(rule, right);
+            Side l = Interpret(rule, left, true);
+            Side r = Interpret(rule, right, false);
             string lc = CurrencyOf(leftCurrency, out bool lcMissing, out string lcProblem, "left");
             string rc = CurrencyOf(rightCurrency, out bool rcMissing, out string rcProblem, "right");
 
@@ -209,10 +230,11 @@ namespace ReconciliationAutomation
             internal string BadCode, BadReason;
             internal string Interpreted;       // text after trimming, or the normalized number
             internal ExactDecimal Number;
+            internal long Moment;               // a calendar date (day number) or an instant (UTC ticks)
 
         }
 
-        private static Side Interpret(ComparisonDef rule, FieldValue value)
+        private static Side Interpret(ComparisonDef rule, FieldValue value, bool leftSide)
         {
             var side = new Side();
             switch (value.Kind)
@@ -243,6 +265,27 @@ namespace ReconciliationAutomation
                     return side;
                 }
                 side.Interpreted = rule.Trim ? value.Text.Trim() : value.Text;
+                return side;
+            }
+
+            if (rule.Kind == RuleKind.CalendarDate || rule.Kind == RuleKind.Instant)
+            {
+                if (value.Kind != FieldKind.String)
+                {
+                    side.BadCode = "InvalidType";
+                    side.BadReason = "a date rule needs text but found " + Describe(value);
+                    return side;
+                }
+                bool parsed = rule.Kind == RuleKind.CalendarDate
+                    ? DateCore.TryParseDate(value.Text, leftSide ? rule.LeftFormat : rule.RightFormat, out side.Moment, out side.Interpreted)
+                    : DateCore.TryParseInstant(value.Text, out side.Moment, out side.Interpreted);
+                if (!parsed)
+                {
+                    side.BadCode = "InvalidDate";
+                    side.BadReason = rule.Kind == RuleKind.CalendarDate
+                        ? "the value is not a valid date in the " + (leftSide ? "left" : "right") + " format"
+                        : "the value is not an ISO instant with an explicit offset or Z (yyyy-MM-ddTHH:mm:ss[.fffffff] followed by Z or +hh:mm)";
+                }
                 return side;
             }
 

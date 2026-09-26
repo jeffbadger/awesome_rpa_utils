@@ -161,6 +161,46 @@ namespace ReconciliationAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddMoneyComparison), ex); return false; }
         }
 
+        /// <summary>Adds an exact calendar-date comparison: text values read with an explicit format per side (built from yyyy, MM, dd and separators, for example yyyy-MM-dd), compared by day with tolerance 0. A value is required on both sides.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Adds an exact calendar-date comparison: text values read with an explicit format per side (built from yyyy, MM, dd and separators, for example yyyy-MM-dd), compared by day with tolerance 0. A value is required on both sides. Never throws.")]
+        public bool AddCalendarDateComparisonSimple(string name, string leftPointer, string rightPointer, string leftFormat, string rightFormat, out string message)
+        {
+            message = null;
+            try { return ChangeDefinition(nameof(AddCalendarDateComparisonSimple), d => d.TryAddCalendarDate(name, leftPointer, rightPointer, leftFormat, rightFormat, 0, ComparisonNullPolicy.RequireValue), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddCalendarDateComparisonSimple), ex); return false; }
+        }
+
+        /// <summary>Adds a calendar-date comparison with a tolerance in whole calendar days and a null policy. Dates are text read with an explicit format per side (yyyy, MM, dd and separators only); no time zone or culture is involved.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Adds a calendar-date comparison with a tolerance in whole calendar days and a null policy. Dates are text read with an explicit format per side (yyyy, MM, dd and separators only); no time zone or culture is involved. Never throws.")]
+        public bool AddCalendarDateComparison(string name, string leftPointer, string rightPointer, string leftFormat, string rightFormat, int toleranceDays, ComparisonNullPolicy nullPolicy, out string message)
+        {
+            message = null;
+            try { return ChangeDefinition(nameof(AddCalendarDateComparison), d => d.TryAddCalendarDate(name, leftPointer, rightPointer, leftFormat, rightFormat, toleranceDays, nullPolicy), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddCalendarDateComparison), ex); return false; }
+        }
+
+        /// <summary>Adds an exact instant comparison: ISO text with an explicit offset or Z (for example 2026-09-26T14:30:00Z or 2026-09-26T10:30:00-04:00), compared as UTC instants with tolerance 0. A value is required on both sides.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Adds an exact instant comparison: ISO text with an explicit offset or Z (for example 2026-09-26T14:30:00Z or 2026-09-26T10:30:00-04:00), compared as UTC instants with tolerance 0. A value is required on both sides. Never throws.")]
+        public bool AddInstantComparisonSimple(string name, string leftPointer, string rightPointer, out string message)
+        {
+            message = null;
+            try { return ChangeDefinition(nameof(AddInstantComparisonSimple), d => d.TryAddInstant(name, leftPointer, rightPointer, 0, ComparisonNullPolicy.RequireValue), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddInstantComparisonSimple), ex); return false; }
+        }
+
+        /// <summary>Adds an instant comparison with a tolerance in whole seconds and a null policy. Values are ISO text with an explicit offset or Z and are compared as UTC instants; a value with no offset is invalid.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Adds an instant comparison with a tolerance in whole seconds and a null policy. Values are ISO text with an explicit offset or Z and are compared as UTC instants; a value with no offset is invalid. Never throws.")]
+        public bool AddInstantComparison(string name, string leftPointer, string rightPointer, int toleranceSeconds, ComparisonNullPolicy nullPolicy, out string message)
+        {
+            message = null;
+            try { return ChangeDefinition(nameof(AddInstantComparison), d => d.TryAddInstant(name, leftPointer, rightPointer, toleranceSeconds, nullPolicy), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddInstantComparison), ex); return false; }
+        }
+
         /// <summary>Replaces the whole definition from JSON. An invalid definition is rejected whole and the previous one stays in force.</summary>
         [Category("Reconciliation - Definition")]
         [Description("Replaces the whole definition from JSON. An invalid definition is rejected whole and the previous one stays in force. Never throws.")]

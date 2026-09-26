@@ -260,5 +260,26 @@ namespace ReconciliationAutomation.Tests
             Assert.True(c.ValidateDefinitionJson("{\"schemaVersion\":1,\"comparisons\":[" + json + "]}", out int errors, out string report, out string m), m);
             Assert.True(errors == 0, report);
         }
+
+        [Fact]
+        public void TheConfigurationPage_DateExample_IsAValidDefinitionRule_AndTheDocumentedInstantsAndFormatsBehaveAsStated()
+        {
+            string json = Blocks(Page("Configuration.md"), "json").Single(b => b.Contains("\"kind\": \"CalendarDate\""));
+            using var c = new ReconciliationUtils();
+            Assert.True(c.ValidateDefinitionJson("{\"schemaVersion\":1,\"comparisons\":[" + json + "]}", out int errors, out string report, out string m), m);
+            Assert.True(errors == 0, report);
+
+            // the examples ComparisonRules.md gives in prose
+            string page = Page("ComparisonRules.md");
+            Assert.Contains("2024-03-01T12:00:00.5Z", page);
+            Assert.True(DateCore.TryParseInstant("2024-03-01T12:00:00.5Z", out _, out _));
+            Assert.False(DateCore.TryParseInstant("2024-03-01T12:00:00", out _, out _));
+            Assert.False(DateCore.TryParseInstant("2024-03-01T23:59:60Z", out _, out _));
+            Assert.False(DateCore.TryParseInstant("2024-03-01T12:00:00+0530", out _, out _));
+            Assert.True(DateCore.TryParseDate("2000-02-29", "yyyy-MM-dd", out _, out _));
+            Assert.False(DateCore.TryParseDate("2100-02-29", "yyyy-MM-dd", out _, out _));
+            Assert.Null(DateCore.CheckFormat("yyyy 'day' dd MM"));
+            Assert.NotNull(DateCore.CheckFormat("yyyy-MM-dd HH:mm"));
+        }
     }
 }

@@ -20,6 +20,8 @@ different, otherwise **Matched**. The details of every unequal or invalid rule a
 | `TextMismatch` | Text rule, both usable, unequal. |
 | `DecimalMismatch` | Decimal or Money rule, both usable, difference larger than the tolerance (or one null against a value under `AllowBothNull`). |
 | `BooleanMismatch` | Boolean rule, both usable, `true` against `false` (or a null against a value under `AllowBothNull`). |
+| `InvalidDate` | Calendar-date or instant rule: the text is not a valid date or instant in the required shape (or is empty). |
+| `DateMismatch` | Calendar-date or instant rule, both usable, difference larger than the tolerance (or one null against a value under `AllowBothNull`). |
 | `InvalidCurrency` | Money rule: a currency field is null, not a string, or not a three-letter code. |
 | `CurrencyMismatch` | Money rule: both currencies are valid and differ; the amounts are not compared. |
 
@@ -64,6 +66,38 @@ The rule decides in this order, and the first that applies wins:
 5. **The currencies agree**: the null policy applies to the amounts (two nulls are equal under `AllowBothNull`), then the amounts are compared exactly within the absolute tolerance, as for Decimal.
 
 Invalid always outranks different, so a bad amount reports its own reason even when the currencies also differ.
+
+## Calendar dates
+
+`AddCalendarDateComparison[Simple]` compares dates given as **text** in an explicit format per side, so left and right can
+differ (`29/02/2024` against `2024-02-29`). A date is read as a plain day; no time, zone, culture or calendar is involved.
+
+- **Formats** are built only from `yyyy`, `MM` and `dd`, each exactly once (a date part is never missing), the separators
+  `- / . ,` and space, and quoted literals such as `'day'`. Time tokens (`HH`, `mm`, `ss`, `f`), offset tokens (`z`, `K`), era,
+  month and day names, one- or two-digit years, `:` and escape characters are refused when the rule is added. Formats are
+  checked when the rule is added, never when a row is read. The Simple form's formats are required too; `yyyy-MM-dd` is the usual one.
+- **Strict reading:** four-digit year, two-digit month and day, ASCII digits only, no surrounding white space. `2023-02-29` and
+  `2100-02-29` are `InvalidDate`; `2024-02-29` and `2000-02-29` are valid. Years 0001 to 9999.
+- **Tolerance** is a whole number of **calendar days** (0 or more), inclusive. The delta is right minus left in days (`-3`, `2`).
+- Empty text is `InvalidDate`; a non-string value is `InvalidType`.
+
+## Instants
+
+`AddInstantComparison[Simple]` compares points in time given as ISO text with an **explicit offset or `Z`**. Only these shapes
+are accepted, in ASCII with an upper-case `T` and `Z`:
+
+- `yyyy-MM-ddTHH:mm:ss` followed by `Z`, or by an offset `+hh:mm` / `-hh:mm`
+- the same with a fraction of one to seven digits after the seconds (`2024-03-01T12:00:00.5Z`)
+
+Any value with no offset (`2024-03-01T12:00:00`) is `InvalidDate`: it is never read in the machine's time zone, and no daylight-saving
+rule is applied. Offsets up to +/-14:00; no leap seconds (`23:59:60` is invalid); no `+0530`. Values are converted to UTC and compared
+exactly, so `12:00:00Z` and `08:00:00-04:00` are the same instant and `12:00:00Z` and `12:00:00-04:00` (same wall clock) are four hours apart.
+
+**Tolerance** is a whole number of **seconds** (0 or more), inclusive, compared exactly to the tick (a difference of 1.0000001 s is beyond a
+tolerance of 1). The delta is right minus left in seconds, exact and without trailing zeros (`14400`, `-1.5`).
+
+The two are separate methods so a tolerance never changes meaning: days for dates, seconds for instants. For both, the detail shows the
+values as found and normalized (`2024-02-29`, `2024-03-01T16:00:00Z`).
 
 ## Original values
 
