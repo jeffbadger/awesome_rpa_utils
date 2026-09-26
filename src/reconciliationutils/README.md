@@ -4,11 +4,11 @@ A Pega Robot Studio-ready component (`ReconciliationUtils`) that reconciles two
 datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
-> **Status: under construction.** This folder currently contains the frozen public
-> contract only (work package 1 of the
-> [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md)):
-> every method exists with its final signature but reports that it is not
-> implemented yet. Do not use it until the first release notes say otherwise.
+> **Status: under construction.** Work package 2 of the
+> [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md)
+> is in: the **definition** operations work (setup methods, JSON load/validate/export,
+> limits). `ReconcileJson` and the result-reading methods still report that they are not
+> implemented yet. Do not use the component until the first release notes say otherwise.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ReconciliationAutomation`
@@ -16,12 +16,52 @@ through scalar ports so an automation can route them to review or correction.
 
 ## Method reference (frozen contract)
 
-All 19 Release 1 methods, with their final signatures. **None of them is implemented
-yet**: each returns `False` with a message saying so, and sets every output to its
-failure value (null strings, 0 counts, `False` flags, -1 row indices). Behavior arrives
-in the later work packages of the
-[plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md), and this
-table gains defaults, worked examples and the full method reference then.
+All 19 Release 1 methods, with their final signatures. The **Definition** methods are
+implemented. The **Run** and **Results** methods are not yet: each returns `False` with a
+message saying so. On any failure a method sets every output to its failure value (null
+strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
+operation; success has no message. The
+[plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) adds the rest.
+
+## Defining a reconciliation
+
+A definition has **keys** (which fields identify a record), **comparisons** (which fields
+to compare once two records share a key) and **limits**. Build it with the `Add...`
+methods, or load it as JSON (`LoadDefinitionJson`, validated whole: a definition with any
+problem is rejected and the current one stays). `GetDefinitionJson` returns the canonical
+form, with every option spelled out; a definition built with methods and the same one
+loaded from JSON produce identical text.
+
+```json
+{
+  "schemaVersion": 1,
+  "keys": [
+    { "name": "Company", "leftPointer": "/company", "rightPointer": "/entity", "trim": true, "ignoreCase": true },
+    { "name": "Invoice", "leftPointer": "/invoiceNumber", "rightPointer": "/invoiceId" }
+  ],
+  "comparisons": [
+    { "name": "Amount", "kind": "Decimal", "leftPointer": "/amount", "rightPointer": "/paidAmount", "absoluteTolerance": "0.01" },
+    { "name": "Status", "kind": "Text", "leftPointer": "/status", "rightPointer": "/status", "trim": true, "ignoreCase": true }
+  ]
+}
+```
+
+- **Pointers** select a field: a leading `/` and property names, `/company` or `/customer/id`.
+  Use `~1` for a `/` and `~0` for a `~` inside a name. Lookup is case-sensitive and a dot has
+  no special meaning; arrays cannot be walked into.
+- **Keys** may be JSON strings or JSON **integers** (an integer is used as its exact text, so
+  `123` and `"123"` are the same key, but `7` and `"007"` are not). A fraction, an exponent,
+  a Boolean, an object or an array as a key makes that row invalid, as does a missing, null or
+  empty key. Keys with several parts are matched as ordered tuples, never joined into one string.
+- **Simple** methods use the safe defaults: no trimming, case-sensitive, tolerance `0`, and a
+  value required on both sides. Names must be unique across keys and comparisons (ignoring case).
+- **Tolerance** is non-negative decimal *text* such as `0` or `0.01`.
+- Unknown properties, repeated properties, wrong types and numeric enum values are errors. A definition is read with the same depth bound as input (64 levels; a real one is 3 deep), reported as `DepthLimit`.
+  `ValidateDefinitionJson` reports every problem (path, code, message; up to 100) without
+  changing anything: `errorCount` is 0 for a valid definition.
+- Text must be valid Unicode: an unpaired surrogate (a lone half of an emoji-style pair, whether written as a raw character or as a JSON escape like `\uD800`) is refused: in a definition JSON document as an `InvalidText` finding (with the path of the value, or of the object holding a bad property name), when adding a name or pointer with a method as `InvalidName` or `InvalidPointer`, and in input it rejects the document (raw character or property name) or makes just that value unsupported data (escaped in a value), so a bad string is never silently turned into a different one. Trimming removes Unicode white space.
+- Input JSON is read with bounds (characters, depth 64, rows, and 256 characters per number), rejects repeated property names
+  anywhere, and never echoes the data in an error message.
 
 ### Definition
 
