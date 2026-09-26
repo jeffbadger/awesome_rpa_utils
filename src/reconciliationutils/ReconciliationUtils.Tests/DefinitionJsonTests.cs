@@ -587,6 +587,25 @@ namespace ReconciliationAutomation.Tests
             Assert.DoesNotContain("failed unexpectedly", message);
         }
 
+        [Theory]
+        [InlineData("high")]
+        [InlineData("low")]
+        [InlineData("trailing-high")]            // a high half at the very end
+        [InlineData("wrong-order")]              // halves in the wrong order
+        public void ARawUnpairedSurrogateCharacter_IsAFinding_NotAFailedUnexpectedly(string which)
+        {
+            // the C# string itself is not valid UTF-16 (this is not an escape in the JSON text)
+            string bad = JsonInputTests.Unpaired(which);
+            string json = "{\"schemaVersion\":1,\"keys\":[{\"name\":\"a" + bad + "b\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}]}";
+            string report = Validate(json, out int errors);
+            Assert.Equal(1, errors);
+            Assert.Equal("InvalidText", FirstCode(report));
+            using var c = new ReconciliationUtils();
+            Assert.False(c.LoadDefinitionJson(json, out string message));
+            Assert.Contains("InvalidText", message);
+            Assert.DoesNotContain("failed unexpectedly", message);
+        }
+
         [Fact]
         public void AProperSurrogatePair_IsFineInADefinition()
         {

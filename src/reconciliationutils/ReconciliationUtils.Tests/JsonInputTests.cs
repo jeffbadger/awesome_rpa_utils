@@ -249,6 +249,40 @@ namespace ReconciliationAutomation.Tests
             }
         }
 
+        /// <summary>Unpaired surrogate text, built at run time: attribute data cannot carry a lone surrogate (it would be stored as U+FFFD).</summary>
+        internal static string Unpaired(string which) => which switch
+        {
+            "high" => "\uD800",
+            "low" => "\uDC00",
+            "trailing-high" => "x\uD83C",
+            "wrong-order" => "\uDF89\uD83C",
+            _ => throw new System.ArgumentException(which)
+        };
+
+        [Theory]
+        [InlineData("high")]
+        [InlineData("low")]
+        [InlineData("trailing-high")]
+        public void ARawUnpairedSurrogateCharacter_IsRejected_NotSilentlyReplaced(string which)
+        {
+            string bad = Unpaired(which);
+            // Encoding it would turn every such string into the same U+FFFD text, so different bad values could become equal keys.
+            Assert.False(TryParse("[{\"k\":\"a" + bad + "b\"}]", out _, out InputFailure failure));
+            Assert.Equal("InvalidText", failure.Code);
+            Assert.StartsWith("Left input", failure.Message);
+            Assert.DoesNotContain("a" + bad, failure.Message);
+        }
+
+        [Fact]
+        public void TheSurrogateCheck_AcceptsEveryProperPair_AndTextWithNoSurrogates()
+        {
+            Assert.False(TextCheck.HasUnpairedSurrogate(""));
+            Assert.False(TextCheck.HasUnpairedSurrogate("plain text"));
+            Assert.False(TextCheck.HasUnpairedSurrogate("\U0001F389 \U00010000 \U0010FFFF"));   // pairs, including the extremes
+            Assert.True(TextCheck.HasUnpairedSurrogate("\uD83C\uD83C\uDF89"));                  // a high half followed by a pair
+            Assert.True(TextCheck.HasUnpairedSurrogate("\uD83C\uDF89\uDF89"));                  // a pair followed by a low half
+        }
+
         [Fact]
         public void AProperSurrogatePair_InAValue_IsAString()
         {

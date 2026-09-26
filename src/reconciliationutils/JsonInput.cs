@@ -63,6 +63,12 @@ namespace ReconciliationAutomation
                 return false;
             }
 
+            if (TextCheck.HasUnpairedSurrogate(json))
+            {
+                failure = new InputFailure("InvalidText", side + " input contains text that is not valid (an unpaired surrogate character).");
+                return false;
+            }
+
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             if (!Scan(bytes, side, limits, out failure)) return false;
 

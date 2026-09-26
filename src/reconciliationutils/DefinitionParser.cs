@@ -50,6 +50,13 @@ namespace ReconciliationAutomation
         /// <summary>Parses <paramref name="json"/>. Returns the definition, or null when there is any finding (see <paramref name="findings"/>).</summary>
         internal static ReconciliationDefinition Parse(string json, DefinitionFindings findings)
         {
+            // Text with an unpaired surrogate character cannot be read reliably (the JSON parser throws), so it is a finding, not a crash.
+            if (TextCheck.HasUnpairedSurrogate(json))
+            {
+                findings.Add("$", "InvalidText", "the definition contains text that is not valid (an unpaired surrogate character)");
+                return null;
+            }
+
             // The same depth bound as input documents (64 levels, the plan's fixed JSON depth). A real definition is at most three
             // levels deep, so this only ever trips on hostile or broken text, and it gets its own finding instead of "malformed".
             if (ExceedsDepth(json))

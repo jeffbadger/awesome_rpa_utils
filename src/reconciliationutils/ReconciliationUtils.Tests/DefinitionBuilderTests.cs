@@ -97,6 +97,35 @@ namespace ReconciliationAutomation.Tests
             Assert.Equal(before, Json(c));
         }
 
+        [Theory]
+        [InlineData("high")]
+        [InlineData("low")]
+        [InlineData("trailing-high")]
+        public void AnUnpairedSurrogateInANameOrPointer_IsRejected_SoTheDefinitionCanAlwaysBeWritten(string which)
+        {
+            string bad = JsonInputTests.Unpaired(which);
+            using var c = new ReconciliationUtils();
+            Assert.True(c.AddKeyMappingSimple("Good", "/a", "/a", out string m), m);
+            string before = Json(c);
+
+            Assert.False(c.AddKeyMappingSimple("n" + bad, "/a", "/a", out m)); Assert.Contains("InvalidName", m);
+            Assert.False(c.AddKeyMappingSimple("N", "/a" + bad, "/a", out m)); Assert.Contains("InvalidPointer", m);
+            Assert.False(c.AddKeyMappingSimple("N", "/a", "/" + bad, out m)); Assert.Contains("InvalidPointer", m);
+            Assert.False(c.AddTextComparisonSimple("n" + bad, "/a", "/a", out m)); Assert.Contains("InvalidName", m);
+            Assert.False(c.AddDecimalComparisonSimple("N", "/" + bad, "/a", out m)); Assert.Contains("InvalidPointer", m);
+            Assert.DoesNotContain("failed unexpectedly", m);
+
+            Assert.Equal(before, Json(c));            // nothing changed, and the canonical JSON is still writable
+        }
+
+        [Fact]
+        public void AProperSurrogatePair_InANameOrPointer_IsAccepted_AndWritten()
+        {
+            using var c = new ReconciliationUtils();
+            Assert.True(c.AddKeyMappingSimple("\U0001F389 party", "/\U0001F389", "/\U0001F389", out string m), m);
+            Assert.Contains("party", Json(c));
+        }
+
         [Fact]
         public void ANameTooLong_IsRejected_AtItsBoundary()
         {

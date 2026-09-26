@@ -85,6 +85,7 @@ namespace ReconciliationAutomation
         {
             if (string.IsNullOrWhiteSpace(name)) return new Finding(path, "InvalidName", "a name is required");
             if (name.Length > MaxNameLength) return new Finding(path, "InvalidName", "the name is longer than " + MaxNameLength + " characters");
+            if (TextCheck.HasUnpairedSurrogate(name)) return new Finding(path, "InvalidName", "the name contains text that is not valid (an unpaired surrogate character)");
             if (taken.Any(t => string.Equals(t, name, StringComparison.OrdinalIgnoreCase)))
                 return new Finding(path, "DuplicateName", "the name '" + name + "' is already used; names are unique across keys and comparisons, ignoring case");
             return null;
@@ -92,6 +93,10 @@ namespace ReconciliationAutomation
 
         internal static Finding CheckPointer(string pointer, string path, out string[] segments)
         {
+            segments = null;
+            // A pointer with an unpaired surrogate could never match a property and would make the canonical JSON unwritable.
+            if (pointer != null && TextCheck.HasUnpairedSurrogate(pointer))
+                return new Finding(path, "InvalidPointer", "the pointer contains text that is not valid (an unpaired surrogate character)");
             if (!JsonPointer.TryParse(pointer, out segments, out string error)) return new Finding(path, "InvalidPointer", error);
             return null;
         }
