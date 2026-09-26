@@ -2,17 +2,7 @@
 
 Two invoice lists: what the ERP says (left) and what the bank paid (right).
 
-```json
-// left
-[ { "invoice": "INV-100", "amount": "10.00", "status": "Open" },
-  { "invoice": "INV-101", "amount": "20.00", "status": "Open" },
-  { "invoice": "INV-102", "amount": "5.00",  "status": "Open" } ]
-
-// right
-[ { "invoiceId": "INV-100", "paid": "10.00", "status": "open" },
-  { "invoiceId": "INV-101", "paid": "21.50", "status": "Open" },
-  { "invoiceId": "INV-103", "paid": "9.00",  "status": "Open" } ]
-```
+The two arrays appear as the `leftJson` and `rightJson` strings in step 2.
 
 ## 1. Define
 
@@ -34,8 +24,17 @@ bad pointer), and then changes nothing. You can also load the whole definition f
 ## 2. Run
 
 ```csharp
-string leftJson = /* the left array above; in Robot Studio, a String variable */ "[ ... ]";
-string rightJson = /* the right array above */ "[ ... ]";
+// In Robot Studio these are String variables (for example the output of a JSON, Excel or SQL step).
+string leftJson = """
+[ { "invoice": "INV-100", "amount": "10.00", "status": "Open" },
+  { "invoice": "INV-101", "amount": "20.00", "status": "Open" },
+  { "invoice": "INV-102", "amount": "5.00",  "status": "Open" } ]
+""";
+string rightJson = """
+[ { "invoiceId": "INV-100", "paid": "10.00", "status": "open" },
+  { "invoiceId": "INV-101", "paid": "21.50", "status": "Open" },
+  { "invoiceId": "INV-103", "paid": "9.00",  "status": "Open" } ]
+""";
 
 if (!recon.ReconcileJson(leftJson, rightJson, out int exceptionCount, out message))
 {

@@ -36,15 +36,18 @@ namespace ReconciliationAutomation.Tests
         private static string Normalize(string code) =>
             Regex.Replace(Regex.Replace(Regex.Replace(code, "//[^\n]*", ""), "^\\s*using [^\n]*;", "", RegexOptions.Multiline).Replace("private static", "static"), "\\s+", "");
 
+        /// <summary>The two arrays exactly as the page's C# assigns them to leftJson and rightJson (raw string literals).</summary>
         private static (string left, string right) QuickStartInputs()
         {
-            string block = Blocks(Page("QuickStart.md"), "json").Single();
-            string[] parts = Regex.Split(block, "^// (?=left|right)", RegexOptions.Multiline).Where(x => x.Trim().Length > 0).ToArray();
-            Assert.Equal(2, parts.Length);
-            string Array(string part) => string.Join("\n", part.Split('\n').Skip(1).Where(l => !l.TrimStart().StartsWith("//")));
-            Assert.StartsWith("left", parts[0]);
-            Assert.StartsWith("right", parts[1]);
-            return (Array(parts[0]), Array(parts[1]));
+            string code = string.Join("\n", Blocks(Page("QuickStart.md"), "csharp"));
+            string Literal(string variable)
+            {
+                Match m = Regex.Match(code, "string " + variable + " = \"\"\"\n(.*?)\n\"\"\";", RegexOptions.Singleline);
+                Assert.True(m.Success, variable + " is not assigned a raw string literal on the QuickStart page");
+                using JsonDocument valid = JsonDocument.Parse(m.Groups[1].Value);         // the page's input must be real JSON
+                return m.Groups[1].Value;
+            }
+            return (Literal("leftJson"), Literal("rightJson"));
         }
 
         [Fact]
