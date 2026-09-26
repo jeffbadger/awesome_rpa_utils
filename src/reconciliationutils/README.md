@@ -5,7 +5,7 @@ datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
 > **Status: released (v0.3.27); Release 2 in progress.** The DataTable bridge (`ReconcileDataTables`,
-> `ConfigureTableLimits`) the Boolean and Money rules and the calendar-date and instant rules are the Release 2 additions so far; results export follows.
+> `ConfigureTableLimits`), the Boolean and Money rules, and the calendar-date and instant rules are the Release 2 additions so far; results export follows.
 > See the [documentation](Documentation/README.md) for a quick start and worked examples, and the
 > [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) for what remains.
 

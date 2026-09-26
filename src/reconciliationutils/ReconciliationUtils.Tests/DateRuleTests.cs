@@ -408,7 +408,7 @@ namespace ReconciliationAutomation.Tests
                                + "{\"id\":\"5\",\"dueDate\":\"2024-01-01\",\"seenAt\":\"2024-03-01T12:00:00Z\"},"
                                + "{\"id\":\"6\",\"dueDate\":null,\"seenAt\":\"2024-03-01T12:00:00Z\"}]";
             Assert.True(c.ReconcileJson(left, right, out int count, out string m), m);
-            Assert.Equal(4, count);                                                        // 1 and 6 match (id 1: 2 days and 20 s, both inside; id 6: both null)
+            Assert.Equal(4, count);                                                        // 1 and 6 match (id 1: 2 days and 20 s, both inside; id 6: both due dates are null, which the Due rule allows with AllowBothNull; its Seen values are present and equal)
             var seen = new List<string>();
             while (c.TryReadNextException(out bool has, out _, out string kind, out string key, out _, out _, out string reason, out _, out _) && has)
                 seen.Add(key + " " + kind + " " + reason);
@@ -453,7 +453,7 @@ namespace ReconciliationAutomation.Tests
             Assert.Equal(0, count);
 
             var typed = new DataTable(); typed.Columns.Add("Id", typeof(string)); typed.Columns.Add("Due", typeof(DateTime)); typed.Columns.Add("Seen", typeof(DateTimeOffset));
-            typed.Rows.Add("a", new DateTime(2024, 2, 29), DateTimeOffset.UtcNow);
+            typed.Rows.Add("a", new DateTime(2024, 2, 29), new DateTimeOffset(2024, 3, 1, 12, 0, 0, TimeSpan.Zero));
             Assert.True(c.ReconcileDataTables(typed, right, out count, out m), m);
             Assert.Equal(1, count);
             Assert.True(c.TryReadNextException(out _, out _, out _, out _, out _, out _, out string reason, out int diffs, out _));
