@@ -100,6 +100,30 @@ loaded from JSON produce identical text.
 `ComparisonNullPolicy` is a drop-down: `RequireValue` (the default: a null on either
 side is invalid) or `AllowBothNull` (two nulls are equal).
 
+## How comparisons work
+
+These are the rules `ReconcileJson` will apply to each pair of records that share a key (the rules themselves are implemented and tested;
+running a whole reconciliation arrives with the next work package). Each rule reports **equal**, **different** or **invalid**, with a
+stable reason code and an explanation that never quotes a text value.
+
+- **Every rule evaluates every pair**; one mismatch never stops the others.
+- **Invalid, not different**, when a side cannot be compared: `MissingField` (a missing field is always invalid, even on both sides),
+  `NullNotAllowed` (a null where the null policy requires a value), `InvalidType` (for example a number given to a text rule) or
+  `InvalidDecimal`. When both sides have problems the reason is the most basic one: missing, then unusable value, then null.
+- **Null policy:** `RequireValue` (default): a null on either side is invalid. `AllowBothNull`: two nulls are equal and a null against a
+  value is a difference. Missing, null, empty text and zero are never treated as the same thing.
+- **Text:** both sides must be strings. Optional trimming (Unicode white space) and ordinal case-insensitive comparison; no locale
+  collation, Unicode normalization or whitespace collapsing, and the result does not depend on the machine's culture (`I` and `i` match
+  under Turkish settings; `İ` and `i` do not). Reason for a difference: `TextMismatch`.
+- **Decimal:** each side is a JSON number or a string of plain invariant numeric text (`-12.50`; no exponent, separators, symbols or
+  spaces in text; JSON numbers may use an exponent). The value is held **exactly**: more than 28 decimal places, more than about 29
+  significant digits or a magnitude beyond `79228162514264337593543950335` is `InvalidDecimal`, never rounded. Two values are equal when
+  `|right - left|` is at most the **absolute tolerance** (inclusive; exact, so `0.1` and `0.3` differ by exactly `0.2`). The delta
+  (right minus left) is reported as exact text even when it is larger than any decimal, and the tolerance must itself be exactly
+  representable. Reason for a difference: `DecimalMismatch`.
+- **Original values are kept** as JSON fragments next to the interpreted ones, so a missing field (no value), a null (`null`), an empty
+  string (`""`) and a zero (`0`) stay distinguishable; an object or array is described (`"(an object)"`), never copied.
+
 ## Not released yet
 
 This component is registered in the solution so it builds and its tests run in CI, but

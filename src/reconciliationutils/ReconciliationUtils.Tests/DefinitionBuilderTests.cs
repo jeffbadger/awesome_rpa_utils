@@ -192,9 +192,15 @@ namespace ReconciliationAutomation.Tests
         public void AToleranceOverTheLengthBound_IsRejected()
         {
             using var c = new ReconciliationUtils();
-            Assert.True(c.AddDecimalComparison("A", "/a", "/a", new string('1', 256), ComparisonNullPolicy.RequireValue, out string m), m);
+            // 256 characters is within the length bound but far too large to hold exactly, so it is refused for that reason...
+            Assert.False(c.AddDecimalComparison("A", "/a", "/a", new string('1', 256), ComparisonNullPolicy.RequireValue, out string m));
+            Assert.Contains("InvalidTolerance", m);
+            Assert.DoesNotContain("longer than", m);
+            // ...and 257 is over the bound itself
             Assert.False(c.AddDecimalComparison("B", "/a", "/a", new string('1', 257), ComparisonNullPolicy.RequireValue, out m));
             Assert.Contains("longer than 256", m);
+            // a 256-character tolerance that IS exactly representable (a long run of zeros) is fine
+            Assert.True(c.AddDecimalComparison("C", "/a", "/a", "0." + new string('0', 254), ComparisonNullPolicy.RequireValue, out m), m);
         }
 
         [Fact]

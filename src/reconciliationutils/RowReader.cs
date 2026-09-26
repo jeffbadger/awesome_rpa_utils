@@ -30,12 +30,14 @@ namespace ReconciliationAutomation
 
         internal FieldKind Kind { get; }
 
-        /// <summary>The string value, the original number token, or <c>true</c>/<c>false</c>; null for the other kinds.</summary>
+        /// <summary>The string value, the original number token, or <c>true</c>/<c>false</c>; for <see cref="FieldKind.Unsupported"/> a short description of what was found (never its content); null for the other kinds.</summary>
         internal string Text { get; }
 
         internal static readonly FieldValue Missing = new FieldValue(FieldKind.Missing);
         internal static readonly FieldValue Null = new FieldValue(FieldKind.Null);
-        internal static readonly FieldValue Unsupported = new FieldValue(FieldKind.Unsupported);
+        internal static readonly FieldValue Unsupported = new FieldValue(FieldKind.Unsupported, "unsupported value");
+
+        internal static FieldValue UnsupportedBecause(string description) => new FieldValue(FieldKind.Unsupported, description);
     }
 
     /// <summary>

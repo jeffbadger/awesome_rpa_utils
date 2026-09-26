@@ -118,7 +118,10 @@ namespace ReconciliationAutomation
                 while (i < text.Length && text[i] >= '0' && text[i] <= '9') i++;
                 ok = ok && i > fractionStart && i == text.Length;
             }
-            return ok ? null : new Finding(path, "InvalidTolerance", "the tolerance must be a non-negative invariant decimal such as 0 or 0.01 (digits with an optional fraction; no sign, exponent or separators)");
+            if (!ok) return new Finding(path, "InvalidTolerance", "the tolerance must be a non-negative invariant decimal such as 0 or 0.01 (digits with an optional fraction; no sign, exponent or separators)");
+            // it must also be exactly representable as a decimal, like every value it is compared against, so it can never be rounded
+            if (!ExactDecimal.TryParseText(text, out _, out string reason)) return new Finding(path, "InvalidTolerance", "the tolerance cannot be used: " + reason);
+            return null;
         }
 
         // ------------------------------------------------------------------ builders (each works on a copy; null = accepted)

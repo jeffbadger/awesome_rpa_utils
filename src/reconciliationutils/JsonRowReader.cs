@@ -19,7 +19,7 @@ namespace ReconciliationAutomation
             for (int i = 0; i < pointerSegments.Length; i++)
             {
                 // Only an object can be walked into. An array met on the way is unsupported data; a null or a scalar means the path is missing.
-                if (current.ValueKind == JsonValueKind.Array) return FieldValue.Unsupported;
+                if (current.ValueKind == JsonValueKind.Array) return FieldValue.UnsupportedBecause("an array on the path");
                 if (current.ValueKind != JsonValueKind.Object) return FieldValue.Missing;
                 // TryGetProperty is ordinal and case-sensitive, and the input scan has already rejected duplicate names.
                 if (!current.TryGetProperty(pointerSegments[i], out current)) return FieldValue.Missing;
@@ -33,7 +33,7 @@ namespace ReconciliationAutomation
             {
                 case JsonValueKind.String:
                     try { return new FieldValue(FieldKind.String, value.GetString()); }
-                    catch (System.InvalidOperationException) { return FieldValue.Unsupported; } // an escaped lone surrogate: legal JSON, not decodable text
+                    catch (System.InvalidOperationException) { return FieldValue.UnsupportedBecause("text that is not valid"); } // an escaped lone surrogate: legal JSON, not decodable text
                 case JsonValueKind.Number:
                     string token = value.GetRawText();
                     return new FieldValue(IsIntegerToken(token) ? FieldKind.Integer : FieldKind.Number, token);
@@ -44,7 +44,7 @@ namespace ReconciliationAutomation
                 case JsonValueKind.Null:
                     return FieldValue.Null;
                 default:
-                    return FieldValue.Unsupported; // an object or array at the leaf
+                    return FieldValue.UnsupportedBecause(value.ValueKind == JsonValueKind.Array ? "an array" : "an object"); // at the leaf
             }
         }
 

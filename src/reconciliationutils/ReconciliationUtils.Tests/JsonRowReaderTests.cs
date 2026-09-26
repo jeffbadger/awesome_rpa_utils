@@ -27,9 +27,9 @@ namespace ReconciliationAutomation.Tests
         [InlineData("{\"a\":true}", "/a", "Boolean", "true")]
         [InlineData("{\"a\":false}", "/a", "Boolean", "false")]
         [InlineData("{\"a\":null}", "/a", "Null", null)]
-        [InlineData("{\"a\":{}}", "/a", "Unsupported", null)]
-        [InlineData("{\"a\":[]}", "/a", "Unsupported", null)]
-        [InlineData("{\"a\":[1]}", "/a", "Unsupported", null)]
+        [InlineData("{\"a\":{}}", "/a", "Unsupported", "an object")]
+        [InlineData("{\"a\":[]}", "/a", "Unsupported", "an array")]
+        [InlineData("{\"a\":[1]}", "/a", "Unsupported", "an array")]
         public void ALeafIsClassifiedByItsJsonType_KeepingItsExactText(string row, string pointer, string kind, string text)
         {
             FieldValue value = Read(row, pointer);
