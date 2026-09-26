@@ -199,6 +199,33 @@ namespace ReconciliationAutomation
             return outcome;
         }
 
+        /// <summary>True for a token matching JSON's number grammar: <c>-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?</c>.</summary>
+        internal static bool IsJsonNumber(string token)
+        {
+            if (string.IsNullOrEmpty(token)) return false;
+            int i = token[0] == '-' ? 1 : 0;
+            if (i >= token.Length || !IsDigit(token[i])) return false;
+            if (token[i] == '0') i++;
+            else while (i < token.Length && IsDigit(token[i])) i++;
+            if (i < token.Length && token[i] == '.')
+            {
+                int start = ++i;
+                while (i < token.Length && IsDigit(token[i])) i++;
+                if (i == start) return false;
+            }
+            if (i < token.Length && (token[i] == 'e' || token[i] == 'E'))
+            {
+                i++;
+                if (i < token.Length && (token[i] == '+' || token[i] == '-')) i++;
+                int start = i;
+                while (i < token.Length && IsDigit(token[i])) i++;
+                if (i == start) return false;
+            }
+            return i == token.Length;
+        }
+
+        private static bool IsDigit(char c) => c >= '0' && c <= '9';
+
         /// <summary>The original value as a JSON fragment, so missing, null, empty and zero stay distinguishable. Missing is a null string.</summary>
         internal static string ValueJson(FieldValue value)
         {
@@ -209,7 +236,12 @@ namespace ReconciliationAutomation
                 case FieldKind.String: return JsonSerializer.Serialize(value.Text, ValueJsonOptions);
                 case FieldKind.Integer:
                 case FieldKind.Number:
-                case FieldKind.Boolean: return value.Text;
+                    // A number is written as its original token only if that really is a JSON number. A row source that does not
+                    // guarantee well-formed tokens (a DataTable) could hand over 01 or 1. or text: those are kept as a quoted string,
+                    // so the fragment is valid JSON and the original text is not lost.
+                    return IsJsonNumber(value.Text) ? value.Text : JsonSerializer.Serialize(value.Text ?? string.Empty, ValueJsonOptions);
+                case FieldKind.Boolean:
+                    return value.Text == "true" || value.Text == "false" ? value.Text : JsonSerializer.Serialize(value.Text ?? string.Empty, ValueJsonOptions);
                 default: return JsonSerializer.Serialize("(" + (value.Text ?? "unsupported value") + ")", ValueJsonOptions);
             }
         }

@@ -220,6 +220,98 @@ namespace ReconciliationAutomation.Tests
             Assert.Equal("\"(an array)\"", Eval(Text(), Arr, S("x")).LeftValueJson);
         }
 
+        [Theory]
+        [InlineData("0")]
+        [InlineData("-0")]
+        [InlineData("7")]
+        [InlineData("-12.5")]
+        [InlineData("1e2")]
+        [InlineData("1E+2")]
+        [InlineData("0.5e-3")]
+        [InlineData("12345678901234567890.123456789e10")]
+        public void AWellFormedNumberToken_IsKeptVerbatimInTheFragment(string token)
+        {
+            Assert.Equal(token, ComparisonCore.ValueJson(N(token)));
+            Assert.True(ComparisonCore.IsJsonNumber(token));
+        }
+
+        [Theory]
+        [InlineData("01")]
+        [InlineData("-01")]
+        [InlineData("00.5")]
+        [InlineData("1.")]
+        [InlineData(".5")]
+        [InlineData("1e")]
+        [InlineData("1e+")]
+        [InlineData("+1")]
+        [InlineData("-")]
+        [InlineData("")]
+        [InlineData(" 5")]
+        [InlineData("5 ")]
+        [InlineData("abc")]
+        [InlineData("NaN")]
+        [InlineData("Infinity")]
+        [InlineData("0x10")]
+        [InlineData("1,5")]
+        [InlineData("1 2")]
+        [InlineData("--1")]
+        [InlineData("1.2.3")]
+        [InlineData("{\"a\":1}")]
+        public void AMalformedNumberToken_FromAnyRowSource_IsQuotedSoTheFragmentIsAlwaysValidJson(string token)
+        {
+            Assert.False(ComparisonCore.IsJsonNumber(token));
+            foreach (FieldKind kind in new[] { FieldKind.Integer, FieldKind.Number })
+            {
+                string fragment = ComparisonCore.ValueJson(new FieldValue(kind, token));
+                using JsonDocument doc = JsonDocument.Parse(fragment);                         // must parse
+                Assert.Equal(JsonValueKind.String, doc.RootElement.ValueKind);                   // as a string carrying the original text
+                Assert.Equal(token, doc.RootElement.GetString());
+            }
+        }
+
+        [Theory]
+        [InlineData("yes")]
+        [InlineData("True")]
+        [InlineData("1")]
+        [InlineData("")]
+        [InlineData("tru")]
+        public void AMalformedBooleanText_IsQuoted_SoTheFragmentIsAlwaysValidJson(string text)
+        {
+            string fragment = ComparisonCore.ValueJson(new FieldValue(FieldKind.Boolean, text));
+            using JsonDocument doc = JsonDocument.Parse(fragment);
+            Assert.Equal(JsonValueKind.String, doc.RootElement.ValueKind);
+            Assert.Equal(text, doc.RootElement.GetString());
+            Assert.Equal("true", ComparisonCore.ValueJson(B(true)));
+            Assert.Equal("false", ComparisonCore.ValueJson(B(false)));
+        }
+
+        [Fact]
+        public void EveryFieldValue_ProducesAFragmentThatParsesAsJson_OrNullForMissing()
+        {
+            var values = new[]
+            {
+                Missing, Null, S(""), S("plain"), S("quo\"te\\ and \u2028 line sep and \t tab"), S("\U0001F389"),
+                I("0"), N("1.50"), new FieldValue(FieldKind.Number, "1."), new FieldValue(FieldKind.Integer, null),
+                new FieldValue(FieldKind.String, null), B(true), new FieldValue(FieldKind.Boolean, null), Obj, Arr, FieldValue.Unsupported,
+                new FieldValue(FieldKind.Unsupported, null)
+            };
+            foreach (FieldValue v in values)
+            {
+                string fragment = ComparisonCore.ValueJson(v);
+                if (v.Kind == FieldKind.Missing) { Assert.Null(fragment); continue; }
+                using JsonDocument doc = JsonDocument.Parse(fragment);                         // never malformed, whatever produced the value
+            }
+        }
+
+        [Fact]
+        public void TheOutcomeFragments_AreValidJson_EvenForMalformedTokensFromAnotherRowSource()
+        {
+            ComparisonOutcome o = Eval(Dec(), N("01"), N("1."));
+            AssertInvalid(o, "InvalidDecimal");
+            using (JsonDocument.Parse(o.LeftValueJson)) { }
+            using (JsonDocument.Parse(o.RightValueJson)) { }
+        }
+
         [Fact]
         public void TheInterpretedValues_AreTheTrimmedTextOrTheNormalizedNumber()
         {
@@ -377,6 +469,32 @@ namespace ReconciliationAutomation.Tests
             AssertInvalid(Eval(rule, S("1.00"), S("1.01")), "InvalidDecimal");
             rule.AbsoluteTolerance = "0.5";
             AssertEqual(Eval(rule, S("1.00"), S("1.50")));         // and it recovers
+        }
+
+        [Fact]
+        public void Decimal_TheToleranceCache_GivesEveryConcurrentReaderTheCompleteValue()
+        {
+            // Sanity check under contention (the volatile publication of an immutable object is what makes this hold on every
+            // architecture; a test cannot prove a memory model, but it would catch a reader ever seeing an empty, zero tolerance).
+            for (int round = 0; round < 200; round++)
+            {
+                ComparisonDef rule = Dec("0.01");
+                var seenZero = new System.Collections.Concurrent.ConcurrentBag<string>();
+                using var start = new System.Threading.ManualResetEventSlim(false);
+                var threads = Enumerable.Range(0, 6).Select(_ => new System.Threading.Thread(() =>
+                {
+                    start.Wait();
+                    for (int i = 0; i < 200; i++)
+                    {
+                        Assert.True(rule.TryGetTolerance(out ExactDecimal value, out string error), error);
+                        if (value.ToString() != "0.01") seenZero.Add(value.ToString());
+                    }
+                })).ToList();
+                threads.ForEach(t => t.Start());
+                start.Set();
+                threads.ForEach(t => Assert.True(t.Join(System.TimeSpan.FromSeconds(10))));
+                Assert.Empty(seenZero);
+            }
         }
 
         [Fact]

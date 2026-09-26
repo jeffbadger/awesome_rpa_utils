@@ -58,26 +58,37 @@ namespace ReconciliationAutomation
 
         private sealed class ParsedTolerance
         {
-            internal string Text;
-            internal ExactDecimal Value;
-            internal string Error;
+            internal ParsedTolerance(string text)
+            {
+                Text = text;
+                ExactDecimal.TryParseText(text, out ExactDecimal parsed, out string error);
+                Value = parsed;
+                Error = error;
+            }
+
+            internal readonly string Text;
+            internal readonly ExactDecimal Value;
+            internal readonly string Error;
         }
 
-        private ParsedTolerance parsedTolerance;
+        // volatile: the object is fully built (readonly fields, set in its constructor) before this reference is published, and a
+        // reader that sees the reference is guaranteed to see those fields, on every processor architecture.
+        private volatile ParsedTolerance parsedTolerance;
 
         /// <summary>
         /// The tolerance as an exact number, parsed once and remembered (a run compares every pair against it). Keyed on the text, so
-        /// changing <see cref="AbsoluteTolerance"/> is honored. The remembered result is one immutable object swapped in with a single
-        /// reference assignment, so concurrent readers can never see a half-updated value. A tolerance is validated when a rule is added, so
-        /// a failure here means the rule was built some other way; it is reported, never thrown.
+        /// changing <see cref="AbsoluteTolerance"/> is honored. Safe for concurrent readers: the remembered result is one immutable object
+        /// published through a volatile reference, so a reader sees either the previous result or the complete new one, never a partly
+        /// written one. A tolerance is validated when a rule is added, so a failure here means the rule was built some other way; it is
+        /// reported, never thrown.
         /// </summary>
         internal bool TryGetTolerance(out ExactDecimal value, out string error)
         {
             ParsedTolerance parsed = parsedTolerance;
-            if (parsed == null || parsed.Text != AbsoluteTolerance)
+            string text = AbsoluteTolerance;
+            if (parsed == null || parsed.Text != text)
             {
-                parsed = new ParsedTolerance { Text = AbsoluteTolerance };
-                ExactDecimal.TryParseText(AbsoluteTolerance, out parsed.Value, out parsed.Error);
+                parsed = new ParsedTolerance(text);
                 parsedTolerance = parsed;
             }
             value = parsed.Value;
