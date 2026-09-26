@@ -54,14 +54,7 @@ namespace ReconciliationAutomation.Tests
         }
 
         /// <summary>Methods that succeed on a live component even when given junk (they take no meaningful input).</summary>
-        private static readonly string[] SucceedsOnAnyInput = { "ClearDefinition", "GetDefinitionJson" };
-
-        /// <summary>Methods whose behavior arrives in a later work package: they still report "not implemented yet".</summary>
-        private static readonly string[] StillStubbed =
-        {
-            "GetSummary", "GetSummaryJson", "ResetResultCursor",
-            "TryReadNextException", "TryReadNextDifference", "GetResultJson", "ClearResults"
-        };
+        private static readonly string[] SucceedsOnAnyInput = { "ClearDefinition", "GetDefinitionJson", "ClearResults" };
 
         private static object[] BadArguments(MethodInfo m) =>
             m.GetParameters().Select(p =>
@@ -96,19 +89,6 @@ namespace ReconciliationAutomation.Tests
                 Assert.Contains(m.Name, message);
                 AssertSentinels(m, outs);
             }
-        }
-
-        [Fact]
-        public void TheStubbedMethods_ReportThatTheyAreNotImplementedYet()
-        {
-            using var component = new ReconciliationUtils();
-            foreach (MethodInfo m in ConventionTests.PublicMethods().Where(m => StillStubbed.Contains(m.Name)))
-            {
-                var (result, message, _) = Call(component, m);
-                Assert.False(result);
-                Assert.Contains("not implemented yet", message);
-            }
-            Assert.Equal(StillStubbed.Length, ConventionTests.PublicMethods().Count(m => StillStubbed.Contains(m.Name)));
         }
 
         [Fact]

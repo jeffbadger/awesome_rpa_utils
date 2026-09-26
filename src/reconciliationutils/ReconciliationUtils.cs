@@ -13,9 +13,9 @@ namespace ReconciliationAutomation
     /// </summary>
     /// <remarks>
     /// Work in progress (see the design plan). The definition operations (setup, JSON load/validate/export, limits) are
-    /// implemented, and <c>ReconcileJson</c> runs a reconciliation; the result-reading methods still report that they are not implemented yet.
+    /// implemented, <c>ReconcileJson</c> runs a reconciliation, and the result readers work; the documentation and release packaging are still to come.
     /// </remarks>
-    [Description("Reconciles two datasets by business key and reports matches, differences, missing and duplicate records through scalar ports. Under construction: the definition operations and ReconcileJson work; reading the results is not implemented yet. Never throws.")]
+    [Description("Reconciles two datasets by business key and reports matches, differences, missing and duplicate records through scalar ports. Under construction: definition, ReconcileJson and result reading all work; documentation and release packaging are still to come. Never throws.")]
     public sealed class ReconciliationUtils : Component
     {
         private readonly object syncRoot = new object();
@@ -24,6 +24,9 @@ namespace ReconciliationAutomation
 
         // The published outcome of the last completed run, or null. Replaced whole, never edited, so a reader can never see it half-built.
         private ReconciliationSnapshot results;
+        private int exceptionPosition;                 // next index in results to examine
+        private ReconciliationResult currentException;   // the exception most recently read; its differences feed the inner cursor
+        private int differencePosition;
 
         /// <summary>Test seam: runs inside <see cref="LoadDefinitionJson"/> after the definition is parsed and before it is committed, while the instance lock is held.</summary>
         internal Action DuringLoad;
@@ -168,7 +171,19 @@ namespace ReconciliationAutomation
             rightRowCount = 0;
             matchedPairCount = 0;
             exceptionCount = 0;
-            try { return NotYetImplemented(nameof(GetSummary), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(GetSummary), out ReconciliationSnapshot run, out message)) return false;
+                    ReconciliationSummary x = run.Summary;
+                    leftRowCount = x.LeftRowCount;
+                    rightRowCount = x.RightRowCount;
+                    matchedPairCount = x.MatchedPairCount;
+                    exceptionCount = x.ExceptionCount;
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetSummary), ex); return false; }
         }
 
@@ -179,7 +194,15 @@ namespace ReconciliationAutomation
         {
             message = null;
             summaryJson = null;
-            try { return NotYetImplemented(nameof(GetSummaryJson), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(GetSummaryJson), out ReconciliationSnapshot run, out message)) return false;
+                    summaryJson = ResultJson.Summary(run.Summary);
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetSummaryJson), ex); return false; }
         }
 
@@ -189,7 +212,15 @@ namespace ReconciliationAutomation
         public bool ResetResultCursor(out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(ResetResultCursor), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(ResetResultCursor), out _, out message)) return false;
+                    ResetCursors();
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ResetResultCursor), ex); return false; }
         }
 
@@ -207,7 +238,31 @@ namespace ReconciliationAutomation
             rightRowIndex = -1;
             reason = null;
             differenceCount = 0;
-            try { return NotYetImplemented(nameof(TryReadNextException), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(TryReadNextException), out ReconciliationSnapshot run, out message)) return false;
+                    while (exceptionPosition < run.Results.Count)
+                    {
+                        ReconciliationResult r = run.Results[exceptionPosition++];
+                        if (r.Kind == ResultKind.Matched) continue;      // only exceptions are read; matched pairs are counted in the summary
+                        currentException = r;
+                        differencePosition = 0;                          // reading an exception restarts the difference cursor
+                        hasItem = true;
+                        resultId = r.Id;
+                        kind = r.Kind.ToString();
+                        keyJson = r.NormalizedKey == null ? null : ReconciliationKey.ToDisplayJson(r.NormalizedKey);
+                        leftRowIndex = r.LeftRowIndex;
+                        rightRowIndex = r.RightRowIndex;
+                        reason = r.ReasonCode;
+                        differenceCount = r.Differences.Count;
+                        return true;
+                    }
+                    currentException = null;                             // exhausted: stays exhausted until a reset or a new run
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(TryReadNextException), ex); return false; }
         }
 
@@ -223,7 +278,22 @@ namespace ReconciliationAutomation
             leftValueJson = null;
             rightValueJson = null;
             explanation = null;
-            try { return NotYetImplemented(nameof(TryReadNextDifference), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(TryReadNextDifference), out _, out message)) return false;
+                    if (currentException == null || differencePosition >= currentException.Differences.Count) return true;
+                    ComparisonOutcome d = currentException.Differences[differencePosition++];
+                    hasItem = true;
+                    ruleName = d.RuleName;
+                    reasonCode = d.ReasonCode;
+                    leftValueJson = d.LeftValueJson;
+                    rightValueJson = d.RightValueJson;
+                    explanation = d.Explanation;
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(TryReadNextDifference), ex); return false; }
         }
 
@@ -234,7 +304,21 @@ namespace ReconciliationAutomation
         {
             message = null;
             resultJson = null;
-            try { return NotYetImplemented(nameof(GetResultJson), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(GetResultJson), out ReconciliationSnapshot run, out message)) return false;
+                    ReconciliationResult found = FindResult(run, resultId);
+                    if (found == null)
+                    {
+                        message = nameof(GetResultJson) + " failed: there is no result with that ID in the current results; IDs look like r000001 and come from TryReadNextException.";
+                        return false;
+                    }
+                    resultJson = ResultJson.Result(found);
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetResultJson), ex); return false; }
         }
 
@@ -244,7 +328,15 @@ namespace ReconciliationAutomation
         public bool ClearResults(out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(ClearResults), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (disposed) { message = DisposedMessage(nameof(ClearResults)); return false; }
+                    InvalidateResults();
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ClearResults), ex); return false; }
         }
 
@@ -381,9 +473,31 @@ namespace ReconciliationAutomation
         }
 
         /// <summary>Discards the results of the last run (a successful setup change makes them stale). Called with the instance lock held.</summary>
-        private void InvalidateResults() { results = null; }
+        private void InvalidateResults() { results = null; ResetCursors(); }
 
-        /// <summary>The last completed run, or null (test seam; the public readers arrive with the results work package).</summary>
+        private void ResetCursors() { exceptionPosition = 0; currentException = null; differencePosition = 0; }
+
+        /// <summary>Fails with the standard disposed message or an actionable no-results message; otherwise hands back the published run. Called with the lock held.</summary>
+        private bool Available(string operation, out ReconciliationSnapshot run, out string message)
+        {
+            run = results;
+            message = null;
+            if (disposed) { message = DisposedMessage(operation); return false; }
+            if (run == null) { message = operation + " failed: there are no results; call ReconcileJson first (a failed run, a setup change or ClearResults discards them)."; return false; }
+            return true;
+        }
+
+        /// <summary>Result IDs are <c>r</c> plus the 1-based position, so a lookup is an index check rather than a scan.</summary>
+        private static ReconciliationResult FindResult(ReconciliationSnapshot run, string resultId)
+        {
+            if (resultId == null || resultId.Length < 2 || resultId.Length > 12 || resultId[0] != 'r') return null;
+            if (!int.TryParse(resultId.Substring(1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int position)) return null;
+            if (position < 1 || position > run.Results.Count) return null;
+            ReconciliationResult candidate = run.Results[position - 1];
+            return candidate.Id == resultId ? candidate : null;
+        }
+
+        /// <summary>The last completed run, or null (test seam).</summary>
         internal ReconciliationSnapshot Snapshot { get { lock (syncRoot) return results; } }
 
 
@@ -401,7 +515,7 @@ namespace ReconciliationAutomation
             lock (syncRoot)
             {
                 if (disposed) { message = DisposedMessage(nameof(ReconcileJson)); return false; }
-                results = null;                                     // stale results must not survive an attempted run, whatever its outcome
+                InvalidateResults();                                // stale results must not survive an attempted run, whatever its outcome
 
                 if (definition.Keys.Count == 0)
                 {
@@ -421,7 +535,7 @@ namespace ReconciliationAutomation
                         message = nameof(ReconcileJson) + " failed: " + failure + ".";
                         return false;
                     }
-                    results = snapshot;
+                    results = snapshot;                     // the cursors were reset when the run began, under the same lock
                     exceptionCount = snapshot.Summary.ExceptionCount;
                     return true;
                 }
@@ -435,26 +549,12 @@ namespace ReconciliationAutomation
 
         private static string DisposedMessage(string operation) => operation + " failed: the component has been disposed.";
 
-        private bool NotYetImplemented(string operation, out string message)
-        {
-            lock (syncRoot)
-            {
-                if (disposed)
-                {
-                    message = DisposedMessage(operation);
-                    return false;
-                }
-            }
-            message = operation + " is not implemented yet.";
-            return false;
-        }
-
         /// <summary>Releases retained inputs and results. Idempotent.</summary>
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                lock (syncRoot) { disposed = true; results = null; }
+                lock (syncRoot) { disposed = true; results = null; ResetCursors(); }
             }
             base.Dispose(disposing);
         }
