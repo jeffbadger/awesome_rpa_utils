@@ -45,19 +45,27 @@ namespace ReconciliationAutomation.Tests
             var clock = Stopwatch.StartNew();
             bool ok = c.ReconcileJson(left, right, out int exceptions, out string message);
             clock.Stop();
-            long afterRun = GC.GetTotalMemory(false);
+            long endOfRun = GC.GetTotalMemory(false);                    // includes garbage from parsing that has not been collected yet
+            long retained = GC.GetTotalMemory(true) - before;            // after a full collection; both inputs are alive in both figures, so this is what the results hold
             Process p = Process.GetCurrentProcess();
-            c.GetSummaryJson(out string summary, out _);
+            Assert.True(c.GetSummaryJson(out string summary, out string summaryMessage), summaryMessage);
             var readClock = Stopwatch.StartNew();
             int read = 0;
-            while (c.TryReadNextException(out bool has, out _, out _, out _, out _, out _, out _, out _, out _) && has)
+            while (true)
             {
+                Assert.True(c.TryReadNextException(out bool has, out _, out _, out _, out _, out _, out _, out _, out string readMessage), readMessage);
+                if (!has) break;
                 read++;
-                while (c.TryReadNextDifference(out bool more, out _, out _, out _, out _, out _, out _) && more) { }
+                while (true)
+                {
+                    Assert.True(c.TryReadNextDifference(out bool more, out _, out _, out _, out _, out _, out string differenceMessage), differenceMessage);
+                    if (!more) break;
+                }
             }
             readClock.Stop();
+            Assert.Equal(exceptions, read);                              // the cursor delivered every exception the run reported
             string line = $"{workload}: ok={ok} message={message} inputChars={left.Length}+{right.Length} exceptions={exceptions} read={read} runMs={clock.ElapsedMilliseconds} readMs={readClock.ElapsedMilliseconds} " +
-                          $"managedBeforeMB={before / 1048576} managedAfterRunMB={afterRun / 1048576} peakWorkingSetMB={p.PeakWorkingSet64 / 1048576} gen2={GC.CollectionCount(2)} " +
+                          $"inputsHeapMB={before / 1048576} heapAtEndOfRunMB={endOfRun / 1048576} retainedByResultsMB={retained / 1048576} peakWorkingSetMB={p.PeakWorkingSet64 / 1048576} gen2={GC.CollectionCount(2)} " +
                           $"runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} cores={Environment.ProcessorCount}";
             string outFile = Environment.GetEnvironmentVariable("RECON_MEASURE_OUT");
             if (outFile != null) File.AppendAllText(outFile, line + Environment.NewLine);
