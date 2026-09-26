@@ -51,7 +51,6 @@ method calls or one JSON text; results come out as counts, two scalar cursors, o
 - Datasets arrive as JSON text or as DataTables. A DataTable's date and time cells are
   unsupported values (put dates in a text column until the date comparison rules arrive), and
   `double`/`float` cells carry binary rounding; both are documented in DataTables.md.
-- A DataTable pointer names one column (`/Amount`), not a path; a mistyped column fails the
-  whole run with a message naming the side and the column instead of a per-row result.
-- Pointers are typed strings; a typo is caught only when a run reports the field missing
-  (`MissingField`), not at design time. `ValidateDefinitionJson` catches malformed pointers.
+- A DataTable pointer names one column (`/Amount`), not a path. A mistyped or missing column is
+  read as a missing field on every row (not a failure, matching JSON), so it appears in the summary
+  counts; check `invalidLeftRowCount`/`invalidRightRowCount` after a run.

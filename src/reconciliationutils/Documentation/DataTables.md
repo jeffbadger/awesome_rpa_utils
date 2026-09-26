@@ -13,7 +13,7 @@ recon.AddDecimalComparisonSimple("Amount", "/Amount", "/Paid", out message);
 
 if (!recon.ReconcileDataTables(erpTable, bankTable, out int exceptionCount, out message))
 {
-    // Not run: a missing column, a limit, no keys ... `message` names the side and the reason, never a value.
+    // Not run: a limit, no keys, a pointer that names more than one column ... `message` names the side and the reason, never a value.
 }
 ```
 
@@ -22,9 +22,11 @@ if (!recon.ReconcileDataTables(erpTable, bankTable, out int exceptionCount, out 
 - A pointer must be exactly one segment, the column name: `/Amount`. Deeper pointers such as `/a/b` are refused with a
   message naming the mapping. For a column whose name contains a slash, write `~1`: the column `Ref/No` is `/Ref~1No`.
 - Column names are matched exactly, including case. Left and right may use different names, as above.
-- A referenced column that a table does not have fails the whole run (`Right table has no column named 'Status'`). This is
-  stricter than JSON, where a missing property is a per-row `MissingField` result, because a whole missing column is a
-  setup mistake, not a data problem.
+- A referenced column that a table does not have is read as **missing on every row**, exactly like a missing JSON property.
+  For a comparison column, every pair reports `MissingField` (an `InvalidComparison`). For a key column, every row of that
+  table is an `InvalidRecord` (`MissingKey`); such rows are never reported as `OnlyLeft` or `OnlyRight`, because a row that has no
+  key cannot be said to have, or lack, a counterpart. The run does not fail, so a mistyped column name shows up as a large
+  `invalidLeftRowCount`/`invalidRightRowCount` (or `MissingField` differences) in the summary; check the counts after a run.
 - Only the columns the definition references are read. Other columns are ignored (they still count toward the column and cell limits).
 
 ## How values are read

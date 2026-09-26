@@ -48,7 +48,7 @@ namespace ReconciliationAutomation
 
         /// <summary>
         /// Reads <paramref name="table"/>. The checks run in a fixed order and before any value is interpreted: rows, columns, cells, then per value
-        /// and per table while reading. A failure names the side and the limit (or the column), never a value.
+        /// and per table while reading. A failure names the side and the limit, never a value.
         /// </summary>
         internal static bool TryRead(DataTable table, string side, IEnumerable<string[]> pointers, ReconciliationLimits limits, TableLimits tableLimits, out DataTableInput input, out string failure)
         {
@@ -74,7 +74,7 @@ namespace ReconciliationAutomation
             {
                 string name = segments[0];
                 if (slotByColumn.ContainsKey(name)) continue;
-                if (!columnByName.TryGetValue(name, out DataColumn found)) { failure = side + " table has no column named '" + name + "' (column names are case-sensitive)."; return false; }
+                if (!columnByName.TryGetValue(name, out DataColumn found)) continue;   // no such column: every row reads it as Missing, exactly like a missing JSON property
                 slotByColumn[name] = used.Count;
                 used.Add(found);
             }

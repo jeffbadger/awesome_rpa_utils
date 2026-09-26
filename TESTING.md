@@ -784,7 +784,7 @@ The platform-independent xunit coverage is in
   with `ReconcileDataTables` and `/Column` pointers, and verify the same results as the JSON path. Confirm the DataTable
   ports accept the producing component's output directly. Include a numeric column, a blank cell (DBNull), a date column
   used as a key (the row must be an `InvalidRecord`, not an error) and a column the definition names that the table lacks
-  (the run must fail with a message naming the side and column). Lower `ConfigureTableLimits` and verify the failure.
+  (the run must succeed, with `MissingField` differences or `InvalidRecord`/`MissingKey` rows, never a failure or OnlyLeft/OnlyRight). Lower `ConfigureTableLimits` and verify the failure.
 
 The platform-independent xunit coverage is in
 `src/reconciliationutils/ReconciliationUtils.Tests`

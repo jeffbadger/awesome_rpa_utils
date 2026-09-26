@@ -80,17 +80,49 @@ namespace ReconciliationAutomation.Tests
         }
 
         [Fact]
-        public void AMissingColumn_FailsTheWholeRun_NamingTheSideAndTheColumn()
+        public void AMissingCompareColumn_IsAMissingFieldOnEveryPair_LikeAMissingJsonProperty()
         {
             using var c = Component();
-            DataTable good = Invoices();
+            DataTable left = Invoices(new object[] { "A", 1m, "x" }, new object[] { "B", 2m, "x" });
             DataTable noStatus = Table(("Invoice", typeof(string)), ("Amount", typeof(decimal)));
-            Assert.False(c.ReconcileDataTables(good, noStatus, out int count, out string m));
-            Assert.Equal(0, count);
-            Assert.Contains("Right table has no column named 'Status'", m);
-            Assert.False(c.ReconcileDataTables(Table(("invoice", typeof(string))), good, out _, out m));   // names are case-sensitive
-            Assert.Contains("Left table has no column named 'Invoice'", m);
-            Assert.False(c.GetSummary(out _, out _, out _, out _, out _));                             // a failed run leaves nothing to read
+            noStatus.Rows.Add("A", 1m); noStatus.Rows.Add("B", 2m);
+            Assert.True(c.ReconcileDataTables(left, noStatus, out int count, out string m), m);
+            Assert.Null(m);
+            Assert.Equal(2, count);                                                       // both pairs: the Status rule cannot be evaluated on the right
+            Assert.True(c.TryReadNextException(out _, out _, out string kind, out _, out _, out _, out string reason, out int differences, out _));
+            Assert.Equal(("InvalidComparison", "MissingField", 1), (kind, reason, differences));
+            Assert.True(c.TryReadNextDifference(out _, out string rule, out _, out string leftValue, out string rightValue, out _, out _));
+            Assert.Equal("Status", rule);
+            Assert.Equal("\"x\"", leftValue);
+            Assert.Null(rightValue);                                                      // missing, not null
+        }
+
+        [Fact]
+        public void AMissingKeyColumn_MakesEveryRowOnThatSideAnInvalidRecord_NotOnlyLeftOrOnlyRight()
+        {
+            using var c = Component();
+            DataTable good = Invoices(new object[] { "A", 1m, "x" }, new object[] { "B", 2m, "x" });
+            DataTable noKey = Table(("Amount", typeof(decimal)), ("Status", typeof(string)));
+            noKey.Rows.Add(1m, "x"); noKey.Rows.Add(2m, "x"); noKey.Rows.Add(3m, "x");
+            Assert.True(c.ReconcileDataTables(good, noKey, out int count, out string m), m);
+            Assert.Equal(5, count);                                                       // 3 unkeyable right rows + 2 left rows with no right counterpart
+            Assert.True(c.GetSummary(out _, out _, out int matched, out _, out _));
+            Assert.Equal(0, matched);
+            Assert.True(c.GetSummaryJson(out string json, out m));
+            Assert.Contains("\"invalidRightRowCount\":3", json);
+            Assert.Contains("\"invalidLeftRowCount\":0", json);
+            Assert.Contains("\"onlyLeftCount\":2", json);
+            Assert.Contains("\"onlyRightCount\":0", json);                             // an unkeyable row is never claimed to be "only right"
+            var kinds = new List<string>();
+            while (c.TryReadNextException(out bool has, out _, out string kind, out _, out _, out _, out string reason, out _, out _) && has) kinds.Add(kind + ":" + reason);
+            Assert.Equal(new[] { "OnlyLeft:", "OnlyLeft:", "InvalidRecord:MissingKey", "InvalidRecord:MissingKey", "InvalidRecord:MissingKey" }, kinds);
+
+            // column names are case-sensitive: a column called "invoice" is not the key column "Invoice"
+            DataTable lower = Table(("invoice", typeof(string))); lower.Rows.Add("A");
+            Assert.True(c.ReconcileDataTables(lower, good, out count, out m), m);
+            Assert.True(c.GetSummaryJson(out json, out m));
+            Assert.Contains("\"invalidLeftRowCount\":1", json);
+            Assert.Contains("\"onlyRightCount\":2", json);
         }
 
         [Fact]
