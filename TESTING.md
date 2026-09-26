@@ -793,6 +793,7 @@ The platform-independent xunit coverage is in
   is identical when called twice. Call `ConfigureOutputLimit` with a small value and verify the export fails with a message naming the
   limit while `GetSummary` and the cursors still work; raise the limit and verify the same export now succeeds. Confirm the report text can be
   bound to a String variable and saved with the Robot Studio file components.
+- **Excel worksheets:** follow `Documentation/ExcelWorksheets.md` with two real worksheets (one with a totals row, blank cells, a formatted-text number and a date column). Confirm which .NET type the export gives each kind of cell (text, number, date) and what a blank cell becomes, and that the page's statements about each hold.
 - **DataTables:** load an Excel range (or CSV) into a DataTable with the Robot Studio components, reconcile two of them
   with `ReconcileDataTables` and `/Column` pointers, and verify the same results as the JSON path. Confirm the DataTable
   ports accept the producing component's output directly. Include a numeric column, a blank cell (DBNull), a date column
