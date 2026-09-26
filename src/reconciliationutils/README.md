@@ -1,24 +1,57 @@
 # ReconciliationAutomation
 
-A Pega Robot Studio-ready component (`ReconciliationUtils`) that reconciles two
-datasets by business key and explains every disagreement, exposing exceptions
-through scalar ports so an automation can route them to review or correction.
-
-> **Status: released (v0.3.27); Release 2 in progress.** The DataTable bridge (`ReconcileDataTables`,
-> `ConfigureTableLimits`), the Boolean and Money rules, the calendar-date and instant rules, and results export (`ExportResultsJson`, `ConfigureOutputLimit`) are the Release 2 additions.
-> See the [documentation](Documentation/README.md) for a quick start and worked examples, and the
-> [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) for what remains.
+A Pega Robot Studio component (`ReconciliationUtils`) that reconciles two datasets by business key and explains every disagreement. Give it two
+JSON arrays or two `DataTable`s (for example two Excel worksheets, or an ERP export and a bank statement), tell it which fields identify a record and
+which fields to compare, and it reports which records match, differ, exist on one side only, are ambiguous, or could not be compared. Exceptions come out
+through scalar ports, so an automation can route each one to review or correction, and the whole run can be exported as one deterministic report.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ReconciliationAutomation`
 - Assembly: `ReconciliationAutomation`
+- Everything is in memory: nothing is written to disk and nothing leaves the machine. Messages never contain your data.
+
+## What it does
+
+- **Input:** two JSON arrays of objects (`ReconcileJson`) or two DataTables (`ReconcileDataTables`).
+- **Keys:** one or several fields, matched as structured tuples (never joined into one string), with optional trimming and case-insensitive matching.
+- **Rules:** text, exact decimals with a tolerance, Booleans, currency-gated money, calendar dates and time instants. Every rule is exact and independent of the machine's
+  culture and time zone.
+- **Results:** matched pairs, differences, records on one side only, duplicate keys, unusable rows and unusable comparisons, each with a stable reason code; counts that
+  always add up; two scalar cursors (exceptions, then the field differences of each) and full detail per result.
+- **Report:** `ExportResultsJson` returns the definition, the summary and every result as one deterministic JSON text.
+- **Limits:** rows, characters, results, differences, DataTable columns and cells, and report size are all bounded, and a run over a limit fails whole instead of truncating.
+- **Never throws:** every method returns `bool` plus a message.
+
+## Quick look
+
+```csharp
+// erpJson and bankJson: the two datasets as JSON text, for example String variables holding arrays of objects.
+var recon = new ReconciliationUtils();
+recon.AddKeyMappingSimple("Invoice", "/invoice", "/invoiceId", out string message);
+recon.AddDecimalComparisonSimple("Amount", "/amount", "/paid", out message);
+
+if (recon.ReconcileJson(erpJson, bankJson, out int exceptionCount, out message))
+{
+    while (recon.TryReadNextException(out bool hasItem, out string id, out string kind, out string keyJson,
+               out int leftRow, out int rightRow, out string reason, out int differenceCount, out message) && hasItem)
+    {
+        // kind: Different, OnlyLeft, OnlyRight, DuplicateKey, InvalidComparison or InvalidRecord
+    }
+}
+```
+
+## Documentation
+
+The [Documentation](Documentation/README.md) folder has worked examples: the [QuickStart](Documentation/QuickStart.md), [Configuration](Documentation/Configuration.md),
+[ComparisonRules](Documentation/ComparisonRules.md), [DataTables](Documentation/DataTables.md), [ExcelWorksheets](Documentation/ExcelWorksheets.md),
+[ResultsAndCounts](Documentation/ResultsAndCounts.md), [Export](Documentation/Export.md), [QueueHandoff](Documentation/QueueHandoff.md) and [Limits](Documentation/Limits.md).
+The design is in the [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md).
 
 ## Method reference
 
 All 31 methods and their signatures. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
-operation; success has no message. The
-[plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) adds the rest.
+operation; success has no message.
 
 ## Defining a reconciliation
 
@@ -43,9 +76,10 @@ loaded from JSON produce identical text.
 }
 ```
 
+- **Comparison kinds** are `Text`, `Decimal`, `Boolean`, `Money`, `CalendarDate` and `Instant`; see [Configuration](Documentation/Configuration.md) for each one's options and [ComparisonRules](Documentation/ComparisonRules.md) for how each decides.
 - **Pointers** select a field: a leading `/` and property names, `/company` or `/customer/id`.
   Use `~1` for a `/` and `~0` for a `~` inside a name. Lookup is case-sensitive and a dot has
-  no special meaning; arrays cannot be walked into.
+  no special meaning; arrays cannot be walked into. For a DataTable, a pointer is one column name (`/Amount`).
 - **Keys** may be JSON strings or JSON **integers** (an integer is used as its exact text, so
   `123` and `"123"` are the same key, but `7` and `"007"` are not). A fraction, an exponent,
   a Boolean, an object or an array as a key makes that row invalid, as does a missing, null or
