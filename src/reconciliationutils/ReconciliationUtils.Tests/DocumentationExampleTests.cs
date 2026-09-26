@@ -26,7 +26,7 @@ namespace ReconciliationAutomation.Tests
             throw new FileNotFoundException("Could not find src/reconciliationutils above " + AppContext.BaseDirectory);
         }
 
-        private static string Page(string name) => File.ReadAllText(Path.Combine(ComponentDirectory(), "Documentation", name));
+        private static string Page(string name) => File.ReadAllText(Path.Combine(ComponentDirectory(), "Documentation", name)).Replace("\r\n", "\n");   // a Windows checkout has CRLF
 
         /// <summary>The bodies of the fenced code blocks of one language, in page order.</summary>
         private static List<string> Blocks(string page, string language) =>

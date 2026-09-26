@@ -66,7 +66,9 @@ read the results with the cursors and `GetResultJson` instead. The check is made
 oversized text first: a value that cannot fit is refused before it is written, so the report buffer never holds more than the limit (at most three bytes per allowed
 character, because a character can take up to three bytes in UTF-8) plus the encoded size of one value.
 
-A run with many results carrying many differences can exceed the default: each result is a few hundred characters, so 100,000 results can pass 16 million
-characters. `ClearDefinition` restores the default limit; `LoadDefinitionJson` leaves it alone.
+A run with many results carrying many differences can exceed the default. Measured: a result with two field differences is about 875 characters, so 50,000 of
+them (a full-size default run where every row differs) produce a report of about 43.8 million characters and are refused under the default limit; a matched
+pair with a short key is about 230 characters. If you expect many exceptions, raise the limit before exporting (up to 64,000,000). `ClearDefinition` restores the default limit;
+`LoadDefinitionJson` leaves it alone.
 
 Export works the same after `ReconcileDataTables` as after `ReconcileJson`.

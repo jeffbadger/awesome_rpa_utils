@@ -8,19 +8,22 @@ over differences.
 
 ## Summary
 
-Every port is a scalar (`string`, `bool`, `int`) or the `ComparisonNullPolicy` enum. No
-collection, object or generic type crosses the public surface. Datasets go in as JSON text
-(typically the output of an existing JSON/Excel/SQL step); the definition goes in as
-method calls or one JSON text; results come out as counts, two scalar cursors, or JSON.
+Every port is a scalar (`string`, `bool`, `int`) or the `ComparisonNullPolicy` enum, with one deliberate exception: `ReconcileDataTables` takes two
+`DataTable`s, which the Robot Studio Excel, CSV and SQL components already produce (the precedent is `DataContractUtils`). No other collection, object or
+generic type crosses the public surface. Datasets go in as JSON text or as DataTables; the definition goes in as method calls or one JSON text; results
+come out as counts, two scalar cursors, or JSON text.
 
 | Area | Rating | Notes |
 |---|---|---|
-| Definition | Direct | `Add...Simple` methods take three strings; the full forms add `bool` trim/ignore-case and a drop-down null policy; the whole definition can be one JSON asset validated with `ValidateDefinitionJson`. |
-| Running | Chainable | `ReconcileJson(left, right)` takes two strings; `ReconcileDataTables(left, right)` takes two DataTables, which Robot Studio's Excel, CSV and SQL components already produce, so the producer connects directly with no proxy or JSON step; `True` means the run completed even with mismatches, so a step never depends on parsing `message`. |
+| Definition | Direct | `Add...Simple` methods take three strings (Money adds two currency pointers, dates two format strings); the full forms add `bool`s, an `int` tolerance and a drop-down null policy; the whole definition can be one JSON asset validated with `ValidateDefinitionJson`. |
+| Running JSON | Direct | `ReconcileJson(left, right)` takes two strings; `True` means the run completed even with mismatches, so a step never depends on parsing `message`. |
+| Running tables | Chainable | `ReconcileDataTables(left, right)` takes two DataTables, so the output of a producing component connects directly with no proxy or JSON step. Pointers name columns (`/Amount`). |
 | Summary | Direct | `GetSummary` returns four `int` ports; `GetSummaryJson` returns the rest. |
 | Exceptions | Direct | `TryReadNextException` follows the `TryTakeNext` idea: `hasItem` is the `While` condition, `kind` feeds a `StringSwitch`, row indices are `int` with a documented `-1`. |
 | Differences | Direct | `TryReadNextDifference` is an inner cursor over the exception just read, replacing a `GetDifferenceCount`/`GetDifferenceAt(i)` index loop. |
-| Detail | Direct | `GetResultJson(resultId)` for what scalars cannot carry (every member of a duplicate group). |
+| Detail | Direct | `GetResultJson(resultId)` for what scalars cannot carry (every member of a duplicate group, currencies, normalized values). |
+| Export | Direct | `ExportResultsJson(runLabel)` returns the whole report as one string; `ConfigureOutputLimit` takes one `int`. |
+| Limits | Direct | `ConfigureLimits`, `ConfigureTableLimits` and `ConfigureOutputLimit` take only `int`s; every failure names the limit. |
 
 ## Findings applied
 
