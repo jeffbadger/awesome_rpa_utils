@@ -12,6 +12,8 @@
 
 For `ReconcileDataTables` there are three more (columns, cells, characters in one value; see [DataTables](DataTables.md)), set with `ConfigureTableLimits`.
 
+`ExportResultsJson` has one more, the output limit (16,000,000 characters by default, 64,000,000 at most), set with `ConfigureOutputLimit`; see [Export](Export.md).
+
 Also fixed: JSON depth 64, 256 characters per number, and at most 100 findings in a validation report.
 
 ## What happens when a limit is hit

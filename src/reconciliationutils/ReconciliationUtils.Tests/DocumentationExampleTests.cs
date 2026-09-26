@@ -281,5 +281,26 @@ namespace ReconciliationAutomation.Tests
             Assert.Null(DateCore.CheckFormat("yyyy 'day' dd MM"));
             Assert.NotNull(DateCore.CheckFormat("yyyy-MM-dd HH:mm"));
         }
+
+        [Fact]
+        public void TheExportPage_EnvelopeAndLimitAreTheRealOnes()
+        {
+            string page = Page("Export.md");
+            using JsonDocument shown = JsonDocument.Parse(Blocks(page, "json").Single());
+            using var c = new ReconciliationUtils();
+            Assert.True(c.AddKeyMappingSimple("Id", "/id", "/id", out string m), m);
+            Assert.True(c.ReconcileJson("[{\"id\":\"1\"}]", "[{\"id\":\"1\"}]", out _, out m), m);
+            Assert.True(c.ExportResultsJson("invoice-close-2026-09-25", out string report, out m), m);
+            using JsonDocument real = JsonDocument.Parse(report);
+            Assert.Equal(real.RootElement.EnumerateObject().Select(p => p.Name), shown.RootElement.EnumerateObject().Select(p => p.Name));
+            Assert.Equal(real.RootElement.GetProperty("runLabel").GetString(), shown.RootElement.GetProperty("runLabel").GetString());
+            Assert.Equal(real.RootElement.GetProperty("schemaVersion").GetInt32(), shown.RootElement.GetProperty("schemaVersion").GetInt32());
+
+            var row = Regex.Match(page, "^\\| `maximumOutputCharacters` \\| ([\\d,]+) \\| ([\\d,]+) \\|", RegexOptions.Multiline);
+            Assert.True(row.Success);
+            Assert.Equal(ReconciliationLimits.DefaultOutputCharacters, int.Parse(row.Groups[1].Value.Replace(",", "")));
+            Assert.Equal(ReconciliationLimits.MaxOutputCharacters, int.Parse(row.Groups[2].Value.Replace(",", "")));
+            Assert.Equal(new[] { "ExportResultsJson" }, Blocks(page, "csharp").SelectMany(b => Regex.Matches(b, "recon\\.(\\w+)\\(").Cast<Match>().Select(mm => mm.Groups[1].Value)).Distinct());
+        }
     }
 }

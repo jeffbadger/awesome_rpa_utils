@@ -25,7 +25,7 @@ namespace ReconciliationAutomation.Tests
         };
 
         /// <summary>Release 2 is additive; each work package adds its methods here.</summary>
-        private static readonly string[] Release2Methods = { "ReconcileDataTables", "ConfigureTableLimits", "AddBooleanComparisonSimple", "AddBooleanComparison", "AddMoneyComparisonSimple", "AddMoneyComparison", "AddCalendarDateComparisonSimple", "AddCalendarDateComparison", "AddInstantComparisonSimple", "AddInstantComparison" };
+        private static readonly string[] Release2Methods = { "ReconcileDataTables", "ConfigureTableLimits", "AddBooleanComparisonSimple", "AddBooleanComparison", "AddMoneyComparisonSimple", "AddMoneyComparison", "AddCalendarDateComparisonSimple", "AddCalendarDateComparison", "AddInstantComparisonSimple", "AddInstantComparison", "ConfigureOutputLimit", "ExportResultsJson" };
 
         internal static MethodInfo[] PublicMethods() =>
             typeof(ReconciliationUtils).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)

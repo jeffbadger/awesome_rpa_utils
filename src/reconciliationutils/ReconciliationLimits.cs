@@ -12,6 +12,10 @@ namespace ReconciliationAutomation
         internal const int DefaultDifferenceDetails = 100000;
         internal const int MaxDifferenceDetails = 500000;
 
+        /// <summary>The export report limit, in UTF-16 characters (Release 2). Not part of the definition: it bounds only ExportResultsJson.</summary>
+        internal const int DefaultOutputCharacters = 16000000;
+        internal const int MaxOutputCharacters = 64000000;
+
         internal int MaximumRowsPerSide = DefaultRowsPerSide;
         internal int MaximumInputCharactersPerSide = DefaultInputCharactersPerSide;
         internal int MaximumResults = DefaultResults;

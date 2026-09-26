@@ -789,6 +789,10 @@ The platform-independent xunit coverage is in
   with no offset (must be `InvalidDate`, never read in the robot's zone), and values exactly at and just beyond each tolerance. Run once on a
   machine set to a non-English regional format (for example Turkish or Arabic) and once with a different Windows time zone: results must be identical.
   Confirm a format such as `yyyy-MM-dd HH:mm` is refused when the rule is added.
+- **Export:** after a run, call `ExportResultsJson("case-1")` and verify the text parses, starts with the schema version and label, and
+  is identical when called twice. Call `ConfigureOutputLimit` with a small value and verify the export fails with a message naming the
+  limit while `GetSummary` and the cursors still work; raise the limit and verify the same export now succeeds. Confirm the report text can be
+  bound to a String variable and saved with the Robot Studio file components.
 - **DataTables:** load an Excel range (or CSV) into a DataTable with the Robot Studio components, reconcile two of them
   with `ReconcileDataTables` and `/Column` pointers, and verify the same results as the JSON path. Confirm the DataTable
   ports accept the producing component's output directly. Include a numeric column, a blank cell (DBNull), a date column

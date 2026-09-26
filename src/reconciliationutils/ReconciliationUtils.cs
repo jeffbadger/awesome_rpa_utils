@@ -24,6 +24,7 @@ namespace ReconciliationAutomation
         private ReconciliationDefinition definition = new ReconciliationDefinition();
 
         // The published outcome of the last completed run, or null. Replaced whole, never edited, so a reader can never see it half-built.
+        private int outputLimit = ReconciliationLimits.DefaultOutputCharacters;   // characters ExportResultsJson may produce
         private TableLimits tableLimits = new TableLimits();      // replaced whole, never edited in place
         private ReconciliationSnapshot results;
         private int exceptionPosition;                 // next index in results to examine
@@ -55,6 +56,7 @@ namespace ReconciliationAutomation
                     d.Comparisons = new List<ComparisonDef>();
                     d.Limits = new ReconciliationLimits();
                     tableLimits = new TableLimits();
+                    outputLimit = ReconciliationLimits.DefaultOutputCharacters;
                     return null;
                 }, out message);
             }
@@ -277,6 +279,26 @@ namespace ReconciliationAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ReconcileDataTables), ex); return false; }
         }
 
+        /// <summary>Sets the most characters ExportResultsJson may produce. Changing it does not discard results, so a report refused for size can be exported again after raising it.</summary>
+        [Category("Reconciliation - Definition")]
+        [Description("Sets the most characters ExportResultsJson may produce (default 16,000,000; maximum 64,000,000). Changing it does not discard results, so a report refused for size can be exported again after raising the limit. Never throws.")]
+        public bool ConfigureOutputLimit(int maximumOutputCharacters, out string message)
+        {
+            message = null;
+            try
+            {
+                string problem = ReconciliationLimits.Check("maximumOutputCharacters", maximumOutputCharacters, ReconciliationLimits.MaxOutputCharacters);
+                lock (syncRoot)
+                {
+                    if (disposed) { message = DisposedMessage(nameof(ConfigureOutputLimit)); return false; }
+                    if (problem != null) { message = nameof(ConfigureOutputLimit) + " failed: " + problem + "."; return false; }
+                    outputLimit = maximumOutputCharacters;     // it bounds only the export, so the published results stay valid
+                    return true;
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ConfigureOutputLimit), ex); return false; }
+        }
+
         /// <summary>Reconciles two JSON arrays of objects. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched.</summary>
         [Category("Reconciliation - Run")]
         [Description("Reconciles two JSON arrays of objects. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched. Never throws.")]
@@ -331,6 +353,79 @@ namespace ReconciliationAutomation
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetSummaryJson), ex); return false; }
+        }
+
+        /// <summary>Exports the last completed run as one deterministic JSON report: the definition, the summary and every result. The run label is copied into the report as given.</summary>
+        [Category("Reconciliation - Results")]
+        [Description("Exports the last completed run as one deterministic JSON report: schema version, your run label, the effective definition, the summary and every result. The same inputs, definition and label always give the same text. Fails, leaving the results intact, if the report would exceed the output limit (ConfigureOutputLimit). The report contains your data; handle it accordingly. Never throws.")]
+        public bool ExportResultsJson(string runLabel, out string reportJson, out string message)
+        {
+            message = null;
+            reportJson = null;
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(ExportResultsJson), out ReconciliationSnapshot run, out message)) return false;
+                    string label = runLabel ?? string.Empty;
+                    if (label.Length > MaxRunLabelLength) { message = nameof(ExportResultsJson) + " failed: the run label is longer than " + MaxRunLabelLength + " characters."; return false; }
+                    if (TextCheck.HasUnpairedSurrogate(label)) { message = nameof(ExportResultsJson) + " failed: the run label contains text that is not valid (an unpaired surrogate character)."; return false; }
+                    return TryExport(run, label, out reportJson, out message);
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { reportJson = null; message = NeverThrowsGuard.Failure(nameof(ExportResultsJson), ex); return false; }
+        }
+
+        private const int MaxRunLabelLength = 256;
+
+        /// <summary>
+        /// Writes the report into a bounded buffer. A UTF-16 character needs at least one UTF-8 byte and at most three, so the buffer is capped at three
+        /// bytes per allowed character and the writing stops the moment it is passed: a string or fragment that cannot fit is refused before it is written, and the total is checked after every
+        /// result member and difference. The most the buffer can hold beyond the cap is the encoded size of one value. The exact character count is checked once the report is complete. Called with the lock held.
+        /// </summary>
+        private bool TryExport(ReconciliationSnapshot run, string label, out string report, out string message)
+        {
+            report = null;
+            message = null;
+            long limit = outputLimit;
+            long byteCap = limit * 3;
+            try
+            {
+                using (var stream = new MemoryStream())
+                {
+                    using (var w = new Utf8JsonWriter(stream))
+                    {
+                        w.WriteStartObject();
+                        w.WriteNumber("schemaVersion", 1);
+                        ResultJson.Room(w, byteCap, label);
+                        w.WriteString("runLabel", label);
+                        if (w.BytesCommitted + w.BytesPending > byteCap) throw new ResultJson.OutputLimitExceededException();   // a tiny limit stops here, before the definition is even built
+                        string definitionJson = definition.ToCanonicalJson();            // bounded by the fixed maxima on names, pointers and counts
+                        ResultJson.Room(w, byteCap, definitionJson);
+                        w.WritePropertyName("definition");
+                        w.WriteRawValue(definitionJson, skipInputValidation: false);
+                        if (w.BytesCommitted + w.BytesPending > byteCap) throw new ResultJson.OutputLimitExceededException();
+                        w.WritePropertyName("summary");
+                        ResultJson.WriteSummary(w, run.Summary);
+                        w.WriteStartArray("results");
+                        foreach (ReconciliationResult result in run.Results)
+                        {
+                            ResultJson.WriteResult(w, result, byteCap);
+                            if (w.BytesCommitted + w.BytesPending > byteCap) throw new ResultJson.OutputLimitExceededException();
+                        }
+                        w.WriteEndArray();
+                        w.WriteEndObject();
+                    }
+                    if (Encoding.UTF8.GetCharCount(stream.GetBuffer(), 0, (int)stream.Length) > limit) throw new ResultJson.OutputLimitExceededException();
+                    report = Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
+                    return true;
+                }
+            }
+            catch (ResultJson.OutputLimitExceededException)
+            {
+                message = nameof(ExportResultsJson) + " failed: the report would be longer than " + limit + " characters. Raise the limit with ConfigureOutputLimit (the results are still available), or read them with the cursors and GetResultJson.";
+                return false;
+            }
         }
 
         /// <summary>Restarts exception and difference reading from the first exception.</summary>

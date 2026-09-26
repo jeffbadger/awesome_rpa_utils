@@ -5,7 +5,7 @@ datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
 > **Status: released (v0.3.27); Release 2 in progress.** The DataTable bridge (`ReconcileDataTables`,
-> `ConfigureTableLimits`), the Boolean and Money rules, and the calendar-date and instant rules are the Release 2 additions so far; results export follows.
+> `ConfigureTableLimits`), the Boolean and Money rules, the calendar-date and instant rules, and results export (`ExportResultsJson`, `ConfigureOutputLimit`) are the Release 2 additions.
 > See the [documentation](Documentation/README.md) for a quick start and worked examples, and the
 > [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) for what remains.
 
@@ -15,7 +15,7 @@ through scalar ports so an automation can route them to review or correction.
 
 ## Method reference
 
-All 29 methods and their signatures. On any failure a method sets every output to its failure value (null
+All 31 methods and their signatures. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
 operation; success has no message. The
 [plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) adds the rest.
@@ -83,6 +83,7 @@ loaded from JSON produce identical text.
 | `GetDefinitionJson` | `bool GetDefinitionJson(out string definitionJson, out string message)` | Returns the current definition, including limits, as canonical JSON. |
 | `ValidateDefinitionJson` | `bool ValidateDefinitionJson(string definitionJson, out int errorCount, out string reportJson, out string message)` | Validates a JSON definition without loading it. Returns True when validation ran; errorCount is 0 for a valid definition and reportJson lists the findings. |
 | `ConfigureLimits` | `bool ConfigureLimits(int maximumRowsPerSide, int maximumInputCharactersPerSide, int maximumResults, int maximumDifferenceDetails, out string message)` | Sets the resource limits: rows per side, input characters per side, result records and difference details. A run that exceeds a limit fails whole. |
+| `ConfigureOutputLimit` | `bool ConfigureOutputLimit(int maximumOutputCharacters, out string message)` | Sets the most characters ExportResultsJson may produce. Changing it does not discard results, so a report refused for size can be exported again after raising it. |
 | `ConfigureTableLimits` | `bool ConfigureTableLimits(int maximumColumns, int maximumCells, int maximumValueCharacters, out string message)` | Sets the DataTable limits used by ReconcileDataTables: columns per table, cells (rows x columns) per table and characters in one text value. Defaults 100, 2,000,000 and 4,096. |
 
 ### Run
@@ -102,6 +103,7 @@ loaded from JSON produce identical text.
 | `TryReadNextException` | `bool TryReadNextException(out bool hasItem, out string resultId, out string kind, out string keyJson, out int leftRowIndex, out int rightRowIndex, out string reason, out int differenceCount, out string message)` | Reads the next exception of the last run. hasItem is False when there are no more. kind is a stable code such as Different or OnlyLeft; a row index is -1 when absent or ambiguous. |
 | `TryReadNextDifference` | `bool TryReadNextDifference(out bool hasItem, out string ruleName, out string reasonCode, out string leftValueJson, out string rightValueJson, out string explanation, out string message)` | Reads the next field difference of the exception most recently read. hasItem is False when there are no more. A missing value is null; a JSON null is the text null. |
 | `GetResultJson` | `bool GetResultJson(string resultId, out string resultJson, out string message)` | Returns the full detail of one result, including every member of a duplicate-key group. |
+| `ExportResultsJson` | `bool ExportResultsJson(string runLabel, out string reportJson, out string message)` | Exports the last completed run as one deterministic JSON report: the definition, the summary and every result. The run label is copied into the report as given. |
 | `ClearResults` | `bool ClearResults(out string message)` | Discards the last run's results. Succeeds even when there are none. |
 
 `ComparisonNullPolicy` is a drop-down: `RequireValue` (the default: a null on either
@@ -160,6 +162,7 @@ GetSummary / GetSummaryJson                -> counts (any time after a run)
 loop: TryReadNextException(...)            -> hasItem, resultId, kind, keyJson, leftRowIndex, rightRowIndex, reason, differenceCount
   inner loop: TryReadNextDifference(...)   -> hasItem, ruleName, reasonCode, leftValueJson, rightValueJson, explanation
 GetResultJson(resultId)                    -> everything about one result, including every member of a duplicate group
+ExportResultsJson(runLabel)                -> one deterministic report: definition, summary and every result
 ```
 
 - Only exceptions are read (everything except **Matched**), in result order. `reason` is the stable reason code (null when there is none).
