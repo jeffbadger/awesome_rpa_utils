@@ -10,6 +10,7 @@ compared. Every result comes back through scalar ports, so it can drive a Robot 
 |---|---|
 | [QuickStart](QuickStart.md) | The smallest complete flow: define, run, read the summary, walk the exceptions and their differences. |
 | [DataTables](DataTables.md) | Reconciling DataTables directly (Excel, CSV, database results), how cell values are read, and the table limits. |
+| [ExcelWorksheets](ExcelWorksheets.md) | Comparing two Excel worksheets: export each to a table, header-named columns, totals and blank rows, blank cells, numbers and dates. |
 | [Configuration](Configuration.md) | Building a definition with methods or JSON, keys, comparisons, validation and the canonical form. |
 | [ComparisonRules](ComparisonRules.md) | Exactly how Text, Decimal, Boolean, Money, calendar-date and instant comparisons decide equal, different or invalid, with the reason codes. |
 | [ResultsAndCounts](ResultsAndCounts.md) | The seven result kinds, the counts and the accounting equations, both cursors and `GetResultJson`. |

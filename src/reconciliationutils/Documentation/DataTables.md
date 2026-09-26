@@ -1,7 +1,7 @@
 # Reconciling DataTables
 
 `ReconcileDataTables(leftTable, rightTable)` does what `ReconcileJson` does, reading two `DataTable`s directly. Use it when
-the data is already in a Robot Studio DataTable: an Excel range, a CSV, a database query. No JSON step is needed. Everything
+the data is already in a Robot Studio DataTable: an Excel range, a CSV, a database query. No JSON step is needed. For Excel worksheets specifically, see [ExcelWorksheets](ExcelWorksheets.md). Everything
 after the run (summary, cursors, `GetResultJson`, the limits on results) is identical.
 
 ```csharp
