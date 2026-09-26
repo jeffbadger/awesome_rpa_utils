@@ -22,6 +22,9 @@ namespace ReconciliationAutomation
         private bool disposed;
         private ReconciliationDefinition definition = new ReconciliationDefinition();
 
+        /// <summary>Test seam: runs inside <see cref="LoadDefinitionJson"/> after the definition is parsed and before it is committed, while the instance lock is held.</summary>
+        internal Action DuringLoad;
+
         /// <summary>Empty constructor required so Pega Robot Studio can create the component.</summary>
         public ReconciliationUtils() { }
 
@@ -282,23 +285,23 @@ namespace ReconciliationAutomation
         private bool LoadDefinition(string definitionJson, out string message)
         {
             message = null;
+            // The whole operation runs under the instance lock, including the parse: another setup call cannot commit between
+            // the check and the swap, so operations are strictly serialized and no change can be silently overwritten. The
+            // parse is bounded (256,000 characters) and fast, so holding the lock through it costs a few milliseconds.
             lock (syncRoot)
             {
                 if (disposed) { message = DisposedMessage(nameof(LoadDefinitionJson)); return false; }
-            }
-            if (!CheckDefinitionText(nameof(LoadDefinitionJson), definitionJson, out message)) return false;
+                if (!CheckDefinitionText(nameof(LoadDefinitionJson), definitionJson, out message)) return false;
 
-            var findings = new DefinitionFindings();
-            ReconciliationDefinition parsed = DefinitionParser.Parse(definitionJson, findings);
-            if (parsed == null)
-            {
-                string more = findings.Total > 1 ? " (" + (findings.Total - 1) + " more problem(s); ValidateDefinitionJson lists them all)" : string.Empty;
-                message = nameof(LoadDefinitionJson) + " failed: " + findings.Reported[0].Format() + more;
-                return false;
-            }
-            lock (syncRoot)
-            {
-                if (disposed) { message = DisposedMessage(nameof(LoadDefinitionJson)); return false; }
+                var findings = new DefinitionFindings();
+                ReconciliationDefinition parsed = DefinitionParser.Parse(definitionJson, findings);
+                DuringLoad?.Invoke();
+                if (parsed == null)
+                {
+                    string more = findings.Total > 1 ? " (" + (findings.Total - 1) + " more problem(s); ValidateDefinitionJson lists them all)" : string.Empty;
+                    message = nameof(LoadDefinitionJson) + " failed: " + findings.Reported[0].Format() + more;
+                    return false;
+                }
                 definition = parsed;
                 InvalidateResults();
                 return true;
@@ -325,14 +328,14 @@ namespace ReconciliationAutomation
             lock (syncRoot)
             {
                 if (disposed) { message = DisposedMessage(nameof(ValidateDefinitionJson)); return false; }
-            }
-            if (!CheckDefinitionText(nameof(ValidateDefinitionJson), definitionJson, out message)) return false;
+                if (!CheckDefinitionText(nameof(ValidateDefinitionJson), definitionJson, out message)) return false;
 
-            var findings = new DefinitionFindings();
-            DefinitionParser.Parse(definitionJson, findings);
-            errorCount = findings.Total;
-            reportJson = WriteReport(findings);
-            return true; // validation ran; whether the definition is valid is in errorCount and the report
+                var findings = new DefinitionFindings();
+                DefinitionParser.Parse(definitionJson, findings);
+                errorCount = findings.Total;
+                reportJson = WriteReport(findings);
+                return true; // validation ran; whether the definition is valid is in errorCount and the report
+            }
         }
 
         private static bool CheckDefinitionText(string operation, string definitionJson, out string message)

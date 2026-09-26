@@ -295,6 +295,35 @@ namespace ReconciliationAutomation.Tests
         }
 
         [Fact]
+        public void ASetupCall_MadeWhileALoadIsInProgress_WaitsForIt_AndIsAppliedAfterwards_NotOverwritten()
+        {
+            // Deterministic: from inside the load (after the parse, before the commit) another thread starts a setup call. It must
+            // block until the load is finished and then apply to the LOADED definition. If the load did not hold the lock, that call
+            // would commit first and the load would silently overwrite it.
+            using var c = new ReconciliationUtils();
+            System.Threading.Thread adding = null;
+            bool addResult = false;
+            bool addFinishedDuringLoad = true;
+            c.DuringLoad = () =>
+            {
+                c.DuringLoad = null;
+                adding = new System.Threading.Thread(() => addResult = c.AddKeyMappingSimple("Added", "/added", "/added", out _));
+                adding.Start();
+                Assert.True(System.Threading.SpinWait.SpinUntil(() => (adding.ThreadState & System.Threading.ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(5)), "the setup call never blocked");
+                addFinishedDuringLoad = !adding.IsAlive;
+            };
+
+            Assert.True(c.LoadDefinitionJson(Full, out string message), message);
+            Assert.True(adding.Join(TimeSpan.FromSeconds(5)));
+
+            Assert.False(addFinishedDuringLoad);      // it waited
+            Assert.True(addResult);
+            using JsonDocument doc = JsonDocument.Parse(Get(c));
+            string[] keys = doc.RootElement.GetProperty("keys").EnumerateArray().Select(k => k.GetProperty("name").GetString()).ToArray();
+            Assert.Equal(new[] { "Company", "Invoice", "Added" }, keys);   // the loaded keys, then the added one: nothing lost
+        }
+
+        [Fact]
         public void ADefinitionOverTheSizeLimit_IsRefused()
         {
             using var c = new ReconciliationUtils();
