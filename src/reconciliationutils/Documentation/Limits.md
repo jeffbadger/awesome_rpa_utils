@@ -54,14 +54,15 @@ Timings on a Windows robot will differ; treat these as an order of magnitude, no
 
 ### DataTables and export
 
-Same machine and method. The DataTable runs use the same five-column rows as the first two workloads above, held in two `DataTable`s
-(loading the tables is not included in the time). The export is of the "every row differs in two fields" workload.
+Same machine and method (each workload in its own process). The DataTable runs use five columns (`id`, `name`, `amount`, `status`, `note`), 50,000 rows
+in each of two `DataTable`s, with the same definition as the JSON workloads (key on `id`; compare `name`, `amount` and `status`); loading the tables is not
+included in the time. In the differing run every name differs and every amount differs by 9. The export is of the JSON "every row differs in two fields" workload.
 
 | Workload | Time | Held by results | Peak process |
 |---|---|---|---|
-| `ReconcileDataTables`, 50,000 rows a side, all matching | 0.43 s | 22 MB | 219 MB |
-| `ReconcileDataTables`, 50,000 rows a side, every row differs | 0.48 s | 60 MB | 273 MB |
-| `ExportResultsJson` of 50,000 differing results (100,000 differences) | 0.10 s | (report: 43.8 M characters) | 534 MB |
+| `ReconcileDataTables`, 50,000 rows a side, all matching | 0.40 s | 22 MB | 220 MB |
+| `ReconcileDataTables`, 50,000 rows a side, every row differs | 0.50 s | 60 MB | 268 MB |
+| `ExportResultsJson` of 50,000 differing results (100,000 differences) | 0.10 s | (report: 43.8 M characters) | 535 MB |
 
 **The default output limit (16,000,000 characters) is smaller than the report for a full-size run with many differences.** A differing
 result with two field differences is about 875 characters, so the 50,000-row workload above produces a 43.8-million-character report and is refused under the

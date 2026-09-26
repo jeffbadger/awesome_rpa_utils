@@ -139,25 +139,35 @@ namespace ReconciliationAutomation.Tests
             return t;
         }
 
-        // 50,000 rows a side read from DataTables (the default row limit), all matching and then every row differing
+        private void MeasureTables(string workload, bool different)
+        {
+            System.Data.DataTable left = Table(50000, "L", different), right = Table(50000, "R", different);
+            using ReconciliationUtils c = Component();
+            GC.Collect();
+            long before = GC.GetTotalMemory(true);
+            var clock = Stopwatch.StartNew();
+            bool ok = c.ReconcileDataTables(left, right, out int exceptions, out string message);
+            clock.Stop();
+            long retained = GC.GetTotalMemory(true) - before;
+            Process p = Process.GetCurrentProcess();
+            Report($"{workload}: ok={ok} message={message} exceptions={exceptions} runMs={clock.ElapsedMilliseconds} retainedByResultsMB={retained / 1048576} peakWorkingSetMB={p.PeakWorkingSet64 / 1048576} runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
+            Assert.True(ok, message);
+        }
+
+        // 50,000 rows a side read from DataTables (the default row limit), every row matching. Run on its own: the peak is per process.
         [Fact]
-        public void Measure_DataTables()
+        public void Measure_DataTablesMatching()
         {
             if (!Enabled) return;
-            foreach (bool different in new[] { false, true })
-            {
-                System.Data.DataTable left = Table(50000, "L", different), right = Table(50000, "R", different);
-                using ReconciliationUtils c = Component();
-                GC.Collect();
-                long before = GC.GetTotalMemory(true);
-                var clock = Stopwatch.StartNew();
-                bool ok = c.ReconcileDataTables(left, right, out int exceptions, out string message);
-                clock.Stop();
-                long retained = GC.GetTotalMemory(true) - before;
-                Process p = Process.GetCurrentProcess();
-                Report($"tables50k-{(different ? "differing" : "matching")}: ok={ok} message={message} exceptions={exceptions} runMs={clock.ElapsedMilliseconds} retainedByResultsMB={retained / 1048576} peakWorkingSetMB={p.PeakWorkingSet64 / 1048576} runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
-                Assert.True(ok, message);
-            }
+            MeasureTables("tables50k-matching", different: false);
+        }
+
+        // the same, every row differing (names and amounts). Run on its own: the peak is per process.
+        [Fact]
+        public void Measure_DataTablesDiffering()
+        {
+            if (!Enabled) return;
+            MeasureTables("tables50k-differing", different: true);
         }
 
         // the report for 50,000 differing rows (100,000 differences); first against the default output limit, then under the maximum
@@ -169,7 +179,10 @@ namespace ReconciliationAutomation.Tests
             string right = Rows(50000, i => "{\"id\":\"K" + i + "\",\"name\":\"right " + i + "\",\"amount\":\"9.00\",\"status\":\"Open\"}");
             using ReconciliationUtils c = Component();
             Assert.True(c.ReconcileJson(left, right, out _, out string m), m);
-            Report("export50k default limit: " + (c.ExportResultsJson("measure", out _, out string refused) ? "fits" : refused));
+            bool fitsDefault = c.ExportResultsJson("measure", out _, out string refused);
+            Report("export50k default limit: " + (fitsDefault ? "fits" : refused));
+            Assert.False(fitsDefault, "the Limits and Export pages state that this workload is refused under the default output limit; update them if that changed");
+            Assert.Contains("ConfigureOutputLimit", refused);
             Assert.True(c.ConfigureOutputLimit(ReconciliationLimits.MaxOutputCharacters, out m), m);        // measure the size itself, under the maximum
             GC.Collect();
             long before = GC.GetTotalMemory(true);
