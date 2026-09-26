@@ -59,7 +59,7 @@ namespace ReconciliationAutomation.Tests
         /// <summary>Methods whose behavior arrives in a later work package: they still report "not implemented yet".</summary>
         private static readonly string[] StillStubbed =
         {
-            "ReconcileJson", "GetSummary", "GetSummaryJson", "ResetResultCursor",
+            "GetSummary", "GetSummaryJson", "ResetResultCursor",
             "TryReadNextException", "TryReadNextDifference", "GetResultJson", "ClearResults"
         };
 

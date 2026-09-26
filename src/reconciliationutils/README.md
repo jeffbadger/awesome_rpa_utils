@@ -124,6 +124,20 @@ stable reason code and an explanation that never quotes a text value.
 - **Original values are kept** as JSON fragments next to the interpreted ones, so a missing field (no value), a null (`null`), an empty
   string (`""`) and a zero (`0`) stay distinguishable; an object or array is described (`"(an object)"`), never copied.
 
+## How reconciliation runs
+
+`ReconcileJson(leftJson, rightJson, out exceptionCount, out message)` parses both datasets, then matches rows by key:
+
+- Rows are grouped by their normalized key (structured, so `["a","bc"]` never collides with `["ab","c"]`). Matching is indexed, so cost grows with the row count, not rows x rows.
+- One key on both sides, one row each: the pair is compared with every rule. **Matched** if all agree, **Different** if any differ, **InvalidComparison** if any value could not be compared (this outranks Different).
+- One side only: **OnlyLeft** / **OnlyRight**.
+- More than one row for a key on either side: one **DuplicateKey** result listing every row. Nothing is guessed or zipped, and a unique row on the other side belongs to that group.
+- A row with no usable key (not an object, key missing, wrong type, empty): **InvalidRecord**.
+- Every input row lands in exactly one result. Results run in left-row order, then remaining right rows, with IDs `r000001`, `r000002`, ...
+- Run counts are checked against the accounting equations before results are published; a failed check fails the run.
+- A run replaces the previous results atomically. A failed run leaves none, and changing the setup discards them.
+- `MaximumResults` and `MaximumDifferenceDetails` are enforced while building, so an oversized run fails instead of truncating.
+
 ## Not released yet
 
 This component is registered in the solution so it builds and its tests run in CI, but

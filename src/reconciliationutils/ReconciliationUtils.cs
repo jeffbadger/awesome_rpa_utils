@@ -22,6 +22,9 @@ namespace ReconciliationAutomation
         private bool disposed;
         private ReconciliationDefinition definition = new ReconciliationDefinition();
 
+        // The published outcome of the last completed run, or null. Replaced whole, never edited, so a reader can never see it half-built.
+        private ReconciliationSnapshot results;
+
         /// <summary>Test seam: runs inside <see cref="LoadDefinitionJson"/> after the definition is parsed and before it is committed, while the instance lock is held.</summary>
         internal Action DuringLoad;
 
@@ -151,7 +154,7 @@ namespace ReconciliationAutomation
         {
             message = null;
             exceptionCount = 0;
-            try { return NotYetImplemented(nameof(ReconcileJson), out message); }
+            try { return RunReconciliation(leftJson, rightJson, out exceptionCount, out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ReconcileJson), ex); return false; }
         }
 
@@ -377,8 +380,58 @@ namespace ReconciliationAutomation
             }
         }
 
-        /// <summary>Discards any results and cursors. There are none yet (reconciliation arrives in a later work package); every setup change already calls this.</summary>
-        private void InvalidateResults() { }
+        /// <summary>Discards the results of the last run (a successful setup change makes them stale). Called with the instance lock held.</summary>
+        private void InvalidateResults() { results = null; }
+
+        /// <summary>The last completed run, or null (test seam; the public readers arrive with the results work package).</summary>
+        internal ReconciliationSnapshot Snapshot { get { lock (syncRoot) return results; } }
+
+
+        // ------------------------------------------------------------------ running
+
+        /// <summary>
+        /// Reconciles two JSON arrays. The whole call runs under the instance lock, so it is serialized with every setup call. Any earlier results
+        /// are discarded first, so a run that fails leaves nothing behind that could be mistaken for its outcome; a new snapshot is built privately
+        /// and published only when the whole run succeeded.
+        /// </summary>
+        private bool RunReconciliation(string leftJson, string rightJson, out int exceptionCount, out string message)
+        {
+            exceptionCount = 0;
+            message = null;
+            lock (syncRoot)
+            {
+                if (disposed) { message = DisposedMessage(nameof(ReconcileJson)); return false; }
+                results = null;                                     // stale results must not survive an attempted run, whatever its outcome
+
+                if (definition.Keys.Count == 0)
+                {
+                    message = nameof(ReconcileJson) + " failed: the definition has no key mapping; add one with AddKeyMapping or AddKeyMappingSimple, or load a definition with keys.";
+                    return false;
+                }
+
+                ReconciliationDefinition snapshotOfDefinition = definition;   // definitions are replaced whole, never edited in place
+                JsonInput left = null, right = null;
+                try
+                {
+                    if (!JsonInput.TryParse(leftJson, "Left", snapshotOfDefinition.Limits, out left, out InputFailure leftFailure)) { message = nameof(ReconcileJson) + " failed: " + leftFailure.Message; return false; }
+                    if (!JsonInput.TryParse(rightJson, "Right", snapshotOfDefinition.Limits, out right, out InputFailure rightFailure)) { message = nameof(ReconcileJson) + " failed: " + rightFailure.Message; return false; }
+
+                    if (!ReconciliationCore.TryRun(snapshotOfDefinition, left, right, out ReconciliationSnapshot snapshot, out string failure))
+                    {
+                        message = nameof(ReconcileJson) + " failed: " + failure + ".";
+                        return false;
+                    }
+                    results = snapshot;
+                    exceptionCount = snapshot.Summary.ExceptionCount;
+                    return true;
+                }
+                finally
+                {
+                    left?.Dispose();        // the parsed inputs are released as soon as the snapshot exists; it holds only what it needs
+                    right?.Dispose();
+                }
+            }
+        }
 
         private static string DisposedMessage(string operation) => operation + " failed: the component has been disposed.";
 
@@ -401,7 +454,7 @@ namespace ReconciliationAutomation
         {
             if (disposing)
             {
-                lock (syncRoot) { disposed = true; }
+                lock (syncRoot) { disposed = true; results = null; }
             }
             base.Dispose(disposing);
         }

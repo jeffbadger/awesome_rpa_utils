@@ -57,6 +57,11 @@ namespace ReconciliationAutomation
                 failure = new InputFailure("MissingInput", side + " input is required (use [] for an empty dataset).");
                 return false;
             }
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                failure = new InputFailure("MalformedJson", side + " input is empty; use [] for an empty dataset.");
+                return false;
+            }
             if (json.Length > limits.MaximumInputCharactersPerSide)
             {
                 failure = new InputFailure("InputTooLarge", side + " input is longer than the limit of " + limits.MaximumInputCharactersPerSide + " characters.");
