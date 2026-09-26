@@ -58,8 +58,8 @@ duplicates, invalid rows).
   and the same one loaded from JSON produce identical text, so it can be saved and reloaded.
 - **Size:** a definition may be at most 256,000 characters **as `GetDefinitionJson` writes it** (the canonical form spells every option out, so it is a little longer
   than compact input). This is checked whenever a definition changes, by the `Add...` methods and by `LoadDefinitionJson`/`ValidateDefinitionJson`, so anything
-  the component accepts can always be saved and loaded again. A change that would pass it is refused with `DefinitionTooLarge` and changes nothing; use shorter names
-  and pointers or fewer rules. Non-ASCII text is written as it is (not as `\uXXXX` escapes), so a pointer in Chinese costs one character per character.
+  the component accepts can always be saved and loaded again. A change that would exceed it is refused with `DefinitionTooLarge` and changes nothing; use shorter names
+  and pointers or fewer rules. Non-ASCII text is written as it is (not as `\uXXXX` escapes), so a pointer in Chinese costs one character per character; ASCII is escaped as it always was (`<`, `>`, `&` and `'` stay `\uXXXX`), so the text is safe to embed in HTML or script.
 - Unknown or repeated properties, wrong types and numeric enum values are errors.
 
 In JSON the kinds are `Text`, `Decimal`, `Boolean`, `Money`, `CalendarDate` and `Instant`. Only the options that belong to a kind are allowed (anything else is

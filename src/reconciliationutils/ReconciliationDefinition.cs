@@ -311,13 +311,17 @@ namespace ReconciliationAutomation
         /// The definition as canonical JSON: fixed property order, every option spelled out (defaults included), compact.
         /// The same definition always produces the same text, whether it was built with methods or loaded from JSON.
         /// </summary>
+        private static readonly System.Text.Encodings.Web.JavaScriptEncoder CanonicalEncoder =
+            System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All);
+
         internal string ToCanonicalJson()
         {
             using (var stream = new MemoryStream())
             {
-                // Relaxed escaping keeps non-ASCII text as it is (a pointer in Chinese is one character per character, not six per character as \uXXXX),
-                // so the saved form stays close to the size of what was typed. Quotes, backslashes and control characters are still escaped.
-                using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+                // Non-ASCII text stays as it is (a pointer in Chinese is one character per character, not six per character as \uXXXX), so the saved form stays close
+                // to the size of what was typed. The encoder is the standard one, widened only to every Unicode range: ASCII is escaped exactly as before (< > & ' + and
+                // the backtick are still \uXXXX, so the text is safe to embed in HTML or script), and quotes, backslashes and control characters are still escaped.
+                using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = CanonicalEncoder }))
                 {
                     w.WriteStartObject();
                     w.WriteNumber("schemaVersion", SchemaVersion);

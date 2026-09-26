@@ -185,5 +185,31 @@ namespace ReconciliationAutomation.Tests
             Assert.Contains("DefinitionTooLarge", message);
             Assert.Contains((Limit + 2).ToString(), message);
         }
+
+        [Fact]
+        public void AsciiIsEscapedExactlyAsBefore_HtmlSensitiveCharactersStayEscaped_AndAnAsciiDefinitionIsByteIdenticalToTheDefaultEncoding()
+        {
+            using var c = new ReconciliationUtils();
+            const string special = "</script> & 'q' + `t` \"d\" \\ \t";
+            Assert.True(c.AddKeyMappingSimple("Key " + special, "/a" + special, "/b" + special, out string m), m);
+            Assert.True(c.AddTextComparisonSimple("Text " + special, "/t" + special, "/u", out m), m);
+            Assert.True(c.GetDefinitionJson(out string canonical, out m), m);
+            foreach (char raw in new[] { '<', '>', '&', '\'', '+', '`' }) Assert.DoesNotContain(raw.ToString(), canonical);      // never written raw
+            Assert.Contains("\\u003C", canonical);
+            Assert.Contains("\\u0026", canonical);
+            Assert.Contains("\\u0027", canonical);
+
+            // the same definition written with the default encoder (what earlier releases did) is the identical text: rewrite the parsed document with it
+            using JsonDocument doc = JsonDocument.Parse(canonical);
+            Assert.Equal(canonical, JsonSerializer.Serialize(doc.RootElement));
+            AssertRoundTrips(c);
+
+            // and a non-ASCII definition differs from the default encoding only in the non-ASCII characters
+            using var d = new ReconciliationUtils();
+            Assert.True(d.AddKeyMappingSimple("\u4e2d<\u6587>", "/\u00e9&", "/x", out m), m);
+            Assert.True(d.GetDefinitionJson(out string unicode, out m), m);
+            Assert.Contains("\"name\":\"\u4e2d\\u003C\u6587\\u003E\"", unicode);
+            Assert.Contains("\"leftPointer\":\"/\u00e9\\u0026\"", unicode);
+        }
     }
 }
