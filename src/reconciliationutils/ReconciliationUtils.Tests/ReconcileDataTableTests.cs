@@ -398,5 +398,21 @@ namespace ReconciliationAutomation.Tests
             System.Threading.Tasks.Task.WaitAll(run, setup);
             Assert.Empty(errors);
         }
+
+        [Fact]
+        public void DeletedRows_CountTowardNeitherTheRowLimitNorTheCellLimit()
+        {
+            using var c = Component();
+            Assert.True(c.ConfigureLimits(2, 1000000, 1000, 1000, out string m), m);
+            Assert.True(c.ConfigureTableLimits(10, 6, 100, out m), m);          // 2 rows x 3 columns = 6 cells
+            DataTable table = Invoices(new object[] { "A", 1m, "x" }, new object[] { "B", 2m, "x" }, new object[] { "C", 3m, "x" }, new object[] { "D", 4m, "x" });
+            table.AcceptChanges();
+            table.Rows[3].Delete(); table.Rows[2].Delete();                     // 4 rows in the collection, 2 live
+            Assert.Equal(4, table.Rows.Count);
+            Assert.True(c.ReconcileDataTables(table, table, out int count, out m), m);
+            Assert.Equal(0, count);
+            table.Rows[1].Delete();                                             // now 1 live row: still fine
+            Assert.True(c.ReconcileDataTables(table, table, out _, out m), m);
+        }
     }
 }

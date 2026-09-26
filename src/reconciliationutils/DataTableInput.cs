@@ -56,7 +56,9 @@ namespace ReconciliationAutomation
             failure = null;
             if (table == null) { failure = side + " table is null."; return false; }
 
-            int rowCount = table.Rows.Count;
+            // Rows marked deleted are not part of the data (and cannot be read), so they count toward neither the row nor the cell limit.
+            int rowCount = 0;
+            foreach (DataRow counted in table.Rows) if (counted.RowState != DataRowState.Deleted) rowCount++;
             if (rowCount > limits.MaximumRowsPerSide) { failure = side + " table has more than " + limits.MaximumRowsPerSide + " rows (the limit is set with ConfigureLimits)."; return false; }
 
             int columnCount = table.Columns.Count;

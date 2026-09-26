@@ -47,9 +47,16 @@ namespace ReconciliationAutomation
             message = null;
             try
             {
-                if (!ChangeDefinition(nameof(ClearDefinition), d => { d.Keys = new List<KeyMappingDef>(); d.Comparisons = new List<ComparisonDef>(); d.Limits = new ReconciliationLimits(); return null; }, out message)) return false;
-                lock (syncRoot) tableLimits = new TableLimits();       // the DataTable limits go back to their defaults too
-                return true;
+                // The change runs under the instance lock, so the DataTable limits are reset in the same critical section as the definition: a concurrent
+                // ConfigureTableLimits lands entirely before or entirely after this call, never between its two halves.
+                return ChangeDefinition(nameof(ClearDefinition), d =>
+                {
+                    d.Keys = new List<KeyMappingDef>();
+                    d.Comparisons = new List<ComparisonDef>();
+                    d.Limits = new ReconciliationLimits();
+                    tableLimits = new TableLimits();
+                    return null;
+                }, out message);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ClearDefinition), ex); return false; }
         }
@@ -523,7 +530,7 @@ namespace ReconciliationAutomation
             run = results;
             message = null;
             if (disposed) { message = DisposedMessage(operation); return false; }
-            if (run == null) { message = operation + " failed: there are no results; call ReconcileJson first (a failed run, a setup change or ClearResults discards them)."; return false; }
+            if (run == null) { message = operation + " failed: there are no results; run ReconcileJson or ReconcileDataTables first (a failed run, a setup change or ClearResults discards them)."; return false; }
             return true;
         }
 

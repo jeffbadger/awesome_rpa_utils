@@ -213,7 +213,7 @@ namespace ReconciliationAutomation.Tests
         public void BeforeAnyRun_EveryReader_FailsWithAnActionableMessage_AndClearResultsSucceeds()
         {
             using var c = new ReconciliationUtils();
-            Assert.False(c.GetSummary(out _, out _, out _, out _, out string m)); Assert.Contains("call ReconcileJson first", m);
+            Assert.False(c.GetSummary(out _, out _, out _, out _, out string m)); Assert.Contains("run ReconcileJson or ReconcileDataTables first", m);
             Assert.False(c.GetSummaryJson(out string json, out m)); Assert.Null(json); Assert.Contains("no results", m);
             Assert.False(c.ResetResultCursor(out m)); Assert.Contains("no results", m);
             Assert.False(c.TryReadNextException(out bool has, out _, out _, out _, out _, out _, out _, out _, out m)); Assert.False(has); Assert.Contains("no results", m);
