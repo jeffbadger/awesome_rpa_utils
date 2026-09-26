@@ -294,14 +294,34 @@ namespace ReconciliationAutomation
         // ------------------------------------------------------------------ canonical JSON
 
         /// <summary>
+        /// A definition is only acceptable if its canonical form (what GetDefinitionJson returns, and what a saved copy contains) fits the limit that
+        /// LoadDefinitionJson applies to its input, so every accepted configuration can be saved and loaded again. The builders' individual maxima
+        /// (names, pointers, counts) allow a total larger than the limit, so the total is checked here. Returns a finding, or null when it fits.
+        /// </summary>
+        internal Finding CheckCanonicalSize()
+        {
+            int length = ToCanonicalJson().Length;
+            if (length <= MaxDefinitionJsonCharacters) return null;
+            return new Finding("definition", "DefinitionTooLarge",
+                "the definition would be " + length + " characters when saved with GetDefinitionJson, over the limit of " + MaxDefinitionJsonCharacters +
+                " that LoadDefinitionJson accepts; use shorter names and pointers or fewer rules");
+        }
+
+        /// <summary>
         /// The definition as canonical JSON: fixed property order, every option spelled out (defaults included), compact.
         /// The same definition always produces the same text, whether it was built with methods or loaded from JSON.
         /// </summary>
+        private static readonly System.Text.Encodings.Web.JavaScriptEncoder CanonicalEncoder =
+            System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All);
+
         internal string ToCanonicalJson()
         {
             using (var stream = new MemoryStream())
             {
-                using (var w = new Utf8JsonWriter(stream))
+                // Non-ASCII text stays as it is (a pointer in Chinese is one character per character, not six per character as \uXXXX), so the saved form stays close
+                // to the size of what was typed. The encoder is the standard one, widened only to every Unicode range: ASCII is escaped exactly as before (< > & ' + and
+                // the backtick are still \uXXXX, so the text is safe to embed in HTML or script), and quotes, backslashes and control characters are still escaped.
+                using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = CanonicalEncoder }))
                 {
                     w.WriteStartObject();
                     w.WriteNumber("schemaVersion", SchemaVersion);

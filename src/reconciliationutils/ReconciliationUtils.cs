@@ -578,7 +578,7 @@ namespace ReconciliationAutomation
             {
                 if (disposed) { message = DisposedMessage(operation); return false; }
                 ReconciliationDefinition copy = definition.Clone();
-                Finding problem = change(copy);
+                Finding problem = change(copy) ?? copy.CheckCanonicalSize();
                 if (problem != null) { message = operation + " failed: " + problem.Format(); return false; }
                 definition = copy;
                 InvalidateResults();
