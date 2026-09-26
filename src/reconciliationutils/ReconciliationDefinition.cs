@@ -118,9 +118,9 @@ namespace ReconciliationAutomation
 
         // ------------------------------------------------------------------ builders (each works on a copy; null = accepted)
 
-        internal Finding TryAddKey(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, bool enforceLimit = true)
+        internal Finding TryAddKey(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase)
         {
-            if (enforceLimit && Keys.Count >= MaxKeys) return new Finding("keys", "TooManyKeys", "a definition may have at most " + MaxKeys + " key mappings");
+            if (Keys.Count >= MaxKeys) return new Finding("keys", "TooManyKeys", "a definition may have at most " + MaxKeys + " key mappings");
             Finding f = CheckName(name, AllNames(), "name");
             if (f != null) return f;
             f = CheckPointer(leftPointer, "leftPointer", out string[] left);
@@ -131,27 +131,27 @@ namespace ReconciliationAutomation
             return null;
         }
 
-        internal Finding TryAddText(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, ComparisonNullPolicy nullPolicy, bool enforceLimit = true)
+        internal Finding TryAddText(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, ComparisonNullPolicy nullPolicy)
         {
-            Finding f = CheckComparisonCommon(name, leftPointer, rightPointer, nullPolicy, enforceLimit, out string[] left, out string[] right);
+            Finding f = CheckComparisonCommon(name, leftPointer, rightPointer, nullPolicy, out string[] left, out string[] right);
             if (f != null) return f;
             Comparisons.Add(new ComparisonDef { Name = name, Kind = RuleKind.Text, LeftPointer = leftPointer, RightPointer = rightPointer, LeftSegments = left, RightSegments = right, Trim = trim, IgnoreCase = ignoreCase, NullPolicy = nullPolicy });
             return null;
         }
 
-        internal Finding TryAddDecimal(string name, string leftPointer, string rightPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, bool enforceLimit = true)
+        internal Finding TryAddDecimal(string name, string leftPointer, string rightPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy)
         {
-            Finding f = CheckComparisonCommon(name, leftPointer, rightPointer, nullPolicy, enforceLimit, out string[] left, out string[] right)
+            Finding f = CheckComparisonCommon(name, leftPointer, rightPointer, nullPolicy, out string[] left, out string[] right)
                 ?? CheckTolerance(absoluteTolerance, "absoluteTolerance");
             if (f != null) return f;
             Comparisons.Add(new ComparisonDef { Name = name, Kind = RuleKind.Decimal, LeftPointer = leftPointer, RightPointer = rightPointer, LeftSegments = left, RightSegments = right, AbsoluteTolerance = absoluteTolerance, NullPolicy = nullPolicy });
             return null;
         }
 
-        private Finding CheckComparisonCommon(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy, bool enforceLimit, out string[] left, out string[] right)
+        private Finding CheckComparisonCommon(string name, string leftPointer, string rightPointer, ComparisonNullPolicy nullPolicy, out string[] left, out string[] right)
         {
             left = right = null;
-            if (enforceLimit && Comparisons.Count >= MaxComparisons) return new Finding("comparisons", "TooManyComparisons", "a definition may have at most " + MaxComparisons + " comparisons");
+            if (Comparisons.Count >= MaxComparisons) return new Finding("comparisons", "TooManyComparisons", "a definition may have at most " + MaxComparisons + " comparisons");
             Finding f = CheckName(name, AllNames(), "name");
             if (f != null) return f;
             f = CheckPointer(leftPointer, "leftPointer", out left);

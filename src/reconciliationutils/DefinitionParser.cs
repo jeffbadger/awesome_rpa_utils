@@ -74,9 +74,11 @@ namespace ReconciliationAutomation
                 var definition = new ReconciliationDefinition();
                 var props = ReadObject(root, "$", RootProperties, null, findings);
 
+                // One set of names for the whole document: keys and comparisons share a namespace.
+                var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 ReadVersion(props, findings);
-                ReadKeys(props, definition, findings);
-                ReadComparisons(props, definition, findings);
+                ReadKeys(props, definition, seenNames, findings);
+                ReadComparisons(props, definition, seenNames, findings);
                 ReadLimits(props, definition, findings);
 
                 return findings.Total == 0 ? definition : null;
@@ -101,7 +103,49 @@ namespace ReconciliationAutomation
                 findings.Add("schemaVersion", "UnsupportedVersion", "schemaVersion " + version + " is not supported; this component reads version " + ReconciliationDefinition.SchemaVersion);
         }
 
-        private static void ReadKeys(Dictionary<string, JsonElement> props, ReconciliationDefinition definition, DefinitionFindings findings)
+        /// <summary>The fields every entry has, read and checked independently of one another so each problem is reported.</summary>
+        private sealed class CommonFields
+        {
+            internal string Name, Left, Right;
+            internal string[] LeftSegments, RightSegments;
+            /// <summary>True when name and both pointers are present and valid (a duplicate name counts as invalid).</summary>
+            internal bool Ok;
+        }
+
+        /// <summary>
+        /// Reads name, leftPointer and rightPointer and checks each on its own. <paramref name="seen"/> holds every well-formed name met so far,
+        /// whether or not its entry was otherwise valid or fell past a limit, so a later entry that reuses one is always reported.
+        /// </summary>
+        private static CommonFields ReadCommon(Dictionary<string, JsonElement> p, string path, HashSet<string> seen, DefinitionFindings findings)
+        {
+            var fields = new CommonFields
+            {
+                Name = ReadString(p, "name", path, true, findings),
+                Left = ReadString(p, "leftPointer", path, true, findings),
+                Right = ReadString(p, "rightPointer", path, true, findings)
+            };
+            fields.Ok = fields.Name != null && fields.Left != null && fields.Right != null;
+
+            if (fields.Name != null)
+            {
+                Finding f = ReconciliationDefinition.CheckName(fields.Name, seen, path + ".name");
+                if (f != null) { findings.Add(f); fields.Ok = false; }
+                if (!string.IsNullOrWhiteSpace(fields.Name) && fields.Name.Length <= ReconciliationDefinition.MaxNameLength) seen.Add(fields.Name);
+            }
+            if (fields.Left != null)
+            {
+                Finding f = ReconciliationDefinition.CheckPointer(fields.Left, path + ".leftPointer", out fields.LeftSegments);
+                if (f != null) { findings.Add(f); fields.Ok = false; }
+            }
+            if (fields.Right != null)
+            {
+                Finding f = ReconciliationDefinition.CheckPointer(fields.Right, path + ".rightPointer", out fields.RightSegments);
+                if (f != null) { findings.Add(f); fields.Ok = false; }
+            }
+            return fields;
+        }
+
+        private static void ReadKeys(Dictionary<string, JsonElement> props, ReconciliationDefinition definition, HashSet<string> seen, DefinitionFindings findings)
         {
             if (!props.TryGetValue("keys", out JsonElement keys)) return;
             if (keys.ValueKind != JsonValueKind.Array)
@@ -114,8 +158,8 @@ namespace ReconciliationAutomation
             foreach (JsonElement item in keys.EnumerateArray())
             {
                 string path = "keys[" + index++ + "]";
-                // Entries past the limit are still checked in full (shape, properties, names, pointers) so the report stays complete;
-                // they are just never added to the definition. The limit itself is reported once.
+                // Entries past the limit are still checked in full so the report stays complete; they are just never added to
+                // the definition. The limit itself is reported once.
                 bool overflow = definition.Keys.Count >= ReconciliationDefinition.MaxKeys;
                 if (overflow && !reportedOverflow)
                 {
@@ -128,21 +172,21 @@ namespace ReconciliationAutomation
                     continue;
                 }
                 var p = ReadObject(item, path, KeyProperties, null, findings);
-                string name = ReadString(p, "name", path, true, findings);
-                string left = ReadString(p, "leftPointer", path, true, findings);
-                string right = ReadString(p, "rightPointer", path, true, findings);
+                CommonFields common = ReadCommon(p, path, seen, findings);
                 bool trim = ReadBool(p, "trim", path, findings);
                 bool ignoreCase = ReadBool(p, "ignoreCase", path, findings);
-                if (name == null || left == null || right == null) continue;
+                if (!common.Ok || overflow) continue;
 
-                var probe = definition.Clone();
-                Finding f = probe.TryAddKey(name, left, right, trim, ignoreCase, enforceLimit: !overflow);
-                if (f != null) findings.Add(path + "." + f.Path, f.Code, f.Message);
-                else if (!overflow) definition.Keys.Add(probe.Keys[probe.Keys.Count - 1]);
+                definition.Keys.Add(new KeyMappingDef
+                {
+                    Name = common.Name, LeftPointer = common.Left, RightPointer = common.Right,
+                    LeftSegments = common.LeftSegments, RightSegments = common.RightSegments,
+                    Trim = trim, IgnoreCase = ignoreCase
+                });
             }
         }
 
-        private static void ReadComparisons(Dictionary<string, JsonElement> props, ReconciliationDefinition definition, DefinitionFindings findings)
+        private static void ReadComparisons(Dictionary<string, JsonElement> props, ReconciliationDefinition definition, HashSet<string> seen, DefinitionFindings findings)
         {
             if (!props.TryGetValue("comparisons", out JsonElement comparisons)) return;
             if (comparisons.ValueKind != JsonValueKind.Array)
@@ -180,27 +224,29 @@ namespace ReconciliationAutomation
                     if (!hasKind) findings.Add(path + ".kind", "MissingProperty", "kind is required: Text or Decimal");
                     else if (kindElement.ValueKind != JsonValueKind.String) findings.Add(path + ".kind", "InvalidType", "kind must be a string: Text or Decimal");
                     else findings.Add(path + ".kind", "UnknownKind", "the kind '" + kindText + "' is not supported by this version; use Text or Decimal");
-                    // Still check the rest against the options every comparison has, so a repeated or misspelled property is reported too.
-                    ReadObject(item, path, CommonComparisonProperties, null, findings);
+                    // The kind cannot be selected, but the fields every comparison has can still be checked, so those problems are
+                    // reported too (and the name still counts for duplicate detection).
+                    var common = ReadObject(item, path, CommonComparisonProperties, null, findings);
+                    ReadCommon(common, path, seen, findings);
+                    ReadNullPolicy(common, path, findings);
                     continue;
                 }
 
                 var p = ReadObject(item, path, allowed, kind.ToString(), findings);
-                string name = ReadString(p, "name", path, true, findings);
-                string left = ReadString(p, "leftPointer", path, true, findings);
-                string right = ReadString(p, "rightPointer", path, true, findings);
+                CommonFields fields = ReadCommon(p, path, seen, findings);
                 ComparisonNullPolicy policy = ReadNullPolicy(p, path, findings);
                 bool trim = kind == RuleKind.Text && ReadBool(p, "trim", path, findings);
                 bool ignoreCase = kind == RuleKind.Text && ReadBool(p, "ignoreCase", path, findings);
                 string tolerance = kind == RuleKind.Decimal ? ReadTolerance(p, path, findings) : null;
-                if (name == null || left == null || right == null || (kind == RuleKind.Decimal && tolerance == null)) continue;
+                if (!fields.Ok || overflow || (kind == RuleKind.Decimal && tolerance == null)) continue;
 
-                var probe = definition.Clone();
-                Finding f = kind == RuleKind.Text
-                    ? probe.TryAddText(name, left, right, trim, ignoreCase, policy, enforceLimit: !overflow)
-                    : probe.TryAddDecimal(name, left, right, tolerance, policy, enforceLimit: !overflow);
-                if (f != null) findings.Add(path + "." + f.Path, f.Code, f.Message);
-                else if (!overflow) definition.Comparisons.Add(probe.Comparisons[probe.Comparisons.Count - 1]);
+                definition.Comparisons.Add(new ComparisonDef
+                {
+                    Name = fields.Name, Kind = kind, LeftPointer = fields.Left, RightPointer = fields.Right,
+                    LeftSegments = fields.LeftSegments, RightSegments = fields.RightSegments,
+                    Trim = trim, IgnoreCase = ignoreCase,
+                    AbsoluteTolerance = tolerance ?? "0", NullPolicy = policy
+                });
             }
         }
 

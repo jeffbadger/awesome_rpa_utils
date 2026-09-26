@@ -329,6 +329,94 @@ namespace ReconciliationAutomation.Tests
             Assert.Contains("TooManyKeys", message);
         }
 
+        // ---------------------------------------------------------------- independent findings, names tracked across the document
+
+        private const string KeyEntry = "{{\"name\":\"{0}\",\"leftPointer\":\"{1}\",\"rightPointer\":\"/a\"}}";
+        private static string KeyItem(string name, string leftPointer = "/a") => string.Format(KeyEntry, name, leftPointer);
+        private static string TextItem(string name) => "{\"name\":\"" + name + "\",\"kind\":\"Text\",\"leftPointer\":\"/a\",\"rightPointer\":\"/a\"}";
+
+        [Fact]
+        public void ADuplicateName_IsReported_EvenWhenAnEarlierEntryWithThatNameWasInvalid()
+        {
+            // keys[0] is invalid (bad pointer) so it is never added to the definition, but its name is still taken.
+            string json = "{\"schemaVersion\":1,\"keys\":[" + KeyItem("X", "bad") + "," + KeyItem("x") + "]}";
+            string report = Validate(json, out int errors);
+            Assert.Equal(2, errors);
+            Assert.Contains("keys[0].leftPointer", report);
+            Assert.Contains("keys[1].name", report);
+            Assert.Contains("DuplicateName", Codes(report));
+        }
+
+        [Fact]
+        public void ADuplicateName_IsReported_WhenTheFirstEntryFellPastTheLimit()
+        {
+            string keys = string.Join(",", Enumerable.Range(0, 16).Select(i => KeyItem("k" + i))) + "," + KeyItem("over") + "," + KeyItem("OVER");
+            string report = Validate("{\"schemaVersion\":1,\"keys\":[" + keys + "]}", out _);
+            string[] codes = Codes(report);
+            Assert.Equal(1, codes.Count(c => c == "TooManyKeys"));
+            Assert.Contains("DuplicateName", codes);
+            Assert.Contains("keys[17].name", report);
+        }
+
+        [Fact]
+        public void AComparisonReusingTheNameOfAnOverflowedKey_IsReported()
+        {
+            string keys = string.Join(",", Enumerable.Range(0, 16).Select(i => KeyItem("k" + i))) + "," + KeyItem("shared");
+            string json = "{\"schemaVersion\":1,\"keys\":[" + keys + "],\"comparisons\":[" + TextItem("Shared") + "]}";
+            string report = Validate(json, out _);
+            Assert.Contains("comparisons[0].name", report);
+            Assert.Contains("DuplicateName", Codes(report));
+        }
+
+        [Fact]
+        public void AComparisonReusingTheNameOfAnInvalidKey_IsReported()
+        {
+            string json = "{\"schemaVersion\":1,\"keys\":[" + KeyItem("Same", "bad") + "],\"comparisons\":[" + TextItem("same") + "]}";
+            string report = Validate(json, out int errors);
+            Assert.Equal(2, errors);
+            Assert.Contains("comparisons[0].name", report);
+        }
+
+        [Fact]
+        public void ANameThatIsItselfInvalid_IsNotRegistered_SoItCannotCauseFalseDuplicates()
+        {
+            // two blank names are each InvalidName, but they are not "duplicates" of one another
+            string json = "{\"schemaVersion\":1,\"keys\":[" + KeyItem("") + "," + KeyItem("  ") + "]}";
+            Assert.Equal(new[] { "InvalidName", "InvalidName" }, Codes(Validate(json, out _)));
+        }
+
+        [Fact]
+        public void AnEntryWithSeveralIndependentProblems_ReportsThemAll()
+        {
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":\"\",\"kind\":\"Decimal\",\"leftPointer\":\"a\",\"rightPointer\":\"b\",\"absoluteTolerance\":\"-1\",\"nullPolicy\":\"Never\"}]}";
+            string[] codes = Codes(Validate(json, out int errors));
+            Assert.Equal(5, errors);
+            Assert.Equal(new[] { "InvalidName", "InvalidPointer", "InvalidPointer", "UnknownEnumValue", "InvalidTolerance" }.OrderBy(x => x), codes.OrderBy(x => x));
+        }
+
+        [Fact]
+        public void AComparisonWhoseKindCannotBeSelected_StillHasItsCommonFieldValuesChecked()
+        {
+            // a Money comparison (unsupported here) with a wrongly typed name, a wrongly typed pointer and a numeric null policy
+            string json = "{\"schemaVersion\":1,\"comparisons\":[{\"name\":5,\"kind\":\"Money\",\"leftPointer\":7,\"rightPointer\":\"/a\",\"nullPolicy\":1}]}";
+            string report = Validate(json, out int errors);
+            Assert.Equal(4, errors);
+            Assert.Equal(new[] { "InvalidType", "InvalidType", "UnknownEnumValue", "UnknownKind" }, Codes(report).OrderBy(x => x));
+            Assert.Contains("comparisons[0].name", report);
+            Assert.Contains("comparisons[0].leftPointer", report);
+            Assert.Contains("comparisons[0].nullPolicy", report);
+        }
+
+        [Fact]
+        public void AComparisonWhoseKindCannotBeSelected_StillHasItsPointersAndNameChecked_AndItsNameIsTaken()
+        {
+            string json = "{\"schemaVersion\":1,\"keys\":[" + KeyItem("Taken") + "],\"comparisons\":[{\"name\":\"taken\",\"kind\":\"Money\",\"leftPointer\":\"bad\",\"rightPointer\":\"/a\"}," + TextItem("TAKEN") + "]}";
+            string report = Validate(json, out _);
+            Assert.Contains("comparisons[0].name", report);          // duplicate of the key
+            Assert.Contains("comparisons[0].leftPointer", report);   // bad pointer
+            Assert.Contains("comparisons[1].name", report);          // duplicate of both earlier names
+        }
+
         private static int ErrorCount(string json) { Validate(json, out int n); return n; }
 
         [Fact]
@@ -412,11 +500,12 @@ namespace ReconciliationAutomation.Tests
         {
             string json = "{\"schemaVersion\":1,\"keys\":[{\"name\":\"\",\"leftPointer\":\"a\",\"rightPointer\":\"/k\"}],\"comparisons\":[{\"name\":\"D\",\"kind\":\"Decimal\",\"leftPointer\":\"/d\",\"rightPointer\":\"/d\",\"absoluteTolerance\":\"-1\"}],\"limits\":{\"maximumResults\":0}}";
             string report = Validate(json, out int errors);
-            Assert.Equal(3, errors);
+            Assert.Equal(4, errors);                     // the key has TWO independent problems: a blank name and a bad pointer
             using JsonDocument doc = JsonDocument.Parse(report);
             Assert.False(doc.RootElement.GetProperty("valid").GetBoolean());
             var found = doc.RootElement.GetProperty("errors").EnumerateArray().Select(e => (e.GetProperty("path").GetString(), e.GetProperty("code").GetString())).ToArray();
             Assert.Contains(("keys[0].name", "InvalidName"), found);
+            Assert.Contains(("keys[0].leftPointer", "InvalidPointer"), found);
             Assert.Contains(("comparisons[0].absoluteTolerance", "InvalidTolerance"), found);
             Assert.Contains(("limits.maximumResults", "InvalidLimit"), found);
             Assert.All(doc.RootElement.GetProperty("errors").EnumerateArray(), e => Assert.False(string.IsNullOrWhiteSpace(e.GetProperty("message").GetString())));
