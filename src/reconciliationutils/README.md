@@ -4,19 +4,18 @@ A Pega Robot Studio-ready component (`ReconciliationUtils`) that reconciles two
 datasets by business key and explains every disagreement, exposing exceptions
 through scalar ports so an automation can route them to review or correction.
 
-> **Status: under construction.** Work package 5 of the
-> [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md)
-> is in: definition, `ReconcileJson` and the result readers all work. Documentation and release
-> packaging are still to come. Do not use the component until the first release notes say otherwise.
+> **Status: complete, awaiting its first release.** All 19 methods work. See the
+> [documentation](Documentation/README.md) for a quick start and worked examples, and the
+> [design plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) for what
+> follows (DataTable bridge, Boolean, money and date rules, export).
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ReconciliationAutomation`
 - Assembly: `ReconciliationAutomation`
 
-## Method reference (frozen contract)
+## Method reference
 
-All 19 Release 1 methods, with their final signatures. The **Definition** methods are
-implemented, and so are **Run** and **Results**. On any failure a method sets every output to its failure value (null
+All 19 methods and their signatures. On any failure a method sets every output to its failure value (null
 strings, 0 counts, `False` flags, -1 row indices) and returns a message naming the
 operation; success has no message. The
 [plan](../../project-docs/plans/2026-09-25-reconciliationutils-design-v2.md) adds the rest.
@@ -154,11 +153,3 @@ GetResultJson(resultId)                    -> everything about one result, inclu
 - Before a completed run (or after a failed run, a setup change or `ClearResults`) every reader returns `False` with a "no results" message.
   `ClearResults` always succeeds. A bad result ID is a failure that leaves the results and cursors alone.
 - Messages never contain source values; the values come only through the value outputs and `GetResultJson`.
-
-## Not released yet
-
-This component is registered in the solution so it builds and its tests run in CI, but
-it is **not** part of any release: no release will be cut while it is incomplete (the
-project owner's decision). It is deliberately not yet listed in the root `README.md` or
-`CrossReference.md`, and not in `scripts/Package-Release.ps1`; the plan's documentation
-work package (WP6) does all of that when the component is finished.

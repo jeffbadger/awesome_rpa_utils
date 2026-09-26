@@ -2,7 +2,7 @@
 
 A single searchable index of every **PME** — Property, Method, and Event —
 exposed by every component in this repository. Use it to answer "does
-anything in this library already do X" without opening 23 different
+anything in this library already do X" without opening 24 different
 READMEs: `Ctrl+F` for a method name, a keyword from what you're trying to
 do, or a parameter/return type, or jump straight to a component from the
 quick-reference table below.
@@ -31,6 +31,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [LocalQueueUtils](#localqueueutils) | `LocalQueueAutomation` | 21 | 0 | 0 | A persistent, machine-local work queue with a lease/process/complete loop, for variable-count work without a Pega collection proxy. |
 | [MouseUtils](#mouseutils) | `MouseAutomation` | 92 (99 rows) | 0 | 0 | Moves, clicks, drags, and scrolls the mouse; controls cursor appearance, visibility, and confinement. |
 | [OcrUtils](#ocrutils) | `OcrAutomation` | 11 | 0 | 0 | Recognizes text from the screen or an image file via `Windows.Media.Ocr`. |
+| [ReconciliationUtils](#reconciliationutils) | `ReconciliationAutomation` | 19 | 0 | 0 | Reconciles two JSON datasets by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing. |
 | [ScreenCaptureUtils](#screencaptureutils) | `ScreenCaptureAutomation` | 28 (34 rows) | 0 | 0 | Captures the screen/region/window to file or clipboard; compares against a baseline; annotates/redacts saved screenshots. |
 | [ServiceUtils](#serviceutils) | `ServiceAutomation` | 24 (25 rows) | 0 | 0 | Queries, starts, stops, restarts, pauses/resumes, and configures the startup type of Windows services. |
 | [SessionUtils](#sessionutils) | `SessionAutomation` | 31 | 0 | 0 | Reports on and acts on Windows session/workstation state — identity, kind, connect state, lock, idle time. |
@@ -577,6 +578,36 @@ Pega Robot Studio-ready component that recognizes text from a screen region or a
 | `TryGetAvailableLanguages` | `bool TryGetAvailableLanguages(out List<string> tags, out string message)` | Gets the BCP-47 language tags of every OCR language pack currently installed, reporting failures via `message` instead of an empty list. Never throws. |
 | `WaitForTextToAppear` | `bool WaitForTextToAppear(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out bool timedOut, out string message)` | Same as `WaitForTextToAppearSimple`, but also reports whether the wait ended because the timeout elapsed via `timedOut`. Never throws. |
 | `WaitForTextToAppearSimple` | `bool WaitForTextToAppearSimple(int left, int top, int width, int height, string expectedText, int timeoutMs, int pollIntervalMs, out string message)` | Polls a screen region until it contains text matching `expectedText` (case-insensitive substring), or the timeout elapses. Never throws. |
+
+## ReconciliationUtils
+
+Reconciles two JSON datasets by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing.
+
+**Namespace:** `ReconciliationAutomation` | **Assembly:** `ReconciliationAutomation`
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `AddDecimalComparison` | `bool AddDecimalComparison(string name, string leftPointer, string rightPointer, string absoluteTolerance, ComparisonNullPolicy nullPolicy, out string message)` | Adds a decimal comparison with an absolute tolerance given as invariant decimal text (for example 0.01) and a null policy. |
+| `AddDecimalComparisonSimple` | `bool AddDecimalComparisonSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds an exact decimal comparison (tolerance 0, a value is required on both sides). |
+| `AddKeyMapping` | `bool AddKeyMapping(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, out string message)` | Adds a business-key part with a choice of trimming and case-insensitive matching. The pointers are restricted JSON Pointers such as /invoiceNumber. |
+| `AddKeyMappingSimple` | `bool AddKeyMappingSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds a business-key part matched exactly (no trimming, case-sensitive). The pointers are restricted JSON Pointers such as /invoiceNumber. |
+| `AddTextComparison` | `bool AddTextComparison(string name, string leftPointer, string rightPointer, bool trim, bool ignoreCase, ComparisonNullPolicy nullPolicy, out string message)` | Adds a text comparison with a choice of trimming, case-insensitive comparison and null policy. |
+| `AddTextComparisonSimple` | `bool AddTextComparisonSimple(string name, string leftPointer, string rightPointer, out string message)` | Adds an exact text comparison (no trimming, case-sensitive, a value is required on both sides). |
+| `ClearDefinition` | `bool ClearDefinition(out string message)` | Restores the default definition (no keys, no comparisons, default limits) and clears any results. |
+| `ClearResults` | `bool ClearResults(out string message)` | Discards the last run's results. Succeeds even when there are none. |
+| `ConfigureLimits` | `bool ConfigureLimits(int maximumRowsPerSide, int maximumInputCharactersPerSide, int maximumResults, int maximumDifferenceDetails, out string message)` | Sets the resource limits: rows per side, input characters per side, result records and difference details. A run that exceeds a limit fails whole. |
+| `GetDefinitionJson` | `bool GetDefinitionJson(out string definitionJson, out string message)` | Returns the current definition, including limits, as canonical JSON. |
+| `GetResultJson` | `bool GetResultJson(string resultId, out string resultJson, out string message)` | Returns the full detail of one result, including every member of a duplicate-key group. |
+| `GetSummary` | `bool GetSummary(out int leftRowCount, out int rightRowCount, out int matchedPairCount, out int exceptionCount, out string message)` | Returns the headline counts of the last completed run. |
+| `GetSummaryJson` | `bool GetSummaryJson(out string summaryJson, out string message)` | Returns every count of the last completed run as JSON. |
+| `LoadDefinitionJson` | `bool LoadDefinitionJson(string definitionJson, out string message)` | Replaces the whole definition from JSON. An invalid definition is rejected whole and the previous one stays in force. |
+| `ReconcileJson` | `bool ReconcileJson(string leftJson, string rightJson, out int exceptionCount, out string message)` | Reconciles two JSON arrays of objects. True means the run completed, even with mismatches; exceptionCount is 0 when everything matched. |
+| `ResetResultCursor` | `bool ResetResultCursor(out string message)` | Restarts exception and difference reading from the first exception. |
+| `TryReadNextDifference` | `bool TryReadNextDifference(out bool hasItem, out string ruleName, out string reasonCode, out string leftValueJson, out string rightValueJson, out string explanation, out string message)` | Reads the next field difference of the exception most recently read. hasItem is False when there are no more. A missing value is null; a JSON null is the text null. |
+| `TryReadNextException` | `bool TryReadNextException(out bool hasItem, out string resultId, out string kind, out string keyJson, out int leftRowIndex, out int rightRowIndex, out string reason, out int differenceCount, out string message)` | Reads the next exception of the last run. hasItem is False when there are no more. kind is a stable code such as Different or OnlyLeft; a row index is -1 when absent or ambiguous. |
+| `ValidateDefinitionJson` | `bool ValidateDefinitionJson(string definitionJson, out int errorCount, out string reportJson, out string message)` | Validates a JSON definition without loading it. Returns True when validation ran; errorCount is 0 for a valid definition and reportJson lists the findings. |
 
 ## ScreenCaptureUtils
 

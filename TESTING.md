@@ -761,6 +761,31 @@ The platform-independent xunit coverage is in
 (`dotnet test src/statemachineutils/StateMachineUtils.Tests/StateMachineUtils.Tests.csproj`), including
 `QueueWorkerExampleTests`, which runs the worked example straight from its documentation page.
 
+### ReconciliationUtils (no setup required; Cleanup: dispose the component)
+
+- Follow `Documentation/QuickStart.md`: build the definition with the `Add...` methods, `ReconcileJson` the two
+  sample arrays, and verify `exceptionCount` 3, `GetSummary` 3/3/1/3, and the exception/difference cursors read
+  Different, OnlyLeft and OnlyRight with the documented values.
+- **Design surface:** wire `TryReadNextException`'s `hasItem` as the condition of a `While` loop and `kind` into a
+  `StringSwitch`; nest a second `While` on `TryReadNextDifference`. Confirm every output binds as a scalar port
+  (including the `-1` row indices) and the `ComparisonNullPolicy` argument shows as a drop-down.
+- Load the definition from a Robot Studio asset with `LoadDefinitionJson`; verify a definition with a typo is
+  rejected whole (with `ValidateDefinitionJson` listing the finding) and the previous one keeps working.
+- Reconcile data that has a duplicate key, a row with a missing key, a non-numeric amount and a right-only record;
+  verify each kind appears once, every row is counted once (`GetSummaryJson` equations), and `GetResultJson`
+  lists every member of the duplicate group.
+- Run twice: the second run's results replace the first; a run with malformed JSON returns `False` and leaves
+  nothing for the readers; any setup change discards results; `ResetResultCursor` restarts reading.
+- Set `ConfigureLimits` below the input size and verify the run fails with a message naming the limit and no
+  results remain. Pass an empty string (not `[]`) and verify the "use []" message.
+- Confirm no message contains values from the data (put a recognizable marker in a failing field).
+- Hand exceptions to a `LocalQueueUtils` queue as in `Documentation/QueueHandoff.md` and verify one item per exception.
+
+The platform-independent xunit coverage is in
+`src/reconciliationutils/ReconciliationUtils.Tests`
+(`dotnet test src/reconciliationutils/ReconciliationUtils.Tests/ReconciliationUtils.Tests.csproj`), including
+`DocumentationExampleTests`, which runs the worked examples straight from the documentation pages.
+
 ### DataContractUtils (no external setup; configure properties before initialization)
 
 - Preload typed definitions from design-time JSON and a relative/absolute JSON

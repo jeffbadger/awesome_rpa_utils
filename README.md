@@ -23,6 +23,7 @@ for checking whether something already exists before writing it yourself.
 | [localqueueutils](src/localqueueutils/README.md) | `LocalQueueAutomation` | Persists variable-count local JSON, text, or file work and exposes a designer-friendly lease/process/complete loop without a Pega collection proxy. |
 | [mouseutils](src/mouseutils/README.md) | `MouseAutomation` | Moves, clicks, drags, and scrolls the mouse via `SendInput`/`SetCursorPos`; controls cursor appearance, visibility, and confinement. |
 | [ocrutils](src/ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
+| [reconciliationutils](src/reconciliationutils/README.md) | `ReconciliationAutomation` | Reconciles two JSON datasets by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal and text comparison and scalar results for routing. |
 | [screencaptureutils](src/screencaptureutils/README.md) | `ScreenCaptureAutomation` | Captures the screen, a region, or a window to a file/clipboard; compares captures against a baseline; annotates or redacts saved screenshots. |
 | [serviceutils](src/serviceutils/README.md) | `ServiceAutomation` | Queries, starts, stops, restarts, and configures the startup type of Windows services. |
 | [sessionutils](src/sessionutils/README.md) | `SessionAutomation` | Reports on and acts on Windows session/workstation state: session identity/kind, enumeration, connect state, lock/desktop availability, idle time, and deliberate lock/disconnect actions. |
@@ -258,6 +259,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [localqueueutils/README.md](src/localqueueutils/README.md) and [localqueueutils/Documentation/](src/localqueueutils/Documentation/README.md)
 - [mouseutils/README.md](src/mouseutils/README.md) and [mouseutils/Documentation/](src/mouseutils/Documentation/README.md)
 - [ocrutils/README.md](src/ocrutils/README.md) and [ocrutils/Documentation/](src/ocrutils/Documentation/README.md)
+- [reconciliationutils/README.md](src/reconciliationutils/README.md) and [reconciliationutils/Documentation/](src/reconciliationutils/Documentation/README.md)
 - [screencaptureutils/README.md](src/screencaptureutils/README.md) and [screencaptureutils/Documentation/](src/screencaptureutils/Documentation/README.md)
 - [serviceutils/README.md](src/serviceutils/README.md) and [serviceutils/Documentation/](src/serviceutils/Documentation/README.md)
 - [sessionutils/README.md](src/sessionutils/README.md) and [sessionutils/Documentation/](src/sessionutils/Documentation/README.md)
@@ -330,7 +332,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `WinEventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, `InterruptUtils`, `ClipboardUtils`, and `StateMachineUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, `InterruptUtils`, `ClipboardUtils`, `StateMachineUtils`, and `ReconciliationUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -355,7 +357,9 @@ and
 and
 `dotnet test src/clipboardutils/ClipboardUtils.Tests/ClipboardUtils.Tests.csproj`,
 and
-`dotnet test src/statemachineutils/StateMachineUtils.Tests/StateMachineUtils.Tests.csproj` —
+`dotnet test src/statemachineutils/StateMachineUtils.Tests/StateMachineUtils.Tests.csproj`,
+and
+`dotnet test src/reconciliationutils/ReconciliationUtils.Tests/ReconciliationUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
