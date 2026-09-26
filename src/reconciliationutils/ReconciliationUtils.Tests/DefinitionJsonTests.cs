@@ -455,6 +455,46 @@ namespace ReconciliationAutomation.Tests
             Assert.Equal(new[] { "Company", "Invoice", "Added" }, keys);   // the loaded keys, then the added one: nothing lost
         }
 
+        // A property nested `levels` deep inside the root object: the root is level 1, so levels = 64 is the deepest allowed document.
+        private static string NestedInUnknownProperty(int levels)
+        {
+            string open = string.Concat(Enumerable.Repeat("{\"n\":", levels - 1));
+            return "{\"schemaVersion\":1,\"deep\":" + open + "1" + new string('}', levels - 1) + "}";
+        }
+
+        [Fact]
+        public void TheDefinitionDepthBound_IsTheDocumented64_NotAnUndocumentedSmallerOne()
+        {
+            // 64 levels is accepted as far as depth goes: the only finding is the unknown property that holds the nesting.
+            string atLimit = Validate(NestedInUnknownProperty(64), out int errors);
+            Assert.Equal(1, errors);
+            Assert.Equal("UnknownProperty", FirstCode(atLimit));
+
+            // 20 levels used to be refused by a hidden limit of 16; it is fine now.
+            Assert.Equal(new[] { "UnknownProperty" }, Codes(Validate(NestedInUnknownProperty(20), out _)));
+        }
+
+        [Fact]
+        public void ADefinitionNestedBeyond64Levels_IsReportedAsADepthLimit_NotAsMalformedJson()
+        {
+            string report = Validate(NestedInUnknownProperty(65), out int errors);
+            Assert.Equal(1, errors);
+            Assert.Equal("DepthLimit", FirstCode(report));
+            Assert.Contains("64", report);
+
+            using var c = new ReconciliationUtils();
+            Assert.False(c.LoadDefinitionJson(NestedInUnknownProperty(65), out string message));
+            Assert.Contains("DepthLimit", message);
+        }
+
+        [Fact]
+        public void TheDepthBound_AppliesToNestedArraysToo_AndDoesNotHideOrInventOtherProblems()
+        {
+            string arrays = "{\"schemaVersion\":1,\"deep\":" + new string('[', 70) + new string(']', 70) + "}";
+            Assert.Equal("DepthLimit", FirstCode(Validate(arrays, out _)));
+            Assert.Equal("MalformedJson", FirstCode(Validate("{\"schemaVersion\":1,\"deep\":" + new string('[', 10) + "}", out _)));   // unbalanced but shallow: malformed, and not a crash
+        }
+
         [Fact]
         public void ADefinitionOverTheSizeLimit_IsRefused()
         {

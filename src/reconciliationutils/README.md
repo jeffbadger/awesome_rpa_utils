@@ -56,7 +56,7 @@ loaded from JSON produce identical text.
 - **Simple** methods use the safe defaults: no trimming, case-sensitive, tolerance `0`, and a
   value required on both sides. Names must be unique across keys and comparisons (ignoring case).
 - **Tolerance** is non-negative decimal *text* such as `0` or `0.01`.
-- Unknown properties, repeated properties, wrong types and numeric enum values are errors.
+- Unknown properties, repeated properties, wrong types and numeric enum values are errors. A definition is read with the same depth bound as input (64 levels; a real one is 3 deep), reported as `DepthLimit`.
   `ValidateDefinitionJson` reports every problem (path, code, message; up to 100) without
   changing anything: `errorCount` is 0 for a valid definition.
 - Input JSON is read with bounds (characters, depth 64, rows, and 256 characters per number), rejects repeated property names

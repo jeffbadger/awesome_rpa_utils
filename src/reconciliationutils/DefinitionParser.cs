@@ -50,10 +50,18 @@ namespace ReconciliationAutomation
         /// <summary>Parses <paramref name="json"/>. Returns the definition, or null when there is any finding (see <paramref name="findings"/>).</summary>
         internal static ReconciliationDefinition Parse(string json, DefinitionFindings findings)
         {
+            // The same depth bound as input documents (64 levels, the plan's fixed JSON depth). A real definition is at most three
+            // levels deep, so this only ever trips on hostile or broken text, and it gets its own finding instead of "malformed".
+            if (ExceedsDepth(json))
+            {
+                findings.Add("$", "DepthLimit", "the definition is nested deeper than the limit of " + JsonInput.MaxDepth + " levels");
+                return null;
+            }
+
             JsonDocument document;
             try
             {
-                document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 16, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
+                document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = JsonInput.MaxDepth, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
             }
             catch (JsonException ex)
             {
@@ -83,6 +91,24 @@ namespace ReconciliationAutomation
 
                 return findings.Total == 0 ? definition : null;
             }
+        }
+
+        /// <summary>
+        /// True when the text nests objects/arrays deeper than <see cref="JsonInput.MaxDepth"/>. Decided by token depth, never by the
+        /// parser's (localized) exception text. Text that is malformed in some other way returns false here and is reported by the parse.
+        /// </summary>
+        private static bool ExceedsDepth(string json)
+        {
+            try
+            {
+                var reader = new Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes(json),
+                    new JsonReaderOptions { MaxDepth = JsonInput.MaxDepth + 1, AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
+                while (reader.Read())
+                    if ((reader.TokenType == JsonTokenType.StartObject || reader.TokenType == JsonTokenType.StartArray) && reader.CurrentDepth + 1 > JsonInput.MaxDepth)
+                        return true;
+            }
+            catch (JsonException) { /* malformed: left for the parse to report */ }
+            return false;
         }
 
         // ------------------------------------------------------------------ sections
