@@ -13,7 +13,7 @@ var recon = new ReconciliationUtils();
 
 recon.AddKeyMappingSimple("Invoice", "/invoice", "/invoiceId", out string message);
 recon.AddDecimalComparisonSimple("Amount", "/amount", "/paid", out message);
-recon.AddTextComparison("Status", "/status", "/status", trim: true, ignoreCase: true,
+recon.AddTextComparison("Status", "/status", "/status", true /* trim */, true /* ignoreCase */,
                         ComparisonNullPolicy.RequireValue, out message);
 ```
 
