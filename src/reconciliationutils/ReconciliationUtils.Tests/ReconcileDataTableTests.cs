@@ -414,5 +414,33 @@ namespace ReconciliationAutomation.Tests
             table.Rows[1].Delete();                                             // now 1 live row: still fine
             Assert.True(c.ReconcileDataTables(table, table, out _, out m), m);
         }
+
+        [Fact]
+        public void AWholeFloatingPointValue_IsAnInteger_SoItIsAValidKey_NeverAnExponentOrNegativeZero()
+        {
+            Assert.Equal((FieldKind.Integer, "1000000000000000"), Map(1e15));                        
+            Assert.Equal((FieldKind.Integer, "123456789012345"), Map(123456789012345.0));
+            Assert.Equal((FieldKind.Integer, "9007199254740991"), Map(9007199254740991.0));          // 2^53 - 1
+            Assert.Equal((FieldKind.Integer, "-4000000000000000"), Map(-4e15));
+            Assert.Equal((FieldKind.Integer, "0"), Map(0.0));
+            Assert.Equal((FieldKind.Integer, "0"), Map(-0.0));                                        // never "-0"
+            Assert.Equal((FieldKind.Integer, "3"), Map(3.0));
+            Assert.Equal((FieldKind.Integer, "3000000000"), Map(3e9f));                               // a float's shortest text is 3E+09, which is not an integer token
+            Assert.Equal((FieldKind.Integer, "16777216"), Map(16777216f));
+            Assert.Equal(FieldKind.Number, Map(12345678901234567890.0).kind);                         // beyond 2^53 a double is not claimed as an exact whole number (its text is an exponent)
+            Assert.Equal(FieldKind.Number, Map(1e300).kind);
+            Assert.Equal(FieldKind.Number, Map(0.5).kind);
+        }
+
+        [Fact]
+        public void AKeyStoredAsADouble_MatchesTheSameNumberAsText()
+        {
+            using var c = new ReconciliationUtils();
+            Assert.True(c.AddKeyMappingSimple("Id", "/Id", "/Id", out string m), m);
+            var left = new DataTable(); left.Columns.Add("Id", typeof(double)); left.Rows.Add(2000000000000000.0);
+            var right = new DataTable(); right.Columns.Add("Id", typeof(string)); right.Rows.Add("2000000000000000");
+            Assert.True(c.ReconcileDataTables(left, right, out int count, out m), m);
+            Assert.Equal(0, count);
+        }
     }
 }
