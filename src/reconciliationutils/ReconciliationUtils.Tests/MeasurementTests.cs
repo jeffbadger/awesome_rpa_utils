@@ -8,11 +8,15 @@ namespace ReconciliationAutomation.Tests
 {
     /// <summary>
     /// Opt-in measurements of the default-limit workloads (set RECON_MEASURE=1; run one workload per process for a meaningful peak, for example
-    /// <c>RECON_MEASURE=1 dotnet test --filter Measure_Matching</c>). Results are appended to the file named by RECON_MEASURE_OUT, or written to the
-    /// test output. Without the variable each test returns immediately, so normal runs are unaffected.
+    /// <c>RECON_MEASURE=1 dotnet test --filter Measure_Matching</c>). Each result line is written to the test output (use <c>--logger "console;verbosity=detailed"</c> to see it) and, when
+    /// RECON_MEASURE_OUT names a file, appended to that file. Without the variable each test returns immediately, so normal runs are unaffected.
     /// </summary>
     public sealed class MeasurementTests
     {
+        private readonly Xunit.Abstractions.ITestOutputHelper output;
+
+        public MeasurementTests(Xunit.Abstractions.ITestOutputHelper output) { this.output = output; }
+
         private static bool Enabled => Environment.GetEnvironmentVariable("RECON_MEASURE") == "1";
 
         private static string Rows(int count, Func<int, string> row)
@@ -32,7 +36,7 @@ namespace ReconciliationAutomation.Tests
             return c;
         }
 
-        private static void Measure(string workload, string left, string right, bool maximumLimits = false)
+        private void Measure(string workload, string left, string right, bool maximumLimits = false)
         {
             using ReconciliationUtils c = Component();
             if (maximumLimits) Assert.True(c.ConfigureLimits(250000, 32000000, 500000, 500000, out string limitMessage), limitMessage);
@@ -57,6 +61,7 @@ namespace ReconciliationAutomation.Tests
                           $"runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} cores={Environment.ProcessorCount}";
             string outFile = Environment.GetEnvironmentVariable("RECON_MEASURE_OUT");
             if (outFile != null) File.AppendAllText(outFile, line + Environment.NewLine);
+            output.WriteLine(line);          // always in the test output too (show it with: dotnet test --logger "console;verbosity=detailed")
             Assert.True(ok, message);
         }
 
