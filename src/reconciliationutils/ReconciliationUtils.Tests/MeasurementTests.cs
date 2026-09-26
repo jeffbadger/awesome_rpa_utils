@@ -120,5 +120,67 @@ namespace ReconciliationAutomation.Tests
                 Rows(250000, i => "{\"id\":\"K" + i + "\",\"name\":\"l" + i + "\",\"amount\":\"1\",\"status\":\"Open\"}"),
                 Rows(250000, i => "{\"id\":\"K" + i + "\",\"name\":\"r" + i + "\",\"amount\":\"9\",\"status\":\"Open\"}"), maximumLimits: true);
         }
+
+        private void Report(string line)
+        {
+            string outFile = Environment.GetEnvironmentVariable("RECON_MEASURE_OUT");
+            if (outFile != null) File.AppendAllText(outFile, line + Environment.NewLine);
+            output.WriteLine(line);
+        }
+
+        private static System.Data.DataTable Table(int rows, string side, bool different)
+        {
+            var t = new System.Data.DataTable();
+            t.Columns.Add("id", typeof(string)); t.Columns.Add("name", typeof(string)); t.Columns.Add("amount", typeof(decimal)); t.Columns.Add("status", typeof(string)); t.Columns.Add("note", typeof(string));
+            t.BeginLoadData();
+            for (int i = 0; i < rows; i++)
+                t.LoadDataRow(new object[] { "INV-" + i.ToString("D7"), (different ? side : "Customer ") + i, (i % 1000) + (different && side == "R" ? 9m : 0m) + 0.25m, "Open", "row " + i }, true);
+            t.EndLoadData();
+            return t;
+        }
+
+        // 50,000 rows a side read from DataTables (the default row limit), all matching and then every row differing
+        [Fact]
+        public void Measure_DataTables()
+        {
+            if (!Enabled) return;
+            foreach (bool different in new[] { false, true })
+            {
+                System.Data.DataTable left = Table(50000, "L", different), right = Table(50000, "R", different);
+                using ReconciliationUtils c = Component();
+                GC.Collect();
+                long before = GC.GetTotalMemory(true);
+                var clock = Stopwatch.StartNew();
+                bool ok = c.ReconcileDataTables(left, right, out int exceptions, out string message);
+                clock.Stop();
+                long retained = GC.GetTotalMemory(true) - before;
+                Process p = Process.GetCurrentProcess();
+                Report($"tables50k-{(different ? "differing" : "matching")}: ok={ok} message={message} exceptions={exceptions} runMs={clock.ElapsedMilliseconds} retainedByResultsMB={retained / 1048576} peakWorkingSetMB={p.PeakWorkingSet64 / 1048576} runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
+                Assert.True(ok, message);
+            }
+        }
+
+        // the report for 50,000 differing rows (100,000 differences); first against the default output limit, then under the maximum
+        [Fact]
+        public void Measure_Export()
+        {
+            if (!Enabled) return;
+            string left = Rows(50000, i => "{\"id\":\"K" + i + "\",\"name\":\"left " + i + "\",\"amount\":\"1.00\",\"status\":\"Open\"}");
+            string right = Rows(50000, i => "{\"id\":\"K" + i + "\",\"name\":\"right " + i + "\",\"amount\":\"9.00\",\"status\":\"Open\"}");
+            using ReconciliationUtils c = Component();
+            Assert.True(c.ReconcileJson(left, right, out _, out string m), m);
+            Report("export50k default limit: " + (c.ExportResultsJson("measure", out _, out string refused) ? "fits" : refused));
+            Assert.True(c.ConfigureOutputLimit(ReconciliationLimits.MaxOutputCharacters, out m), m);        // measure the size itself, under the maximum
+            GC.Collect();
+            long before = GC.GetTotalMemory(true);
+            long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+            var clock = Stopwatch.StartNew();
+            bool ok = c.ExportResultsJson("measure", out string report, out string message);
+            clock.Stop();
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+            Process p = Process.GetCurrentProcess();
+            Report($"export50k: ok={ok} message={message} reportChars={report?.Length} exportMs={clock.ElapsedMilliseconds} allocatedMB={allocated / 1048576} peakWorkingSetMB={p.PeakWorkingSet64 / 1048576} runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
+            Assert.True(ok, message);
+        }
     }
 }

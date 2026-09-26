@@ -15,7 +15,7 @@ compared. Every result comes back through scalar ports, so it can drive a Robot 
 | [ResultsAndCounts](ResultsAndCounts.md) | The seven result kinds, the counts and the accounting equations, both cursors and `GetResultJson`. |
 | [Export](Export.md) | Exporting a deterministic JSON report of a run, the run label and the output limit. |
 | [QueueHandoff](QueueHandoff.md) | Turning exceptions into work items (for example in `LocalQueueUtils`) for review or correction. |
-| [Limits](Limits.md) | The four resource limits, their defaults and maximums, and what a run does when one is exceeded. |
+| [Limits](Limits.md) | The resource limits (run, DataTable and export), their defaults and maximums, what a run does when one is exceeded, and measured cost. |
 
 The [component README](../README.md) holds the method reference. Conventions shared by every method:
 
@@ -24,6 +24,6 @@ The [component README](../README.md) holds the method reference. Conventions sha
 - A reconciliation that finds mismatches is still a **success** (`True`, `message` null). Read the
   outcome from the outputs, not from `message`.
 - On failure every output holds its sentinel: null strings, 0 counts, `False` flags, `-1` row indices.
-- Messages never contain data from your rows. Values come only through the value outputs and `GetResultJson`.
+- Messages never contain data from your rows. Values come only through the value outputs, `GetResultJson` and `ExportResultsJson`.
 - Use one instance per automation flow. Calls are serialized by an instance lock.
 - The component is in-memory only: nothing is written to disk and nothing leaves the machine.

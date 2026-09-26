@@ -51,3 +51,19 @@ The defaults comfortably fit a typical robot machine, and even the maximums stay
 Memory grows with input size, so wider rows or a 32-million-character input cost proportionally more. The
 measurements are repeatable: set `RECON_MEASURE=1` and run the `MeasurementTests` one at a time (see the class remarks).
 Timings on a Windows robot will differ; treat these as an order of magnitude, not a promise.
+
+### DataTables and export
+
+Same machine and method. The DataTable runs use the same five-column rows as the first two workloads above, held in two `DataTable`s
+(loading the tables is not included in the time). The export is of the "every row differs in two fields" workload.
+
+| Workload | Time | Held by results | Peak process |
+|---|---|---|---|
+| `ReconcileDataTables`, 50,000 rows a side, all matching | 0.43 s | 22 MB | 219 MB |
+| `ReconcileDataTables`, 50,000 rows a side, every row differs | 0.48 s | 60 MB | 273 MB |
+| `ExportResultsJson` of 50,000 differing results (100,000 differences) | 0.10 s | (report: 43.8 M characters) | 534 MB |
+
+**The default output limit (16,000,000 characters) is smaller than the report for a full-size run with many differences.** A differing
+result with two field differences is about 875 characters, so the 50,000-row workload above produces a 43.8-million-character report and is refused under the
+default with a message naming `ConfigureOutputLimit`. Raise it (for that workload, to at least 50,000,000; the maximum is 64,000,000) before exporting. A run
+that is mostly matches is far smaller (a matched pair with a short key is about 230 characters). Exporting 43.8 M characters allocated about 270 MB in total.
