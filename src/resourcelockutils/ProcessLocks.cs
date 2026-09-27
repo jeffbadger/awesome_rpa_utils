@@ -9,12 +9,6 @@ namespace ResourceLockAutomation
 {
     internal enum LockKind { Lock, Slot }
 
-    /// <summary>A lease owner that can be closed (a disposed component). Checked inside the lock table's lock, so an acquire can never add a
-    /// lease to an owner whose disposal has already released everything it held.</summary>
-    internal interface ILeaseOwner
-    {
-        bool IsClosed { get; }
-    }
 
     /// <summary>The outcome of an acquire attempt: acquired with a token, or who and how many hold it.</summary>
     internal readonly struct AcquireResult
@@ -124,7 +118,9 @@ namespace ResourceLockAutomation
 
         internal static int HeldBy(object owner) { lock (Sync) return OwnerCounts.TryGetValue(owner, out int count) ? count : 0; }
 
-        private static bool IsClosed(object owner) => owner is ILeaseOwner o && o.IsClosed;
+        /// <summary>Whether the owner is a disposed component. Checked inside the table's lock, so an acquire can never add a lease to a component
+        /// whose disposal has already released everything it held.</summary>
+        private static bool IsClosed(object owner) => owner is ResourceLockUtils component && component.IsClosedForLeases;
 
         private static AcquireResult TryAcquireLocked(string resource, LockKind kind, int capacity, string holder, long leaseMs, object owner, long now)
         {

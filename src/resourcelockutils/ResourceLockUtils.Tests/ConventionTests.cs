@@ -89,6 +89,7 @@ namespace ResourceLockAutomation.Tests
         {
             Type[] expected = { typeof(ResourceLockUtils), typeof(LockScope) };
             Assert.Equal(expected.Select(t => t.Name).OrderBy(n => n), typeof(ResourceLockUtils).Assembly.GetExportedTypes().Select(t => t.Name).OrderBy(n => n));
+            Assert.DoesNotContain(typeof(ResourceLockUtils).GetInterfaces(), i => !i.IsPublic);                // no internal type in the component's metadata
         }
 
         [Fact]

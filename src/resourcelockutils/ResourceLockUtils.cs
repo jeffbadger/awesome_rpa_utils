@@ -13,10 +13,10 @@ namespace ResourceLockAutomation
     /// and <c>ValidateLockFolder</c> report that they are not implemented yet. See project-docs/plans/2026-09-27-resourcelockutils-design.md.
     /// </remarks>
     [Description("Locks on named resources that any thread can release and that Server Bots on one machine share: a lease owned by a token, renewed or released from any thread, that expires if its holder crashes or hangs. Under construction: the Process scope works; the Machine scope is not implemented yet. Never throws.")]
-    public sealed class ResourceLockUtils : Component, ILeaseOwner
+    public sealed class ResourceLockUtils : Component
     {
         private readonly object syncRoot = new object();
-        private volatile bool disposed;             // volatile: the lock table reads it (as ILeaseOwner.IsClosed) under its own lock
+        private volatile bool disposed;             // volatile: the lock table reads it (IsClosedForLeases) under its own lock
         private string lockFolder;                  // null: the default folder
 
         /// <summary>Empty constructor required so Pega Robot Studio can create the component.</summary>
@@ -210,7 +210,7 @@ namespace ResourceLockAutomation
         // ------------------------------------------------------------------ plumbing
 
         /// <summary>Read by the lock table inside its lock, so disposal and an acquire that was already admitted cannot interleave badly.</summary>
-        bool ILeaseOwner.IsClosed => disposed;
+        internal bool IsClosedForLeases => disposed;
 
         /// <summary>The folder Machine-scope locks use: the configured one, or the default.</summary>
         internal string LockFolder { get { lock (syncRoot) { return lockFolder ?? LockInput.DefaultFolder; } } }
