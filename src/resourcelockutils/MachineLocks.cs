@@ -83,7 +83,8 @@ namespace ResourceLockAutomation
 
     /// <summary>
     /// The Machine scope: locks shared by every robot on the machine (Server Bots in other sessions, under other Windows accounts) through lease
-    /// files in one folder. The protocol needs only the right to create files in the folder:
+    /// files in one folder. Each robot needs the rights to list the folder, read its files and create files in it; no robot ever needs to delete or
+    /// rename another robot's file:
     /// <list type="bullet">
     /// <item>A lock is a chain of generation files <c>&lt;resource&gt;.&lt;slot&gt;.&lt;generation&gt;.lease</c> (a lock is slot 0; a pool of
     /// capacity N uses slots 0 to N-1). The highest generation of a chain decides: it holds the slot when it is not released, not expired and
@@ -189,7 +190,7 @@ namespace ResourceLockAutomation
             {
                 chain.Files.Sort((a, b) => b.Generation.CompareTo(a.Generation));
                 long top = chain.Highest;
-                while (File.Exists(Path.Combine(folder, FileName(resource, chain.Slot, top + 1)))) top++;
+                for (int step = 0; step < MaxProbe && Present(Path.Combine(folder, FileName(resource, chain.Slot, top + 1))); step++) top++;
                 if (top > chain.Highest) chain.Files.Insert(0, (top, Path.Combine(folder, FileName(resource, chain.Slot, top))));
                 if (chain.Files.Count == 0) chains.Remove(chain.Slot);
             }
@@ -197,7 +198,7 @@ namespace ResourceLockAutomation
             {
                 string top = chain.Files[0].Path;
                 chain.Top = ReadRecord(top, out bool denied);
-                for (int attempt = 0; chain.Top == null && !denied && attempt < 10 && File.Exists(top); attempt++)
+                for (int attempt = 0; chain.Top == null && !denied && attempt < 10 && Present(top); attempt++)
                 {
                     Thread.Sleep(10);                                                       // a new lease whose content is still being written
                     chain.Top = ReadRecord(top, out denied);
@@ -209,12 +210,35 @@ namespace ResourceLockAutomation
             return chains;
         }
 
+        /// <summary>
+        /// Whether a file exists, telling a missing file from one this account may not access. File.Exists answers False for both, so an
+        /// access-denied lease would look absent: the lookup of the top would stop early and a protected lease would look old.
+        /// </summary>
+        internal static bool Present(string path)
+        {
+            try { File.GetAttributes(path); return true; }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+            catch (Exception ex) when (ex is UnauthorizedAccessException || ex is IOException)
+            {
+                // Access denied (or busy) says nothing about existence: in a folder this account may list but not access, every name is denied,
+                // and taking that as present made the lookup of the top loop forever. The listing confirms the exact name; it never invents one.
+                try { return Directory.EnumerateFiles(Path.GetDirectoryName(path), Path.GetFileName(path)).Any(); }
+                catch (Exception inner) when (inner is UnauthorizedAccessException || inner is IOException) { return true; }
+            }
+        }
+
+        /// <summary>A safety bound on the lookup of the top by name; far above any real chain (old generations are cleaned up).</summary>
+        internal const int MaxProbe = 100000;
+
         /// <summary>How long an unreadable lease file counts as held (being written) before it is treated as stale and superseded.</summary>
         internal const int UnreadableGraceSeconds = 10;
 
+        /// <summary>Whether a present file was written less than the given seconds ago. A timestamp that cannot be read counts as young (held).</summary>
         private static bool IsYoung(string path, DateTime now, int seconds)
         {
-            try { return File.Exists(path) && (now - File.GetLastWriteTimeUtc(path)).TotalSeconds < seconds; }
+            if (!Present(path)) return false;
+            try { return (now - File.GetLastWriteTimeUtc(path)).TotalSeconds < seconds; }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { return true; }
         }
 
@@ -336,13 +360,13 @@ namespace ResourceLockAutomation
             foreach (string path in Directory.EnumerateFiles(folder, key + "." + slot.ToString(CultureInfo.InvariantCulture) + ".*.lease"))
             {
                 Match m = LeaseName.Match(Path.GetFileName(path));
-                if (!m.Success || m.Groups["resource"].Value != key) continue;
+                if (!m.Success || m.Groups["resource"].Value != key || int.Parse(m.Groups["slot"].Value, CultureInfo.InvariantCulture) != slot) continue;
                 long generation = long.Parse(m.Groups["gen"].Value, CultureInfo.InvariantCulture);
                 if (generation >= highest) continue;
                 string successor = Path.Combine(folder, FileName(resource, slot, generation + 1));
                 try
                 {
-                    if (File.Exists(successor) && (now - File.GetLastWriteTimeUtc(successor)).TotalMinutes >= SafeDeleteMinutes) TryDelete(path);
+                    if (Present(successor) && !IsYoung(successor, now, SafeDeleteMinutes * 60)) TryDelete(path);
                 }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
             }
@@ -377,6 +401,28 @@ namespace ResourceLockAutomation
         private static void ForgetEverywhere(string token)
         {
             foreach (object owner in Holdings.Keys.ToList()) Forget(owner, token);
+        }
+
+        /// <summary>
+        /// Stops tracking an owner's leases that are no longer held where they were taken (expired, released, superseded or their file gone),
+        /// so leases that ended without being renewed or released do not count against the per-component limit.
+        /// </summary>
+        private static void PruneLost(object owner)
+        {
+            if (!Holdings.TryGetValue(owner, out List<Holding> list)) return;
+            DateTime now = UtcNow;
+            foreach (var group in list.ToList().GroupBy(h => (h.Folder, Resource: Key(h.Resource))))
+            {
+                SortedDictionary<int, Chain> chains;
+                try { chains = Directory.Exists(group.Key.Folder) ? ReadChains(group.Key.Folder, group.First().Resource, now) : new SortedDictionary<int, Chain>(); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { continue; }   // cannot tell: keep counting them
+                foreach (Holding h in group)
+                {
+                    var (chain, _) = FindTop(chains, h.Token);
+                    if (chain == null || !chain.Held) list.Remove(h);
+                }
+            }
+            if (list.Count == 0) Holdings.Remove(owner);
         }
 
         /// <summary>Where a token's lease was taken (by any component in this process), or null when this process does not know it.</summary>
@@ -418,6 +464,14 @@ namespace ResourceLockAutomation
                 LeaseRecord other = held.FirstOrDefault(r => r.Capacity != capacity);
                 if (other != null)
                     return new AcquireResult(false, null, null, 0, "the resource is in use with a capacity of " + other.Capacity + "; every caller must give the same capacity");
+                // A held slot whose lease cannot be read has an unknown kind and capacity: allocating another slot beside it could mix a lock with
+                // a pool. Wait until it can be read (a half-written lease, milliseconds) or ends (an unreadable one, at most the longest lease).
+                if (chains.Values.Any(c => c.Held && c.Top == null))
+                {
+                    List<string> unreadable = HolderNames(chains.Values.Where(c => c.Held));
+                    return new AcquireResult(false, null, unreadable.FirstOrDefault(), unreadable.Count, null);
+                }
+                if (HeldBy(owner) >= LockLimits.MaxHeldPerInstance) PruneLost(owner);           // leases that ended unvisited still count until pruned
                 if (HeldBy(owner) >= LockLimits.MaxHeldPerInstance)
                     return new AcquireResult(false, null, null, 0, "this component already holds " + LockLimits.MaxHeldPerInstance + " locks and slots; release some first");
                 for (int slot = 0; slot < capacity; slot++)
@@ -607,21 +661,31 @@ namespace ResourceLockAutomation
                     w.WriteStartArray("locks");
                     foreach (string resource in resources)
                     {
-                        List<LeaseRecord> live = ReadChains(folder, resource, now).Values.Where(c => c.Held && c.Top != null).Select(c => c.Top).ToList();
+                        List<Chain> live = ReadChains(folder, resource, now).Values.Where(c => c.Held).ToList();
                         if (live.Count == 0) continue;
+                        LeaseRecord known = live.Select(c => c.Top).FirstOrDefault(r => r != null);
                         w.WriteStartObject();
                         w.WriteString("resource", resource);
-                        w.WriteString("kind", live[0].Kind.ToString());
-                        w.WriteNumber("capacity", live[0].Capacity);
+                        if (known == null) { w.WriteNull("kind"); w.WriteNull("capacity"); }   // only unreadable leases: unknown
+                        else { w.WriteString("kind", known.Kind.ToString()); w.WriteNumber("capacity", known.Capacity); }
                         w.WriteStartArray("holders");
-                        foreach (LeaseRecord r in live)
+                        foreach (Chain c in live)
                         {
+                            LeaseRecord r = c.Top;
                             w.WriteStartObject();
-                            w.WriteString("holder", r.Holder);
-                            w.WriteNumber("expiresInSeconds", ProcessLocks.Seconds((long)Math.Ceiling((r.ExpiresUtc - now).TotalMilliseconds)));
-                            w.WriteString("machine", r.Machine);
-                            w.WriteNumber("sessionId", r.SessionId);
-                            w.WriteNumber("processId", r.ProcessId);
+                            if (r == null)
+                            {
+                                w.WriteString("holder", "(an unreadable lease)");            // being written, or not readable by this account
+                                w.WriteNull("expiresInSeconds"); w.WriteNull("machine"); w.WriteNull("sessionId"); w.WriteNull("processId");
+                            }
+                            else
+                            {
+                                w.WriteString("holder", r.Holder);
+                                w.WriteNumber("expiresInSeconds", ProcessLocks.Seconds((long)Math.Ceiling((r.ExpiresUtc - now).TotalMilliseconds)));
+                                w.WriteString("machine", r.Machine);
+                                w.WriteNumber("sessionId", r.SessionId);
+                                w.WriteNumber("processId", r.ProcessId);
+                            }
                             w.WriteEndObject();
                         }
                         w.WriteEndArray();

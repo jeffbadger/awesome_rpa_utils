@@ -32,8 +32,9 @@ Bots from using the same resource.
   most 1,000 at a time. Expired leases are cleared when their resource is next used, and by a background sweep once a minute while any lock
   is held, so stale entries never accumulate.
 - **`Machine` scope details:** each lock or slot is a chain of small lease files, `<resource>.<slot>.<generation>.lease`, in the lock folder
-  (created when missing). A file records the holder, the lease end, and the holder's machine, session, process and process start time. Robots
-  need only the right to create files there: nothing ever deletes or renames another robot's current lease.
+  (created when missing). A file records the holder, the lease end, and the holder's machine, session, process and process start time. Every
+  robot account needs to **list the folder, read its files and create files** in it. None needs to delete or rename another robot's files:
+  nothing ever deletes or renames another robot's current lease (deleting old ones is optional cleanup).
   - A holder whose process has ended (or whose process ID now belongs to another process, told apart by its exact start time) frees its lock
     at once; a holder this machine cannot check (another user's process it may not inspect) is trusted until its lease ends.
   - A lease file this robot's account may not read is treated as held until it is 24 hours old (the longest lease), never taken over early.

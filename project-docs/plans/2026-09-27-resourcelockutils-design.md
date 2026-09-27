@@ -46,7 +46,7 @@ not renewed expires, so a crashed or hung holder cannot block everyone forever.
 - **Race-proof takeover** (the core of WP3): taking over an expired or dead lease must not steal a lease its holder renewed in time, and two
   robots taking over the same stale lease must not both win. The generation-file protocol (decision 2) gives both: only one robot can create
   generation n+1, and a renewal before expiry is seen by any taker. The protocol is proven by multi-process stress tests, not by argument.
-- Robots need only the right to create files in the folder; deleting another robot's file is never needed for correctness, only for cleanup.
+- Robots need the rights to list the folder, read its files and create files in it; deleting another robot's file is never needed for correctness, only for cleanup.
   `ValidateLockFolder` reports the real permissions and fails with a clear message when files cannot be created; the documentation gives the
   recommended Server Bot setup (an admin-provisioned folder with Modify for the robot accounts, via `icacls`, set with `ConfigureLockFolder`).
 
@@ -110,7 +110,7 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    another robot's file: a lock is a sequence of **generation files** (`<resource>.<n>.lease`) created atomically with create-if-not-exists,
    the highest valid generation (not expired, holder process alive) holds the lock, a taker supersedes a stale generation by creating the next
    one, a holder renews by rewriting its own file and has lost the lease when a higher generation exists, and each robot deletes only its own
-   old generations. This needs only the right to create files. The default folder stays `%ProgramData%\AwesomeRpaUtils\Locks`;
+   old generations. This needs the rights to list the folder, read its files and create files, never to delete or rename another robot's. The default folder stays `%ProgramData%\AwesomeRpaUtils\Locks`;
    `ConfigureLockFolder` points to an admin-provisioned folder (recommended setup for Server Bots, which also allows full cleanup);
    `ValidateLockFolder` reports whether robots can create files, delete their own and delete another's, and fails with a message pointing at
    `ConfigureLockFolder` when files cannot be created. The default ProgramData ACL behaviour is to be confirmed on a real Server Bot host in WP3.
@@ -144,4 +144,8 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    within a second; a lease file this account may not read is held until it is older than the longest lease (24 h), never superseded after
    the 10 s grace for half-written files; token operations use the folder and resource the lease was taken in, and only a lease confirmed lost
    stops being tracked for disposal; cleanup after a successful create is best effort, so an acquire that created its lease always returns it.
-
+8. **Second review of PR #167**: the permissions a robot needs are listing the folder, reading its files and creating files (never deleting or
+   renaming another robot's), corrected wherever the plan said "only create"; file presence tells a missing file from an inaccessible one (so
+   an access-denied lease is never mistaken for absent or old); cleanup checks the parsed slot; a held slot whose lease cannot be read blocks
+   allocating another slot of the resource (its kind and capacity are unknown); leases that ended unvisited are pruned before the
+   per-component limit applies; the locks JSON lists unreadable held leases with null details; the test project states `OutputType` Exe. Testing the presence fix found that an access-denied name was taken as present, so in a folder that can be listed but not accessed the lookup of the top looped forever: an access-denied name is now confirmed by listing its exact name, and the lookup has a hard bound.

@@ -333,6 +333,88 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void Presence_TellsAMissingFileFromAPresentOne()
+        {
+            Directory.CreateDirectory(folder);
+            string path = Path.Combine(folder, "here.0.1.lease");
+            File.WriteAllText(path, "x");
+            Assert.True(MachineLocks.Present(path));
+            Assert.False(MachineLocks.Present(Path.Combine(folder, "gone.0.1.lease")));
+            Assert.False(MachineLocks.Present(Path.Combine(folder, "no-such-folder", "x.0.1.lease")));
+        }
+
+        [Fact]
+        public void AFolderThatCanBeListedButNotAccessed_KeepsItsLeasesHeld_AndDoesNotLoop()
+        {
+            // Read without execute on a Linux folder: names can be listed, but every file (and every name) is "access denied". Its lease must
+            // count as held (File.Exists would say it is not there), and looking up the next generation must end.
+            if (!OperatingSystem.IsLinux()) return;
+            using (var c = New()) Acquire(c, "listed", "other account");
+            var clock = Stopwatch.StartNew();
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead);
+            try
+            {
+                try { File.GetAttributes(Path.Combine(folder, "listed.0.1.lease")); return; } catch (UnauthorizedAccessException) { }   // root: cannot test
+                Assert.True(MachineLocks.Present(Path.Combine(folder, "listed.0.1.lease")));
+                Assert.False(MachineLocks.Present(Path.Combine(folder, "listed.0.2.lease")));
+                using var viewer = New();
+                Assert.True(viewer.GetLockStatus(LockScope.Machine, "listed", out bool held, out string holders, out _, out _, out string m), m);
+                Assert.Equal((true, "(an unreadable lease)"), (held, holders));
+                Assert.InRange(clock.ElapsedMilliseconds, 0, 10000);
+            }
+            finally { File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+        }
+
+        [Fact]
+        public void AHeldSlotThatCannotBeRead_BlocksTheRestOfThePool()
+        {
+            // Its kind and capacity are unknown: taking another slot beside it could put a pool lease next to a lock.
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "pool2.0.1.lease"), "");                                 // young and unreadable: held
+            using var c = New();
+            Assert.True(c.TryAcquireSlot(LockScope.Machine, "pool2", 3, "me", 60, out bool acquired, out string token, out int count, out string m), m);
+            Assert.Equal((false, (string)null, 1), (acquired, token, count));
+            Assert.Equal(new[] { "pool2.0.1.lease" }, Files());                                            // no slot 1 created beside it
+            Assert.True(c.GetLocksJson(LockScope.Machine, out string json, out m), m);
+            using JsonDocument doc = JsonDocument.Parse(json);
+            JsonElement entry = doc.RootElement.GetProperty("locks").EnumerateArray().Single();
+            Assert.Equal(JsonValueKind.Null, entry.GetProperty("kind").ValueKind);                         // unknown, and said so
+            JsonElement holder = entry.GetProperty("holders").EnumerateArray().Single();
+            Assert.Equal("(an unreadable lease)", holder.GetProperty("holder").GetString());
+            Assert.Equal(JsonValueKind.Null, holder.GetProperty("expiresInSeconds").ValueKind);
+        }
+
+        [Fact]
+        public void Cleanup_TouchesOnlyItsOwnSlot()
+        {
+            using var c = New();
+            var tokens = new List<string>();
+            for (int i = 0; i < 11; i++)
+            {
+                Assert.True(c.TryAcquireSlot(LockScope.Machine, "wide", 11, "r" + i, 60, out bool acquired, out string token, out _, out string m) && acquired, m);
+                tokens.Add(token);
+            }
+            Assert.True(c.ReleaseLock(LockScope.Machine, "wide", tokens[10], out _, out string msg), msg);       // slot 10: generation 1 released
+            Assert.True(c.TryAcquireSlot(LockScope.Machine, "wide", 11, "again", 60, out bool again, out _, out _, out msg) && again, msg);   // slot 10: generation 2
+            File.SetLastWriteTimeUtc(Path.Combine(folder, "wide.10.2.lease"), DateTime.UtcNow.AddMinutes(-(MachineLocks.SafeDeleteMinutes + 1)));
+            Assert.True(c.ReleaseLock(LockScope.Machine, "wide", tokens[1], out _, out msg), msg);                // cleanup of slot 1
+            Assert.Contains("wide.10.1.lease", Files());                                                     // slot 10 is not slot 1's to clean
+        }
+
+        [Fact]
+        public void LeasesThatEndedUnvisited_StopCountingAgainstTheLimit()
+        {
+            object owner = new object();
+            for (int i = 0; i < LockLimits.MaxHeldPerInstance; i++)
+                Assert.True(MachineLocks.TryAcquire(folder, "bulk-" + i, LockKind.Lock, 1, "one-shot", TimeSpan.FromMilliseconds(1500), owner).Acquired);
+            Assert.Equal(LockLimits.MaxHeldPerInstance, MachineLocks.HeldByForTests(owner));
+            Thread.Sleep(1700);                                                                             // all expired, none renewed or released
+            AcquireResult next = MachineLocks.TryAcquire(folder, "bulk-next", LockKind.Lock, 1, "one-shot", TimeSpan.FromSeconds(60), owner);
+            Assert.True(next.Acquired, next.Problem);
+            Assert.Equal(1, MachineLocks.HeldByForTests(owner));
+        }
+
+        [Fact]
         public void ARunningHolder_OrOneThisMachineCannotCheck_KeepsItsLease()
         {
             using Process self = Process.GetCurrentProcess();
