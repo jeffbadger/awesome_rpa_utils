@@ -65,7 +65,7 @@ namespace ResourceLockAutomation.Tests
             using Process self = Process.GetCurrentProcess();
             Assert.Equal((token, "Robot — Bänk", LockKind.Lock, 1), (r.Token, r.Holder, r.Kind, r.Capacity));
             Assert.Equal((Environment.MachineName, self.Id, self.SessionId), (r.Machine, r.ProcessId, r.SessionId));
-            Assert.Equal(self.StartTime.ToUniversalTime().Ticks, r.ProcessStartUtcTicks);
+            Assert.Equal(MachineLocks.StartIdentity(self), r.ProcessStart);
             Assert.InRange((r.ExpiresUtc - r.AcquiredUtc).TotalSeconds, 59.9, 60.1);
             Assert.False(r.Released);
         }
@@ -174,7 +174,7 @@ namespace ResourceLockAutomation.Tests
             {
                 Token = Guid.NewGuid().ToString("N"), Holder = holder, Kind = LockKind.Lock, Capacity = 1, AcquiredUtc = now,
                 ExpiresUtc = now + (lease ?? TimeSpan.FromHours(1)), Machine = machine ?? Environment.MachineName, SessionId = 1,
-                ProcessId = processId, ProcessStartUtcTicks = startTicks
+                ProcessId = processId, ProcessStart = startTicks
             };
             File.WriteAllText(Path.Combine(folder, file), record.ToJson());
         }
@@ -226,7 +226,7 @@ namespace ResourceLockAutomation.Tests
             using (Process ended = Process.Start(new ProcessStartInfo("dotnet", "--version") { RedirectStandardOutput = true, UseShellExecute = false }))
             {
                 pid = ended.Id;
-                start = ended.StartTime.ToUniversalTime().Ticks;
+                try { start = MachineLocks.StartIdentity(ended); } catch (IOException) { start = 1; } catch (InvalidOperationException) { start = 1; }
                 ended.WaitForExit();
             }
             WriteLease("crashed.0.7.lease", "crashed robot", pid, start);                                   // an hour left on the lease
@@ -239,7 +239,7 @@ namespace ResourceLockAutomation.Tests
         public void AReusedProcessId_IsNotTakenForTheOriginalHolder()
         {
             using Process self = Process.GetCurrentProcess();
-            WriteLease("reused.0.1.lease", "old robot", self.Id, self.StartTime.ToUniversalTime().Ticks - TimeSpan.TicksPerHour);   // same ID, another start
+            WriteLease("reused.0.1.lease", "old robot", self.Id, MachineLocks.StartIdentity(self) - 1);      // same ID, another start
             using var c = New();
             Acquire(c, "reused");
         }
@@ -256,8 +256,8 @@ namespace ResourceLockAutomation.Tests
             Assert.Equal("HELD", line);
             try
             {
-                long started = other.StartTime.ToUniversalTime().Ticks;
-                WriteLease("same-id-other-start.0.1.lease", "dead robot", other.Id, started - TimeSpan.TicksPerHour);
+                long started = MachineLocks.StartIdentity(other);
+                WriteLease("same-id-other-start.0.1.lease", "dead robot", other.Id, started - 1);           // one unit off is another process
                 WriteLease("same-id-same-start.0.1.lease", "live robot", other.Id, started);
                 using var c = New();
                 Acquire(c, "same-id-other-start");                                                          // the ID was reused: free
@@ -268,10 +268,75 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void TheStartIdentity_IsExactAndStable_ForTheSameProcess()
+        {
+            using Process self = Process.GetCurrentProcess();
+            long first = MachineLocks.StartIdentity(self);
+            Thread.Sleep(50);
+            using Process again = Process.GetProcessById(self.Id);
+            Assert.Equal(first, MachineLocks.StartIdentity(again));                                        // exact, no tolerance needed
+        }
+
+        [Fact]
+        public void ALeaseFileThisAccountMayNotRead_IsHeld_NotSuperseded()
+        {
+            // Another account's lease this robot cannot read may be live: superseding it after the short grace for half-written files would
+            // give the lock to two robots. It is held until it is older than the longest possible lease.
+            if (!OperatingSystem.IsLinux()) return;                                                         // permissions are set with Unix modes here
+            Directory.CreateDirectory(folder);
+            string secret = Path.Combine(folder, "secret.0.5.lease");
+            WriteLease("secret.0.5.lease", "other account", 999999, 1);
+            File.SetLastWriteTimeUtc(secret, DateTime.UtcNow.AddSeconds(-(MachineLocks.UnreadableGraceSeconds + 5)));
+            File.SetUnixFileMode(secret, UnixFileMode.None);
+            try
+            {
+                try { File.ReadAllText(secret); return; } catch (UnauthorizedAccessException) { }        // running as root: cannot test
+                using var c = New();
+                Assert.True(c.TryAcquireLock(LockScope.Machine, "secret", "me", 60, out bool acquired, out _, out string current, out string m), m);
+                Assert.Equal((false, "(an unreadable lease)"), (acquired, current));
+                File.SetLastWriteTimeUtc(secret, DateTime.UtcNow.AddSeconds(-(LockLimits.MaxLeaseSeconds + 5)));
+                Acquire(c, "secret");                                                                       // older than any lease: superseded
+            }
+            finally { File.SetUnixFileMode(secret, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+        }
+
+        [Fact]
+        public void TokenOperations_UseTheFolderTheLeaseWasTakenIn_AfterTheFolderChanges()
+        {
+            using var c = New();
+            string token = Acquire(c, "moved");
+            string other = folder + "-other";
+            try
+            {
+                Assert.True(c.ConfigureLockFolder(other, out string m), m);
+                Assert.True(c.RenewLock(LockScope.Machine, "moved", token, 120, out bool renewed, out _, out m), m);
+                Assert.True(renewed);
+                Assert.True(c.ReleaseLock(LockScope.Machine, "moved", token, out bool released, out m), m);
+                Assert.True(released);
+                Assert.True(Record("moved.0.1.lease").Released);                                            // released in the original folder
+            }
+            finally { if (Directory.Exists(other)) Directory.Delete(other, true); }
+        }
+
+        [Fact]
+        public void ATokenGivenWithTheWrongResource_IsNotALostLease_AndStaysTracked()
+        {
+            var c = New();
+            string token = Acquire(c, "right");
+            Assert.True(c.ReleaseLock(LockScope.Machine, "wrong", token, out bool released, out string m), m);
+            Assert.False(released);
+            Assert.True(c.RenewLock(LockScope.Machine, "wrong", token, 60, out bool renewed, out _, out m), m);
+            Assert.False(renewed);
+            Assert.Equal(1, MachineLocks.HeldByForTests(c));                                               // still tracked ...
+            c.Dispose();
+            Assert.True(Record("right.0.1.lease").Released);                                                // ... so disposal releases it
+        }
+
+        [Fact]
         public void ARunningHolder_OrOneThisMachineCannotCheck_KeepsItsLease()
         {
             using Process self = Process.GetCurrentProcess();
-            WriteLease("running.0.1.lease", "live robot", self.Id, self.StartTime.ToUniversalTime().Ticks);
+            WriteLease("running.0.1.lease", "live robot", self.Id, MachineLocks.StartIdentity(self));
             WriteLease("remote.0.1.lease", "other machine", 999999, 1, machine: "SOME-OTHER-HOST");
             using var c = New();
             Assert.True(c.TryAcquireLock(LockScope.Machine, "running", "me", 60, out bool acquired, out _, out string current, out string m), m);
@@ -288,7 +353,7 @@ namespace ResourceLockAutomation.Tests
             File.WriteAllText(Path.Combine(folder, "fresh.0.3.lease"), "");
             using var c = New();
             Assert.True(c.TryAcquireLock(LockScope.Machine, "fresh", "me", 60, out bool acquired, out _, out string current, out string m), m);
-            Assert.Equal((false, "(a lease being written)"), (acquired, current));
+            Assert.Equal((false, "(an unreadable lease)"), (acquired, current));
             Assert.Equal(new[] { "fresh.0.3.lease" }, Files());
         }
 

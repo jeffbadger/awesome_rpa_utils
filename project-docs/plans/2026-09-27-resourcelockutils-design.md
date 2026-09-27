@@ -139,4 +139,9 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    tokens) and force release (a released generation) are in WP3 rather than WP4; WP4 keeps `ValidateLockFolder` and corrupt-file handling.
    The test assembly doubles as the child process (`dotnet ResourceLockUtils.Tests.dll stress-host ...`, its own `Main`), so no helper project
    can end up in a package; every child has a time limit, so a broken build fails the tests instead of hanging CI.
+7. **Review fixes to the `Machine` scope** (WP3, Copilot review of PR #167): the process-start identity is compared exactly (the kernel's start
+   tick from `/proc/[pid]/stat` on Linux, where .NET's `StartTime` moves with wall-clock adjustments; the creation time on Windows) instead of
+   within a second; a lease file this account may not read is held until it is older than the longest lease (24 h), never superseded after
+   the 10 s grace for half-written files; token operations use the folder and resource the lease was taken in, and only a lease confirmed lost
+   stops being tracked for disposal; cleanup after a successful create is best effort, so an acquire that created its lease always returns it.
 

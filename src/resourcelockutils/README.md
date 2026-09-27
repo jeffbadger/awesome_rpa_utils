@@ -34,8 +34,11 @@ Bots from using the same resource.
 - **`Machine` scope details:** each lock or slot is a chain of small lease files, `<resource>.<slot>.<generation>.lease`, in the lock folder
   (created when missing). A file records the holder, the lease end, and the holder's machine, session, process and process start time. Robots
   need only the right to create files there: nothing ever deletes or renames another robot's current lease.
-  - A holder whose process has ended (or whose process ID now belongs to a process started at another time) frees its lock at once; a holder
-    this machine cannot check (another user's process it may not inspect) is trusted until its lease ends.
+  - A holder whose process has ended (or whose process ID now belongs to another process, told apart by its exact start time) frees its lock
+    at once; a holder this machine cannot check (another user's process it may not inspect) is trusted until its lease ends.
+  - A lease file this robot's account may not read is treated as held until it is 24 hours old (the longest lease), never taken over early.
+    Give every robot account read access to the folder (`ValidateLockFolder` will report it).
+  - `RenewLock` and `ReleaseLock` work in the folder the lease was taken in, even after `ConfigureLockFolder` changed the folder.
   - Lease times are wall-clock UTC, since several processes must agree on them; do not move a server's clock while robots hold locks.
   - `AcquireLock`/`AcquireSlot` check the files with growing pauses (50 ms up to 1 s).
   - Old generations are deleted only once their successor is 5 minutes old, so a lock taken very often leaves up to one small file per

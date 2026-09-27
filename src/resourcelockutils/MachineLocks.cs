@@ -23,7 +23,7 @@ namespace ResourceLockAutomation
         internal string Machine;
         internal int SessionId;
         internal int ProcessId;
-        internal long ProcessStartUtcTicks;
+        internal long ProcessStart;               // the process's exact start identity (MachineLocks.StartIdentity)
         internal bool Released;
 
         internal string ToJson()
@@ -42,7 +42,7 @@ namespace ResourceLockAutomation
                 w.WriteString("machine", Machine);
                 w.WriteNumber("sessionId", SessionId);
                 w.WriteNumber("processId", ProcessId);
-                w.WriteNumber("processStartUtcTicks", ProcessStartUtcTicks);
+                w.WriteNumber("processStart", ProcessStart);
                 w.WriteBoolean("released", Released);
                 w.WriteEndObject();
             }
@@ -68,7 +68,7 @@ namespace ResourceLockAutomation
                     Machine = r.GetProperty("machine").GetString(),
                     SessionId = r.GetProperty("sessionId").GetInt32(),
                     ProcessId = r.GetProperty("processId").GetInt32(),
-                    ProcessStartUtcTicks = r.GetProperty("processStartUtcTicks").GetInt64(),
+                    ProcessStart = r.GetProperty("processStart").GetInt64(),
                     Released = r.GetProperty("released").GetBoolean()
                 };
                 if (LockInput.Token(record.Token) != null || string.IsNullOrEmpty(record.Holder) || record.Capacity < 1 || record.ExpiresUtc.Kind != DateTimeKind.Utc) return null;
@@ -101,8 +101,11 @@ namespace ResourceLockAutomation
     /// minutes old; an acquire that takes longer than <see cref="MaxDecisionSeconds"/> seconds between reading and creating starts over. So no
     /// generation at or above the top an operation started from can disappear while it runs, the lookups never skip a number, and generation
     /// numbers only grow. Deleting old generations is cleanup (anyone allowed to, at least their creator), never needed for correctness.</item>
-    /// <item>A lease is dead when its process has ended, or a process with its ID started at another time (the ID was reused). A process that
-    /// cannot be looked at (another user's, or on another machine) is taken to be running; lease expiry then covers it.</item>
+    /// <item>A lease is dead when its process has ended, or the process with its ID has another exact start identity (the ID was reused). A
+    /// process that cannot be looked at (another user's, or on another machine) is taken to be running; lease expiry then covers it.</item>
+    /// <item>A lease file this account may not read is held until it is <see cref="LockLimits.MaxLeaseSeconds"/> seconds old: a live holder
+    /// rewrites it on every renewal, and no lease is longer, so it is never superseded while it may be live (ValidateLockFolder reports such a
+    /// folder).</item>
     /// </list>
     /// Within this process all Machine-scope operations are serialized, and a disposed component is refused inside that lock, like the Process
     /// scope. Times are UTC wall-clock times, since several processes must agree on them.
@@ -123,8 +126,25 @@ namespace ResourceLockAutomation
         private static readonly Lazy<(int Id, long StartTicks, int Session)> Self = new Lazy<(int, long, int)>(() =>
         {
             using Process p = Process.GetCurrentProcess();
-            return (p.Id, p.StartTime.ToUniversalTime().Ticks, p.SessionId);
+            return (p.Id, StartIdentity(p), p.SessionId);
         });
+
+        /// <summary>
+        /// A process's exact start identity, compared exactly: with its ID it names one process even after the ID is reused. On Windows the
+        /// creation time in ticks (from the kernel's creation FILETIME). On Linux the start time in clock ticks since boot from /proc/[pid]/stat,
+        /// because .NET's StartTime there is boot time estimated from the wall clock, which moves with clock adjustments (seconds over hours), so
+        /// no tolerance would be both safe and exact.
+        /// </summary>
+        internal static long StartIdentity(Process process)
+        {
+            if (OperatingSystem.IsLinux())
+            {
+                string stat = File.ReadAllText("/proc/" + process.Id.ToString(CultureInfo.InvariantCulture) + "/stat");
+                string[] fields = stat.Substring(stat.LastIndexOf(')') + 2).Split(' ');   // after "pid (name) ": field 3 (state) is fields[0]
+                return long.Parse(fields[22 - 3], CultureInfo.InvariantCulture);          // field 22: starttime
+            }
+            return process.StartTime.ToUniversalTime().Ticks;
+        }
 
         internal static DateTime UtcNow => DateTime.UtcNow;
 
@@ -176,14 +196,15 @@ namespace ResourceLockAutomation
             foreach (Chain chain in chains.Values)
             {
                 string top = chain.Files[0].Path;
-                chain.Top = ReadRecord(top);
-                for (int attempt = 0; chain.Top == null && attempt < 10 && File.Exists(top); attempt++)
+                chain.Top = ReadRecord(top, out bool denied);
+                for (int attempt = 0; chain.Top == null && !denied && attempt < 10 && File.Exists(top); attempt++)
                 {
                     Thread.Sleep(10);                                                       // a new lease whose content is still being written
-                    chain.Top = ReadRecord(top);
+                    chain.Top = ReadRecord(top, out denied);
                 }
                 if (chain.Top != null) chain.Held = !chain.Top.Released && now < chain.Top.ExpiresUtc && IsAlive(chain.Top);
-                else chain.Held = IsYoung(top, now);                                        // unreadable: held while young, stale once old
+                else if (denied) chain.Held = IsYoung(top, now, LockLimits.MaxLeaseSeconds);  // may be a live lease: held as long as any lease could be
+                else chain.Held = IsYoung(top, now, UnreadableGraceSeconds);                 // unreadable: held while young, stale once old
             }
             return chains;
         }
@@ -191,18 +212,21 @@ namespace ResourceLockAutomation
         /// <summary>How long an unreadable lease file counts as held (being written) before it is treated as stale and superseded.</summary>
         internal const int UnreadableGraceSeconds = 10;
 
-        private static bool IsYoung(string path, DateTime now)
+        private static bool IsYoung(string path, DateTime now, int seconds)
         {
-            try { return File.Exists(path) && (now - File.GetLastWriteTimeUtc(path)).TotalSeconds < UnreadableGraceSeconds; }
+            try { return File.Exists(path) && (now - File.GetLastWriteTimeUtc(path)).TotalSeconds < seconds; }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { return true; }
         }
 
-        /// <summary>The holders of the held slots; a lease still being written is shown as such.</summary>
-        private static List<string> HolderNames(IEnumerable<Chain> held) => held.Select(c => c.Top?.Holder ?? "(a lease being written)").ToList();
+        /// <summary>The holders of the held slots; a lease still being written, or one this account may not read, has no readable holder.</summary>
+        private static List<string> HolderNames(IEnumerable<Chain> held) => held.Select(c => c.Top?.Holder ?? "(an unreadable lease)").ToList();
 
         /// <summary>A lease file's record; null when it is missing or not a valid lease. Opened so that a holder can replace it meanwhile.</summary>
-        private static LeaseRecord ReadRecord(string path)
+        private static LeaseRecord ReadRecord(string path) => ReadRecord(path, out _);
+
+        private static LeaseRecord ReadRecord(string path, out bool accessDenied)
         {
+            accessDenied = false;
             try
             {
                 using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
@@ -212,6 +236,7 @@ namespace ResourceLockAutomation
             catch (FileNotFoundException) { return null; }
             catch (DirectoryNotFoundException) { return null; }
             catch (IOException) { return null; }                                            // opened exclusively by its creator for a moment
+            catch (UnauthorizedAccessException) { accessDenied = true; return null; }
         }
 
         /// <summary>
@@ -221,7 +246,7 @@ namespace ResourceLockAutomation
         internal static bool IsAlive(LeaseRecord record)
         {
             if (!string.Equals(record.Machine, Environment.MachineName, StringComparison.OrdinalIgnoreCase)) return true;
-            if (record.ProcessId == Self.Value.Id) return record.ProcessStartUtcTicks == Self.Value.StartTicks;
+            if (record.ProcessId == Self.Value.Id) return record.ProcessStart == Self.Value.StartTicks;
             Process process;
             try { process = Process.GetProcessById(record.ProcessId); }
             catch (ArgumentException) { return false; }                                     // no such process
@@ -231,8 +256,11 @@ namespace ResourceLockAutomation
                 try
                 {
                     if (process.HasExited) return false;
-                    long started = process.StartTime.ToUniversalTime().Ticks;
-                    return Math.Abs(started - record.ProcessStartUtcTicks) < TimeSpan.TicksPerSecond;   // another start time: the ID was reused
+                    return StartIdentity(process) == record.ProcessStart;                   // another start: the ID was reused
+                }
+                catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+                {
+                    return false;                                                            // /proc entry gone: the process has ended
                 }
                 catch (Exception ex) when (ex is System.ComponentModel.Win32Exception || ex is InvalidOperationException || ex is NotSupportedException || ex is UnauthorizedAccessException)
                 {
@@ -324,7 +352,7 @@ namespace ResourceLockAutomation
             new LeaseRecord
             {
                 Token = token, Holder = holder, Kind = kind, Capacity = capacity, AcquiredUtc = now, ExpiresUtc = now + lease,
-                Machine = Environment.MachineName, SessionId = Self.Value.Session, ProcessId = Self.Value.Id, ProcessStartUtcTicks = Self.Value.StartTicks
+                Machine = Environment.MachineName, SessionId = Self.Value.Session, ProcessId = Self.Value.Id, ProcessStart = Self.Value.StartTicks
             };
 
         // ------------------------------------------------------------------ operations
@@ -349,6 +377,24 @@ namespace ResourceLockAutomation
         private static void ForgetEverywhere(string token)
         {
             foreach (object owner in Holdings.Keys.ToList()) Forget(owner, token);
+        }
+
+        /// <summary>Where a token's lease was taken (by any component in this process), or null when this process does not know it.</summary>
+        private static Holding FindHolding(string token) =>
+            Holdings.Values.SelectMany(l => l).FirstOrDefault(h => string.Equals(h.Token, token, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// The folder a token operation works in: the folder its lease was taken in when this process knows the token (so changing the lock
+        /// folder cannot strand it). False when the token belongs to another resource: that is the caller's mistake, not a lost lease, so the
+        /// lease stays tracked.
+        /// </summary>
+        private static bool Locate(ref string folder, string resource, string token, out Holding holding)
+        {
+            holding = FindHolding(token);
+            if (holding == null) return true;
+            if (!string.Equals(holding.Resource, resource, StringComparison.OrdinalIgnoreCase)) return false;
+            folder = holding.Folder;
+            return true;
         }
 
         internal static int HeldByForTests(object owner) { lock (Sync) return HeldBy(owner); }
@@ -389,8 +435,15 @@ namespace ResourceLockAutomation
                     }
                     if (!created) continue;                                                  // another robot won this slot
                     Remember(owner, folder, resource, token);
-                    DeleteOldGenerations(folder, resource, slot, generation);
-                    return new AcquireResult(true, token, null, ReadChains(folder, resource, UtcNow, capacity).Values.Count(c => c.Held), null);
+                    // The lease exists now: nothing after this may turn it into a failed acquire, so cleanup and the count are best effort.
+                    int holderCount = chains.Values.Count(c => c.Held) + 1;
+                    try
+                    {
+                        DeleteOldGenerations(folder, resource, slot, generation);
+                        holderCount = ReadChains(folder, resource, UtcNow, capacity).Values.Count(c => c.Held);
+                    }
+                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
+                    return new AcquireResult(true, token, null, holderCount, null);
                 }
                 List<string> holders = HolderNames(ReadChains(folder, resource, UtcNow, capacity).Values.Where(c => c.Held));
                 return new AcquireResult(false, null, holders.FirstOrDefault(), holders.Count, null);
@@ -427,10 +480,12 @@ namespace ResourceLockAutomation
             expiresIn = TimeSpan.Zero;
             lock (Sync)
             {
-                if (!Directory.Exists(folder)) return false;
+                if (!Locate(ref folder, resource, token, out Holding holding)) return false;
+                if (!Directory.Exists(folder)) { if (holding != null) ForgetEverywhere(token); return false; }
                 DateTime now = UtcNow;
                 var (chain, path) = FindTop(ReadChains(folder, resource, now), token);
-                if (chain == null || !chain.Held) { ForgetEverywhere(token); return false; }
+                if (chain == null) { if (holding != null) ForgetEverywhere(token); return false; }  // superseded where it was taken: lost
+                if (!chain.Held) { ForgetEverywhere(token); return false; }
                 LeaseRecord record = chain.Top;
                 record.ExpiresUtc = now + lease;
                 if (!Overwrite(path, record)) { ForgetEverywhere(token); return false; }
@@ -446,11 +501,18 @@ namespace ResourceLockAutomation
         {
             lock (Sync)
             {
-                ForgetEverywhere(token);
-                if (!Directory.Exists(folder)) return false;
+                if (!Locate(ref folder, resource, token, out Holding holding)) return false;
+                if (!Directory.Exists(folder)) { if (holding != null) ForgetEverywhere(token); return false; }
                 DateTime now = UtcNow;
                 var (chain, path) = FindTop(ReadChains(folder, resource, now), token);
-                if (chain == null) { DeleteOwnSuperseded(folder, resource, token); return false; }
+                if (chain == null)
+                {
+                    if (holding == null) return false;                                       // not a lease of this folder and resource
+                    ForgetEverywhere(token);                                                 // superseded where it was taken: lost
+                    try { DeleteOwnSuperseded(folder, resource, token); } catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
+                    return false;
+                }
+                ForgetEverywhere(token);
                 bool wasHeld = chain.Held;
                 if (!chain.Top.Released)
                 {
@@ -458,7 +520,8 @@ namespace ResourceLockAutomation
                     record.Released = true;
                     Overwrite(path, record);                                                 // never deleted or renamed: generation numbers only grow
                 }
-                DeleteOldGenerations(folder, resource, chain.Slot, chain.Highest);
+                try { DeleteOldGenerations(folder, resource, chain.Slot, chain.Highest); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
                 return wasHeld;
             }
         }
