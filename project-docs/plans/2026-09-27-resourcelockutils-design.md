@@ -122,5 +122,5 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    holds it); a token given with the wrong resource name is `released`/`renewed` False, like a lost lease (the table cannot tell the two
    apart); disposing a component releases what it still holds, and the table checks the owner is not disposed inside its own lock, so an acquire
    admitted just before disposal cannot leave a lease behind; per-owner lease counts are kept (no scan per acquire) and every expired lease is
-   swept at least once a minute, so resource names that are never used again do not accumulate; holders may not contain `|`, the separator of
+   swept at least once a minute by a background timer that runs only while the table holds anything (plus lazily on every visit), so resource names that are never used again do not accumulate; holders may not contain `|`, the separator of
    `GetLockStatus`'s holders; the JSON never contains tokens.

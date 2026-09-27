@@ -28,7 +28,8 @@ Bots from using the same resource.
 - **`Process` scope details:** leases are timed with a monotonic clock, so changing the system clock neither expires nor extends one. A release
   wakes waiting `AcquireLock`/`AcquireSlot` calls at once (the `Machine` scope checks its lock files repeatedly instead). While a resource is held it is either a lock or a slot pool with one capacity; a call
   that disagrees fails. Disposing the component releases every lock and slot it still holds, including one an in-flight call was about to take. One component holds at
-  most 1,000 at a time, and expired leases are cleared at least once a minute.
+  most 1,000 at a time. Expired leases are cleared when their resource is next used, and by a background sweep once a minute while any lock
+  is held, so stale entries never accumulate.
 - Finding a lock taken, or learning that a lease was lost, is a normal outcome with a `bool` output (`acquired`, `renewed`, `released`), not a
   failure. `False` from a method means the call itself could not be done.
 

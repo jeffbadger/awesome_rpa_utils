@@ -34,7 +34,8 @@ namespace ResourceLockAutomation
     /// <summary>
     /// The Process scope: every lock and slot held in this Robot Runtime, shared by all component instances. A lease belongs to its token, not
     /// to a thread, so any thread can renew or release it. Time is measured with a monotonic clock, so changing the system clock neither expires
-    /// nor extends a lease. Expired leases are removed lazily, by whichever call looks at the resource next. A release wakes waiting acquirers at
+    /// nor extends a lease. Expired leases are removed lazily, by whichever call looks at the resource next, and by a background sweep once a
+    /// minute while the table holds anything (so a runtime that stops acquiring still lets go of stale entries). A release wakes waiting acquirers at
     /// once; a waiter also wakes when the earliest lease it is waiting on would expire.
     /// </summary>
     internal static class ProcessLocks
@@ -62,6 +63,9 @@ namespace ResourceLockAutomation
 
         /// <summary>How often every expired lease is dropped, so resources that are never visited again do not accumulate.</summary>
         internal const long SweepIntervalMs = 60000;
+
+        // Sweeps once a minute while the table holds anything, whether or not anyone acquires again; stops itself when the table is empty.
+        private static Timer sweeper;
 
         internal static long NowMs => Environment.TickCount64;
 
@@ -96,6 +100,26 @@ namespace ResourceLockAutomation
             lastSweepMs = now;
         }
 
+        /// <summary>The timer's work: drop every expired lease, and stop the timer once nothing is left to watch.</summary>
+        internal static void TimedSweep()
+        {
+            lock (Sync)
+            {
+                Sweep(NowMs);
+                if (Entries.Count == 0 && sweeper != null) { sweeper.Dispose(); sweeper = null; }
+            }
+        }
+
+        private static void EnsureSweeper()
+        {
+            if (sweeper == null) sweeper = new Timer(_ => { try { TimedSweep(); } catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { } }, null, SweepIntervalMs, SweepIntervalMs);
+        }
+
+        internal static bool SweeperRunning { get { lock (Sync) return sweeper != null; } }
+
+        /// <summary>Whether the table has an entry for the resource, without dropping expired leases (for tests of the sweep).</summary>
+        internal static bool HasEntry(string resource) { lock (Sync) return Entries.ContainsKey(resource); }
+
         internal static int EntryCount { get { lock (Sync) return Entries.Count; } }
 
         internal static int HeldBy(object owner) { lock (Sync) return OwnerCounts.TryGetValue(owner, out int count) ? count : 0; }
@@ -124,7 +148,7 @@ namespace ResourceLockAutomation
                 if (held >= LockLimits.MaxHeldPerInstance)
                     return new AcquireResult(false, null, null, 0, "this component already holds " + LockLimits.MaxHeldPerInstance + " locks and slots; release some first");
             }
-            if (entry == null) Entries[resource] = entry = new Entry { Resource = resource, Kind = kind, Capacity = capacity };
+            if (entry == null) { Entries[resource] = entry = new Entry { Resource = resource, Kind = kind, Capacity = capacity }; EnsureSweeper(); }
             var lease = new Lease { Token = Guid.NewGuid().ToString("N"), Holder = holder, ExpiresAtMs = now + leaseMs, Owner = owner };
             entry.Leases.Add(lease);
             OwnerCounts[owner] = held + 1;

@@ -348,6 +348,40 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void TheBackgroundSweep_DropsExpiredEntries_WithoutAnyFurtherAcquire()
+        {
+            object owner = new object();
+            string r = NewResource();
+            Assert.True(ProcessLocks.TryAcquire(r, LockKind.Lock, 1, "one-shot", 200, owner).Acquired);
+            Assert.True(ProcessLocks.SweeperRunning);                                                        // started by the first entry
+            Thread.Sleep(400);
+            Assert.True(ProcessLocks.HasEntry(r));                                                           // expired, but nothing has looked at it
+            ProcessLocks.TimedSweep();                                                                       // what the timer runs once a minute
+            Assert.False(ProcessLocks.HasEntry(r));
+            Assert.Equal(0, ProcessLocks.HeldBy(owner));
+        }
+
+        [Fact]
+        public void ALockTakenOnOneThread_IsRenewedOnAnother()
+        {
+            using var c = new ResourceLockUtils();
+            string r = NewResource();
+            string token = null;
+            var taker = new Thread(() => token = Acquire(c, r));
+            taker.Start();
+            taker.Join();
+            bool result = false, renewed = false;
+            int expires = 0;
+            string message = null;
+            var renewer = new Thread(() => result = c.RenewLock(LockScope.Process, r, token, 900, out renewed, out expires, out message));
+            renewer.Start();
+            renewer.Join();
+            Assert.True(result, message);
+            Assert.Equal((true, 900), (renewed, expires));
+            Assert.True(c.ReleaseLock(LockScope.Process, r, token, out bool released, out message) && released, message);
+        }
+
+        [Fact]
         public void TheStatusOfAFreeResource_IsNotHeld()
         {
             using var c = new ResourceLockUtils();
