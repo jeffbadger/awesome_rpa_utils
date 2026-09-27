@@ -178,6 +178,10 @@ namespace TextExtractAutomation
                 if (i > 0 && char.IsLetterOrDigit(span[i - 1])) continue;
                 char c = span[i];
                 bool couldStart = (c >= '0' && c <= '9') || c == '-' || c == '+' || c == (style == DecimalStyle.DotDecimal ? '.' : ',') || c == 'O' || c == 'o' || c == 'I' || c == 'l' || c == '|';
+                // a value that starts with the other style's decimal separator (,5 under DotDecimal) is written in the other style: refuse it rather
+                // than skip the separator and read 5
+                char otherPoint = style == DecimalStyle.DotDecimal ? ',' : '.';
+                if (c == otherPoint && i + 1 < span.Length && DigitValue(span, i + 1, i, span.Length) >= 0) { sawBadGrouping = true; return null; }
                 if (!couldStart) continue;
                 NumberToken token = ReadNumber(span, i, style, out bool badGrouping);
                 if (badGrouping) { sawBadGrouping = true; return null; }     // the first number is written in the other style: refuse, never read a later part of it
@@ -264,7 +268,17 @@ namespace TextExtractAutomation
                 if (f < span.Length && IsCurrencySymbol(span[f])) { currency = span[f].ToString(); a = f + 1; }
                 else if (IsCurrencyCodeAt(span, f)) { currency = span.Substring(f, 3); a = f + 3; }
             }
-            if (a < span.Length && span[a] == '-' && !negative && (a + 1 == span.Length || !char.IsDigit(span[a + 1]))) { negative = true; a++; }
+            if (a < span.Length && span[a] == '-' && !negative && (a + 1 == span.Length || !char.IsDigit(span[a + 1])))
+            {
+                negative = true;
+                a++;
+                if (currency == null)                                        // "12.00- EUR": the currency may follow the trailing minus
+                {
+                    int f = Forward(a);
+                    if (f < span.Length && IsCurrencySymbol(span[f])) { currency = span[f].ToString(); a = f + 1; }
+                    else if (IsCurrencyCodeAt(span, f)) { currency = span.Substring(f, 3); a = f + 3; }
+                }
+            }
             if (openParen)
             {
                 int f = Forward(a);
@@ -342,6 +356,7 @@ namespace TextExtractAutomation
 
         private static Converted Iban(string span)
         {
+            bool sawCandidate = false;
             for (int s = 0; s + 4 <= span.Length; s++)
             {
                 if (s > 0 && char.IsLetterOrDigit(span[s - 1])) continue;
@@ -365,9 +380,9 @@ namespace TextExtractAutomation
                     string candidate = chars.ToString(0, length);
                     if (Mod97(candidate) == 1) return Converted.Found(candidate, s, end);
                 }
-                return Converted.Invalid("the IBAN's check digits do not match (mod 97)");
+                sawCandidate = true;                                         // something IBAN-shaped that does not check; a later token may still be the IBAN
             }
-            return Converted.Invalid("there is no IBAN (two letters, two digits, then the account)");
+            return Converted.Invalid(sawCandidate ? "the IBAN's check digits do not match (mod 97)" : "there is no IBAN (two letters, two digits, then the account)");
         }
 
         private static bool IsAsciiLetter(char c) => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');

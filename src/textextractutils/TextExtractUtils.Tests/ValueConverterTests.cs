@@ -134,6 +134,9 @@ namespace TextExtractAutomation.Tests
         [InlineData("1.234,56", DecimalStyle.DotDecimal)]      // the wrong style is refused, not read as 1.234
         [InlineData("12.5", DecimalStyle.CommaDecimal)]
         [InlineData("99999999999999999999999999999999", DecimalStyle.DotDecimal)]   // beyond what can be held exactly
+        [InlineData(",5", DecimalStyle.DotDecimal)]                                   // a leading separator of the other style
+        [InlineData(".5", DecimalStyle.CommaDecimal)]
+        [InlineData("about ,O5", DecimalStyle.DotDecimal)]
         [InlineData("0.12345678901234567890123456789", DecimalStyle.DotDecimal)]
         [InlineData("79228162514264337593543950336", DecimalStyle.DotDecimal)]      // one past the largest decimal
         [InlineData("0.00000000000000000000000000001", DecimalStyle.DotDecimal)]    // 29 significant decimals would be rounded
@@ -162,6 +165,8 @@ namespace TextExtractAutomation.Tests
         [InlineData("($12.00)", "-12.00", "$")]
         [InlineData("(12.00)", "-12.00", null)]
         [InlineData("12.00-", "-12.00", null)]
+        [InlineData("12.00- EUR", "-12.00", "EUR")]          // a currency after the trailing minus
+        [InlineData("12.00-$", "-12.00", "$")]
         [InlineData("1,045.00", "1045.00", null)]
         [InlineData("-0.00", "0.00", null)]                 // no negative zero
         [InlineData("Total due 99.95 by Friday", "99.95", null)]
@@ -201,6 +206,7 @@ namespace TextExtractAutomation.Tests
             Assert.Equal("($12.00)", Captured(FieldType.Amount, "Credit ($12.00) applied"));
             Assert.Equal("1,234.50 USD", Captured(FieldType.Amount, "1,234.50 USD incl. tax"));
             Assert.Equal("12.00-", Captured(FieldType.Amount, "12.00- CR"));
+            Assert.Equal("12.00- EUR", Captured(FieldType.Amount, "12.00- EUR due"));
             Assert.Equal("12", Captured(FieldType.Amount, "(see note) 12"));                // an unmatched ( is not a negative
             Assert.Equal("12", Value(FieldType.Amount, "(see note) 12"));
         }
@@ -263,6 +269,8 @@ namespace TextExtractAutomation.Tests
         [InlineData("gb82 west 1234 5698 7654 32", "GB82WEST12345698765432")]
         [InlineData("IBAN DE89 3704 0044 0532 0130 00 BIC COBADEFFXXX", "DE89370400440532013000")]
         [InlineData("NL91ABNA0417164300.", "NL91ABNA0417164300")]
+        [InlineData("ref AB12 then GB82 WEST 1234 5698 7654 32", "GB82WEST12345698765432")]   // an IBAN-shaped word before the real one
+        [InlineData("DE00 3704 0044 0532 0130 00 or DE89 3704 0044 0532 0130 00", "DE89370400440532013000")]
         public void Iban_IsChecked_AndNormalized(string span, string value) => Assert.Equal(value, Value(FieldType.Iban, span));
 
         [Theory]
