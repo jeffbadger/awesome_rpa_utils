@@ -206,5 +206,33 @@ namespace TextExtractAutomation.Tests
             Assert.True(again.GetTemplateJson(out string second, out m), m);
             Assert.Equal(json, second);
         }
+
+        [Theory]
+        [InlineData("\"kind\":\"Table\",")]
+        [InlineData("")]
+        [InlineData("\"kind\":7,")]
+        public void AFieldWhoseKindCannotBeSelected_StillHasEveryCommonOptionChecked(string kind)
+        {
+            string field = "{\"name\":\"A\"," + kind + "\"type\":5,\"decimalStyle\":\"Comma\",\"dateFormats\":[\"yyyy\"],\"required\":\"yes\",\"occurrence\":0}";
+            List<(string path, string code)> findings = Findings(OneField(field));
+            Assert.Contains(("fields[0].type", "UnknownEnumValue"), findings);
+            Assert.Contains(("fields[0].decimalStyle", "UnknownEnumValue"), findings);
+            Assert.Contains(("fields[0].dateFormats", "InvalidFormat"), findings);
+            Assert.Contains(("fields[0].required", "InvalidType"), findings);
+            Assert.Contains(("fields[0].occurrence", "UnknownEnumValue"), findings);
+            Assert.Equal(6, findings.Count);                                              // plus the kind problem itself
+        }
+
+        [Fact]
+        public void AFieldWithAnUnknownType_StillHasItsOptionsChecked()
+        {
+            List<(string path, string code)> findings = Findings(OneField("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Money\",\"decimalStyle\":2,\"dateFormats\":[\"dd/MM\"],\"required\":1}"));
+            Assert.Contains(("fields[0].type", "UnknownEnumValue"), findings);
+            Assert.Contains(("fields[0].decimalStyle", "UnknownEnumValue"), findings);
+            Assert.Contains(("fields[0].dateFormats", "InvalidFormat"), findings);
+            Assert.Contains(("fields[0].required", "InvalidType"), findings);
+            Assert.Equal(4, findings.Count);
+            Assert.Empty(Findings(OneField("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Date\",\"dateFormats\":[\"dd/MM/yyyy\"]}")));
+        }
     }
 }

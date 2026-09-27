@@ -28,10 +28,10 @@ Intake automations constantly pull a few business fields (invoice number, total,
 ## Public surface (initial)
 | Group | Methods |
 |---|---|
-| Template | `AddLabelFieldSimple(name, labels, type)` (SameLine, required, unique), `AddLabelField(name, labels, position, type, format, required, occurrence)`, `AddPatternField(name, pattern, type, format)`, `AddTableColumn(table, header, type, format)`, `ClearTemplate`, `LoadTemplateJson`, `GetTemplateJson`, `ValidateTemplateJson`, `ConfigureLimits` |
+| Template | `AddLabelFieldSimple(name, labels, type)` (SameLine, required, unique), `AddLabelField(name, labels, position, type, decimalStyle, dateFormats, required, occurrence)`, `AddPatternField(name, pattern, type, decimalStyle, dateFormats)`, `AddTableColumn(table, header, type, decimalStyle, dateFormats)` (phase 2), `ClearTemplate`, `LoadTemplateJson`, `GetTemplateJson`, `ValidateTemplateJson`, `ConfigureLimits` |
 | Run | `ExtractFromText(text, out foundCount, out missingRequiredCount)` |
-| Read | `GetField(name, out found, out value, out raw, out reason, out lineNumber)`, `GetResultJson`, `ResetFieldCursor` + `TryReadNextField(out hasItem, out name, out found, out value, out reason)`, `TryReadNextRow(table, out hasItem, out rowIndex, out rowJson)` + `GetRowValue(column, out found, out value, out raw, out reason)`, `ClearResults` |
-- Enums as drop-downs: `ValuePosition`, `FieldType`, `Occurrence`, `DecimalStyle`. `format` carries the date format or decimal style as text for types that need it (validated when the field is added).
+| Read | `GetField(name, out found, out value, out raw, out reason, out lineNumber)`, `GetResultJson`, `ResetFieldCursor` + `TryReadNextField(out hasItem, out name, out value, out raw, out reason, out lineNumber)` (one bool output: reason is null when found), `TryReadNextRow(table, out hasItem, out rowIndex, out rowJson)` + `GetRowValue(column, out found, out value, out raw, out reason)` (phase 2), `ClearResults` |
+- Enums as drop-downs: `ValuePosition`, `FieldType`, `DecimalStyle`, `Occurrence`. `dateFormats` is text (`dd/MM/yyyy|yyyy-MM-dd`) used only by Date fields; `decimalStyle` is used only by Decimal, Amount and Percentage fields. Both are validated when the field is added (see decision 4).
 - A setup change discards results (same lifecycle as ReconciliationUtils; document it in a "which calls discard results" section guarded by a test).
 
 ## Limits (defaults / maximums)

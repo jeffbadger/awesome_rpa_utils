@@ -256,8 +256,13 @@ namespace TextExtractAutomation
                     if (!hasKind) findings.Add(path + ".kind", "MissingProperty", "kind is required: Label or Pattern");
                     else if (kindElement.ValueKind != JsonValueKind.String) findings.Add(path + ".kind", "InvalidType", "kind must be a string: Label or Pattern");
                     else findings.Add(path + ".kind", "UnknownKind", "the kind '" + kindText + "' is not supported by this version; use Label or Pattern");
+                    // The kind cannot be selected, but everything every field has can still be checked, so those problems are reported too
+                    // (and the name still counts for duplicate detection).
                     RejectUnknown(p, path, CommonFieldProperties, null, findings);
                     ReadName(p, path, seen, findings);
+                    ReadTypeOptions(p, path, findings, out _, out _, out _);
+                    ReadBool(p, "required", path, true, findings, out _);
+                    ReadEnum(p, "occurrence", path, Occurrence.RequireUnique, findings, out Occurrence _);
                     continue;
                 }
 
@@ -283,34 +288,7 @@ namespace TextExtractAutomation
                     }
                 }
 
-                FieldType type = FieldType.Text;
-                bool typeOk = false;
-                if (!p.ContainsKey("type")) findings.Add(path + ".type", "MissingProperty", "type is required: " + string.Join(", ", Enum.GetNames(typeof(FieldType))));
-                else typeOk = ReadEnum(p, "type", path, FieldType.Text, findings, out type);
-                ok &= typeOk;
-
-                // decimalStyle belongs to Decimal, Amount and Percentage fields and dateFormats to Date fields; on any other type they are errors,
-                // because an option that is silently ignored is a plausible-looking wrong configuration.
-                DecimalStyle decimalStyle = DecimalStyle.DotDecimal;
-                if (p.ContainsKey("decimalStyle"))
-                {
-                    if (typeOk && !Template.UsesDecimalStyle(type)) { findings.Add(path + ".decimalStyle", "UnknownProperty", "decimalStyle applies only to Decimal, Amount and Percentage fields"); ok = false; }
-                    else ok &= ReadEnum(p, "decimalStyle", path, DecimalStyle.DotDecimal, findings, out decimalStyle);
-                }
-                string[] dateFormats = null;
-                if (typeOk)
-                {
-                    if (p.ContainsKey("dateFormats") && type != FieldType.Date) { findings.Add(path + ".dateFormats", "UnknownProperty", "dateFormats applies only to Date fields"); ok = false; }
-                    else if (type == FieldType.Date)
-                    {
-                        if (!ReadStringArray(p, "dateFormats", path, findings, out string[] given)) ok = false;
-                        else
-                        {
-                            Finding f = Template.CheckDateFormats(type, given, path + ".dateFormats", out dateFormats);
-                            if (f != null) { findings.Add(f); ok = false; }
-                        }
-                    }
-                }
+                ok &= ReadTypeOptions(p, path, findings, out FieldType type, out DecimalStyle decimalStyle, out string[] dateFormats);
                 ok &= ReadBool(p, "required", path, true, findings, out bool required);
                 ok &= ReadEnum(p, "occurrence", path, Occurrence.RequireUnique, findings, out Occurrence occurrence);
 
@@ -321,6 +299,40 @@ namespace TextExtractAutomation
                     Type = type, DecimalStyle = decimalStyle, DateFormats = dateFormats, Required = required, Occurrence = occurrence
                 });
             }
+        }
+
+        /// <summary>
+        /// Reads type, decimalStyle and dateFormats, reporting every problem. decimalStyle belongs to Decimal, Amount and Percentage fields and dateFormats
+        /// to Date fields; on any other type they are errors, because an option that is silently ignored is a plausible-looking wrong configuration. When
+        /// the type itself is missing or unknown, the options are still checked on their own terms (a malformed value or date format is still reported).
+        /// </summary>
+        private static bool ReadTypeOptions(Dictionary<string, JsonElement> p, string path, TemplateFindings findings, out FieldType type, out DecimalStyle decimalStyle, out string[] dateFormats)
+        {
+            type = FieldType.Text;
+            decimalStyle = DecimalStyle.DotDecimal;
+            dateFormats = null;
+            bool typeOk = false;
+            if (!p.ContainsKey("type")) findings.Add(path + ".type", "MissingProperty", "type is required: " + string.Join(", ", Enum.GetNames(typeof(FieldType))));
+            else typeOk = ReadEnum(p, "type", path, FieldType.Text, findings, out type);
+            bool ok = typeOk;
+
+            if (p.ContainsKey("decimalStyle"))
+            {
+                if (typeOk && !Template.UsesDecimalStyle(type)) { findings.Add(path + ".decimalStyle", "UnknownProperty", "decimalStyle applies only to Decimal, Amount and Percentage fields"); ok = false; }
+                else ok &= ReadEnum(p, "decimalStyle", path, DecimalStyle.DotDecimal, findings, out decimalStyle);
+            }
+
+            if (typeOk && type != FieldType.Date)
+            {
+                if (p.ContainsKey("dateFormats")) { findings.Add(path + ".dateFormats", "UnknownProperty", "dateFormats applies only to Date fields"); ok = false; }
+                return ok;
+            }
+            if (!ReadStringArray(p, "dateFormats", path, findings, out string[] given)) return false;
+            // A Date field checks and resolves its formats; with an unknown type the formats are still checked as date formats (the only kind there is).
+            Finding f = Template.CheckDateFormats(FieldType.Date, given, path + ".dateFormats", out string[] resolved);
+            if (f != null) { findings.Add(f); return false; }
+            if (typeOk) dateFormats = resolved;
+            return ok;
         }
 
         /// <summary>Reads and checks the name. Every well-formed name counts toward duplicate detection, whether or not its field is otherwise valid.</summary>
