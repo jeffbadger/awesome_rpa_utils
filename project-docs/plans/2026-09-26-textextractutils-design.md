@@ -1,6 +1,6 @@
 # TextExtractUtils design (approved plan)
 
-Status: approved 2026-09-26; phase 1 in progress (WP1). Tables (WP6) are phase 2.
+Status: approved 2026-09-26; phase 1 complete (WP1-WP5, WP7, WP8), awaiting its first release. Tables (WP6) are phase 2.
 
 ## Context
 Intake automations constantly pull a few business fields (invoice number, total, due date, IBAN, policy number) out of messy text: email bodies, OCR output (OcrUtils), terminal screens (TerminalUtils), PDF text. Pega Robot Studio's regex service can do it, but only if the designer writes and maintains a regular expression, tolerates OCR slips by hand, and converts the captured text to a number or date themselves. TextExtractUtils lets the designer describe a field the way a person sees it — **the label(s) in front of it, where the value sits, and what type it is** — and returns a validated, normalized value or a stable reason code. Regex remains only as an escape hatch.
