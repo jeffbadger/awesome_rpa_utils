@@ -2,7 +2,7 @@
 
 A single searchable index of every **PME** — Property, Method, and Event —
 exposed by every component in this repository. Use it to answer "does
-anything in this library already do X" without opening 24 different
+anything in this library already do X" without opening 25 different
 READMEs: `Ctrl+F` for a method name, a keyword from what you're trying to
 do, or a parameter/return type, or jump straight to a component from the
 quick-reference table below.
@@ -38,6 +38,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [StackUtils](#stackutils) | `StackAutomation` | 13 | 1 | 0 | An instance-local, in-memory LIFO stack for variable-count RPA work. |
 | [StateMachineUtils](#statemachineutils) | `StateMachineAutomation` | 27 | 4 | 5 | Models a process as states, triggers, and guarded transitions declared in JSON or method calls, with events on every state change and optional crash-safe persistence. |
 | [TerminalUtils](#terminalutils) | `TerminalAutomation` | 11 | 0 | 0 | Reads a console app's live screen buffer and injects keystrokes into it, for terminal UIs normal UI automation can't see. |
+| [TextExtractUtils](#textextractutils) | `TextExtractAutomation` | 14 | 0 | 0 | Extracts labelled, typed fields (invoice numbers, totals, dates, IBANs) from email, OCR or screen text without writing regular expressions, with OCR-tolerant labels, exact culture-independent values and a reason for every field it cannot read. |
 | [UIAutomationUtils](#uiautomationutils) | `UIAutomation` | 53 (55 rows) | 0 | 0 | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation. |
 | [ValueStoreUtils](#valuestoreutils) | `ValueStoreAutomation` | 49 | 1 | 0 | A freeform key/value bag with forgiving typed conversion and dot-notation access into JSON-shaped values. |
 | [WindowUtils](#windowutils) | `WindowAutomation` | 37 | 0 | 0 | Enumerates, locates, moves/resizes, activates, and closes windows via Win32 window APIs. |
@@ -854,6 +855,31 @@ Pega Robot Studio-ready component for terminal-style console applications that e
 | `WaitForScreenTextSimple` | `bool WaitForScreenTextSimple(int processId, string pattern, bool useRegex, int timeoutMs, int pollIntervalMs, out string message)` | Same as `WaitForScreenText`, without the `timedOut` output. |
 | `WriteLine` | `bool WriteLine(int processId, string text, out string message)` | Same as `WriteText`, appending a trailing carriage return so a shell or REPL submits the line. |
 | `WriteText` | `bool WriteText(int processId, string text, out string message)` | Injects text as keystrokes directly into the console's input buffer via `WriteConsoleInputW`. |
+
+## TextExtractUtils
+
+Extracts labelled, typed fields (invoice numbers, totals, dates, IBANs) from email, OCR or screen text without writing regular expressions, with OCR-tolerant labels, exact culture-independent values and a reason for every field it cannot read.
+
+**Namespace:** `TextExtractAutomation` | **Assembly:** `TextExtractAutomation`
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `AddLabelField` | `bool AddLabelField(string name, string labels, ValuePosition position, FieldType type, DecimalStyle decimalStyle, string dateFormats, bool required, Occurrence occurrence, out string message)` | Adds a field with every option: where the value sits relative to the label, how numbers are written (DecimalStyle, used by Decimal, Amount and Percentage fields), the date formats for a Date field (separated by \|; empty for yyyy-MM-dd, and empty for every other type), whether it is required, and what to do when the label appears more than once. |
+| `AddLabelFieldSimple` | `bool AddLabelFieldSimple(string name, string labels, FieldType type, out string message)` | Adds a required field whose value follows one of its labels on the same line. Labels are alternatives separated by \|, for example Invoice No\|Invoice Number. The type decides what a valid value is; numbers use DotDecimal (1,234.56) and dates yyyy-MM-dd. |
+| `AddPatternField` | `bool AddPatternField(string name, string pattern, FieldType type, DecimalStyle decimalStyle, string dateFormats, out string message)` | Adds a required field found by a regular expression with a named group called value, for text that has no stable label (an escape hatch; label fields need no pattern). DecimalStyle and date formats work as in AddLabelField. The match times out rather than hanging the robot. |
+| `ClearResults` | `bool ClearResults(out string message)` | Discards the last extraction's results. Succeeds even when there are none. |
+| `ClearTemplate` | `bool ClearTemplate(out string message)` | Removes every field and restores the default limits. Also clears any results. |
+| `ConfigureLimits` | `bool ConfigureLimits(int maximumTextCharacters, out string message)` | Sets the longest text ExtractFromText accepts, in characters (default 1,000,000; maximum 10,000,000). Longer text fails whole. |
+| `ExtractFromText` | `bool ExtractFromText(string text, out int foundCount, out int missingRequiredCount, out string message)` | Extracts every field of the template from the text. True means the extraction ran, even when fields were not found; foundCount and missingRequiredCount summarize it, and GetField reads each field. |
+| `GetField` | `bool GetField(string name, out bool found, out string value, out string raw, out string reason, out int lineNumber, out string message)` | Reads one field of the last extraction: found, the normalized value, the text as it appeared, a reason code when it was not found or not valid, and the 1-based line number (0 when none). |
+| `GetResultJson` | `bool GetResultJson(out string resultJson, out string message)` | Returns every field of the last extraction as JSON, with values, text as found, reasons and line numbers. |
+| `GetTemplateJson` | `bool GetTemplateJson(out string templateJson, out string message)` | Returns the current template, including limits, as canonical JSON that LoadTemplateJson accepts. |
+| `LoadTemplateJson` | `bool LoadTemplateJson(string templateJson, out string message)` | Replaces the whole template from JSON. An invalid template is rejected whole and the previous one stays in force. |
+| `ResetFieldCursor` | `bool ResetFieldCursor(out string message)` | Restarts TryReadNextField from the first field. |
+| `TryReadNextField` | `bool TryReadNextField(out bool hasItem, out string name, out string value, out string raw, out string reason, out int lineNumber, out string message)` | Reads the next field of the last extraction, in template order. hasItem is False when there are no more; reason is null when the field was found and valid. |
+| `ValidateTemplateJson` | `bool ValidateTemplateJson(string templateJson, out int errorCount, out string reportJson, out string message)` | Checks a JSON template without loading it. Returns True when the check ran; errorCount is 0 for a valid template and reportJson lists every problem with its path. |
 
 ## UIAutomationUtils
 

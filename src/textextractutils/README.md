@@ -4,16 +4,19 @@ A Pega Robot Studio component (`TextExtractUtils`) that pulls labelled, typed bu
 out of text such as email bodies, OCR output and terminal screens, **without writing regular expressions**. Describe each field the way a person
 sees it (the labels in front of it, where the value sits and what type it is) and read back a validated, normalized value or a stable reason code.
 
-> **Status: under construction.** Work packages 1 to 4 of the [design plan](../../project-docs/plans/2026-09-26-textextractutils-design.md) are
-> in: templates, text normalization, label matching, typed values, `ExtractFromText`, the result readers and hardened pattern fields all work.
-> Still to come: the documentation pages and registration, measurement, and the first release. Do not use the component until a release says otherwise.
-> It is registered in the solution so it builds and its tests run in CI, but it is deliberately not in any release, the root README or
-> `CrossReference.md` yet.
+> **Status: complete, awaiting its first release.** All phase 1 methods work. See the [documentation](Documentation/README.md) for a quick start
+> and worked examples, and the [design plan](../../project-docs/plans/2026-09-26-textextractutils-design.md) for phase 2 (tables).
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `TextExtractAutomation`
 - Assembly: `TextExtractAutomation`
 - No NuGet dependencies. Everything is in memory; messages never contain the text being read.
+
+## Documentation
+
+The [Documentation](Documentation/README.md) folder has the [QuickStart](Documentation/QuickStart.md), [Labels](Documentation/Labels.md),
+[Types](Documentation/Types.md), [Results](Documentation/Results.md), [Patterns](Documentation/Patterns.md), [Limits](Documentation/Limits.md) and a
+worked [EmailIntake](Documentation/EmailIntake.md) example with `LocalQueueUtils`.
 
 ## Templates
 
