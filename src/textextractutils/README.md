@@ -4,9 +4,6 @@ A Pega Robot Studio component (`TextExtractUtils`) that pulls labelled, typed bu
 out of text such as email bodies, OCR output and terminal screens, **without writing regular expressions**. Describe each field the way a person
 sees it (the labels in front of it, where the value sits and what type it is) and read back a validated, normalized value or a stable reason code.
 
-> **Status: complete.** Phase 1 (fields) and phase 2 (tables) both work. See the [documentation](Documentation/README.md) for a quick start
-> and worked examples, and the [design plan](../../project-docs/plans/2026-09-26-textextractutils-design.md) for the design decisions.
-
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `TextExtractAutomation`
 - Assembly: `TextExtractAutomation`

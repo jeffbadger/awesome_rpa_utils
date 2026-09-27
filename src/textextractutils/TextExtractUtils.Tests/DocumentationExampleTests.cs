@@ -112,6 +112,36 @@ namespace TextExtractAutomation.Tests
         }
 
         [Fact]
+        public void Types_EveryFieldTypeIsExplained_AndThePageProseHolds()
+        {
+            string page = Page("Types.md");
+            List<string> chosen = Table(page, "## Choosing a type").Select(r => r[0]).ToList();
+            foreach (FieldType type in Enum.GetValues(typeof(FieldType)))
+            {
+                Assert.Contains("\n### `" + type + "`\n", page);
+                Assert.Contains(type.ToString(), chosen);
+            }
+            Assert.Equal(Enum.GetValues(typeof(FieldType)).Length, chosen.Count);
+
+            // the examples written into the explanations
+            string Value(FieldType type, string format, string text)
+            {
+                Converted c = ValueConverter.Convert(TypeField(type.ToString(), format), text);
+                return c.Ok ? c.Value : c.Reason;
+            }
+            Assert.Equal("INV-7", Value(FieldType.Code, "", "INV-7 (reissued)"));
+            Assert.Equal("INV-2026-0042", Value(FieldType.Code, "", "INV-2026-0042 (reissued)"));
+            Assert.Equal("1234.50", Value(FieldType.Amount, "CommaDecimal", "EUR 1.234,50 incl. VAT"));
+            Assert.Equal("InvalidValue", Value(FieldType.Amount, "DotDecimal", "n/a"));
+            Assert.Equal("InvalidValue", Value(FieldType.Date, "dd/MM/yyyy", "31/02/2026"));
+            Assert.Equal("-12", Value(FieldType.Integer, "DotDecimal", "-12"));
+            Assert.Equal("-12.00", Value(FieldType.Amount, "DotDecimal", "-12.00"));
+            Assert.Equal("1234.50", Value(FieldType.Amount, "DotDecimal", "1,234.50"));                  // no currency is fine
+            Assert.Equal("2026-09-26", Value(FieldType.Date, "yyyy-MM-dd|dd/MM/yyyy", "from 26/09/2026 to 2026-10-01"));   // the first date in the text wins
+            Assert.Equal("5", Value(FieldType.Integer, "DotDecimal", "5 12/03"));
+        }
+
+        [Fact]
         public void Types_EveryExampleGivesItsValue_AndEveryRefusalIsRefused()
         {
             string page = Page("Types.md");
