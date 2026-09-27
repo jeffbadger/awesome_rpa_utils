@@ -4,10 +4,11 @@ A Pega Robot Studio component (`TextExtractUtils`) that pulls labelled, typed bu
 out of text such as email bodies, OCR output and terminal screens, **without writing regular expressions**. Describe each field the way a person
 sees it (the labels in front of it, where the value sits and what type it is) and read back a validated, normalized value or a stable reason code.
 
-> **Status: under construction.** Work packages 1 to 3 of the [design plan](../../project-docs/plans/2026-09-26-textextractutils-design.md) are
-> in: the **template** operations work (building fields with methods, JSON load/validate/export, limits), and the internal text normalization,
-> label matching and typed value reading exist and are tested. `ExtractFromText` and the result readers report that they are not implemented yet. Do not use the component until a release says otherwise. It is registered in the solution so it builds and its
-> tests run in CI, but it is deliberately not in any release, the root README or `CrossReference.md` yet.
+> **Status: under construction.** Work packages 1 to 4 of the [design plan](../../project-docs/plans/2026-09-26-textextractutils-design.md) are
+> in: templates, text normalization, label matching, typed values, `ExtractFromText` and the result readers all work. Still to come: pattern-field
+> hardening, the documentation pages and registration, measurement, and the first release. Do not use the component until a release says otherwise.
+> It is registered in the solution so it builds and its tests run in CI, but it is deliberately not in any release, the root README or
+> `CrossReference.md` yet.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `TextExtractAutomation`
@@ -40,6 +41,24 @@ stable label) is found by a regular expression with a named group `value`.
   `dd` and separators; `yyyy-MM-dd` when none are given. Every other type must be given none. Never the machine culture.
 - Field names are unique ignoring case. A template has at most 200 fields and, as saved by `GetTemplateJson`, at most 256,000 characters, so
   anything accepted can be saved and loaded again. Unknown or repeated properties, wrong types and numeric enum values are errors.
+
+## Extracting and reading results
+
+```text
+ExtractFromText(text)                      -> foundCount, missingRequiredCount
+GetField(name)                             -> found, value, raw, reason, lineNumber
+TryReadNextField()                         -> hasItem, name, value, raw, reason, lineNumber   (every field, in template order)
+GetResultJson()                            -> everything, including the label that matched, the currency and the number of occurrences
+```
+
+- `value` is normalized and culture-independent (`1234.50`, `2026-09-26`, an IBAN without spaces); `raw` is exactly the text it was read from.
+- `reason` is null when the field was found. Otherwise: `MissingLabel` (no label or pattern match), `MissingValue` (the label is there, the value is
+  not), `InvalidValue` (text is there but is not a valid value of the type; `raw` shows it), `AmbiguousValue` (the label appears more than once with
+  different values under `RequireUnique`; the same value repeated is fine), or `PatternTimeout`. Explanations in the result JSON never quote the text.
+- `lineNumber` is the 1-based line of the value, or of the label when the value is missing, or 0.
+- `First` and `Last` take that occurrence as it is; `RequireUnique` never guesses between two different values.
+- Every accepted template change, `ClearResults` and every extraction attempt (even one that fails) discards the previous results and cursor; a
+  refused change and the read methods keep them. Before an extraction, every reader fails with a message saying to run `ExtractFromText` first.
 
 ## Method reference
 
