@@ -46,7 +46,7 @@ not renewed expires, so a crashed or hung holder cannot block everyone forever.
 - **Race-proof takeover** (the core of WP3): taking over an expired or dead lease must not steal a lease its holder renewed in time, and two
   robots taking over the same stale lease must not both win. The generation-file protocol (decision 2) gives both: only one robot can create
   generation n+1, and a renewal before expiry is seen by any taker. The protocol is proven by multi-process stress tests, not by argument.
-- Robots need only the right to create files in the folder; deleting another robot's file is never needed for correctness, only for cleanup.
+- Robots need the rights to list the folder, read its files and create files in it; deleting another robot's file is never needed for correctness, only for cleanup.
   `ValidateLockFolder` reports the real permissions and fails with a clear message when files cannot be created; the documentation gives the
   recommended Server Bot setup (an admin-provisioned folder with Modify for the robot accounts, via `icacls`, set with `ConfigureLockFolder`).
 
@@ -87,7 +87,7 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
   another, many threads contending, and expiry of an abandoned lease.
 - **WP3** `Machine` scope: lease files, atomic acquire, process liveness, the takeover protocol, atomic renewal, slots; multi-process stress
   tests (child processes acquiring, renewing, crashing and taking over) asserting that no two processes ever hold the same lock.
-- **WP4** Folder configuration and validation, status and JSON, `ForceReleaseLock`, corrupt-file handling (quarantine, as LocalQueueUtils does).
+- **WP4** `ValidateLockFolder` (the folder's real permissions) and corrupt-file handling (status, JSON and `ForceReleaseLock` moved into WP3).
 - **WP5** Docs (README; Documentation: QuickStart, CrossThread, ServerBots with the folder setup, Slots, Limits), registration
   (`src/AwesomeRpaUtils.sln`, `$releaseAssemblies` in `scripts/Package-Release.ps1`, root README row/links/test line and the DLL count
   "twenty-five" → "twenty-six", `CrossReference.md`, `TESTING.md`), Pega usability review + index, documentation sync/example tests.
@@ -110,7 +110,7 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    another robot's file: a lock is a sequence of **generation files** (`<resource>.<n>.lease`) created atomically with create-if-not-exists,
    the highest valid generation (not expired, holder process alive) holds the lock, a taker supersedes a stale generation by creating the next
    one, a holder renews by rewriting its own file and has lost the lease when a higher generation exists, and each robot deletes only its own
-   old generations. This needs only the right to create files. The default folder stays `%ProgramData%\AwesomeRpaUtils\Locks`;
+   old generations. This needs the rights to list the folder, read its files and create files, never to delete or rename another robot's. The default folder stays `%ProgramData%\AwesomeRpaUtils\Locks`;
    `ConfigureLockFolder` points to an admin-provisioned folder (recommended setup for Server Bots, which also allows full cleanup);
    `ValidateLockFolder` reports whether robots can create files, delete their own and delete another's, and fails with a message pointing at
    `ConfigureLockFolder` when files cannot be created. The default ProgramData ACL behaviour is to be confirmed on a real Server Bot host in WP3.
@@ -124,3 +124,36 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    admitted just before disposal cannot leave a lease behind; per-owner lease counts are kept (no scan per acquire) and every expired lease is
    swept at least once a minute by a background timer that runs only while the table holds anything (plus lazily on every visit), so resource names that are never used again do not accumulate; holders may not contain `|`, the separator of
    `GetLockStatus`'s holders; the JSON never contains tokens.
+6. **`Machine` scope protocol, as built and stress-tested** (WP3). The multi-process stress test (8 processes x 300 acquisitions, repeated) found
+   two flaws in the first version, both now fixed and covered:
+   - A move "without overwrite" is not atomic on Linux: .NET checks for the target and then renames (2,989 of 3,000 races had several
+     winners). Lease files are created exclusively instead (`FileMode.CreateNew`: `O_EXCL` / `CREATE_NEW`). A new file can be read before its
+     content is written, so readers retry briefly and an unreadable file younger than 10 s counts as held; an older one is superseded.
+   - A directory listing is only guaranteed to include files that are neither created nor deleted while it runs. A robot that missed the new top
+     generation and its just-deleted predecessor created a lower number: two holders. So the top is found by looking up n+1, n+2, ... by name
+     from the listing's highest number; holders renew and release by rewriting their own file in place (never renaming); and a generation is
+     deleted only once its successor is 5 minutes old, while an acquire that takes over 60 s between reading and creating starts over. No
+     generation at or above an operation's starting top can then disappear during it, so numbers only grow.
+   After the fixes: no overlap and no lost lease in 6 runs of 2,400 acquisitions each. A lease is dead when its process has ended or its process
+   ID belongs to a process started at another time; a process that cannot be inspected is trusted until its lease ends. Status, JSON (never
+   tokens) and force release (a released generation) are in WP3 rather than WP4; WP4 keeps `ValidateLockFolder` and corrupt-file handling.
+   The test assembly doubles as the child process (`dotnet ResourceLockUtils.Tests.dll stress-host ...`, its own `Main`), so no helper project
+   can end up in a package; every child has a time limit, so a broken build fails the tests instead of hanging CI.
+7. **Review fixes to the `Machine` scope** (WP3, Copilot review of PR #167): the process-start identity is compared exactly (the kernel's start
+   tick from `/proc/[pid]/stat` on Linux, where .NET's `StartTime` moves with wall-clock adjustments; the creation time on Windows) instead of
+   within a second; a lease file this account may not read is held until it is older than the longest lease (24 h), never superseded after
+   the 10 s grace for half-written files; token operations use the folder and resource the lease was taken in, and only a lease confirmed lost
+   stops being tracked for disposal; cleanup after a successful create is best effort, so an acquire that created its lease always returns it.
+8. **Second review of PR #167**: the permissions a robot needs are listing the folder, reading its files and creating files (never deleting or
+   renaming another robot's), corrected wherever the plan said "only create"; file presence tells a missing file from an inaccessible one (so
+   an access-denied lease is never mistaken for absent or old); cleanup checks the parsed slot; a held slot whose lease cannot be read blocks
+   allocating another slot of the resource (its kind and capacity are unknown); leases that ended unvisited are pruned before the
+   per-component limit applies; the locks JSON lists unreadable held leases with null details; the test project states `OutputType` Exe. Testing the presence fix found that an access-denied name was taken as present, so in a folder that can be listed but not accessed the lookup of the top looped forever: an access-denied name is now confirmed by listing its exact name, and the lookup has a hard bound.
+9. **Third review of PR #167**: the lease's times are taken immediately before its file is created (a slow scan no longer shortens it); only
+   an existing target counts as losing the race for a generation, and any other failure to create fails the call with a message; after
+   creating generation n, a robot that finds n+1 already there gives n up at once (marked released), which closes the last window for filling
+   a gap below the top (a process stalled between the 60 s check and the create); a release re-checks, just **before** marking the lease released,
+   that it has not expired and has no successor (a taker can only supersede an expired lease), and reports `released` False otherwise. A first
+   version checked after the rewrite; the stress test showed clean releases reported lost, since the next robot may take the released lease
+   at once. Test-only hooks force each timing.
+

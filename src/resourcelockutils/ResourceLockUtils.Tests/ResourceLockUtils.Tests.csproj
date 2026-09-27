@@ -3,6 +3,10 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <IsPackable>false</IsPackable>
+    <!-- Our own Main (StressHost.cs): the test assembly doubles as the child process of the multi-process lock tests. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
+    <!-- The test SDK already builds test projects as executables; stated here so the stress-host child does not depend on that default. -->
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
