@@ -255,10 +255,10 @@ namespace TextExtractAutomation.Tests
             string readme = File.ReadAllText(Path.Combine(ComponentDirectory(), "..", "localqueueutils", "README.md"));
             Assert.Contains("bool AddJson(string queuePath, string payloadJson, out string itemId, out bool duplicate, out string message, string businessKey", readme);
 
-            // the page states the duplicate check the way LocalQueueUtils implements it: active items only
-            Assert.Contains("still waiting or being worked", page);
-            string queueCode = File.ReadAllText(Path.Combine(ComponentDirectory(), "..", "localqueueutils", "LocalQueueUtils.cs"));
-            Assert.Contains("ReadItems(full, \"ready\", \"delayed\", \"in-progress\")", queueCode);
+            // the page names every state the duplicate check covers; the behavior itself is run by LocalQueueUtils' own
+            // AddJson_BusinessKey_IsADuplicateWhileActive_AndNewOnceCompletedOrRejected test
+            Assert.Contains("(ready, delayed or in progress)", page);
+            Assert.Contains("Once the first item is completed or rejected, the same invoice number\n  makes a new item", page);
         }
     }
 }

@@ -80,7 +80,7 @@ namespace TextExtractAutomation.Tests
             Measure("email9k", c, Email(), 2000, 9);
         }
 
-        // a 10,000-line fixed-width report (about 1 MB) with 50 fields, some found once, most missing
+        // a 10,000-line fixed-width report (about 700 KB) with 50 fields, each found once (one labelled line every 200 lines)
         [Fact]
         public void Measure_Report()
         {

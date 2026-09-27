@@ -824,7 +824,8 @@ The platform-independent xunit coverage is in
   column with `GetRowValue`; verify the documented rows, that the `Total` line ends the table and is still read as a field, and that a report
   whose header repeats on every page (a `TerminalUtils` screen dump or a PDF text export) is read as one table with continuous row numbers.
 - Hand the result to a `LocalQueueUtils` queue as in `Documentation/EmailIntake.md` and verify a re-sent email becomes a duplicate while
-  the first item is still ready or in progress, and a new item once the first has been completed.
+  the first item is ready, delayed (add it with `delaySeconds`) or in progress, and a new item once the first has been completed, and again once
+  one has been rejected.
 
 The platform-independent xunit coverage is in `src/textextractutils/TextExtractUtils.Tests`
 (`dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj`), including `DocumentationExampleTests`, which runs the
