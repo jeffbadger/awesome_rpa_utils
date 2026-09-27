@@ -132,8 +132,18 @@ namespace TextExtractAutomation.Tests
         }
 
         [Fact]
-        public void AHeaderInsideAnotherHeader_TakesItsOwnPlace()
+        public void AHeaderInsideAnotherHeader_TakesItsOwnPlace_WhateverTheColumnOrder()
         {
+            using (var reversed = new TextExtractUtils())
+            {
+                Assert.True(reversed.AddTableColumn("T", "Amount", FieldType.Amount, DecimalStyle.DotDecimal, "", out string rm), rm);
+                Assert.True(reversed.AddTableColumn("T", "Amount Due", FieldType.Amount, DecimalStyle.DotDecimal, "", out rm), rm);
+                Assert.True(reversed.ExtractFromText("Amount Due    Amount\n     10.00     20.00\n", out _, out _, out rm), rm);
+                Assert.Equal(new[] { "1:20.00|10.00" }, Rows(reversed, "T", "Amount", "Amount Due"));
+                Assert.True(reversed.GetResultJson(out string json, out rm), rm);
+                Assert.Contains("\"cells\":[{\"column\":\"Amount\",\"found\":true,\"value\":\"20.00\"", json);      // cells stay in template column order
+            }
+
             using var c = new TextExtractUtils();
             Assert.True(c.AddTableColumn("T", "Amount Due", FieldType.Amount, DecimalStyle.DotDecimal, "", out string m), m);
             Assert.True(c.AddTableColumn("T", "Amount", FieldType.Amount, DecimalStyle.DotDecimal, "", out m), m);
@@ -156,6 +166,29 @@ namespace TextExtractAutomation.Tests
                 "3           Green  wid\n";                     // a second piece inside Description's header is not moved into the empty Qty
             Assert.True(c.ExtractFromText(text, out _, out _, out string msg), msg);
             Assert.Equal(new[] { "1:1|Blue widget|5", "2:(MissingValue)|Red widget|6", "3:3|Green|(MissingValue)" }, Rows(c, "T", "Id", "Description", "Qty"));
+        }
+
+        [Fact]
+        public void APageFooter_IsARow_UnlessAFieldLabelEndsIt()
+        {
+            const string text =
+                "Ref      Amount\n" +
+                "R1       1.00\n" +
+                "Page 1 of 2\n" +
+                "Ref      Amount\n" +
+                "R2       2.00\n";
+            using var plain = new TextExtractUtils();
+            Assert.True(plain.AddTableColumn("T", "Ref", FieldType.Code, DecimalStyle.DotDecimal, "", out string m), m);
+            Assert.True(plain.AddTableColumn("T", "Amount", FieldType.Amount, DecimalStyle.DotDecimal, "", out m), m);
+            Assert.True(plain.ExtractFromText(text, out _, out _, out m), m);
+            Assert.Equal(new[] { "1:R1|1.00", "2:Page|(MissingValue)", "3:R2|2.00" }, Rows(plain, "T", "Ref", "Amount"));   // no footer detection: the footer is a row (Ref is a Code, so it reads the first word)
+
+            using var withFooterField = new TextExtractUtils();
+            Assert.True(withFooterField.AddLabelField("Page", "Page", ValuePosition.SameLine, FieldType.Text, DecimalStyle.DotDecimal, "", false, Occurrence.First, out m), m);
+            Assert.True(withFooterField.AddTableColumn("T", "Ref", FieldType.Code, DecimalStyle.DotDecimal, "", out m), m);
+            Assert.True(withFooterField.AddTableColumn("T", "Amount", FieldType.Amount, DecimalStyle.DotDecimal, "", out m), m);
+            Assert.True(withFooterField.ExtractFromText(text, out _, out _, out m), m);
+            Assert.Equal(new[] { "1:R1|1.00", "2:R2|2.00" }, Rows(withFooterField, "T", "Ref", "Amount"));
         }
 
         [Fact]
@@ -255,13 +288,15 @@ namespace TextExtractAutomation.Tests
             Assert.True(c.AddTableColumn("Lines", "Qty", FieldType.Integer, DecimalStyle.DotDecimal, "", out m), m);
             Assert.False(c.AddLabelFieldSimple("LINES", "L", FieldType.Text, out m)); Assert.Contains("DuplicateName", m);
             Assert.False(c.AddTableColumn("Lines", "qty", FieldType.Integer, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("already has a column", m);
+            Assert.True(c.AddTableColumn("Lines", "Unit Price", FieldType.Amount, DecimalStyle.DotDecimal, "", out m), m);
+            Assert.False(c.AddTableColumn("Lines", "UNIT   price", FieldType.Amount, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("ignoring case and spacing", m);   // matched the same way
             Assert.False(c.AddTableColumn("lines", "Price", FieldType.Amount, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("same spelling", m);
             Assert.False(c.AddTableColumn("Lines", "A|B", FieldType.Text, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("InvalidLabel", m);
             Assert.False(c.AddTableColumn("Lines", "", FieldType.Text, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("InvalidLabel", m);
             Assert.False(c.AddTableColumn("Lines", "When", FieldType.Date, DecimalStyle.DotDecimal, "yyyy", out m)); Assert.Contains("InvalidFormat", m);
             Assert.False(c.AddTableColumn("Lines", "Price", (FieldType)42, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("UnknownEnumValue", m);
             Assert.False(c.AddTableColumn("", "Price", FieldType.Text, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("InvalidName", m);
-            for (int i = 1; i < 50; i++) Assert.True(c.AddTableColumn("Lines", "C" + i, FieldType.Text, DecimalStyle.DotDecimal, "", out m), m);
+            for (int i = 2; i < 50; i++) Assert.True(c.AddTableColumn("Lines", "C" + i, FieldType.Text, DecimalStyle.DotDecimal, "", out m), m);
             Assert.False(c.AddTableColumn("Lines", "C50", FieldType.Text, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("TooManyColumns", m);
             for (int t = 1; t < 20; t++) Assert.True(c.AddTableColumn("T" + t, "H", FieldType.Text, DecimalStyle.DotDecimal, "", out m), m);
             Assert.False(c.AddTableColumn("T20", "H", FieldType.Text, DecimalStyle.DotDecimal, "", out m)); Assert.Contains("TooManyTables", m);

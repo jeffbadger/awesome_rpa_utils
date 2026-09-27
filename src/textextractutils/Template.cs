@@ -213,7 +213,8 @@ namespace TextExtractAutomation
             return null;
         }
 
-        /// <summary>A header is a single label: trimmed, with a letter or digit, no line break or |, at most 128 characters, unique in its table ignoring case.</summary>
+        /// <summary>A header is a single label: trimmed, with a letter or digit, no line break or |, at most 128 characters, unique in its table as it
+        /// is matched (ignoring case and spacing, so Unit Price and UNIT  PRICE are the same header).</summary>
         internal static Finding CheckColumn(TableDef table, string header, string path, out string trimmed)
         {
             trimmed = null;
@@ -224,8 +225,9 @@ namespace TextExtractAutomation
             if (f != null) return f;
             trimmed = checkedHeader[0];
             string candidate = trimmed;
-            if (table != null && table.Columns.Any(c => string.Equals(c.Header, candidate, StringComparison.OrdinalIgnoreCase)))
-                return new Finding(path, "DuplicateName", "the table already has a column '" + candidate + "'; headers are unique in a table, ignoring case");
+            string folded = new LabelPattern(candidate).Folded;
+            if (table != null && table.Columns.Any(c => string.Equals(c.Header, candidate, StringComparison.OrdinalIgnoreCase) || new LabelPattern(c.Header).Folded == folded))
+                return new Finding(path, "DuplicateName", "the table already has a column '" + candidate + "'; headers are unique in a table, ignoring case and spacing");
             return null;
         }
 

@@ -38,7 +38,9 @@ In a JSON template the same table is:
 - A table name shares the field names' namespace: it must differ, ignoring case, from every field and every other table. Later columns must spell
   the table name exactly as the first did.
 - A header follows the rules of a single label (a letter or digit, no line break, at most 128 characters) and may not contain `|`. Headers are
-  unique within a table, ignoring case. At most 50 columns per table and 20 tables per template.
+  unique within a table as they are matched, ignoring case and spacing. At most 50 columns per table and 20 tables per template.
+- The column order does not matter for finding the header line: longer headers claim their places first, as labels do, so `Amount` does not
+  take the `Amount` inside `Amount Due`.
 - The type, decimal style and date formats of a column work exactly as for a field (see [Types](Types.md)).
 
 ## How a table is found
@@ -49,7 +51,9 @@ In a JSON template the same table is:
    line after the items), another header line, or the end of the text. Lines made only of `-`, `=`, `_`, `+`, `|` and spaces (the rule under
    a header) are skipped.
 3. **A repeated header line continues the table**, so a report whose header is printed again on every page is read as one table, and row numbers
-   carry on. Text between the pages (a page footer, a blank line) is not read as rows.
+   carry on. Text between the pages is read as rows unless something ends them first: a blank line, or a line holding a field's label. For a
+   footer such as `Page 1 of 2`, add an optional label field for it (`AddLabelField("Page", "Page", SameLine, Text, …, required False, First)`),
+   so its line ends the rows; there is no other footer detection.
 4. **Cells**: a row is split into cells at runs of two or more spaces (one space keeps `Red widget` together). Each column takes, left to right,
    the first unused cell that overlaps its header, or else the first unused cell that lies between the previous column's header and the next one
    without touching either. Right-aligned numbers and values a little out of line therefore still land in their column, and a value under the

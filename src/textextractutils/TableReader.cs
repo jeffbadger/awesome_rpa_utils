@@ -35,8 +35,8 @@ namespace TextExtractAutomation
     /// <summary>
     /// Reads fixed-width tables: rows under a header line.
     /// <list type="bullet">
-    /// <item>A header line is a line where every column's header is found (matched like a label: case, spacing and OCR slips). The same header
-    /// line found again later (a page break) continues the table.</item>
+    /// <item>A header line is a line where every column's header is found (matched like a label: case, spacing and OCR slips; longer headers claim
+    /// their places first). The same header line found again later (a page break) continues the table.</item>
     /// <item>Rows are the lines after a header line, up to a blank line, a line holding a label of any label field (a Total line after the items),
     /// another header line or the end of the text. Lines made only of - = _ + | and spaces (rules under a header) are skipped.</item>
     /// <item>A row is split into cells at runs of two or more spaces. Columns are taken left to right: a column's cell is the first unused cell that
@@ -59,6 +59,7 @@ namespace TextExtractAutomation
         {
             internal TableDef Table;
             internal int[] Patterns;                  // per column, the index of its header's pattern
+            internal int[] Order;                     // the columns, longest header first (then template order): the order headers claim their places
             internal TableResult Result;
             internal List<HeaderSpan> Header;         // the header of the rows being read, or null between tables
             internal bool Done;                       // TooManyRows
@@ -79,7 +80,8 @@ namespace TextExtractAutomation
                     if (!byFolded.TryGetValue(pattern.Folded, out int index)) { index = patterns.Count; byFolded[pattern.Folded] = index; patterns.Add(pattern); }
                     indexes[k] = index;
                 }
-                states.Add(new State { Table = table, Patterns = indexes, Result = new TableResult { Name = table.Name } });
+                int[] order = Enumerable.Range(0, indexes.Length).OrderByDescending(k => patterns[indexes[k]].Folded.Length).ThenBy(k => k).ToArray();
+                states.Add(new State { Table = table, Patterns = indexes, Order = order, Result = new TableResult { Name = table.Name } });
             }
             var byFirst = new Dictionary<char, List<int>>();
             for (int p = 0; p < patterns.Count; p++)
@@ -146,24 +148,25 @@ namespace TextExtractAutomation
             return states.Select(s => s.Result).ToList();
         }
 
-        /// <summary>The columns' header positions on a line where every header is found (each at its first match not overlapping an earlier
-        /// column's), or null.</summary>
+        /// <summary>The columns' header positions (in template column order) on a line where every header is found, or null. Longer headers claim
+        /// their places first, as with labels, so Amount does not take the Amount inside Amount Due whatever order the columns were added in; each
+        /// header takes its first match not overlapping a place already claimed.</summary>
         private static List<HeaderSpan> HeaderAt(State s, List<(int Start, int End)>[] matches)
         {
-            var spans = new List<HeaderSpan>();
-            for (int k = 0; k < s.Patterns.Length; k++)
+            var spans = new HeaderSpan[s.Patterns.Length];
+            var claimed = new List<HeaderSpan>();
+            foreach (int k in s.Order)
             {
-                bool found = false;
                 foreach (var (start, end) in matches[s.Patterns[k]])
                 {
-                    if (spans.Any(h => start < h.End && h.Start < end)) continue;
-                    spans.Add(new HeaderSpan { Column = s.Table.Columns[k], Start = start, End = end });
-                    found = true;
+                    if (claimed.Any(h => start < h.End && h.Start < end)) continue;
+                    spans[k] = new HeaderSpan { Column = s.Table.Columns[k], Start = start, End = end };
+                    claimed.Add(spans[k]);
                     break;
                 }
-                if (!found) return null;
+                if (spans[k] == null) return null;
             }
-            return spans;
+            return spans.ToList();
         }
 
         private static bool IsRule(string text)
