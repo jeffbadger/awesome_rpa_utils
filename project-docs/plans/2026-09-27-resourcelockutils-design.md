@@ -55,14 +55,14 @@ not renewed expires, so a crashed or hung holder cannot block everyone forever.
 a lease; the token identifies the slot. The capacity is recorded on first use; a call with a different capacity for the same resource fails
 rather than silently allowing more holders.
 
-## Public surface (initial)
+## Public surface (frozen in WP1: 11 methods)
 
 | Group | Methods |
 |---|---|
 | Acquire | `TryAcquireLock(scope, resource, holder, leaseSeconds, out acquired, out token, out currentHolder)`; `AcquireLock(… , waitMilliseconds, …)` (polls with jittered backoff until acquired or the wait ends; run it on an asynchronous link); `TryAcquireSlot(scope, resource, capacity, holder, leaseSeconds, out acquired, out token, out holderCount)`; `AcquireSlot(… , waitMilliseconds, …)` |
-| Hold | `RenewLock(scope, resource, token, leaseSeconds, out expiresInSeconds)`; `ReleaseLock(scope, resource, token, out released)` — True when the call ran; `released` False means the lease had already expired or been taken over, so the work may have overlapped with another holder |
-| Inspect | `GetLockStatus(scope, resource, out held, out holder, out expiresInSeconds, out holderCount)`; `GetLocksJson(scope, out locksJson)` |
-| Operate | `ForceReleaseLock(scope, resource, confirmForceRelease)`; `ConfigureLockFolder(folderPath)`; `ValidateLockFolder(out usable, out reportJson)` |
+| Hold | `RenewLock(scope, resource, token, leaseSeconds, out renewed, out expiresInSeconds)` — `renewed` False means the lease was lost; `ReleaseLock(scope, resource, token, out released)` — True when the call ran; `released` False means the lease had already expired or been taken over, so the work may have overlapped with another holder |
+| Inspect | `GetLockStatus(scope, resource, out held, out holders, out expiresInSeconds, out holderCount)` (slot holders separated by `|`); `GetLocksJson(scope, out locksJson)` |
+| Operate | `ForceReleaseLock(scope, resource, confirmForceRelease, out releasedCount)`; `ConfigureLockFolder(folderPath)`; `ValidateLockFolder(out usable, out reportJson)` |
 - Disposing the component releases every lock this instance still holds (Robot Runtime shutdown), in both scopes.
 - Resource names: letters, digits, `-`, `_`, `.`, at most 100 characters, ignoring case (they become file names). Holder: free text, at most
   128 characters, typically the robot name; the documentation says never to put secrets in it.
