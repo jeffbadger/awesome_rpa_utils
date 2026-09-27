@@ -12,15 +12,16 @@ namespace TextExtractAutomation
     /// </summary>
     /// <remarks>
     /// Describe each field the way a person sees it (the labels in front of it, where the value sits, what type it is) with the <c>Add...</c>
-    /// methods or a JSON template, run <c>ExtractFromText</c>, then read each field's normalized value or its reason code. Work in progress:
-    /// the template operations work; extraction and result reading report that they are not implemented yet.
+    /// methods or a JSON template, run <c>ExtractFromText</c>, then read each field's normalized value or its reason code.
     /// </remarks>
-    [Description("Extracts labelled, typed fields (invoice number, total, due date, IBAN) from email, OCR or screen text without writing regular expressions. Under construction: the template operations work; extraction and reading results are not implemented yet. Never throws.")]
+    [Description("Extracts labelled, typed fields (invoice number, total, due date, IBAN) from email, OCR or screen text without writing regular expressions. Describe each field by its labels, position and type, run ExtractFromText, then read each value or its reason code. Never throws.")]
     public sealed class TextExtractUtils : Component
     {
         private readonly object syncRoot = new object();
         private bool disposed;
         private Template template = new Template();          // replaced whole, never edited in place
+        private ExtractionSnapshot results;                  // the last completed extraction, or null; replaced whole, never edited
+        private int cursor;                                  // TryReadNextField: the next field to read
 
         /// <summary>Empty constructor required so Pega Robot Studio can create the component.</summary>
         public TextExtractUtils() { }
@@ -153,7 +154,26 @@ namespace TextExtractAutomation
             foundCount = 0;
             missingRequiredCount = 0;
             message = null;
-            try { return NotYetImplemented(nameof(ExtractFromText), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (disposed) { message = DisposedMessage(nameof(ExtractFromText)); return false; }
+                    InvalidateResults();                         // earlier results never survive an attempt, whatever its outcome
+                    if (text == null) { message = nameof(ExtractFromText) + " failed: text is required (an empty string is allowed)."; return false; }
+                    if (template.Fields.Count == 0) { message = nameof(ExtractFromText) + " failed: the template has no fields; add one with AddLabelFieldSimple or AddLabelField, or load a template."; return false; }
+                    if (text.Length > template.Limits.MaximumTextCharacters)
+                    {
+                        message = nameof(ExtractFromText) + " failed: the text is longer than " + template.Limits.MaximumTextCharacters + " characters (the limit is set with ConfigureLimits).";
+                        return false;
+                    }
+                    ExtractionSnapshot snapshot = Extraction.Run(template, text);
+                    results = snapshot;
+                    foundCount = snapshot.FoundCount;
+                    missingRequiredCount = snapshot.MissingRequiredCount;
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ExtractFromText), ex); return false; }
         }
 
@@ -170,7 +190,21 @@ namespace TextExtractAutomation
             reason = null;
             lineNumber = 0;
             message = null;
-            try { return NotYetImplemented(nameof(GetField), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(GetField), out ExtractionSnapshot run, out message)) return false;
+                    FieldResult r = run.Find(name);
+                    if (r == null) { message = nameof(GetField) + " failed: the template has no field with that name (names are matched ignoring case)."; return false; }
+                    found = r.Found;
+                    value = r.Value;
+                    raw = r.Raw;
+                    reason = r.Reason;
+                    lineNumber = r.LineNumber;
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetField), ex); return false; }
         }
 
@@ -181,7 +215,15 @@ namespace TextExtractAutomation
         {
             resultJson = null;
             message = null;
-            try { return NotYetImplemented(nameof(GetResultJson), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(GetResultJson), out ExtractionSnapshot run, out message)) return false;
+                    resultJson = Extraction.ToJson(run);
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetResultJson), ex); return false; }
         }
 
@@ -191,7 +233,15 @@ namespace TextExtractAutomation
         public bool ResetFieldCursor(out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(ResetFieldCursor), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(ResetFieldCursor), out _, out message)) return false;
+                    cursor = 0;
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ResetFieldCursor), ex); return false; }
         }
 
@@ -207,7 +257,22 @@ namespace TextExtractAutomation
             reason = null;
             lineNumber = 0;
             message = null;
-            try { return NotYetImplemented(nameof(TryReadNextField), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(TryReadNextField), out ExtractionSnapshot run, out message)) return false;
+                    if (cursor >= run.Fields.Count) return true;              // exhausted: stays exhausted until a reset or a new extraction
+                    FieldResult r = run.Fields[cursor++];
+                    hasItem = true;
+                    name = r.Name;
+                    value = r.Value;
+                    raw = r.Raw;
+                    reason = r.Reason;
+                    lineNumber = r.LineNumber;
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(TryReadNextField), ex); return false; }
         }
 
@@ -217,7 +282,15 @@ namespace TextExtractAutomation
         public bool ClearResults(out string message)
         {
             message = null;
-            try { return NotYetImplemented(nameof(ClearResults), out message); }
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (disposed) { message = DisposedMessage(nameof(ClearResults)); return false; }
+                    InvalidateResults();
+                    return true;
+                }
+            }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ClearResults), ex); return false; }
         }
 
@@ -240,6 +313,7 @@ namespace TextExtractAutomation
                 Finding problem = change(copy) ?? copy.CheckCanonicalSize();
                 if (problem != null) { message = operation + " failed: " + problem.Format(); return false; }
                 template = copy;
+                InvalidateResults();                             // results belong to the template that produced them
                 return true;
             }
         }
@@ -260,6 +334,7 @@ namespace TextExtractAutomation
                     return false;
                 }
                 template = parsed;
+                InvalidateResults();
                 return true;
             }
         }
@@ -305,14 +380,16 @@ namespace TextExtractAutomation
 
         private static string DisposedMessage(string operation) => operation + " failed: the component has been disposed.";
 
-        private bool NotYetImplemented(string operation, out string message)
+        private void InvalidateResults() { results = null; cursor = 0; }
+
+        /// <summary>Fails with the disposed message or an actionable no-results message; otherwise hands back the published extraction. Called with the lock held.</summary>
+        private bool Available(string operation, out ExtractionSnapshot run, out string message)
         {
-            lock (syncRoot)
-            {
-                if (disposed) { message = DisposedMessage(operation); return false; }
-            }
-            message = operation + " is not implemented yet.";
-            return false;
+            run = results;
+            message = null;
+            if (disposed) { message = DisposedMessage(operation); return false; }
+            if (run == null) { message = operation + " failed: there are no results; run ExtractFromText first (a failed extraction, a template change or ClearResults discards them)."; return false; }
+            return true;
         }
 
         /// <summary>Releases the template and results. Idempotent.</summary>
@@ -320,7 +397,7 @@ namespace TextExtractAutomation
         {
             if (disposing)
             {
-                lock (syncRoot) { disposed = true; }
+                lock (syncRoot) { disposed = true; InvalidateResults(); }
             }
             base.Dispose(disposing);
         }

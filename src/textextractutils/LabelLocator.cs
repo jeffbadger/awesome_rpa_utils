@@ -154,7 +154,12 @@ namespace TextExtractAutomation
                 }
                 var kept = new List<Hit>();
                 foreach (Hit h in found.OrderByDescending(h => h.End - h.Start).ThenBy(h => h.Slipped).ThenBy(h => h.FieldIndex).ThenBy(h => h.Start))
-                    if (!kept.Any(k => h.Start < k.End && k.Start < h.End)) kept.Add(h);
+                {
+                    // A shorter or later label that overlaps a kept one is dropped. The exact same span for a different field is kept: two fields may
+                    // read the same label (Status as First and as Last), and each must see it.
+                    bool blocked = kept.Any(k => h.Start < k.End && k.Start < h.End && !(k.Start == h.Start && k.End == h.End && k.FieldIndex != h.FieldIndex));
+                    if (!blocked) kept.Add(h);
+                }
                 kept.Sort((a, b) => a.Start.CompareTo(b.Start));
                 foreach (Hit h in kept) h.ValueStart = SkipSeparators(lines[li].Text, h.End);
                 hitsByLine[li] = kept;

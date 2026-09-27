@@ -35,7 +35,7 @@ namespace TextExtractAutomation.Tests
             }
         }
 
-        private static readonly string[] SucceedsOnAnyInput = { "ClearTemplate", "GetTemplateJson" };
+        private static readonly string[] SucceedsOnAnyInput = { "ClearTemplate", "GetTemplateJson", "ClearResults" };
 
         [Fact]
         public void EveryMethod_OnBadInput_FailsWithSentinels_AndNamesItself()
@@ -96,20 +96,6 @@ namespace TextExtractAutomation.Tests
             Assert.Contains("InvalidOperationException", text);
             Assert.False(NeverThrowsGuard.IsRecoverable(new OutOfMemoryException()));
             Assert.True(NeverThrowsGuard.IsRecoverable(new InvalidOperationException()));
-        }
-
-        [Fact]
-        public void TheRunAndResultMethods_ReportThatTheyAreNotImplementedYet()
-        {
-            using var component = new TextExtractUtils();
-            string[] stubbed = { "ExtractFromText", "GetField", "GetResultJson", "ResetFieldCursor", "TryReadNextField", "ClearResults" };
-            foreach (MethodInfo m in ConventionTests.PublicMethods().Where(m => stubbed.Contains(m.Name)))
-            {
-                var (result, message, outs) = Invoke(component, m, Valid);
-                Assert.False(result);
-                Assert.Equal(m.Name + " is not implemented yet.", message);
-                AssertSentinels(m, outs);
-            }
         }
     }
 }

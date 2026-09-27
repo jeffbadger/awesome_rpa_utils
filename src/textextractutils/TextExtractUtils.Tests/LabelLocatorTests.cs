@@ -155,6 +155,15 @@ namespace TextExtractAutomation.Tests
         }
 
         [Fact]
+        public void TwoFieldsWithTheSameLabel_BothSeeIt_ButOneFieldNeverSeesItTwice()
+        {
+            var t = TemplateOf(("A", "Status", ValuePosition.SameLine), ("B", "Status", ValuePosition.NextLine));
+            Assert.Equal(new[] { "A=OPEN@1", "B=next@2" }, Found(t, "Status: OPEN\nnext"));
+            var spaced = TemplateOf(("C", "Invoice No|Invoice  No", ValuePosition.SameLine));          // two spellings that match the same text
+            Assert.Single(Locate(spaced, "Invoice No 5"));
+        }
+
+        [Fact]
         public void ALabelFollowedDirectlyByAnotherLabel_HasNoValue()
         {
             var t = TemplateOf(("Number", "Invoice No", ValuePosition.SameLine), ("Date", "Date", ValuePosition.SameLine));
