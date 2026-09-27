@@ -234,5 +234,16 @@ namespace TextExtractAutomation.Tests
             Assert.Equal(4, findings.Count);
             Assert.Empty(Findings(OneField("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Date\",\"dateFormats\":[\"dd/MM/yyyy\"]}")));
         }
+
+        [Fact]
+        public void EveryNonStringEntry_InLabelsAndDateFormats_IsReported()
+        {
+            List<(string path, string code)> labels = Findings(OneField("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[1,\"ok\",true],\"type\":\"Text\"}"));
+            Assert.Contains(("fields[0].labels[0]", "InvalidType"), labels);
+            Assert.Contains(("fields[0].labels[2]", "InvalidType"), labels);
+            Assert.Equal(2, labels.Count);
+            List<(string path, string code)> formats = Findings(OneField("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Date\",\"dateFormats\":[null,\"yyyy-MM-dd\",5]}"));
+            Assert.Equal(new[] { ("fields[0].dateFormats[0]", "InvalidType"), ("fields[0].dateFormats[2]", "InvalidType") }, formats);
+        }
     }
 }

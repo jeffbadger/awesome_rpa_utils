@@ -34,7 +34,7 @@ namespace TextExtractAutomation.Tests
         public void TheReadmeMethodTable_MatchesTheCode()
         {
             var rows = Regex.Matches(Readme(), "^\\| `(\\w+)` \\| `(bool [^`]+)` \\| (.+) \\|$", RegexOptions.Multiline).Cast<Match>()
-                .Select(m => (name: m.Groups[1].Value, signature: m.Groups[2].Value, description: m.Groups[3].Value)).ToList();
+                .Select(m => (name: m.Groups[1].Value, signature: m.Groups[2].Value, description: m.Groups[3].Value.Replace("\\|", "|"))).ToList();   // a | in a cell is written \| so it does not split the column
             MethodInfo[] methods = ConventionTests.PublicMethods();
             Assert.Equal(methods.Select(m => m.Name).OrderBy(n => n, StringComparer.Ordinal), rows.Select(r => r.name).OrderBy(n => n, StringComparer.Ordinal));
             var problems = new List<string>();
@@ -48,6 +48,8 @@ namespace TextExtractAutomation.Tests
             }
             Assert.True(problems.Count == 0, string.Join("\n", problems));
             Assert.Contains("All " + methods.Length + " phase 1 methods", Readme());
+            foreach (Match row in Regex.Matches(Readme(), "^\\| `\\w+` \\| `bool [^`]+` \\| (.+) \\|$", RegexOptions.Multiline))
+                Assert.DoesNotMatch("(?<!\\\\)\\|", row.Groups[1].Value);                                   // every | inside a description is escaped
         }
 
         [Fact]

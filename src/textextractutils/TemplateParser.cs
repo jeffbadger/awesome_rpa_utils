@@ -352,13 +352,16 @@ namespace TextExtractAutomation
             if (!p.TryGetValue("labels", out JsonElement v)) { findings.Add(path + ".labels", "MissingProperty", "labels is required: an array of label texts such as [\"Invoice No\", \"Invoice Number\"]"); return false; }
             if (v.ValueKind != JsonValueKind.Array) { findings.Add(path + ".labels", "InvalidType", "labels must be an array of strings"); return false; }
             var list = new List<string>();
+            bool allStrings = true;
             int i = 0;
             foreach (JsonElement e in v.EnumerateArray())
             {
-                if (e.ValueKind != JsonValueKind.String) { findings.Add(path + ".labels[" + i + "]", "InvalidType", "each label must be a string"); return false; }
-                list.Add(e.GetString());
+                // every entry that is not a string is reported, not just the first
+                if (e.ValueKind != JsonValueKind.String) { findings.Add(path + ".labels[" + i + "]", "InvalidType", "each label must be a string"); allStrings = false; }
+                else list.Add(e.GetString());
                 i++;
             }
+            if (!allStrings) return false;
             Finding f = Template.CheckLabels(list, path + ".labels", out labels);
             if (f != null) { findings.Add(f); return false; }
             return true;
@@ -434,13 +437,15 @@ namespace TextExtractAutomation
             if (!p.TryGetValue(name, out JsonElement v)) return true;
             if (v.ValueKind != JsonValueKind.Array) { findings.Add(path + "." + name, "InvalidType", name + " must be an array of strings"); return false; }
             var list = new List<string>();
+            bool allStrings = true;
             int i = 0;
             foreach (JsonElement e in v.EnumerateArray())
             {
-                if (e.ValueKind != JsonValueKind.String) { findings.Add(path + "." + name + "[" + i + "]", "InvalidType", "each entry must be a string"); return false; }
-                list.Add(e.GetString());
+                if (e.ValueKind != JsonValueKind.String) { findings.Add(path + "." + name + "[" + i + "]", "InvalidType", "each entry must be a string"); allStrings = false; }
+                else list.Add(e.GetString());
                 i++;
             }
+            if (!allStrings) return false;
             values = list.ToArray();
             return true;
         }
