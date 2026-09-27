@@ -29,14 +29,17 @@ namespace TextExtractAutomation
     /// <summary>The published outcome of one extraction: a result per field in template order, and the counts.</summary>
     internal sealed class ExtractionSnapshot
     {
-        internal ExtractionSnapshot(IList<FieldResult> fields)
+        internal ExtractionSnapshot(IList<FieldResult> fields, IList<TableResult> tables = null)
         {
             Fields = new ReadOnlyCollection<FieldResult>(fields);
+            Tables = new ReadOnlyCollection<TableResult>(tables ?? new List<TableResult>());
             FoundCount = fields.Count(f => f.Found);
             MissingRequiredCount = fields.Count(f => f.Required && !f.Found);
         }
 
         internal IReadOnlyList<FieldResult> Fields { get; }
+        internal IReadOnlyList<TableResult> Tables { get; }
+        internal TableResult FindTable(string name) => Tables.FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase));
         internal int FoundCount { get; }
         internal int MissingRequiredCount { get; }
 
@@ -74,7 +77,9 @@ namespace TextExtractAutomation
                     : FromPattern(field, text, patternBudgetMilliseconds, out stop);
                 results.Add(Decide(field, occurrences, stop));
             }
-            return new ExtractionSnapshot(results);
+            var labelLines = new HashSet<int>(candidates.Select(c => c.LabelLine));        // a line with a field's label ends a table (a Total line after the items)
+            List<TableResult> tables = TableReader.ReadAll(template.Tables, text, lines, labelLines);
+            return new ExtractionSnapshot(results, tables);
         }
 
         private static Hit FromLabel(FieldDef field, string original, LabelCandidate c)
@@ -262,8 +267,59 @@ namespace TextExtractAutomation
                         w.WriteEndObject();
                     }
                     w.WriteEndArray();
+                    if (snapshot.Tables.Count > 0)                    // present only when the template has tables, so phase 1 results keep their exact shape
+                    {
+                        w.WriteStartArray("tables");
+                        foreach (TableResult t in snapshot.Tables)
+                        {
+                            w.WriteStartObject();
+                            w.WriteString("name", t.Name);
+                            w.WriteBoolean("found", t.Found);
+                            w.WriteString("reason", t.Reason);
+                            w.WriteString("explanation", t.Explanation);
+                            w.WriteNumber("headerLine", t.HeaderLine);
+                            w.WriteNumber("rowCount", t.Rows.Count);
+                            w.WriteStartArray("rows");
+                            foreach (RowResult r in t.Rows) WriteRow(w, r);
+                            w.WriteEndArray();
+                            w.WriteEndObject();
+                        }
+                        w.WriteEndArray();
+                    }
                     w.WriteEndObject();
                 }
+                return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
+        private static readonly System.Text.Encodings.Web.JavaScriptEncoder ResultEncoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All);
+
+        private static void WriteRow(Utf8JsonWriter w, RowResult r)
+        {
+            w.WriteStartObject();
+            w.WriteNumber("rowNumber", r.RowNumber);
+            w.WriteNumber("lineNumber", r.LineNumber);
+            w.WriteStartArray("cells");
+            foreach (CellResult c in r.Cells)
+            {
+                w.WriteStartObject();
+                w.WriteString("column", c.Column);
+                w.WriteBoolean("found", c.Found);
+                w.WriteString("value", c.Value);
+                w.WriteString("raw", c.Raw);
+                w.WriteString("reason", c.Reason);
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+            w.WriteEndObject();
+        }
+
+        /// <summary>One row as JSON, for TryReadNextRow.</summary>
+        internal static string RowJson(RowResult row)
+        {
+            using (var stream = new MemoryStream())
+            {
+                using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = ResultEncoder })) WriteRow(w, row);
                 return Encoding.UTF8.GetString(stream.ToArray());
             }
         }

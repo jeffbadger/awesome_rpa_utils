@@ -9,6 +9,7 @@
 | `TryReadNextField()` | `hasItem`, `name`, `value`, `raw`, `reason`, `lineNumber`, for every field in template order |
 | `ResetFieldCursor()` | starts `TryReadNextField` again from the first field |
 | `GetResultJson()` | everything, as JSON |
+| `TryReadNextRow(table)`, `GetRowValue(column)` | the rows of a table, one cell at a time (see [Tables](Tables.md)) |
 | `ClearResults()` | discards the results (always succeeds) |
 
 - `value`: normalized, culture-independent; null unless found.
@@ -18,7 +19,8 @@
 
 ## Reason codes
 
-`reason` is null when the field was found. Otherwise:
+`reason` is null when the field was found. Otherwise (a table's header line not found is `MissingLabel`, and a table cell can be `MissingValue`
+or `InvalidValue`):
 
 | Reason | Meaning |
 |---|---|
@@ -28,6 +30,7 @@
 | `AmbiguousValue` | The label appears more than once with different valid values, and the field is `RequireUnique`. |
 | `PatternTimeout` | A pattern field took too long and was stopped (see [Patterns](Patterns.md)). |
 | `TooManyMatches` | A pattern field matched more than 10,000 times. |
+| `TooManyRows` | A table has more than 10,000 rows; it has no rows (tables only, see [Tables](Tables.md)). |
 
 `missingRequiredCount` counts required fields that were not found, whatever the reason; optional fields never count.
 
@@ -57,8 +60,8 @@
 
 Results belong to the template and text that produced them:
 
-- **Discards results** (and the cursor): every accepted template change (`AddLabelFieldSimple`, `AddLabelField`, `AddPatternField`, `ClearTemplate`,
-  `LoadTemplateJson`, `ConfigureLimits`), `ClearResults`, and every call to `ExtractFromText`, even one that fails.
+- **Discards results** (and the cursors): every accepted template change (`AddLabelFieldSimple`, `AddLabelField`, `AddPatternField`, `AddTableColumn`,
+  `ClearTemplate`, `LoadTemplateJson`, `ConfigureLimits`), `ClearResults`, and every call to `ExtractFromText`, even one that fails.
 - **Keeps results**: a refused template change, `GetTemplateJson`, `ValidateTemplateJson` and the read methods.
 
 Before the first extraction (or after results are discarded), every reader returns `False` with a message saying to run `ExtractFromText` first.

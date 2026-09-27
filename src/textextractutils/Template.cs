@@ -48,15 +48,40 @@ namespace TextExtractAutomation
         internal Occurrence Occurrence = Occurrence.RequireUnique;
     }
 
+    /// <summary>One column of a table: found by its header text on a header line, read as its type in every row.</summary>
+    internal sealed class ColumnDef
+    {
+        internal string Header;                   // as written in the template; also the column's name for GetRowValue
+        internal FieldType Type;
+        internal DecimalStyle DecimalStyle;
+        internal string[] DateFormats;            // Date columns only
+
+        /// <summary>The column as a field definition, so the value types read a cell exactly as they read a field's value.</summary>
+        internal FieldDef AsField() => new FieldDef { Name = Header, Kind = FieldKind.Label, Type = Type, DecimalStyle = DecimalStyle, DateFormats = DateFormats };
+    }
+
+    /// <summary>A table: rows under a header line that holds every column's header.</summary>
+    internal sealed class TableDef
+    {
+        internal string Name;
+        internal List<ColumnDef> Columns = new List<ColumnDef>();
+
+        internal TableDef With(ColumnDef column) => new TableDef { Name = Name, Columns = new List<ColumnDef>(Columns) { column } };
+    }
+
     /// <summary>The fields and limits that define an extraction. Copied before every change, so a rejected change leaves the current template untouched.</summary>
     internal sealed class Template
     {
         internal const int SchemaVersion = 1;
 
         internal List<FieldDef> Fields = new List<FieldDef>();
+        internal List<TableDef> Tables = new List<TableDef>();
         internal TemplateLimits Limits = new TemplateLimits();
 
-        internal Template Clone() => new Template { Fields = new List<FieldDef>(Fields), Limits = Limits.Clone() };
+        internal Template Clone() => new Template { Fields = new List<FieldDef>(Fields), Tables = new List<TableDef>(Tables), Limits = Limits.Clone() };
+
+        /// <summary>Field and table names share one namespace (ignoring case), so a result is never ambiguous.</summary>
+        internal IEnumerable<string> AllNames() => Fields.Select(f => f.Name).Concat(Tables.Select(t => t.Name));
 
         // ------------------------------------------------------------------ shared rules (builders and JSON loading)
 
@@ -66,7 +91,7 @@ namespace TextExtractAutomation
             if (name.Length > TemplateLimits.MaxNameLength) return new Finding(path, "InvalidName", "the name is longer than " + TemplateLimits.MaxNameLength + " characters");
             if (TextCheck.HasUnpairedSurrogate(name)) return new Finding(path, "InvalidName", "the name contains text that is not valid (an unpaired surrogate character)");
             if (taken.Any(t => string.Equals(t, name, StringComparison.OrdinalIgnoreCase)))
-                return new Finding(path, "DuplicateName", "the name '" + name + "' is already used; field names are unique, ignoring case");
+                return new Finding(path, "DuplicateName", "the name '" + name + "' is already used; field and table names are unique, ignoring case");
             return null;
         }
 
@@ -161,6 +186,51 @@ namespace TextExtractAutomation
             return null;
         }
 
+        /// <summary>
+        /// Adds a column to a table, creating the table (after the existing ones) when this is its first column. The header is matched on the header
+        /// line like a label (case, spacing and OCR slips as for labels) and is also the column's name for GetRowValue.
+        /// </summary>
+        internal Finding TryAddTableColumn(string table, string header, FieldType type, DecimalStyle decimalStyle, string dateFormats)
+        {
+            TableDef existing = Tables.FirstOrDefault(t => string.Equals(t.Name, table, StringComparison.OrdinalIgnoreCase));
+            if (existing == null)
+            {
+                if (Tables.Count >= TemplateLimits.MaxTables) return new Finding("tables", "TooManyTables", "a template may have at most " + TemplateLimits.MaxTables + " tables");
+                Finding nameProblem = CheckName(table, AllNames(), "table");
+                if (nameProblem != null) return nameProblem;
+            }
+            else if (existing.Name != table)
+                return new Finding("table", "DuplicateName", "the table is called '" + existing.Name + "'; use the same spelling for all its columns");
+            Finding f = CheckColumn(existing, header, "header", out string trimmed);
+            if (f != null) return f;
+            f = CheckEnums(ValuePosition.SameLine, type, decimalStyle, Occurrence.RequireUnique);
+            if (f != null) return f;
+            f = CheckDateFormats(type, SplitDateFormats(dateFormats), "dateFormats", out string[] formats);
+            if (f != null) return f;
+            var column = new ColumnDef { Header = trimmed, Type = type, DecimalStyle = decimalStyle, DateFormats = formats };
+            if (existing == null) Tables.Add(new TableDef { Name = table, Columns = { column } });
+            else Tables[Tables.IndexOf(existing)] = existing.With(column);          // tables are replaced, never edited, so earlier copies stay intact
+            return null;
+        }
+
+        /// <summary>A header is a single label: trimmed, with a letter or digit, no line break or |, at most 128 characters, unique in its table as it
+        /// is matched (ignoring case and spacing, so Unit Price and UNIT  PRICE are the same header).</summary>
+        internal static Finding CheckColumn(TableDef table, string header, string path, out string trimmed)
+        {
+            trimmed = null;
+            if (table != null && table.Columns.Count >= TemplateLimits.MaxColumnsPerTable) return new Finding(path, "TooManyColumns", "a table may have at most " + TemplateLimits.MaxColumnsPerTable + " columns");
+            if (string.IsNullOrWhiteSpace(header)) return new Finding(path, "InvalidLabel", "a column header is required");
+            if (header.Contains('|')) return new Finding(path, "InvalidLabel", "a column has one header; | is not allowed");
+            Finding f = CheckLabels(new[] { header }, path, out string[] checkedHeader);
+            if (f != null) return f;
+            trimmed = checkedHeader[0];
+            string candidate = trimmed;
+            string folded = new LabelPattern(candidate).Folded;
+            if (table != null && table.Columns.Any(c => string.Equals(c.Header, candidate, StringComparison.OrdinalIgnoreCase) || new LabelPattern(c.Header).Folded == folded))
+                return new Finding(path, "DuplicateName", "the table already has a column '" + candidate + "'; headers are unique in a table, ignoring case and spacing");
+            return null;
+        }
+
         private static Finding CheckEnums(ValuePosition position, FieldType type, DecimalStyle decimalStyle, Occurrence occurrence)
         {
             if (!Enum.IsDefined(typeof(DecimalStyle), decimalStyle)) return new Finding("decimalStyle", "UnknownEnumValue", "decimalStyle " + (int)decimalStyle + " is not a known DecimalStyle");
@@ -175,7 +245,7 @@ namespace TextExtractAutomation
         internal Finding TryAddLabelField(string name, string labels, ValuePosition position, FieldType type, DecimalStyle decimalStyle, string dateFormats, bool required, Occurrence occurrence)
         {
             if (Fields.Count >= TemplateLimits.MaxFields) return new Finding("fields", "TooManyFields", "a template may have at most " + TemplateLimits.MaxFields + " fields");
-            Finding f = CheckName(name, Fields.Select(x => x.Name), "name");
+            Finding f = CheckName(name, AllNames(), "name");
             if (f != null) return f;
             f = SplitLabels(labels, "labels", out string[] split);
             if (f != null) return f;
@@ -190,7 +260,7 @@ namespace TextExtractAutomation
         internal Finding TryAddPatternField(string name, string pattern, FieldType type, DecimalStyle decimalStyle, string dateFormats)
         {
             if (Fields.Count >= TemplateLimits.MaxFields) return new Finding("fields", "TooManyFields", "a template may have at most " + TemplateLimits.MaxFields + " fields");
-            Finding f = CheckName(name, Fields.Select(x => x.Name), "name");
+            Finding f = CheckName(name, AllNames(), "name");
             if (f != null) return f;
             f = CompilePattern(pattern, "pattern", out Regex regex);
             if (f != null) return f;
@@ -266,6 +336,33 @@ namespace TextExtractAutomation
                         w.WriteEndObject();
                     }
                     w.WriteEndArray();
+                    if (Tables.Count > 0)                    // written only when present, so a template without tables keeps its phase 1 text
+                    {
+                        w.WriteStartArray("tables");
+                        foreach (TableDef t in Tables)
+                        {
+                            w.WriteStartObject();
+                            w.WriteString("name", t.Name);
+                            w.WriteStartArray("columns");
+                            foreach (ColumnDef c in t.Columns)
+                            {
+                                w.WriteStartObject();
+                                w.WriteString("header", c.Header);
+                                w.WriteString("type", c.Type.ToString());
+                                if (UsesDecimalStyle(c.Type)) w.WriteString("decimalStyle", c.DecimalStyle.ToString());
+                                if (c.Type == FieldType.Date)
+                                {
+                                    w.WriteStartArray("dateFormats");
+                                    foreach (string format in c.DateFormats) w.WriteStringValue(format);
+                                    w.WriteEndArray();
+                                }
+                                w.WriteEndObject();
+                            }
+                            w.WriteEndArray();
+                            w.WriteEndObject();
+                        }
+                        w.WriteEndArray();
+                    }
                     w.WriteStartObject("limits");
                     w.WriteNumber("maximumTextCharacters", Limits.MaximumTextCharacters);
                     w.WriteEndObject();

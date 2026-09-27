@@ -47,7 +47,7 @@ namespace TextExtractAutomation.Tests
                 if (description != row.description) problems.Add(m.Name + " description differs from [Description]");
             }
             Assert.True(problems.Count == 0, string.Join("\n", problems));
-            Assert.Contains("All " + methods.Length + " phase 1 methods", Readme());
+            Assert.Contains("All " + methods.Length + " methods", Readme());
             foreach (Match row in Regex.Matches(Readme(), "^\\| `\\w+` \\| `bool [^`]+` \\| (.+) \\|$", RegexOptions.Multiline))
                 Assert.DoesNotMatch("(?<!\\\\)\\|", row.Groups[1].Value);                                   // every | inside a description is escaped
         }

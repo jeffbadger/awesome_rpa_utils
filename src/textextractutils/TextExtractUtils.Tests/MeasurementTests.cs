@@ -80,7 +80,7 @@ namespace TextExtractAutomation.Tests
             Measure("email9k", c, Email(), 2000, 9);
         }
 
-        // a 10,000-line fixed-width report (about 1 MB) with 50 fields, some found once, most missing
+        // a 10,000-line fixed-width report (about 700 KB) with 50 fields, each found once (one labelled line every 200 lines)
         [Fact]
         public void Measure_Report()
         {
@@ -112,6 +112,45 @@ namespace TextExtractAutomation.Tests
             b.Append('x', TemplateLimits.MaxTextCharacters - b.Length);                        // exactly at the text limit
             Assert.Equal(TemplateLimits.MaxTextCharacters, b.Length);
             Measure("maximum10M", c, b.ToString(), 1, 200);
+        }
+
+        // a statement with a 10,000-row table (the row limit) of 5 typed columns and 2 fields
+        [Fact]
+        public void Measure_Table()
+        {
+            if (!Enabled) return;
+            using var c = new TextExtractUtils();
+            Assert.True(c.AddLabelFieldSimple("Account", "Account", FieldType.Code, out string m), m);
+            Assert.True(c.AddLabelFieldSimple("Total", "Total", FieldType.Amount, out m), m);
+            Assert.True(c.AddTableColumn("Lines", "Date", FieldType.Date, DecimalStyle.DotDecimal, "dd/MM/yyyy", out m), m);
+            Assert.True(c.AddTableColumn("Lines", "Reference", FieldType.Code, DecimalStyle.DotDecimal, "", out m), m);
+            Assert.True(c.AddTableColumn("Lines", "Description", FieldType.Text, DecimalStyle.DotDecimal, "", out m), m);
+            Assert.True(c.AddTableColumn("Lines", "Qty", FieldType.Integer, DecimalStyle.DotDecimal, "", out m), m);
+            Assert.True(c.AddTableColumn("Lines", "Amount", FieldType.Amount, DecimalStyle.DotDecimal, "", out m), m);
+            var b = new StringBuilder("Account: ACC-001\n\nDate        Reference   Description                Qty        Amount\n");
+            for (int i = 0; i < TemplateLimits.MaxTableRows; i++)
+                b.Append("26/09/2026  REF-" + i.ToString("D6") + "  Widget number " + i.ToString("D6") + "       " + (i % 90 + 1).ToString().PadLeft(3) + "     1,234.50\n");
+            b.Append("Total: 12,345,000.00\n");
+            Measure("table10kRows", c, b.ToString(), 20, 2);
+            Assert.True(c.GetResultJson(out string json, out m), m);
+            Assert.Contains("\"rowCount\":" + TemplateLimits.MaxTableRows, json);
+        }
+
+        // the maximum tables (20 tables x 50 columns, every header different) over the maximum text, every line holding 49 of one table's 50
+        // headers: each line is a near-miss header line for that table, the worst case for header search
+        [Fact]
+        public void Measure_MaximumTables()
+        {
+            if (!Enabled) return;
+            using var c = new TextExtractUtils();
+            for (int t = 0; t < TemplateLimits.MaxTables; t++)
+                for (int k = 0; k < TemplateLimits.MaxColumnsPerTable; k++)
+                    Assert.True(c.AddTableColumn("T" + t, "Hdr" + t + "x" + k.ToString("00"), FieldType.Text, DecimalStyle.DotDecimal, "", out string m), m);
+            string line = string.Join("  ", Enumerable.Range(0, TemplateLimits.MaxColumnsPerTable - 1).Select(k => "Hdr0x" + k.ToString("00"))) + "\n";
+            var b = new StringBuilder();
+            while (b.Length + line.Length <= TemplateLimits.MaxTextCharacters) b.Append(line);
+            b.Append('x', TemplateLimits.MaxTextCharacters - b.Length);
+            Measure("maximumTables10M", c, b.ToString(), 1, 0);
         }
     }
 }

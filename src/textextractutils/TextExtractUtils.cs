@@ -22,6 +22,8 @@ namespace TextExtractAutomation
         private Template template = new Template();          // replaced whole, never edited in place
         private ExtractionSnapshot results;                  // the last completed extraction, or null; replaced whole, never edited
         private int cursor;                                  // TryReadNextField: the next field to read
+        private readonly System.Collections.Generic.Dictionary<string, int> rowCursors = new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private RowResult currentRow;                        // the row TryReadNextRow read last; GetRowValue reads its cells
 
         /// <summary>Empty constructor required so Pega Robot Studio can create the component.</summary>
         public TextExtractUtils() { }
@@ -31,13 +33,13 @@ namespace TextExtractAutomation
 
         // ------------------------------------------------------------------ template
 
-        /// <summary>Removes every field and restores the default limits. Also clears any results.</summary>
+        /// <summary>Removes every field and table and restores the default limits. Also clears any results.</summary>
         [Category("Text Extract - Template")]
-        [Description("Removes every field and restores the default limits. Also clears any results. Never throws.")]
+        [Description("Removes every field and table and restores the default limits. Also clears any results. Never throws.")]
         public bool ClearTemplate(out string message)
         {
             message = null;
-            try { return ChangeTemplate(nameof(ClearTemplate), t => { t.Fields.Clear(); t.Limits = new TemplateLimits(); return null; }, out message); }
+            try { return ChangeTemplate(nameof(ClearTemplate), t => { t.Fields.Clear(); t.Tables.Clear(); t.Limits = new TemplateLimits(); return null; }, out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(ClearTemplate), ex); return false; }
         }
 
@@ -69,6 +71,16 @@ namespace TextExtractAutomation
             message = null;
             try { return ChangeTemplate(nameof(AddPatternField), t => t.TryAddPatternField(name, pattern, type, decimalStyle, dateFormats), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddPatternField), ex); return false; }
+        }
+
+        /// <summary>Adds a column to a table, creating the table when it is new. The header is found on a header line like a label, and names the column for GetRowValue.</summary>
+        [Category("Text Extract - Template")]
+        [Description("Adds a column to a table (rows under a header line), creating the table when the name is new. The header text is found on the header line like a label and names the column for GetRowValue; the type, decimal style and date formats read each cell as they read a field. Never throws.")]
+        public bool AddTableColumn(string table, string header, FieldType type, DecimalStyle decimalStyle, string dateFormats, out string message)
+        {
+            message = null;
+            try { return ChangeTemplate(nameof(AddTableColumn), t => t.TryAddTableColumn(table, header, type, decimalStyle, dateFormats), out message); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddTableColumn), ex); return false; }
         }
 
         /// <summary>Replaces the whole template from JSON. An invalid template is rejected whole and the previous one stays in force.</summary>
@@ -146,9 +158,9 @@ namespace TextExtractAutomation
 
         // ------------------------------------------------------------------ run
 
-        /// <summary>Extracts every field of the template from the text. True means the extraction ran, even when fields were not found; foundCount and missingRequiredCount summarize it.</summary>
+        /// <summary>Extracts every field and table of the template from the text. True means the extraction ran, even when fields were not found; foundCount and missingRequiredCount summarize it.</summary>
         [Category("Text Extract - Run")]
-        [Description("Extracts every field of the template from the text. True means the extraction ran, even when fields were not found; foundCount and missingRequiredCount summarize it, and GetField reads each field. Never throws.")]
+        [Description("Extracts every field and table of the template from the text. True means the extraction ran, even when fields were not found; foundCount and missingRequiredCount summarize the fields, GetField reads each field and TryReadNextRow each table row. Never throws.")]
         public bool ExtractFromText(string text, out int foundCount, out int missingRequiredCount, out string message)
         {
             foundCount = 0;
@@ -161,7 +173,7 @@ namespace TextExtractAutomation
                     if (disposed) { message = DisposedMessage(nameof(ExtractFromText)); return false; }
                     InvalidateResults();                         // earlier results never survive an attempt, whatever its outcome
                     if (text == null) { message = nameof(ExtractFromText) + " failed: text is required (an empty string is allowed)."; return false; }
-                    if (template.Fields.Count == 0) { message = nameof(ExtractFromText) + " failed: the template has no fields; add one with AddLabelFieldSimple or AddLabelField, or load a template."; return false; }
+                    if (template.Fields.Count == 0 && template.Tables.Count == 0) { message = nameof(ExtractFromText) + " failed: the template has no fields or tables; add one with AddLabelFieldSimple, AddLabelField or AddTableColumn, or load a template."; return false; }
                     if (text.Length > template.Limits.MaximumTextCharacters)
                     {
                         message = nameof(ExtractFromText) + " failed: the text is longer than " + template.Limits.MaximumTextCharacters + " characters (the limit is set with ConfigureLimits).";
@@ -208,9 +220,9 @@ namespace TextExtractAutomation
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(GetField), ex); return false; }
         }
 
-        /// <summary>Returns every field of the last extraction as JSON.</summary>
+        /// <summary>Returns every field and table of the last extraction as JSON.</summary>
         [Category("Text Extract - Results")]
-        [Description("Returns every field of the last extraction as JSON, with values, text as found, reasons and line numbers. Never throws.")]
+        [Description("Returns every field and table of the last extraction as JSON, with values, text as found, reasons and line numbers. Never throws.")]
         public bool GetResultJson(out string resultJson, out string message)
         {
             resultJson = null;
@@ -274,6 +286,64 @@ namespace TextExtractAutomation
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(TryReadNextField), ex); return false; }
+        }
+
+        /// <summary>Reads the next row of a table from the last extraction. hasItem is False when there are no more. rowNumber is 1-based; rowJson holds every cell. GetRowValue then reads one cell of this row.</summary>
+        [Category("Text Extract - Results")]
+        [Description("Reads the next row of a table from the last extraction. hasItem is False when there are no more rows (or the table's header was not found). rowNumber is 1-based within the table; rowJson holds every cell; GetRowValue then reads one cell of this row. Never throws.")]
+        public bool TryReadNextRow(string table, out bool hasItem, out int rowNumber, out string rowJson, out string message)
+        {
+            hasItem = false;
+            rowNumber = 0;
+            rowJson = null;
+            message = null;
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(TryReadNextRow), out ExtractionSnapshot run, out message)) return false;
+                    TableResult t = run.FindTable(table);
+                    if (t == null) { message = nameof(TryReadNextRow) + " failed: the template has no table with that name (names are matched ignoring case)."; return false; }
+                    rowCursors.TryGetValue(t.Name, out int next);
+                    if (next >= t.Rows.Count) { currentRow = null; return true; }      // exhausted: stays exhausted until a new extraction
+                    RowResult row = t.Rows[next];
+                    rowCursors[t.Name] = next + 1;
+                    currentRow = row;
+                    hasItem = true;
+                    rowNumber = row.RowNumber;
+                    rowJson = Extraction.RowJson(row);
+                    return true;
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { hasItem = false; rowNumber = 0; rowJson = null; message = NeverThrowsGuard.Failure(nameof(TryReadNextRow), ex); return false; }
+        }
+
+        /// <summary>Reads one cell of the row TryReadNextRow read last: found, the normalized value, the text as it appeared, and a reason when not found.</summary>
+        [Category("Text Extract - Results")]
+        [Description("Reads one cell (by column header, ignoring case) of the row TryReadNextRow read last: found, the normalized value, the text as it appeared, and a reason (MissingValue or InvalidValue) when it was not found. Never throws.")]
+        public bool GetRowValue(string column, out bool found, out string value, out string raw, out string reason, out string message)
+        {
+            found = false;
+            value = null;
+            raw = null;
+            reason = null;
+            message = null;
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (!Available(nameof(GetRowValue), out _, out message)) return false;
+                    if (currentRow == null) { message = nameof(GetRowValue) + " failed: there is no current row; call TryReadNextRow and use the row only while hasItem is True."; return false; }
+                    CellResult cell = currentRow.Find(column);
+                    if (cell == null) { message = nameof(GetRowValue) + " failed: the table has no column with that header (headers are matched ignoring case)."; return false; }
+                    found = cell.Found;
+                    value = cell.Value;
+                    raw = cell.Raw;
+                    reason = cell.Reason;
+                    return true;
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { found = false; value = null; raw = null; reason = null; message = NeverThrowsGuard.Failure(nameof(GetRowValue), ex); return false; }
         }
 
         /// <summary>Discards the last extraction's results. Succeeds even when there are none.</summary>
@@ -380,7 +450,7 @@ namespace TextExtractAutomation
 
         private static string DisposedMessage(string operation) => operation + " failed: the component has been disposed.";
 
-        private void InvalidateResults() { results = null; cursor = 0; }
+        private void InvalidateResults() { results = null; cursor = 0; rowCursors.Clear(); currentRow = null; }
 
         /// <summary>Fails with the disposed message or an actionable no-results message; otherwise hands back the published extraction. Called with the lock held.</summary>
         private bool Available(string operation, out ExtractionSnapshot run, out string message)

@@ -59,6 +59,36 @@ namespace LocalQueueAutomation.Tests
             Assert.Equal(1, ready);
         }
 
+        // TextExtractUtils' EmailIntake page relies on this: a business key is a duplicate while its item is ready, delayed or in progress,
+        // and makes a new item once that item is completed or rejected.
+        [Fact]
+        public void AddJson_BusinessKey_IsADuplicateWhileActive_AndNewOnceCompletedOrRejected()
+        {
+            Create();
+            Assert.True(queue.AddJson(path, "1", out string ready, out bool duplicate, out string message, "ready-key"), message);
+            Assert.True(queue.AddJson(path, "2", out string again, out duplicate, out message, "ready-key"), message);
+            Assert.True(duplicate); Assert.Equal(ready, again);
+
+            Assert.True(queue.AddJson(path, "1", out string delayed, out _, out message, "delayed-key", delaySeconds: 3600), message);
+            Assert.True(queue.AddJson(path, "2", out again, out duplicate, out message, "delayed-key"), message);
+            Assert.True(duplicate); Assert.Equal(delayed, again);
+
+            Assert.True(queue.TryTakeNext(path, out bool available, out string taken, out _, out _, out _, out string token, out _, out message), message);
+            Assert.True(available); Assert.Equal(ready, taken);                                              // in progress now
+            Assert.True(queue.AddJson(path, "2", out again, out duplicate, out message, "ready-key"), message);
+            Assert.True(duplicate); Assert.Equal(ready, again);
+
+            Assert.True(queue.CompleteItem(path, ready, token, out message), message);
+            Assert.True(queue.AddJson(path, "3", out string afterCompleted, out duplicate, out message, "ready-key"), message);
+            Assert.False(duplicate); Assert.NotEqual(ready, afterCompleted);
+
+            Assert.True(queue.TryTakeNext(path, out _, out taken, out _, out _, out _, out token, out _, out message), message);
+            Assert.Equal(afterCompleted, taken);
+            Assert.True(queue.RejectItem(path, afterCompleted, token, "bad", out message), message);
+            Assert.True(queue.AddJson(path, "4", out string afterRejected, out duplicate, out message, "ready-key"), message);
+            Assert.False(duplicate); Assert.NotEqual(afterCompleted, afterRejected);
+        }
+
         [Fact]
         public void RetryItem_AtMaximumAttempts_RejectsItem()
         {

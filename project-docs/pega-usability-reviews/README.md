@@ -60,7 +60,7 @@ enum is not rendered as a selectable constant.
 | ClipboardUtils | All ports are scalar: snapshots are named, collections come as JSON or newline text, and timeouts are a normal outcome rather than an error. |
 | StateMachineUtils | All ports are scalar: the machine is JSON in, a declined trigger is a normal outcome with a stable reason code, and every event payload is also readable by a method. |
 | ReconciliationUtils | All ports are scalar: two JSON texts (or two DataTables) in, counts and two scalar cursors out, so routing needs no collection proxy; `GetResultJson` carries the detail a scalar cannot. |
-| TextExtractUtils | All ports are scalar or drop-downs: fields are described by label text, a position, a type and a decimal style, and every result is a value or a stable reason code, with no regular expression required. |
+| TextExtractUtils | All ports are scalar or drop-downs: fields are described by label text, a position, a type and a decimal style, and every result is a value or a stable reason code, with no regular expression required; table rows are read with a row cursor, one scalar cell at a time. |
 
 ## Review order
 

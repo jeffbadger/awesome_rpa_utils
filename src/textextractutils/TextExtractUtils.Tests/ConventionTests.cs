@@ -18,6 +18,9 @@ namespace TextExtractAutomation.Tests
             "GetField", "GetResultJson", "ResetFieldCursor", "TryReadNextField", "ClearResults"
         };
 
+        /// <summary>Phase 2 (tables) is additive.</summary>
+        private static readonly string[] Phase2Methods = { "AddTableColumn", "TryReadNextRow", "GetRowValue" };
+
         internal static MethodInfo[] PublicMethods() =>
             typeof(TextExtractUtils).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(m => !m.IsSpecialName).ToArray();
 
@@ -25,7 +28,7 @@ namespace TextExtractAutomation.Tests
         public void ThePublicSurface_IsExactlyThePlannedMethods()
         {
             // A deliberate tripwire: adding, removing or renaming a public method must be a conscious change to this list and to the plan.
-            Assert.Equal(Phase1Methods.OrderBy(x => x, StringComparer.Ordinal), PublicMethods().Select(m => m.Name).OrderBy(x => x, StringComparer.Ordinal));
+            Assert.Equal(Phase1Methods.Concat(Phase2Methods).OrderBy(x => x, StringComparer.Ordinal), PublicMethods().Select(m => m.Name).OrderBy(x => x, StringComparer.Ordinal));
         }
 
         [Fact]

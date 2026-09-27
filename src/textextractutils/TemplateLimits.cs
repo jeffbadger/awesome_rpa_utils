@@ -7,6 +7,9 @@ namespace TextExtractAutomation
         internal const int MaxTextCharacters = 10000000;
 
         internal const int MaxFields = 200;
+        internal const int MaxTables = 20;
+        internal const int MaxColumnsPerTable = 50;
+        internal const int MaxTableRows = 10000;                      // rows of one table in one extraction
         internal const int MaxLabelsPerField = 20;
         internal const int MaxLabelLength = 128;
         internal const int MaxNameLength = 128;
