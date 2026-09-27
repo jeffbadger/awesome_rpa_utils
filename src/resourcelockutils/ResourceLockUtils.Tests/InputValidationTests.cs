@@ -151,13 +151,15 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
-        public void WithValidInput_TheLockOperations_SayTheyAreNotImplementedYet()
+        public void WithValidInput_TheMachineScope_SaysItIsNotImplementedYet()
         {
             using var c = new ResourceLockUtils();
-            Assert.False(c.TryAcquireLock(LockScope.Process, "SAP-User", "Robot 1", 60, out _, out _, out _, out string m));
-            Assert.Equal("TryAcquireLock is not implemented yet.", m);
+            Assert.False(c.TryAcquireLock(LockScope.Machine, "SAP-User", "Robot 1", 60, out _, out _, out _, out string m));
+            Assert.Equal("TryAcquireLock failed: the Machine scope is not implemented yet.", m);
             Assert.False(c.ReleaseLock(LockScope.Machine, "SAP-User", Token, out _, out m));
-            Assert.Equal("ReleaseLock is not implemented yet.", m);
+            Assert.Equal("ReleaseLock failed: the Machine scope is not implemented yet.", m);
+            Assert.False(c.ValidateLockFolder(out _, out _, out m));
+            Assert.Equal("ValidateLockFolder is not implemented yet.", m);
         }
     }
 }

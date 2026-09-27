@@ -5,9 +5,10 @@ rate-limited portal) that **any thread can release** and that **Server Bots on o
 component: a `Lock` can only be released by the thread that took it, and it is in memory inside one Robot Runtime, so it cannot stop two Server
 Bots from using the same resource.
 
-> **Status: under construction.** Work package 1 of the [design plan](../../project-docs/plans/2026-09-27-resourcelockutils-design.md) is in:
-> the public methods are fixed, every input is validated and `ConfigureLockFolder` works. Acquiring, holding and inspecting locks report that
-> they are not implemented yet. Do not use the component until a release says otherwise. It is registered in the solution so it builds and its
+> **Status: under construction.** Work packages 1 and 2 of the [design plan](../../project-docs/plans/2026-09-27-resourcelockutils-design.md)
+> are in: the public methods are fixed, every input is validated, and the **`Process` scope works** (locks and slots shared by every thread and
+> automation in one Robot Runtime, released from any thread). The `Machine` scope and `ValidateLockFolder` report that they are not implemented
+> yet. Do not use the component until a release says otherwise. It is registered in the solution so it builds and its
 > tests run in CI, but it is deliberately not in any release, the root README or `CrossReference.md` yet.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
@@ -24,6 +25,9 @@ Bots from using the same resource.
 - **Scope** (`LockScope` drop-down): `Process` shares locks between every thread and automation in one Robot Runtime (in memory); `Machine`
   shares them between every robot on the machine, including Server Bots in other sessions under other Windows accounts (files in the lock folder).
 - **Slots** allow up to `capacity` holders of one resource (a pool of licenses, logins or sessions).
+- **`Process` scope details:** leases are timed with a monotonic clock, so changing the system clock neither expires nor extends one. A release
+  wakes waiting `AcquireLock`/`AcquireSlot` calls at once. While a resource is held it is either a lock or a slot pool with one capacity; a call
+  that disagrees fails. Disposing the component releases every lock and slot it still holds. One component holds at most 1,000 at a time.
 - Finding a lock taken, or learning that a lease was lost, is a normal outcome with a `bool` output (`acquired`, `renewed`, `released`), not a
   failure. `False` from a method means the call itself could not be done.
 

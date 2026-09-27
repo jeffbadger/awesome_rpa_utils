@@ -116,3 +116,8 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    `ConfigureLockFolder` when files cannot be created. The default ProgramData ACL behaviour is to be confirmed on a real Server Bot host in WP3.
 3. **Losing a lease**: `ReleaseLock` returns True with `released` False, so the automation can flag possible overlap.
 4. **Name**: `ResourceLockUtils` / `ResourceLockAutomation`.
+5. **`Process` scope details** (WP2): leases are timed with a monotonic clock (`Environment.TickCount64`), so a system clock change neither
+   expires nor extends a lease; a release wakes waiters at once and a waiter also wakes at the earliest expiry it waits on (no polling); while a
+   resource is held it is either a lock or a slot pool with one capacity, and a call that disagrees fails (the capacity can change once nothing
+   holds it); a token given with the wrong resource name is `released`/`renewed` False, like a lost lease (the table cannot tell the two
+   apart); disposing a component releases what it still holds; the JSON never contains tokens.
