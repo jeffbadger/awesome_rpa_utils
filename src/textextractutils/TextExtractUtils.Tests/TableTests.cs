@@ -163,9 +163,10 @@ namespace TextExtractAutomation.Tests
                 "Id          Description        Qty\n" +
                 "1   x       Blue widget        5\n" +          // a stray mark between Id and Description
                 "          Red widget           6\n" +          // no Id; the description starts a little left of its header
-                "3           Green  wid\n";                     // a second piece inside Description's header is not moved into the empty Qty
+                "3           Green  wid\n" +                    // a second piece inside Description's header is not moved into the empty Qty
+                "4           Green  widget\n";                  // nor one that starts inside it and runs past its end
             Assert.True(c.ExtractFromText(text, out _, out _, out string msg), msg);
-            Assert.Equal(new[] { "1:1|Blue widget|5", "2:(MissingValue)|Red widget|6", "3:3|Green|(MissingValue)" }, Rows(c, "T", "Id", "Description", "Qty"));
+            Assert.Equal(new[] { "1:1|Blue widget|5", "2:(MissingValue)|Red widget|6", "3:3|Green|(MissingValue)", "4:4|Green|(MissingValue)" }, Rows(c, "T", "Id", "Description", "Qty"));
         }
 
         [Fact]

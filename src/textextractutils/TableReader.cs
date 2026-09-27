@@ -196,7 +196,7 @@ namespace TextExtractAutomation
                 for (int i = 0; i < cells.Count && chosen < 0; i++)
                     if (!used[i] && cells[i].Start < h.End && h.Start < cells[i].End) chosen = i;
                 for (int i = 0; i < cells.Count && chosen < 0; i++)
-                    if (!used[i] && cells[i].Start < nextStart && cells[i].End > (k > 0 ? ordered[k - 1].End : 0) && !(cells[i].End > nextStart && cells[i].Start < nextEnd)) chosen = i;
+                    if (!used[i] && cells[i].Start >= (k > 0 ? ordered[k - 1].End : 0) && cells[i].Start < nextStart && !(cells[i].End > nextStart && cells[i].Start < nextEnd)) chosen = i;
                 var cell = new CellResult { Column = h.Column.Header };
                 if (chosen < 0)
                 {
