@@ -143,7 +143,7 @@ namespace TextExtractAutomation
                 break;
             }
             groups.Add(current);
-            bool leadingPoint = digits.Length == 0 && i < text.Length && text[i] == point && i + 1 < text.Length && text[i + 1] >= '0' && text[i + 1] <= '9';
+            bool leadingPoint = digits.Length == 0 && i < text.Length && text[i] == point && i + 1 < text.Length && DigitValue(text, i + 1, start, runEnd) >= 0;   // .50, or .O5 read by OCR
             if (digits.Length == 0 && !leadingPoint) return null;
             if (groups.Count > 1)
             {
@@ -186,9 +186,24 @@ namespace TextExtractAutomation
             return null;
         }
 
-        /// <summary>A number fits the component's exact range: what .NET's decimal holds (up to 28 digits after the point, about 7.9e28).</summary>
-        private static bool Representable(string normalized) =>
-            decimal.TryParse(normalized, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out _) && normalized.Replace("-", "").Replace(".", "").Length <= 29;
+        /// <summary>
+        /// A number fits the component's exact range when .NET's decimal holds its value exactly: leading zeros of the whole part and trailing zeros of
+        /// the fraction carry no value, so they do not count (0000.5000 is fine however many there are), but any significant digit that decimal would
+        /// round away (more than 28 decimals, about 29 significant digits, or beyond about 7.9e28) makes the number unusable. The value is still reported
+        /// with its digits as written.
+        /// </summary>
+        internal static bool Representable(string normalized)
+        {
+            string unsigned = normalized.StartsWith("-", StringComparison.Ordinal) ? normalized.Substring(1) : normalized;
+            int point = unsigned.IndexOf('.');
+            string whole = (point < 0 ? unsigned : unsigned.Substring(0, point)).TrimStart('0');
+            string fraction = point < 0 ? string.Empty : unsigned.Substring(point + 1).TrimEnd('0');
+            string significant = (whole.Length == 0 ? "0" : whole) + (fraction.Length == 0 ? string.Empty : "." + fraction);
+            if (!decimal.TryParse(significant, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out decimal value)) return false;
+            string back = value.ToString(CultureInfo.InvariantCulture);
+            if (back.Contains('.')) back = back.TrimEnd('0').TrimEnd('.');
+            return back == significant;                  // decimal kept every significant digit: nothing was rounded
+        }
 
         private static Converted Number(string span, DecimalStyle style, bool integerOnly, bool percentage)
         {

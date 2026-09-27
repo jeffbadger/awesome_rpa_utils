@@ -121,6 +121,13 @@ namespace TextExtractAutomation.Tests
         [InlineData("12.5 kg", DecimalStyle.DotDecimal, "12.5")]
         [InlineData("1,234.", DecimalStyle.DotDecimal, "1234")]                // a trailing point belongs to the sentence
         [InlineData("3.14l5", DecimalStyle.DotDecimal, "3.1415")]
+        [InlineData(".O5", DecimalStyle.DotDecimal, "0.05")]                     // OCR O after a leading point
+        [InlineData(",O5", DecimalStyle.CommaDecimal, "0.05")]
+        [InlineData("0000000000000000000000000000000012.5", DecimalStyle.DotDecimal, "0000000000000000000000000000000012.5")]   // redundant zeros cost nothing
+        [InlineData("1.0000000000000000000000000001", DecimalStyle.DotDecimal, "1.0000000000000000000000000001")]   // 29 digits that decimal still holds exactly
+        [InlineData("1.50000000000000000000000000000000000", DecimalStyle.DotDecimal, "1.50000000000000000000000000000000000")]
+        [InlineData("79228162514264337593543950335", DecimalStyle.DotDecimal, "79228162514264337593543950335")]                 // the largest decimal
+        [InlineData("0.0000000000000000000000000001", DecimalStyle.DotDecimal, "0.0000000000000000000000000001")]                 // 28 decimals
         public void Decimal_ReadsItsStyle(string span, DecimalStyle style, string value) => Assert.Equal(value, Value(FieldType.Decimal, span, style));
 
         [Theory]
@@ -128,6 +135,9 @@ namespace TextExtractAutomation.Tests
         [InlineData("12.5", DecimalStyle.CommaDecimal)]
         [InlineData("99999999999999999999999999999999", DecimalStyle.DotDecimal)]   // beyond what can be held exactly
         [InlineData("0.12345678901234567890123456789", DecimalStyle.DotDecimal)]
+        [InlineData("79228162514264337593543950336", DecimalStyle.DotDecimal)]      // one past the largest decimal
+        [InlineData("0.00000000000000000000000000001", DecimalStyle.DotDecimal)]    // 29 significant decimals would be rounded
+        [InlineData("8.0000000000000000000000000001", DecimalStyle.DotDecimal)]     // 29 significant digits past decimal's mantissa: the last would be rounded
         public void Decimal_Invalid(string span, DecimalStyle style) => Invalid(FieldType.Decimal, span, style);
 
         [Theory]
