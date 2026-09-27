@@ -45,7 +45,8 @@ if (!extract.ExtractFromText(body, out int foundCount, out int missingRequired, 
 extract.GetResultJson(out string resultJson, out message);
 extract.GetField("InvoiceNumber", out bool hasNumber, out string invoiceNumber, out _, out _, out _, out message);
 
-// Complete invoices go to the posting queue with the invoice number as business key (a re-sent email becomes a duplicate, not a second item);
+// Complete invoices go to the posting queue with the invoice number as business key: while the first item is still waiting or being worked
+// (ready, delayed or in progress), a re-sent email is reported as a duplicate instead of becoming a second item;
 // incomplete ones go to the review queue, where a person sees each field's reason.
 string queue = missingRequired == 0 ? postingQueue : reviewQueue;
 queueUtils.AddJson(queue, resultJson, out string itemId, out bool duplicate, out message, hasNumber ? invoiceNumber : null);
@@ -53,6 +54,8 @@ queueUtils.AddJson(queue, resultJson, out string itemId, out bool duplicate, out
 
 Notes:
 
+- The duplicate check covers only items still waiting or being worked. Once the first item is completed or rejected, the same invoice number
+  makes a new item, so a worker that must never post twice should also check its own records (for example the ERP) by invoice number.
 - The payload is the result JSON, so the worker has every value, its `raw` text, and a reason for anything missing, without the email.
 - The payload contains data from the email; handle the queue like the mailbox.
 - Values that needed an OCR slip (`labelSlipped`) or that came from a text where a label appeared more than once can be routed to review too:
