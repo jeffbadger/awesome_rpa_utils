@@ -198,7 +198,7 @@ namespace TextExtractAutomation
         }
 
         /// <summary>The folded characters a match of this label can begin with: its first character, and its OCR look-alikes when it may slip.</summary>
-        private static IEnumerable<char> StartCharacters(LabelPattern pattern)
+        internal static IEnumerable<char> StartCharacters(LabelPattern pattern)
         {
             char first = pattern.Folded[0];
             yield return first;

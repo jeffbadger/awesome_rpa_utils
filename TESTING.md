@@ -820,6 +820,9 @@ The platform-independent xunit coverage is in
   fields are still extracted.
 - Run once with a non-English regional format (for example Turkish or German): the result JSON must be identical.
 - Confirm no message or explanation contains text from the input (put a recognizable marker in a field that fails).
+- Tables: follow `Documentation/Tables.md` with `AddTableColumn`, loop `TryReadNextRow` with `hasItem` as the `While` condition and read each
+  column with `GetRowValue`; verify the documented rows, that the `Total` line ends the table and is still read as a field, and that a report
+  whose header repeats on every page (a `TerminalUtils` screen dump or a PDF text export) is read as one table with continuous row numbers.
 - Hand the result to a `LocalQueueUtils` queue as in `Documentation/EmailIntake.md` and verify a re-sent email becomes a duplicate while
   the first item is still ready or in progress, and a new item once the first has been completed.
 

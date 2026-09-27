@@ -42,7 +42,9 @@ namespace TextExtractAutomation
     {
         internal const int MaxDepth = 64;
 
-        private static readonly string[] RootProperties = { "schemaVersion", "fields", "limits" };
+        private static readonly string[] RootProperties = { "schemaVersion", "fields", "tables", "limits" };
+        private static readonly string[] TableProperties = { "name", "columns" };
+        private static readonly string[] ColumnProperties = { "header", "type", "decimalStyle", "dateFormats" };
         private static readonly string[] CommonFieldProperties = { "name", "kind", "type", "decimalStyle", "dateFormats", "required", "occurrence" };
         private static readonly string[] LabelFieldProperties = { "name", "kind", "labels", "position", "type", "decimalStyle", "dateFormats", "required", "occurrence" };
         private static readonly string[] PatternFieldProperties = { "name", "kind", "pattern", "type", "decimalStyle", "dateFormats", "required", "occurrence" };
@@ -88,7 +90,9 @@ namespace TextExtractAutomation
                 var template = new Template();
                 var props = ReadObject(root, "$", RootProperties, null, findings);
                 ReadVersion(props, findings);
-                ReadFields(props, template, findings);
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // field and table names share one namespace
+                ReadFields(props, template, seen, findings);
+                ReadTables(props, template, seen, findings);
                 ReadLimits(props, template, findings);
 
                 if (findings.Total != 0) return null;
@@ -219,7 +223,7 @@ namespace TextExtractAutomation
                 findings.Add("schemaVersion", "UnsupportedVersion", "schemaVersion " + version + " is not supported; this version reads " + Template.SchemaVersion);
         }
 
-        private static void ReadFields(Dictionary<string, JsonElement> props, Template template, TemplateFindings findings)
+        private static void ReadFields(Dictionary<string, JsonElement> props, Template template, HashSet<string> seen, TemplateFindings findings)
         {
             if (!props.TryGetValue("fields", out JsonElement fields)) return;
             if (fields.ValueKind != JsonValueKind.Array)
@@ -227,7 +231,6 @@ namespace TextExtractAutomation
                 findings.Add("fields", "InvalidType", "fields must be an array");
                 return;
             }
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int index = 0;
             bool reportedOverflow = false;
             foreach (JsonElement item in fields.EnumerateArray())
@@ -365,6 +368,55 @@ namespace TextExtractAutomation
             Finding f = Template.CheckLabels(list, path + ".labels", out labels);
             if (f != null) { findings.Add(f); return false; }
             return true;
+        }
+
+        private static void ReadTables(Dictionary<string, JsonElement> props, Template template, HashSet<string> seen, TemplateFindings findings)
+        {
+            if (!props.TryGetValue("tables", out JsonElement tables)) return;
+            if (tables.ValueKind != JsonValueKind.Array) { findings.Add("tables", "InvalidType", "tables must be an array"); return; }
+            int index = 0;
+            foreach (JsonElement item in tables.EnumerateArray())
+            {
+                string path = "tables[" + index++ + "]";
+                bool overflow = index > TemplateLimits.MaxTables;
+                if (overflow && index == TemplateLimits.MaxTables + 1) findings.Add("tables", "TooManyTables", "a template may have at most " + TemplateLimits.MaxTables + " tables");
+                if (item.ValueKind != JsonValueKind.Object) { findings.Add(path, "InvalidType", "each table must be an object"); continue; }
+                Dictionary<string, JsonElement> p = ReadObject(item, path, TableProperties, null, findings);
+                string name = ReadName(p, path, seen, findings);
+                bool ok = name != null;
+                var table = new TableDef { Name = name };
+                if (!p.TryGetValue("columns", out JsonElement columns)) { findings.Add(path + ".columns", "MissingProperty", "columns is required: an array of { \"header\", \"type\" }"); ok = false; }
+                else if (columns.ValueKind != JsonValueKind.Array) { findings.Add(path + ".columns", "InvalidType", "columns must be an array"); ok = false; }
+                else
+                {
+                    int c = 0;
+                    foreach (JsonElement column in columns.EnumerateArray())
+                    {
+                        string cpath = path + ".columns[" + c++ + "]";
+                        if (c > TemplateLimits.MaxColumnsPerTable)
+                        {
+                            if (c == TemplateLimits.MaxColumnsPerTable + 1) findings.Add(path + ".columns", "TooManyColumns", "a table may have at most " + TemplateLimits.MaxColumnsPerTable + " columns");
+                            ok = false;
+                            continue;
+                        }
+                        if (column.ValueKind != JsonValueKind.Object) { findings.Add(cpath, "InvalidType", "each column must be an object"); ok = false; continue; }
+                        Dictionary<string, JsonElement> cp = ReadObject(column, cpath, ColumnProperties, null, findings);
+                        string header = ReadString(cp, "header", cpath, true, findings);
+                        bool columnOk = header != null;
+                        string trimmed = null;
+                        if (header != null)
+                        {
+                            Finding f = Template.CheckColumn(table, header, cpath + ".header", out trimmed);
+                            if (f != null) { findings.Add(f); columnOk = false; }
+                        }
+                        columnOk &= ReadTypeOptions(cp, cpath, findings, out FieldType type, out DecimalStyle style, out string[] formats);
+                        if (columnOk) table.Columns.Add(new ColumnDef { Header = trimmed, Type = type, DecimalStyle = style, DateFormats = formats });
+                        else ok = false;
+                    }
+                    if (c == 0) { findings.Add(path + ".columns", "InvalidType", "a table needs at least one column"); ok = false; }
+                }
+                if (ok && !overflow) template.Tables.Add(table);
+            }
         }
 
         private static void ReadLimits(Dictionary<string, JsonElement> props, Template template, TemplateFindings findings)

@@ -4,8 +4,8 @@ A Pega Robot Studio component (`TextExtractUtils`) that pulls labelled, typed bu
 out of text such as email bodies, OCR output and terminal screens, **without writing regular expressions**. Describe each field the way a person
 sees it (the labels in front of it, where the value sits and what type it is) and read back a validated, normalized value or a stable reason code.
 
-> **Status: complete, awaiting its first release.** All phase 1 methods work. See the [documentation](Documentation/README.md) for a quick start
-> and worked examples, and the [design plan](../../project-docs/plans/2026-09-26-textextractutils-design.md) for phase 2 (tables).
+> **Status: complete.** Phase 1 (fields) and phase 2 (tables) both work. See the [documentation](Documentation/README.md) for a quick start
+> and worked examples, and the [design plan](../../project-docs/plans/2026-09-26-textextractutils-design.md) for the design decisions.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `TextExtractAutomation`
@@ -15,7 +15,7 @@ sees it (the labels in front of it, where the value sits and what type it is) an
 ## Documentation
 
 The [Documentation](Documentation/README.md) folder has the [QuickStart](Documentation/QuickStart.md), [Labels](Documentation/Labels.md),
-[Types](Documentation/Types.md), [Results](Documentation/Results.md), [Patterns](Documentation/Patterns.md), [Limits](Documentation/Limits.md) and a
+[Types](Documentation/Types.md), [Results](Documentation/Results.md), [Tables](Documentation/Tables.md), [Patterns](Documentation/Patterns.md), [Limits](Documentation/Limits.md) and a
 worked [EmailIntake](Documentation/EmailIntake.md) example with `LocalQueueUtils`.
 
 ## Templates
@@ -42,6 +42,8 @@ stable label) is found by a regular expression with a named group `value`.
   styles needs two templates (or two fields with different labels). Other types ignore it.
 - **Date formats** for `Date` fields: one or more formats, tried in order (`dd/MM/yyyy|yyyy-MM-dd` in the builder methods), built from `yyyy`, `MM`,
   `dd` and separators; `yyyy-MM-dd` when none are given. Every other type must be given none. Never the machine culture.
+- A **table** (see [Tables](Documentation/Tables.md)) reads fixed-width rows under a header line: add its columns with `AddTableColumn` (header
+  text, type, decimal style, date formats) and read each row with `TryReadNextRow` and `GetRowValue`. At most 20 tables of 50 columns and 10,000 rows.
 - Field names are unique ignoring case. A template has at most 200 fields and, as saved by `GetTemplateJson`, at most 256,000 characters, so
   anything accepted can be saved and loaded again. Unknown or repeated properties, wrong types and numeric enum values are errors.
 
@@ -51,6 +53,8 @@ stable label) is found by a regular expression with a named group `value`.
 ExtractFromText(text)                      -> foundCount, missingRequiredCount
 GetField(name)                             -> found, value, raw, reason, lineNumber
 TryReadNextField()                         -> hasItem, name, value, raw, reason, lineNumber   (every field, in template order)
+TryReadNextRow(table)                      -> hasItem, rowNumber, rowJson                      (every row of a table, in order)
+GetRowValue(column)                        -> found, value, raw, reason                        (one cell of the current row)
 GetResultJson()                            -> everything, including the label that matched, the currency and the number of occurrences
 ```
 
@@ -71,17 +75,18 @@ GetResultJson()                            -> everything, including the label th
 
 ## Method reference
 
-All 14 phase 1 methods and their signatures. On any failure a method sets every output to its failure value (null strings, 0 counts and line
-numbers, `False` flags) and returns a message naming the operation; success has no message.
+All 17 methods and their signatures. On any failure a method sets every output to its failure value (null strings, 0 counts and line
+numbers and row numbers, `False` flags) and returns a message naming the operation; success has no message.
 
 ### Template
 
 | Method | Signature | Description |
 |---|---|---|
-| `ClearTemplate` | `bool ClearTemplate(out string message)` | Removes every field and restores the default limits. Also clears any results. |
+| `ClearTemplate` | `bool ClearTemplate(out string message)` | Removes every field and table and restores the default limits. Also clears any results. |
 | `AddLabelFieldSimple` | `bool AddLabelFieldSimple(string name, string labels, FieldType type, out string message)` | Adds a required field whose value follows one of its labels on the same line. Labels are alternatives separated by \|, for example Invoice No\|Invoice Number. The type decides what a valid value is; numbers use DotDecimal (1,234.56) and dates yyyy-MM-dd. |
 | `AddLabelField` | `bool AddLabelField(string name, string labels, ValuePosition position, FieldType type, DecimalStyle decimalStyle, string dateFormats, bool required, Occurrence occurrence, out string message)` | Adds a field with every option: where the value sits relative to the label, how numbers are written (DecimalStyle, used by Decimal, Amount and Percentage fields), the date formats for a Date field (separated by \|; empty for yyyy-MM-dd, and empty for every other type), whether it is required, and what to do when the label appears more than once. |
 | `AddPatternField` | `bool AddPatternField(string name, string pattern, FieldType type, DecimalStyle decimalStyle, string dateFormats, out string message)` | Adds a required field found by a regular expression with a named group called value, for text that has no stable label (an escape hatch; label fields need no pattern). DecimalStyle and date formats work as in AddLabelField. The match times out rather than hanging the robot. |
+| `AddTableColumn` | `bool AddTableColumn(string table, string header, FieldType type, DecimalStyle decimalStyle, string dateFormats, out string message)` | Adds a column to a table (rows under a header line), creating the table when the name is new. The header text is found on the header line like a label and names the column for GetRowValue; the type, decimal style and date formats read each cell as they read a field. |
 | `LoadTemplateJson` | `bool LoadTemplateJson(string templateJson, out string message)` | Replaces the whole template from JSON. An invalid template is rejected whole and the previous one stays in force. |
 | `GetTemplateJson` | `bool GetTemplateJson(out string templateJson, out string message)` | Returns the current template, including limits, as canonical JSON that LoadTemplateJson accepts. |
 | `ValidateTemplateJson` | `bool ValidateTemplateJson(string templateJson, out int errorCount, out string reportJson, out string message)` | Checks a JSON template without loading it. Returns True when the check ran; errorCount is 0 for a valid template and reportJson lists every problem with its path. |
@@ -91,14 +96,16 @@ numbers, `False` flags) and returns a message naming the operation; success has 
 
 | Method | Signature | Description |
 |---|---|---|
-| `ExtractFromText` | `bool ExtractFromText(string text, out int foundCount, out int missingRequiredCount, out string message)` | Extracts every field of the template from the text. True means the extraction ran, even when fields were not found; foundCount and missingRequiredCount summarize it, and GetField reads each field. |
+| `ExtractFromText` | `bool ExtractFromText(string text, out int foundCount, out int missingRequiredCount, out string message)` | Extracts every field and table of the template from the text. True means the extraction ran, even when fields were not found; foundCount and missingRequiredCount summarize the fields, GetField reads each field and TryReadNextRow each table row. |
 
 ### Results
 
 | Method | Signature | Description |
 |---|---|---|
 | `GetField` | `bool GetField(string name, out bool found, out string value, out string raw, out string reason, out int lineNumber, out string message)` | Reads one field of the last extraction: found, the normalized value, the text as it appeared, a reason code when it was not found or not valid, and the 1-based line number (0 when none). |
-| `GetResultJson` | `bool GetResultJson(out string resultJson, out string message)` | Returns every field of the last extraction as JSON, with values, text as found, reasons and line numbers. |
+| `GetResultJson` | `bool GetResultJson(out string resultJson, out string message)` | Returns every field and table of the last extraction as JSON, with values, text as found, reasons and line numbers. |
 | `ResetFieldCursor` | `bool ResetFieldCursor(out string message)` | Restarts TryReadNextField from the first field. |
 | `TryReadNextField` | `bool TryReadNextField(out bool hasItem, out string name, out string value, out string raw, out string reason, out int lineNumber, out string message)` | Reads the next field of the last extraction, in template order. hasItem is False when there are no more; reason is null when the field was found and valid. |
+| `TryReadNextRow` | `bool TryReadNextRow(string table, out bool hasItem, out int rowNumber, out string rowJson, out string message)` | Reads the next row of a table from the last extraction. hasItem is False when there are no more rows (or the table's header was not found). rowNumber is 1-based within the table; rowJson holds every cell; GetRowValue then reads one cell of this row. |
+| `GetRowValue` | `bool GetRowValue(string column, out bool found, out string value, out string raw, out string reason, out string message)` | Reads one cell (by column header, ignoring case) of the row TryReadNextRow read last: found, the normalized value, the text as it appeared, and a reason (MissingValue or InvalidValue) when it was not found. |
 | `ClearResults` | `bool ClearResults(out string message)` | Discards the last extraction's results. Succeeds even when there are none. |

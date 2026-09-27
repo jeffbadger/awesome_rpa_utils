@@ -140,7 +140,8 @@ namespace TextExtractAutomation.Tests
             using JsonDocument real = JsonDocument.Parse(json);
             Assert.Equal(real.RootElement.GetRawText(), shown.RootElement.GetRawText().Replace("\n", "").Replace("  ", "").Replace(", ", ",").Replace(": ", ":").Replace("{ ", "{").Replace(" }", "}").Replace("[ ", "[").Replace(" ]", "]"));
 
-            string source = File.ReadAllText(Path.Combine(ComponentDirectory(), "Extraction.cs")) + File.ReadAllText(Path.Combine(ComponentDirectory(), "ValueConverter.cs"));
+            string source = File.ReadAllText(Path.Combine(ComponentDirectory(), "Extraction.cs")) + File.ReadAllText(Path.Combine(ComponentDirectory(), "ValueConverter.cs"))
+                + File.ReadAllText(Path.Combine(ComponentDirectory(), "TableReader.cs"));
             var codes = Regex.Matches(source, "\"(Missing[A-Za-z]+|Invalid[A-Za-z]+|Ambiguous[A-Za-z]+|Pattern[A-Za-z]+|TooMany[A-Za-z]+)\"").Cast<Match>().Select(x => x.Groups[1].Value).Distinct().ToList();
             List<string> documented = Table(page, "| Reason | Meaning |").Select(r => r[0]).ToList();
             Assert.Equal(codes.OrderBy(x => x), documented.OrderBy(x => x));
@@ -176,7 +177,65 @@ namespace TextExtractAutomation.Tests
             Assert.Equal(TemplateLimits.PatternTimeoutMilliseconds + " ms", Max("One pattern match"));
             Assert.Equal(TemplateLimits.PatternBudgetMilliseconds / 1000 + " s", Max("All of one pattern"));
             Assert.Equal(TemplateLimits.MaxPatternMatches.ToString(), Max("Occurrences of one pattern"));
+            Assert.Equal(TemplateLimits.MaxTables.ToString(), Max("Tables in a template"));
+            Assert.Equal(TemplateLimits.MaxColumnsPerTable.ToString(), Max("Columns in a table"));
+            Assert.Equal(TemplateLimits.MaxTableRows.ToString(), Max("Rows in a table"));
         }
+
+        [Fact]
+        public void Tables_TheBuilderCallsAndTheJsonAgree_AndTheTextGivesTheDocumentedRows()
+        {
+            string page = Page("Tables.md");
+            string code = Blocks(page, "csharp").Single();
+            using var built = new TextExtractUtils();
+            foreach (Match call in Regex.Matches(code, "extract\\.(\\w+)\\(\"(\\w+)\", \"([^\"]+)\", FieldType\\.(\\w+)(?:, DecimalStyle\\.(\\w+), \"\")?, out message\\);"))
+            {
+                var type = Enum.Parse<FieldType>(call.Groups[4].Value);
+                string m;
+                if (call.Groups[1].Value == "AddLabelFieldSimple") Assert.True(built.AddLabelFieldSimple(call.Groups[2].Value, call.Groups[3].Value, type, out m), m);
+                else Assert.True(built.AddTableColumn(call.Groups[2].Value, call.Groups[3].Value, type, Enum.Parse<DecimalStyle>(call.Groups[5].Value), "", out m), m);
+            }
+            Assert.Equal(code.Split('\n').Length, built.CurrentTemplate.Fields.Count + built.CurrentTemplate.Tables.Sum(t => t.Columns.Count));   // every line was a call that ran
+
+            using var loaded = new TextExtractUtils();
+            List<string> json = Blocks(page, "json");
+            Assert.True(loaded.LoadTemplateJson(json[0], out string message), message);
+            Assert.True(loaded.GetTemplateJson(out string fromJson, out message), message);
+            Assert.True(built.GetTemplateJson(out string fromBuilder, out message), message);
+            Assert.Contains(fromJson.Substring(fromJson.IndexOf("\"tables\"", StringComparison.Ordinal)).TrimEnd('}'), fromBuilder);          // the JSON table is the builder's table
+
+            Assert.True(built.ExtractFromText(Blocks(page, "text")[0], out int found, out _, out message), message);
+            Assert.Equal(2, found);
+            Assert.Equal("136.50", Get(built, "Total").value);
+            List<string[]> rows = Table(page, "| Row |");
+            string[] headers = page.Split('\n').First(l => l.StartsWith("| Row |", StringComparison.Ordinal)).Trim('|').Split('|').Select(h => h.Trim()).Skip(1).ToArray();
+            foreach (string[] row in rows)
+            {
+                Assert.True(built.TryReadNextRow("Lines", out bool hasItem, out int rowNumber, out string rowJson, out message), message);
+                Assert.True(hasItem);
+                Assert.Equal(int.Parse(row[0]), rowNumber);
+                for (int k = 0; k < headers.Length; k++)
+                {
+                    Assert.True(built.GetRowValue(headers[k], out bool cellFound, out string value, out _, out string reason, out message), message);
+                    Assert.Equal((true, row[k + 1], (string)null), (cellFound, value, reason));
+                }
+                if (rowNumber == 1)
+                {
+                    // the rowJson example shows the real properties and the real first cells (it is cut short after two)
+                    using JsonDocument shown = JsonDocument.Parse(json[1]);
+                    using JsonDocument real = JsonDocument.Parse(rowJson);
+                    Assert.Equal(Names(real.RootElement), Names(shown.RootElement));
+                    Assert.Equal(Names(real.RootElement.GetProperty("cells")[0]), Names(shown.RootElement.GetProperty("cells")[0]));
+                    Assert.Equal(real.RootElement.GetProperty("lineNumber").GetInt32(), shown.RootElement.GetProperty("lineNumber").GetInt32());
+                    foreach (JsonElement cell in shown.RootElement.GetProperty("cells").EnumerateArray())
+                        Assert.Contains(real.RootElement.GetProperty("cells").EnumerateArray(), r => r.GetRawText() == cell.GetRawText().Replace(" ", "").Replace("Bluewidget", "Blue widget"));
+                }
+            }
+            Assert.True(built.TryReadNextRow("Lines", out bool more, out _, out _, out message), message);
+            Assert.False(more);
+        }
+
+        private static List<string> Names(JsonElement e) => e.EnumerateObject().Select(p => p.Name).ToList();
 
         [Fact]
         public void EmailIntake_TheTemplateLoads_AndTheEmailGivesTheDocumentedCounts()
