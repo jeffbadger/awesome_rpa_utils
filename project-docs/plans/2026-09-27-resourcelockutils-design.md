@@ -149,3 +149,9 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    an access-denied lease is never mistaken for absent or old); cleanup checks the parsed slot; a held slot whose lease cannot be read blocks
    allocating another slot of the resource (its kind and capacity are unknown); leases that ended unvisited are pruned before the
    per-component limit applies; the locks JSON lists unreadable held leases with null details; the test project states `OutputType` Exe. Testing the presence fix found that an access-denied name was taken as present, so in a folder that can be listed but not accessed the lookup of the top looped forever: an access-denied name is now confirmed by listing its exact name, and the lookup has a hard bound.
+9. **Third review of PR #167**: the lease's times are taken immediately before its file is created (a slow scan no longer shortens it); only
+   an existing target counts as losing the race for a generation, and any other failure to create fails the call with a message; after
+   creating generation n, a robot that finds n+1 already there gives n up at once (marked released), which closes the last window for filling
+   a gap below the top (a process stalled between the 60 s check and the create); a release re-checks for a successor after rewriting and
+   reports `released` False if one appeared. Test-only hooks force each timing.
+

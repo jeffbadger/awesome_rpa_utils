@@ -300,8 +300,13 @@ namespace ResourceLockAutomation
         {
             byte[] content = new UTF8Encoding(false).GetBytes(record.ToJson());
             FileStream stream;
-            try { stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None); }
-            catch (IOException) { return false; }                                           // it exists (or appeared and went): read again
+            try
+            {
+                BeforeCreateForTests?.Invoke(path);
+                stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            }
+            catch (IOException) when (Present(path)) { return false; }                     // another robot created this generation first
+            // any other I/O failure (folder gone, disk full) propagates: the call fails with a message instead of looking like a lost race
             using (stream)
             {
                 stream.Write(content, 0, content.Length);
@@ -322,6 +327,7 @@ namespace ResourceLockAutomation
             {
                 try
                 {
+                    BeforeOverwriteForTests?.Invoke(path);
                     using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
                     stream.SetLength(0);
                     stream.Write(content, 0, content.Length);
@@ -342,6 +348,9 @@ namespace ResourceLockAutomation
 
         /// <summary>Tests only: files a listing should miss, as a real listing may while files are created or deleted.</summary>
         internal static Func<string, bool> HideFromListingForTests;
+
+        /// <summary>Tests only: runs just before a lease file is created, or rewritten in place, to force a timing or a failure there.</summary>
+        internal static Action<string> BeforeCreateForTests, BeforeOverwriteForTests;
 
         /// <summary>A generation may be deleted once its successor is this old: longer than any operation's read-to-create window.</summary>
         internal const int SafeDeleteMinutes = 5;
@@ -481,13 +490,27 @@ namespace ResourceLockAutomation
                     long generation = (chain?.Highest ?? 0) + 1;
                     if (decision.Elapsed.TotalSeconds > MaxDecisionSeconds) break;          // too slow to trust the reading: report not acquired, try again
                     string token = Guid.NewGuid().ToString("N");
+                    string path = Path.Combine(folder, FileName(resource, slot, generation));
                     bool created;
-                    try { created = TryCreate(Path.Combine(folder, FileName(resource, slot, generation)), NewRecord(token, holder, kind, capacity, now, lease)); }
+                    try { created = TryCreate(path, NewRecord(token, holder, kind, capacity, UtcNow, lease)); }       // the lease starts now, not when reading began
                     catch (UnauthorizedAccessException)
                     {
                         return new AcquireResult(false, null, null, 0, "this robot's account cannot create files in the lock folder; grant it access or set another folder with ConfigureLockFolder (ValidateLockFolder checks one)");
                     }
+                    catch (IOException)
+                    {
+                        return new AcquireResult(false, null, null, 0, "a lease file could not be created in the lock folder (it may have been removed, or the disk is full or failing)");
+                    }
                     if (!created) continue;                                                  // another robot won this slot
+                    // Belt and braces: if a newer generation already exists, this one filled a gap below the top (possible only if this process
+                    // stalled for minutes between reading and creating). It never held the slot: mark it released at once and try the next slot.
+                    if (Present(Path.Combine(folder, FileName(resource, slot, generation + 1))))
+                    {
+                        LeaseRecord stillborn = NewRecord(token, holder, kind, capacity, UtcNow, TimeSpan.Zero);
+                        stillborn.Released = true;
+                        try { Overwrite(path, stillborn); } catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
+                        continue;
+                    }
                     Remember(owner, folder, resource, token);
                     // The lease exists now: nothing after this may turn it into a failed acquire, so cleanup and the count are best effort.
                     int holderCount = chains.Values.Count(c => c.Held) + 1;
@@ -572,7 +595,9 @@ namespace ResourceLockAutomation
                 {
                     LeaseRecord record = chain.Top;
                     record.Released = true;
-                    Overwrite(path, record);                                                 // never deleted or renamed: generation numbers only grow
+                    if (!Overwrite(path, record)) wasHeld = false;                           // never deleted or renamed: generation numbers only grow
+                    // As in Renew: a successor created between the reading and the rewrite means the lease was lost before this release.
+                    else if (wasHeld && Present(Path.Combine(folder, FileName(resource, chain.Slot, chain.Highest + 1)))) wasHeld = false;
                 }
                 try { DeleteOldGenerations(folder, resource, chain.Slot, chain.Highest); }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }

@@ -415,6 +415,73 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void TheLeaseStartsWhenItsFileIsCreated_NotWhenReadingBegan()
+        {
+            // A slow scan must not eat into the lease: a 1 s lease read for 1.2 s used to be expired by the time it was returned.
+            object owner = new object();
+            AcquireResult warm = MachineLocks.TryAcquire(folder, "slow", LockKind.Lock, 1, "a", TimeSpan.FromSeconds(60), owner);
+            Assert.True(MachineLocks.Release(folder, "slow", warm.Token));                                  // a file for the listing to find
+            int calls = 0;
+            MachineLocks.HideFromListingForTests = path => { if (Interlocked.Increment(ref calls) == 1) Thread.Sleep(1200); return false; };
+            AcquireResult slow;
+            try { slow = MachineLocks.TryAcquire(folder, "slow", LockKind.Lock, 1, "b", TimeSpan.FromMilliseconds(1000), owner); }
+            finally { MachineLocks.HideFromListingForTests = null; }
+            Assert.True(slow.Acquired);
+            Assert.True(MachineLocks.Renew(folder, "slow", slow.Token, TimeSpan.FromSeconds(60), out _));  // still live when returned
+            Assert.True(MachineLocks.Release(folder, "slow", slow.Token));
+        }
+
+        [Fact]
+        public void AGenerationCreatedBelowTheTop_NeverHoldsTheLock()
+        {
+            // Force the gap the review describes: generation 2 gone, generation 3 held but missed by the listing. The robot creates 2, sees 3
+            // above it, and gives 2 up at once instead of reporting a second holder.
+            object a = new object(), b = new object();
+            for (int i = 0; i < 2; i++)
+                Assert.True(MachineLocks.Release(folder, "gap", MachineLocks.TryAcquire(folder, "gap", LockKind.Lock, 1, "earlier", TimeSpan.FromSeconds(60), a).Token));
+            AcquireResult holder = MachineLocks.TryAcquire(folder, "gap", LockKind.Lock, 1, "holder", TimeSpan.FromSeconds(60), a);
+            Assert.Contains("gap.0.3.lease", Files());
+            File.Delete(Path.Combine(folder, "gap.0.2.lease"));
+            MachineLocks.HideFromListingForTests = path => path.EndsWith("gap.0.3.lease");
+            AcquireResult late;
+            try { late = MachineLocks.TryAcquire(folder, "gap", LockKind.Lock, 1, "stale reader", TimeSpan.FromSeconds(60), b); }
+            finally { MachineLocks.HideFromListingForTests = null; }
+            Assert.Equal((false, "holder"), (late.Acquired, late.CurrentHolder));
+            Assert.True(Record("gap.0.2.lease").Released);                                                  // the gap was filled, then given up
+            Assert.Equal(0, MachineLocks.HeldByForTests(b));
+            Assert.True(MachineLocks.Release(folder, "gap", holder.Token));
+        }
+
+        [Fact]
+        public void AFailureToCreateTheLeaseFile_FailsTheCall_NotALostRace()
+        {
+            using var c = New();
+            MachineLocks.BeforeCreateForTests = path => throw new IOException("the disk is full");
+            try
+            {
+                Assert.False(c.TryAcquireLock(LockScope.Machine, "full-disk", "me", 60, out bool acquired, out string token, out _, out string m));
+                Assert.Equal((false, (string)null), (acquired, token));
+                Assert.Equal("TryAcquireLock failed: a lease file could not be created in the lock folder (it may have been removed, or the disk is full or failing).", m);
+            }
+            finally { MachineLocks.BeforeCreateForTests = null; }
+        }
+
+        [Fact]
+        public void AReleaseRacingATakeover_ReportsTheLeaseLost()
+        {
+            object owner = new object();
+            AcquireResult held = MachineLocks.TryAcquire(folder, "raced", LockKind.Lock, 1, "holder", TimeSpan.FromSeconds(60), owner);
+            MachineLocks.BeforeOverwriteForTests = path =>
+            {
+                MachineLocks.BeforeOverwriteForTests = null;                                                // once: another robot takes over now
+                using Process self = Process.GetCurrentProcess();
+                WriteLease("raced.0.2.lease", "taker", self.Id, MachineLocks.StartIdentity(self));
+            };
+            try { Assert.False(MachineLocks.Release(folder, "raced", held.Token)); }                       // released False: it had been lost
+            finally { MachineLocks.BeforeOverwriteForTests = null; }
+        }
+
+        [Fact]
         public void ARunningHolder_OrOneThisMachineCannotCheck_KeepsItsLease()
         {
             using Process self = Process.GetCurrentProcess();
