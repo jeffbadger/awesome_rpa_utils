@@ -15,5 +15,6 @@ touching the component source trees.
   [index and methodology](pega-usability-reviews/README.md).
 - [`plans/`](plans/) — implementation plans for substantial, multi-task
   features (e.g. the [REST code generator](plans/2026-08-31-swagger-rest-codegen.md)
-  and its [multi-format input support](plans/2026-09-06-multi-format-rest-codegen.md), and the
-  [TextExtractUtils design](plans/2026-09-26-textextractutils-design.md)).
+  and its [multi-format input support](plans/2026-09-06-multi-format-rest-codegen.md), the
+  [TextExtractUtils design](plans/2026-09-26-textextractutils-design.md) and the
+  [ResourceLockUtils design](plans/2026-09-27-resourcelockutils-design.md)).
