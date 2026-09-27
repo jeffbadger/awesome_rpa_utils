@@ -219,6 +219,22 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void TheLastAttempt_IsMadeWhenTheWaitEnds_SoAZeroWaitTakesAFreeLock()
+        {
+            // Review asked whether the deadline should be checked before acquiring. It is deliberately checked after: a lock that is free when
+            // the wait ends is taken (the caller is still in the call and receives the token), and a zero wait is a single attempt.
+            using var c = new ResourceLockUtils();
+            string r = NewResource();
+            Assert.True(c.AcquireLock(LockScope.Process, r, "zero wait", 60, 0, out bool acquired, out string token, out string current, out string m), m);
+            Assert.Equal((true, (string)null), (acquired, current));
+            Assert.NotNull(token);
+            Assert.True(c.AcquireSlot(LockScope.Process, NewResource(), 2, "zero wait", 60, 0, out acquired, out _, out int count, out m), m);
+            Assert.Equal((true, 1), (acquired, count));
+            AcquireResult late = ProcessLocks.Acquire(NewResource(), LockKind.Lock, 1, "deadline already passed", 60000, -5, new object());
+            Assert.True(late.Acquired);                                                                      // even a deadline in the past gets its one attempt
+        }
+
+        [Fact]
         public void AWaiter_WakesWhenTheLeaseItWaitsOnExpires()
         {
             object owner = new object();

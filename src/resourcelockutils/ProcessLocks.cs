@@ -157,7 +157,12 @@ namespace ResourceLockAutomation
             lock (Sync) return TryAcquireLocked(resource, kind, capacity, holder, leaseMs, owner, NowMs);
         }
 
-        /// <summary>Waits up to waitMs for a lock or slot. A release wakes the waiter at once; so does the earliest expiry of a lease it waits on.</summary>
+        /// <summary>
+        /// Waits up to waitMs for a lock or slot. A release wakes the waiter at once; so does the earliest expiry of a lease it waits on. Every
+        /// wake-up, including the one at the deadline, first tries to acquire: a resource that is free when the wait ends is taken rather than
+        /// refused for being a few milliseconds late, and waitMs 0 therefore tries exactly once. The caller is still inside the call, so a lease
+        /// taken at the deadline is returned to it, never orphaned.
+        /// </summary>
         internal static AcquireResult Acquire(string resource, LockKind kind, int capacity, string holder, long leaseMs, long waitMs, object owner)
         {
             long deadline = NowMs + waitMs;

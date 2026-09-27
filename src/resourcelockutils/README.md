@@ -26,7 +26,8 @@ Bots from using the same resource.
   shares them between every robot on the machine, including Server Bots in other sessions under other Windows accounts (files in the lock folder).
 - **Slots** allow up to `capacity` holders of one resource (a pool of licenses, logins or sessions).
 - **`Process` scope details:** leases are timed with a monotonic clock, so changing the system clock neither expires nor extends one. A release
-  wakes waiting `AcquireLock`/`AcquireSlot` calls at once (the `Machine` scope checks its lock files repeatedly instead). While a resource is held it is either a lock or a slot pool with one capacity; a call
+  wakes waiting `AcquireLock`/`AcquireSlot` calls at once (the `Machine` scope checks its lock files repeatedly instead). When the wait ends,
+  one last attempt is made, so a resource that is free at that moment is taken, and `waitMilliseconds` 0 tries exactly once. While a resource is held it is either a lock or a slot pool with one capacity; a call
   that disagrees fails. Disposing the component releases every lock and slot it still holds, including one an in-flight call was about to take. One component holds at
   most 1,000 at a time. Expired leases are cleared when their resource is next used, and by a background sweep once a minute while any lock
   is held, so stale entries never accumulate.
