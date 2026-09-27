@@ -350,7 +350,7 @@ namespace ResourceLockAutomation
         internal static Func<string, bool> HideFromListingForTests;
 
         /// <summary>Tests only: runs just before a lease file is created, or rewritten in place, to force a timing or a failure there.</summary>
-        internal static Action<string> BeforeCreateForTests, BeforeOverwriteForTests;
+        internal static Action<string> BeforeCreateForTests, BeforeOverwriteForTests, BeforeReleaseCheckForTests, AfterReleaseForTests;
 
         /// <summary>A generation may be deleted once its successor is this old: longer than any operation's read-to-create window.</summary>
         internal const int SafeDeleteMinutes = 5;
@@ -591,13 +591,16 @@ namespace ResourceLockAutomation
                 }
                 ForgetEverywhere(token);
                 bool wasHeld = chain.Held;
+                // Re-check just before releasing, never after: once the lease is marked released, a successor may be taken legitimately at once.
+                // A taker can only supersede a lease it saw expired, so a lease still unexpired with no successor was held until this release.
+                BeforeReleaseCheckForTests?.Invoke(path);
+                if (wasHeld && (UtcNow >= chain.Top.ExpiresUtc || Present(Path.Combine(folder, FileName(resource, chain.Slot, chain.Highest + 1))))) wasHeld = false;
                 if (!chain.Top.Released)
                 {
                     LeaseRecord record = chain.Top;
                     record.Released = true;
                     if (!Overwrite(path, record)) wasHeld = false;                           // never deleted or renamed: generation numbers only grow
-                    // As in Renew: a successor created between the reading and the rewrite means the lease was lost before this release.
-                    else if (wasHeld && Present(Path.Combine(folder, FileName(resource, chain.Slot, chain.Highest + 1)))) wasHeld = false;
+                    AfterReleaseForTests?.Invoke(path);
                 }
                 try { DeleteOldGenerations(folder, resource, chain.Slot, chain.Highest); }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }

@@ -152,6 +152,8 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
 9. **Third review of PR #167**: the lease's times are taken immediately before its file is created (a slow scan no longer shortens it); only
    an existing target counts as losing the race for a generation, and any other failure to create fails the call with a message; after
    creating generation n, a robot that finds n+1 already there gives n up at once (marked released), which closes the last window for filling
-   a gap below the top (a process stalled between the 60 s check and the create); a release re-checks for a successor after rewriting and
-   reports `released` False if one appeared. Test-only hooks force each timing.
+   a gap below the top (a process stalled between the 60 s check and the create); a release re-checks, just **before** marking the lease released,
+   that it has not expired and has no successor (a taker can only supersede an expired lease), and reports `released` False otherwise. A first
+   version checked after the rewrite; the stress test showed clean releases reported lost, since the next robot may take the released lease
+   at once. Test-only hooks force each timing.
 

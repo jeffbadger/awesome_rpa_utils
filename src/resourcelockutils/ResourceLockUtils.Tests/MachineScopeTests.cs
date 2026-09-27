@@ -467,18 +467,35 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void AReleaseFollowedAtOnceByTheNextHolder_IsStillReportedReleased()
+        {
+            // The first version of the re-check looked after marking the lease released; a robot taking the next generation at that moment made
+            // a clean release look lost (the stress test showed it). The check runs before the release, so this handover is a clean release.
+            object owner = new object();
+            AcquireResult held = MachineLocks.TryAcquire(folder, "handover", LockKind.Lock, 1, "first", TimeSpan.FromSeconds(60), owner);
+            MachineLocks.AfterReleaseForTests = path =>
+            {
+                MachineLocks.AfterReleaseForTests = null;                                                   // once: the next robot takes over now
+                using Process self = Process.GetCurrentProcess();
+                WriteLease("handover.0.2.lease", "second", self.Id, MachineLocks.StartIdentity(self));
+            };
+            try { Assert.True(MachineLocks.Release(folder, "handover", held.Token)); }
+            finally { MachineLocks.AfterReleaseForTests = null; }
+        }
+
+        [Fact]
         public void AReleaseRacingATakeover_ReportsTheLeaseLost()
         {
             object owner = new object();
             AcquireResult held = MachineLocks.TryAcquire(folder, "raced", LockKind.Lock, 1, "holder", TimeSpan.FromSeconds(60), owner);
-            MachineLocks.BeforeOverwriteForTests = path =>
+            MachineLocks.BeforeReleaseCheckForTests = path =>
             {
-                MachineLocks.BeforeOverwriteForTests = null;                                                // once: another robot takes over now
+                MachineLocks.BeforeReleaseCheckForTests = null;                                             // once: another robot takes over now
                 using Process self = Process.GetCurrentProcess();
                 WriteLease("raced.0.2.lease", "taker", self.Id, MachineLocks.StartIdentity(self));
             };
             try { Assert.False(MachineLocks.Release(folder, "raced", held.Token)); }                       // released False: it had been lost
-            finally { MachineLocks.BeforeOverwriteForTests = null; }
+            finally { MachineLocks.BeforeReleaseCheckForTests = null; }
         }
 
         [Fact]
