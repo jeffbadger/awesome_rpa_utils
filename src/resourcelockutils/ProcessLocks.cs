@@ -9,6 +9,13 @@ namespace ResourceLockAutomation
 {
     internal enum LockKind { Lock, Slot }
 
+    /// <summary>A lease owner that can be closed (a disposed component). Checked inside the lock table's lock, so an acquire can never add a
+    /// lease to an owner whose disposal has already released everything it held.</summary>
+    internal interface ILeaseOwner
+    {
+        bool IsClosed { get; }
+    }
+
     /// <summary>The outcome of an acquire attempt: acquired with a token, or who and how many hold it.</summary>
     internal readonly struct AcquireResult
     {
@@ -50,24 +57,55 @@ namespace ResourceLockAutomation
 
         private static readonly object Sync = new object();
         private static readonly Dictionary<string, Entry> Entries = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<object, int> OwnerCounts = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);   // leases per owner
+        private static long lastSweepMs = NowMs;
+
+        /// <summary>How often every expired lease is dropped, so resources that are never visited again do not accumulate.</summary>
+        internal const long SweepIntervalMs = 60000;
 
         internal static long NowMs => Environment.TickCount64;
+
+        /// <summary>Removes the leases of an entry that match, keeping the per-owner counts, and the entry itself once it is empty.</summary>
+        private static int Drop(Entry entry, Predicate<Lease> which)
+        {
+            int removed = 0;
+            for (int i = entry.Leases.Count - 1; i >= 0; i--)
+            {
+                Lease lease = entry.Leases[i];
+                if (!which(lease)) continue;
+                entry.Leases.RemoveAt(i);
+                removed++;
+                if (OwnerCounts.TryGetValue(lease.Owner, out int count)) { if (count <= 1) OwnerCounts.Remove(lease.Owner); else OwnerCounts[lease.Owner] = count - 1; }
+            }
+            if (entry.Leases.Count == 0) Entries.Remove(entry.Resource);
+            return removed;
+        }
 
         /// <summary>The live leases of a resource, after dropping expired ones; null when nothing holds it (the entry is then removed).</summary>
         private static Entry Live(string resource, long now)
         {
             if (!Entries.TryGetValue(resource, out Entry entry)) return null;
-            entry.Leases.RemoveAll(l => l.ExpiresAtMs <= now);
-            if (entry.Leases.Count > 0) return entry;
-            Entries.Remove(resource);
-            return null;
+            Drop(entry, l => l.ExpiresAtMs <= now);
+            return entry.Leases.Count > 0 ? entry : null;
         }
 
-        private static int HeldBy(object owner, long now) =>
-            Entries.Values.Sum(e => e.Leases.Count(l => l.Owner == owner && l.ExpiresAtMs > now));
+        /// <summary>Drops every expired lease in the table.</summary>
+        private static void Sweep(long now)
+        {
+            foreach (string resource in Entries.Keys.ToList()) Live(resource, now);
+            lastSweepMs = now;
+        }
+
+        internal static int EntryCount { get { lock (Sync) return Entries.Count; } }
+
+        internal static int HeldBy(object owner) { lock (Sync) return OwnerCounts.TryGetValue(owner, out int count) ? count : 0; }
+
+        private static bool IsClosed(object owner) => owner is ILeaseOwner o && o.IsClosed;
 
         private static AcquireResult TryAcquireLocked(string resource, LockKind kind, int capacity, string holder, long leaseMs, object owner, long now)
         {
+            if (IsClosed(owner)) return new AcquireResult(false, null, null, 0, "the component has been disposed");
+            if (now - lastSweepMs >= SweepIntervalMs) Sweep(now);
             Entry entry = Live(resource, now);
             if (entry != null && entry.Kind != kind)
                 return new AcquireResult(false, null, null, 0, kind == LockKind.Lock
@@ -77,11 +115,19 @@ namespace ResourceLockAutomation
                 return new AcquireResult(false, null, null, 0, "the resource is in use with a capacity of " + entry.Capacity + "; every caller must give the same capacity");
             if (entry != null && entry.Leases.Count >= capacity)
                 return new AcquireResult(false, null, entry.Leases[0].Holder, entry.Leases.Count, null);
-            if (HeldBy(owner, now) >= LockLimits.MaxHeldPerInstance)
-                return new AcquireResult(false, null, null, 0, "this component already holds " + LockLimits.MaxHeldPerInstance + " locks and slots; release some first");
+            OwnerCounts.TryGetValue(owner, out int held);
+            if (held >= LockLimits.MaxHeldPerInstance)
+            {
+                Sweep(now);                                                         // the count includes leases that expired unvisited
+                entry = Live(resource, now);
+                OwnerCounts.TryGetValue(owner, out held);
+                if (held >= LockLimits.MaxHeldPerInstance)
+                    return new AcquireResult(false, null, null, 0, "this component already holds " + LockLimits.MaxHeldPerInstance + " locks and slots; release some first");
+            }
             if (entry == null) Entries[resource] = entry = new Entry { Resource = resource, Kind = kind, Capacity = capacity };
             var lease = new Lease { Token = Guid.NewGuid().ToString("N"), Holder = holder, ExpiresAtMs = now + leaseMs, Owner = owner };
             entry.Leases.Add(lease);
+            OwnerCounts[owner] = held + 1;
             return new AcquireResult(true, lease.Token, null, entry.Leases.Count, null);
         }
 
@@ -130,8 +176,7 @@ namespace ResourceLockAutomation
             lock (Sync)
             {
                 Entry entry = Live(resource, NowMs);
-                int removed = entry?.Leases.RemoveAll(l => string.Equals(l.Token, token, StringComparison.OrdinalIgnoreCase)) ?? 0;
-                if (entry != null && entry.Leases.Count == 0) Entries.Remove(resource);
+                int removed = entry == null ? 0 : Drop(entry, l => string.Equals(l.Token, token, StringComparison.OrdinalIgnoreCase));
                 if (removed > 0) Monitor.PulseAll(Sync);
                 return removed > 0;
             }
@@ -144,27 +189,24 @@ namespace ResourceLockAutomation
             {
                 Entry entry = Live(resource, NowMs);
                 if (entry == null) return 0;
-                int count = entry.Leases.Count;
-                Entries.Remove(resource);
+                int count = Drop(entry, l => true);
                 Monitor.PulseAll(Sync);
                 return count;
             }
         }
 
-        /// <summary>Releases every lease an instance still holds (the instance is being disposed).</summary>
+        /// <summary>
+        /// Releases every lease an owner still holds (it is being disposed; it is already closed, so no acquire can add another), and wakes every
+        /// waiter: the owner's own waiters then see it is closed and return.
+        /// </summary>
         internal static void ReleaseAllOwnedBy(object owner)
         {
             lock (Sync)
             {
-                long now = NowMs;
-                bool any = false;
-                foreach (string resource in Entries.Keys.ToList())
-                {
-                    Entry entry = Entries[resource];
-                    any |= entry.Leases.RemoveAll(l => l.Owner == owner) > 0;
-                    if (Live(resource, now) == null) Entries.Remove(resource);
-                }
-                if (any) Monitor.PulseAll(Sync);
+                if (OwnerCounts.ContainsKey(owner))
+                    foreach (string resource in Entries.Keys.ToList())
+                        if (Entries.TryGetValue(resource, out Entry entry)) Drop(entry, l => l.Owner == owner);
+                Monitor.PulseAll(Sync);
             }
         }
 

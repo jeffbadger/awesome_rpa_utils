@@ -26,8 +26,9 @@ Bots from using the same resource.
   shares them between every robot on the machine, including Server Bots in other sessions under other Windows accounts (files in the lock folder).
 - **Slots** allow up to `capacity` holders of one resource (a pool of licenses, logins or sessions).
 - **`Process` scope details:** leases are timed with a monotonic clock, so changing the system clock neither expires nor extends one. A release
-  wakes waiting `AcquireLock`/`AcquireSlot` calls at once. While a resource is held it is either a lock or a slot pool with one capacity; a call
-  that disagrees fails. Disposing the component releases every lock and slot it still holds. One component holds at most 1,000 at a time.
+  wakes waiting `AcquireLock`/`AcquireSlot` calls at once (the `Machine` scope checks its lock files repeatedly instead). While a resource is held it is either a lock or a slot pool with one capacity; a call
+  that disagrees fails. Disposing the component releases every lock and slot it still holds, including one an in-flight call was about to take. One component holds at
+  most 1,000 at a time, and expired leases are cleared at least once a minute.
 - Finding a lock taken, or learning that a lease was lost, is a normal outcome with a `bool` output (`acquired`, `renewed`, `released`), not a
   failure. `False` from a method means the call itself could not be done.
 
@@ -35,7 +36,8 @@ Bots from using the same resource.
 
 - **resource**: ASCII letters (`A`–`Z`, `a`–`z`, no accented letters), digits, `-`, `_` and `.` (the name becomes part of a file name), starting with a letter or digit, not ending with a dot, not a Windows device name (`CON`,
   `NUL`, `COM1`, `LPT1`, ...), at most 100 characters. Names are compared ignoring case.
-- **holder**: who holds the lock, as other robots see it (typically the robot name): 1 to 128 characters, no line breaks. Never put secrets in it.
+- **holder**: who holds the lock, as other robots see it (typically the robot name): 1 to 128 characters, no line breaks and no `|` (it separates
+  holders in `GetLockStatus`). Never put secrets in it.
 - **leaseSeconds** 5 to 86,400; **waitMilliseconds** 0 to 3,600,000; **capacity** 1 to 100.
 - **token**: exactly as an acquire call returned it.
 - **folderPath**: an absolute local folder, or empty for the default `ProgramData\AwesomeRpaUtils\Locks`. Network paths are not supported by the
@@ -51,9 +53,9 @@ All 11 methods and their signatures. On any failure a method sets every output t
 | Method | Signature | Description |
 |---|---|---|
 | `TryAcquireLock` | `bool TryAcquireLock(LockScope scope, string resource, string holder, int leaseSeconds, out bool acquired, out string token, out string currentHolder, out string message)` | Takes a lock on a resource now if it is free, without waiting. acquired is False when another holder has it, and currentHolder then names who. Keep the token: RenewLock and ReleaseLock need it, from any thread. The lease ends after leaseSeconds unless it is renewed. |
-| `AcquireLock` | `bool AcquireLock(LockScope scope, string resource, string holder, int leaseSeconds, int waitMilliseconds, out bool acquired, out string token, out string currentHolder, out string message)` | Waits up to waitMilliseconds for a lock on a resource, checking repeatedly, and takes it when it is free. acquired is False when the wait ended first, and currentHolder then names who has it. Run it on an asynchronous link so the wait does not block the user interface. |
+| `AcquireLock` | `bool AcquireLock(LockScope scope, string resource, string holder, int leaseSeconds, int waitMilliseconds, out bool acquired, out string token, out string currentHolder, out string message)` | Waits up to waitMilliseconds for a lock on a resource and takes it as soon as it is free. acquired is False when the wait ended first, and currentHolder then names who has it. Run it on an asynchronous link so the wait does not block the user interface. |
 | `TryAcquireSlot` | `bool TryAcquireSlot(LockScope scope, string resource, int capacity, string holder, int leaseSeconds, out bool acquired, out string token, out int holderCount, out string message)` | Takes one of capacity slots on a resource now if one is free (a pool of licenses, logins or sessions), without waiting. holderCount is how many slots are taken. Every caller must give the same capacity for the resource. The token works with RenewLock and ReleaseLock. |
-| `AcquireSlot` | `bool AcquireSlot(LockScope scope, string resource, int capacity, string holder, int leaseSeconds, int waitMilliseconds, out bool acquired, out string token, out int holderCount, out string message)` | Waits up to waitMilliseconds for one of capacity slots on a resource, checking repeatedly, and takes it when one is free. acquired is False when the wait ended first. Run it on an asynchronous link so the wait does not block the user interface. |
+| `AcquireSlot` | `bool AcquireSlot(LockScope scope, string resource, int capacity, string holder, int leaseSeconds, int waitMilliseconds, out bool acquired, out string token, out int holderCount, out string message)` | Waits up to waitMilliseconds for one of capacity slots on a resource and takes it as soon as one is free. acquired is False when the wait ended first. Run it on an asynchronous link so the wait does not block the user interface. |
 
 ### Hold
 

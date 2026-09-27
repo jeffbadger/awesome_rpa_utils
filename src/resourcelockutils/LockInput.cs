@@ -38,12 +38,14 @@ namespace ResourceLockAutomation
             return null;
         }
 
-        /// <summary>Who holds the lock, as shown to other robots (typically the robot name): 1 to 128 characters, no control characters.</summary>
+        /// <summary>Who holds the lock, as shown to other robots (typically the robot name): 1 to 128 characters, no control characters and no |
+        /// (the separator of GetLockStatus's holders).</summary>
         internal static string Holder(string holder)
         {
             if (string.IsNullOrWhiteSpace(holder)) return "holder is required (typically the robot name)";
             if (holder.Length > LockLimits.MaxHolderLength) return "holder may have at most " + LockLimits.MaxHolderLength + " characters";
             if (holder.Any(char.IsControl)) return "holder must not contain line breaks or other control characters";
+            if (holder.IndexOf('|') >= 0) return "holder must not contain |, which separates holders in GetLockStatus";
             return null;
         }
 

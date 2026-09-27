@@ -53,6 +53,7 @@ namespace ResourceLockAutomation.Tests
             Assert.Contains("required", LockInput.Holder("   "));
             Assert.Contains("control", LockInput.Holder("line\nbreak"));
             Assert.Contains("control", LockInput.Holder("tab\there"));
+            Assert.Contains("must not contain |", LockInput.Holder("Robot|Night"));                // | separates holders in GetLockStatus
         }
 
         [Fact]

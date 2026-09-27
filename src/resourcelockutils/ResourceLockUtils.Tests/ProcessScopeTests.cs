@@ -276,6 +276,78 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void AnAcquireThatReachesTheTableAfterDisposal_IsRefused_AndLeavesNothingBehind()
+        {
+            // The interleaving from review: Ready() admitted the call, then Dispose ran before the call reached the lock table.
+            var c = new ResourceLockUtils();
+            string r = NewResource();
+            c.Dispose();
+            AcquireResult late = ProcessLocks.TryAcquire(r, LockKind.Lock, 1, "late", 60000, c);
+            Assert.False(late.Acquired);
+            Assert.Equal("the component has been disposed", late.Problem);
+            Assert.Equal(0, ProcessLocks.HeldBy(c));
+            using var other = new ResourceLockUtils();
+            Acquire(other, r);                                                                               // nothing blocks the resource
+        }
+
+        [Fact]
+        public void DisposingAComponent_EndsItsOwnWaits_AtOnce()
+        {
+            using var holder = new ResourceLockUtils();
+            string r = NewResource();
+            string token = Acquire(holder, r, "holder");
+            var waiter = new ResourceLockUtils();
+            bool result = true, acquired = true;
+            string message = null;
+            var clock = Stopwatch.StartNew();
+            var thread = new Thread(() => result = waiter.AcquireLock(LockScope.Process, r, "waiter", 60, 20000, out acquired, out _, out _, out message));
+            thread.Start();
+            Thread.Sleep(200);                                                                               // the waiter is waiting
+            waiter.Dispose();
+            Assert.True(thread.Join(5000), "the wait did not end when its component was disposed");
+            Assert.InRange(clock.ElapsedMilliseconds, 0, 10000);
+            Assert.Equal((false, false), (result, acquired));
+            Assert.Equal("AcquireLock failed: the component has been disposed.", message);
+            Assert.Equal(0, ProcessLocks.HeldBy(waiter));
+            Assert.True(holder.ReleaseLock(LockScope.Process, r, token, out bool released, out string m) && released, m);
+        }
+
+        [Fact]
+        public void LeaseCounts_FollowEveryWayALeaseEnds()
+        {
+            object owner = new object();
+            string a = NewResource(), b = NewResource(), s = NewResource();
+            AcquireResult la = ProcessLocks.TryAcquire(a, LockKind.Lock, 1, "x", 60000, owner);
+            ProcessLocks.TryAcquire(b, LockKind.Lock, 1, "x", 60000, owner);
+            ProcessLocks.TryAcquire(s, LockKind.Slot, 3, "x", 60000, owner);
+            ProcessLocks.TryAcquire(s, LockKind.Slot, 3, "x", 60000, owner);
+            Assert.Equal(4, ProcessLocks.HeldBy(owner));
+            Assert.True(ProcessLocks.Release(a, la.Token));
+            Assert.Equal(3, ProcessLocks.HeldBy(owner));
+            Assert.Equal(2, ProcessLocks.ForceRelease(s));
+            Assert.Equal(1, ProcessLocks.HeldBy(owner));
+            ProcessLocks.ReleaseAllOwnedBy(owner);
+            Assert.Equal(0, ProcessLocks.HeldBy(owner));
+        }
+
+        [Fact]
+        public void ExpiredLeasesThatAreNeverVisitedAgain_AreSwept_AndStopCountingAgainstTheLimit()
+        {
+            object owner = new object();
+            string prefix = NewResource();
+            for (int i = 0; i < LockLimits.MaxHeldPerInstance; i++)
+                Assert.True(ProcessLocks.TryAcquire(prefix + "-" + i, LockKind.Lock, 1, "one-shot", 300, owner).Acquired);
+            Assert.Equal(LockLimits.MaxHeldPerInstance, ProcessLocks.HeldBy(owner));
+            Thread.Sleep(500);                                                                               // all expired, none visited
+            int entriesBefore = ProcessLocks.EntryCount;
+            AcquireResult next = ProcessLocks.TryAcquire(prefix + "-new", LockKind.Lock, 1, "one-shot", 60000, owner);
+            Assert.True(next.Acquired, next.Problem);
+            Assert.Equal(1, ProcessLocks.HeldBy(owner));
+            Assert.True(ProcessLocks.EntryCount <= entriesBefore - LockLimits.MaxHeldPerInstance + 100);     // the stale entries are gone, not just uncounted (slack: other tests run in parallel)
+            Assert.True(ProcessLocks.Release(prefix + "-new", next.Token));
+        }
+
+        [Fact]
         public void TheStatusOfAFreeResource_IsNotHeld()
         {
             using var c = new ResourceLockUtils();
