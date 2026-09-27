@@ -109,6 +109,8 @@ namespace TextExtractAutomation.Tests
                 b.Append(line % 500 == 0 ? "Label " + (line / 500 % 200) + " alt 3: value " + line : "some ordinary words on an ordinary line of text " + line).Append('\n');
                 line++;
             }
+            b.Append('x', TemplateLimits.MaxTextCharacters - b.Length);                        // exactly at the text limit
+            Assert.Equal(TemplateLimits.MaxTextCharacters, b.Length);
             Measure("maximum10M", c, b.ToString(), 1, 200);
         }
     }
