@@ -144,9 +144,11 @@ namespace TextExtractAutomation.Tests
         {
             string text = "a\r\nb\rc\nd\r\n\r\ne f\n";
             var counter = new Extraction.LineCounter(text);
-            for (int offset = 0; offset < text.Length; offset++)
-                if (text[offset] != '\r' && text[offset] != '\n')
-                    Assert.Equal(Extraction.LineOf(text, offset), counter.LineAt(offset));
+            for (int offset = 0; offset < text.Length; offset++)                       // every offset in order, including the CR and the LF of each CRLF
+                Assert.Equal(Extraction.LineOf(text, offset), counter.LineAt(offset));
+            var skipping = new Extraction.LineCounter(text);                             // and only the offsets just after each CR, then the rest
+            foreach (int offset in new[] { 2, 3, 5, 9, 10, 11, 12, 13 })
+                Assert.Equal(Extraction.LineOf(text, offset), skipping.LineAt(offset));
         }
 
         [Fact]
@@ -158,6 +160,27 @@ namespace TextExtractAutomation.Tests
             Assert.False(c.Ok);
             Assert.Equal("InvalidValue", c.Reason);
             Assert.Contains("too long or unusual", c.Detail);
+        }
+
+        [Fact]
+        public void APatternMatchingEveryCharacter_ReportsCorrectLines_AcrossCrlf()
+        {
+            var template = new Template();
+            Assert.Null(template.TryAddPatternField("P", @"(?<value>[\s\S])", FieldType.Text, DecimalStyle.DotDecimal, null));
+            // make it Last, so every match is read
+            template.Fields[0].Occurrence = Occurrence.Last;
+            ExtractionSnapshot snapshot = Extraction.Run(template, "a\r\nb\r\nZ");
+            Assert.Equal("Z", snapshot.Fields[0].Value);
+            Assert.Equal(3, snapshot.Fields[0].LineNumber);                              // not 4 or 5: each CRLF counts once
+        }
+
+        [Fact]
+        public void TooManyMatches_ExplainsHowToGetFirstForAPatternField()
+        {
+            using TextExtractUtils c = WithPattern(@"(?<value>x)");
+            Assert.True(c.ExtractFromText(string.Concat(Enumerable.Repeat("x ", 10001)), out _, out _, out string m), m);
+            Assert.True(c.GetResultJson(out string json, out m), m);
+            Assert.Contains("JSON template", json);
         }
     }
 }

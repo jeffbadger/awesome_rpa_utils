@@ -58,7 +58,8 @@ GetResultJson()                            -> everything, including the label th
   quote the text.
 - Pattern fields run on the original text with .NET regular expressions (use inline options such as `(?i)` or `(?m)`; with `(?m)`, lines of Windows
   text end in `\r\n`, so write `\r?$`). Each match attempt stops after 100 ms and each field's matches after 1 s in all (`PatternTimeout`); a match
-  whose `value` group is empty is not an occurrence; a `First` field stops at its first match; more than 10,000 matches is `TooManyMatches`. A slow or
+  whose `value` group is empty is not an occurrence; a `First` field stops at its first match; more than 10,000 matches is `TooManyMatches`. `AddPatternField` makes a
+  `RequireUnique` pattern field; to make one `First` or `Last`, set `occurrence` in a JSON template. A slow or
   flooding pattern never affects the other fields.
 - `lineNumber` is the 1-based line of the value, or of the label when the value is missing, or 0.
 - `First` and `Last` take that occurrence as it is; `RequireUnique` never guesses between two different values.

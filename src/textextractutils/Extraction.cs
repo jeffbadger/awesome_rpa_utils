@@ -104,17 +104,25 @@ namespace TextExtractAutomation
             var lines = new LineCounter(text);
             try
             {
-                foreach (Match m in field.CompiledPattern.Matches(text))
+                // The collection is lazy: each MoveNext runs the next search. The budget is checked before a search starts and after one that found
+                // a match, so it is overshot by at most one search (itself limited to 100 ms). A search that ends the scan without a match means
+                // the text has been read completely, so the result is complete even if that last search ran past the budget.
+                using (var matches = ((System.Collections.Generic.IEnumerable<Match>)field.CompiledPattern.Matches(text)).GetEnumerator())
                 {
-                    if (clock.ElapsedMilliseconds > budgetMilliseconds) { stop = PatternStop.Timeout; break; }
-                    Group g = m.Groups["value"];
-                    if (!g.Success || g.Length == 0) continue;
-                    if (list.Count >= TemplateLimits.MaxPatternMatches) { stop = PatternStop.TooManyMatches; break; }
-                    string normalized = string.Join(" ", TextLines.Split(g.Value).Select(l => l.Text));
-                    Converted value = ValueConverter.Convert(field, normalized);
-                    int line = lines.LineAt(g.Index);
-                    list.Add(new Hit { Value = value, Raw = g.Value, LineNumber = line, LabelLine = line });
-                    if (field.Occurrence == TextExtractAutomation.Occurrence.First) break;
+                    while (true)
+                    {
+                        if (clock.ElapsedMilliseconds > budgetMilliseconds) { stop = PatternStop.Timeout; break; }
+                        if (!matches.MoveNext()) break;
+                        if (clock.ElapsedMilliseconds > budgetMilliseconds) { stop = PatternStop.Timeout; break; }
+                        Group g = matches.Current.Groups["value"];
+                        if (!g.Success || g.Length == 0) continue;
+                        if (list.Count >= TemplateLimits.MaxPatternMatches) { stop = PatternStop.TooManyMatches; break; }
+                        string normalized = string.Join(" ", TextLines.Split(g.Value).Select(l => l.Text));
+                        Converted value = ValueConverter.Convert(field, normalized);
+                        int line = lines.LineAt(g.Index);
+                        list.Add(new Hit { Value = value, Raw = g.Value, LineNumber = line, LabelLine = line });
+                        if (field.Occurrence == TextExtractAutomation.Occurrence.First) break;
+                    }
                 }
             }
             catch (RegexMatchTimeoutException)
@@ -134,11 +142,14 @@ namespace TextExtractAutomation
 
             internal int LineAt(int offset)
             {
-                if (offset < position) { position = 0; line = 1; }           // never expected; stays correct anyway
+                // The LF of a CRLF is consumed together with its CR, so it can be one past the offset asked for; that LF already belongs to the next
+                // line (as in LineOf), so the current count is the answer. Anything else earlier than the position restarts the count (never expected).
+                if (offset == position - 1 && offset > 0 && text[offset] == '\n' && text[offset - 1] == '\r') return line;
+                if (offset < position) { position = 0; line = 1; }
                 for (; position < offset && position < text.Length; position++)
                 {
                     char c = text[position];
-                    if (c == '\r') { if (position + 1 < text.Length && text[position + 1] == '\n' && position + 1 < offset) position++; line++; }
+                    if (c == '\r') { if (position + 1 < text.Length && text[position + 1] == '\n') position++; line++; }
                     else if (c == '\n' || c == '\u0085' || c == '\u2028' || c == '\u2029' || c == '\u000B' || c == '\u000C') line++;
                 }
                 return line;
@@ -174,7 +185,7 @@ namespace TextExtractAutomation
             if (stop == PatternStop.TooManyMatches)
             {
                 result.Reason = "TooManyMatches";
-                result.Explanation = "the pattern matched more than " + TemplateLimits.MaxPatternMatches + " times; make it more specific, or set the field's occurrence to First";
+                result.Explanation = "the pattern matched more than " + TemplateLimits.MaxPatternMatches + " times; make it more specific, or set the field's occurrence to First (AddPatternField fields are RequireUnique; set occurrence in a JSON template)";
                 return result;
             }
             if (occurrences.Count == 0)
