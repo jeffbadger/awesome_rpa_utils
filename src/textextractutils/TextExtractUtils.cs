@@ -42,31 +42,31 @@ namespace TextExtractAutomation
 
         /// <summary>Adds a required field whose value follows one of its labels on the same line. Labels are alternatives separated by |, for example Invoice No|Invoice Number.</summary>
         [Category("Text Extract - Template")]
-        [Description("Adds a required field whose value follows one of its labels on the same line. Labels are alternatives separated by |, for example Invoice No|Invoice Number. The type decides what a valid value is. Never throws.")]
+        [Description("Adds a required field whose value follows one of its labels on the same line. Labels are alternatives separated by |, for example Invoice No|Invoice Number. The type decides what a valid value is; numbers use DotDecimal (1,234.56) and dates yyyy-MM-dd. Never throws.")]
         public bool AddLabelFieldSimple(string name, string labels, FieldType type, out string message)
         {
             message = null;
-            try { return ChangeTemplate(nameof(AddLabelFieldSimple), t => t.TryAddLabelField(name, labels, ValuePosition.SameLine, type, null, true, Occurrence.RequireUnique), out message); }
+            try { return ChangeTemplate(nameof(AddLabelFieldSimple), t => t.TryAddLabelField(name, labels, ValuePosition.SameLine, type, DecimalStyle.DotDecimal, null, true, Occurrence.RequireUnique), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddLabelFieldSimple), ex); return false; }
         }
 
-        /// <summary>Adds a field with every option: where the value sits, the type's format (DotDecimal/CommaDecimal, or date formats separated by |), whether it is required, and what to do when its label appears more than once.</summary>
+        /// <summary>Adds a field with every option: where the value sits, how numbers are written (DecimalStyle), the date formats for a Date field (separated by |), whether it is required, and what to do when its label appears more than once.</summary>
         [Category("Text Extract - Template")]
-        [Description("Adds a field with every option: where the value sits relative to the label, the type's format (DotDecimal or CommaDecimal for numbers, date formats separated by | for dates, empty otherwise), whether it is required, and what to do when the label appears more than once. Never throws.")]
-        public bool AddLabelField(string name, string labels, ValuePosition position, FieldType type, string format, bool required, Occurrence occurrence, out string message)
+        [Description("Adds a field with every option: where the value sits relative to the label, how numbers are written (DecimalStyle, used by Decimal, Amount and Percentage fields), the date formats for a Date field (separated by |; empty for yyyy-MM-dd, and empty for every other type), whether it is required, and what to do when the label appears more than once. Never throws.")]
+        public bool AddLabelField(string name, string labels, ValuePosition position, FieldType type, DecimalStyle decimalStyle, string dateFormats, bool required, Occurrence occurrence, out string message)
         {
             message = null;
-            try { return ChangeTemplate(nameof(AddLabelField), t => t.TryAddLabelField(name, labels, position, type, format, required, occurrence), out message); }
+            try { return ChangeTemplate(nameof(AddLabelField), t => t.TryAddLabelField(name, labels, position, type, decimalStyle, dateFormats, required, occurrence), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddLabelField), ex); return false; }
         }
 
         /// <summary>Adds a required field found by a regular expression with a named group called value, for text that has no stable label. The pattern times out rather than hanging.</summary>
         [Category("Text Extract - Template")]
-        [Description("Adds a required field found by a regular expression with a named group called value, for text that has no stable label (an escape hatch; label fields need no pattern). The match times out rather than hanging the robot. Never throws.")]
-        public bool AddPatternField(string name, string pattern, FieldType type, string format, out string message)
+        [Description("Adds a required field found by a regular expression with a named group called value, for text that has no stable label (an escape hatch; label fields need no pattern). DecimalStyle and date formats work as in AddLabelField. The match times out rather than hanging the robot. Never throws.")]
+        public bool AddPatternField(string name, string pattern, FieldType type, DecimalStyle decimalStyle, string dateFormats, out string message)
         {
             message = null;
-            try { return ChangeTemplate(nameof(AddPatternField), t => t.TryAddPatternField(name, pattern, type, format), out message); }
+            try { return ChangeTemplate(nameof(AddPatternField), t => t.TryAddPatternField(name, pattern, type, decimalStyle, dateFormats), out message); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(nameof(AddPatternField), ex); return false; }
         }
 

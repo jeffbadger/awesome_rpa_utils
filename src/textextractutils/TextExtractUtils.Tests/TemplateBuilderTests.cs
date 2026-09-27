@@ -30,7 +30,8 @@ namespace TextExtractAutomation.Tests
             Assert.Equal(new[] { "Invoice No", "Invoice Number", "Invoice #" }, f.GetProperty("labels").EnumerateArray().Select(x => x.GetString()));
             Assert.Equal("SameLine", f.GetProperty("position").GetString());
             Assert.Equal("Code", f.GetProperty("type").GetString());
-            Assert.Equal("", f.GetProperty("format").GetString());
+            Assert.False(f.TryGetProperty("decimalStyle", out _));                    // a Code field has no decimal style or date formats
+            Assert.False(f.TryGetProperty("dateFormats", out _));
             Assert.True(f.GetProperty("required").GetBoolean());
             Assert.Equal("RequireUnique", f.GetProperty("occurrence").GetString());
         }
@@ -39,45 +40,64 @@ namespace TextExtractAutomation.Tests
         public void TheFullForm_KeepsEveryOption()
         {
             using var c = new TextExtractUtils();
-            Assert.True(c.AddLabelField("Due", "Due Date|Payment Due", ValuePosition.Below, FieldType.Date, "dd/MM/yyyy|yyyy-MM-dd", false, Occurrence.Last, out string m), m);
+            Assert.True(c.AddLabelField("Due", "Due Date|Payment Due", ValuePosition.Below, FieldType.Date, DecimalStyle.DotDecimal, "dd/MM/yyyy|yyyy-MM-dd", false, Occurrence.Last, out string m), m);
             JsonElement f = Field(c, 0);
             Assert.Equal("Below", f.GetProperty("position").GetString());
-            Assert.Equal("dd/MM/yyyy|yyyy-MM-dd", f.GetProperty("format").GetString());
+            Assert.Equal(new[] { "dd/MM/yyyy", "yyyy-MM-dd" }, f.GetProperty("dateFormats").EnumerateArray().Select(x => x.GetString()));
+            Assert.False(f.TryGetProperty("decimalStyle", out _));
             Assert.False(f.GetProperty("required").GetBoolean());
             Assert.Equal("Last", f.GetProperty("occurrence").GetString());
         }
 
         [Theory]
-        [InlineData(FieldType.Amount, null, "DotDecimal")]
-        [InlineData(FieldType.Amount, "", "DotDecimal")]
-        [InlineData(FieldType.Amount, " CommaDecimal ", "CommaDecimal")]
-        [InlineData(FieldType.Decimal, "DotDecimal", "DotDecimal")]
-        [InlineData(FieldType.Percentage, "CommaDecimal", "CommaDecimal")]
-        [InlineData(FieldType.Date, null, "yyyy-MM-dd")]
-        [InlineData(FieldType.Date, "dd.MM.yyyy | MM/dd/yyyy", "dd.MM.yyyy|MM/dd/yyyy")]
-        [InlineData(FieldType.Text, null, "")]
-        [InlineData(FieldType.Iban, "  ", "")]
-        public void Formats_AreResolvedToTheirCanonicalForm(FieldType type, string format, string resolved)
+        [InlineData(FieldType.Amount, DecimalStyle.DotDecimal)]
+        [InlineData(FieldType.Amount, DecimalStyle.CommaDecimal)]
+        [InlineData(FieldType.Decimal, DecimalStyle.CommaDecimal)]
+        [InlineData(FieldType.Percentage, DecimalStyle.CommaDecimal)]
+        public void NumericFields_KeepTheirDecimalStyle(FieldType type, DecimalStyle style)
         {
             using var c = new TextExtractUtils();
-            Assert.True(c.AddLabelField("F", "Label", ValuePosition.SameLine, type, format, true, Occurrence.RequireUnique, out string m), m);
-            Assert.Equal(resolved, Field(c, 0).GetProperty("format").GetString());
+            Assert.True(c.AddLabelField("F", "Label", ValuePosition.SameLine, type, style, null, true, Occurrence.RequireUnique, out string m), m);
+            JsonElement f = Field(c, 0);
+            Assert.Equal(style.ToString(), f.GetProperty("decimalStyle").GetString());
+            Assert.False(f.TryGetProperty("dateFormats", out _));
         }
 
         [Theory]
-        [InlineData(FieldType.Amount, "dotdecimal")]            // exact names only
-        [InlineData(FieldType.Amount, "de-DE")]                 // never a culture
-        [InlineData(FieldType.Decimal, "yyyy-MM-dd")]
+        [InlineData(FieldType.Text)]
+        [InlineData(FieldType.Code)]
+        [InlineData(FieldType.Date)]
+        [InlineData(FieldType.Iban)]
+        public void OtherFields_IgnoreTheDecimalStyle_AndDoNotRecordIt(FieldType type)
+        {
+            using var c = new TextExtractUtils();
+            Assert.True(c.AddLabelField("F", "Label", ValuePosition.SameLine, type, DecimalStyle.CommaDecimal, null, true, Occurrence.RequireUnique, out string m), m);
+            Assert.False(Field(c, 0).TryGetProperty("decimalStyle", out _));
+        }
+
+        [Theory]
+        [InlineData(null, new[] { "yyyy-MM-dd" })]
+        [InlineData("", new[] { "yyyy-MM-dd" })]
+        [InlineData("   ", new[] { "yyyy-MM-dd" })]
+        [InlineData("dd.MM.yyyy | MM/dd/yyyy", new[] { "dd.MM.yyyy", "MM/dd/yyyy" })]
+        public void DateFields_GetTheirFormats_OrTheDefault(string dateFormats, string[] expected)
+        {
+            using var c = new TextExtractUtils();
+            Assert.True(c.AddLabelField("F", "Label", ValuePosition.SameLine, FieldType.Date, DecimalStyle.DotDecimal, dateFormats, true, Occurrence.RequireUnique, out string m), m);
+            Assert.Equal(expected, Field(c, 0).GetProperty("dateFormats").EnumerateArray().Select(x => x.GetString()));
+        }
+
+        [Theory]
         [InlineData(FieldType.Date, "yyyy-MM")]                  // a date part is missing
         [InlineData(FieldType.Date, "yyyy-MM-dd HH:mm")]         // time tokens are refused
         [InlineData(FieldType.Date, "yyyy-MM-dd|yyyy-MM-dd")]    // repeated
         [InlineData(FieldType.Date, "yyyy-MM-dd|")]              // an empty alternative
-        [InlineData(FieldType.Code, "anything")]                 // this type takes no format
-        [InlineData(FieldType.Email, "x")]
-        public void BadFormats_AreRefused(FieldType type, string format)
+        [InlineData(FieldType.Amount, "yyyy-MM-dd")]             // date formats on a non-date field are a mistake, not ignored
+        [InlineData(FieldType.Code, "dd/MM/yyyy")]
+        public void BadDateFormats_AreRefused(FieldType type, string dateFormats)
         {
             using var c = new TextExtractUtils();
-            Assert.False(c.AddLabelField("F", "Label", ValuePosition.SameLine, type, format, true, Occurrence.RequireUnique, out string m));
+            Assert.False(c.AddLabelField("F", "Label", ValuePosition.SameLine, type, DecimalStyle.DotDecimal, dateFormats, true, Occurrence.RequireUnique, out string m));
             Assert.Contains("InvalidFormat", m);
             Assert.Contains("AddLabelField", m);
         }
@@ -87,8 +107,8 @@ namespace TextExtractAutomation.Tests
         {
             string[] ten = { "yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd.MM.yyyy", "yyyyMMdd", "dd-MM-yyyy", "MM-dd-yyyy", "yyyy/MM/dd", "dd MM yyyy", "yyyy.MM.dd" };
             using var c = new TextExtractUtils();
-            Assert.True(c.AddLabelField("A", "L", ValuePosition.SameLine, FieldType.Date, string.Join("|", ten), true, Occurrence.RequireUnique, out string m), m);
-            Assert.False(c.AddLabelField("B", "L", ValuePosition.SameLine, FieldType.Date, string.Join("|", ten) + "|MM.dd.yyyy", true, Occurrence.RequireUnique, out m));
+            Assert.True(c.AddLabelField("A", "L", ValuePosition.SameLine, FieldType.Date, DecimalStyle.DotDecimal, string.Join("|", ten), true, Occurrence.RequireUnique, out string m), m);
+            Assert.False(c.AddLabelField("B", "L", ValuePosition.SameLine, FieldType.Date, DecimalStyle.DotDecimal, string.Join("|", ten) + "|MM.dd.yyyy", true, Occurrence.RequireUnique, out m));
             Assert.Contains("at most 10", m);
         }
 
@@ -117,7 +137,7 @@ namespace TextExtractAutomation.Tests
             using var c = new TextExtractUtils();
             Assert.False(c.AddLabelFieldSimple("F", "Bad \ud800 text", FieldType.Text, out string m)); Assert.Contains("InvalidLabel", m); Assert.Contains("not valid", m);
             Assert.False(c.AddLabelFieldSimple("F\udc00", "L", FieldType.Text, out m)); Assert.Contains("InvalidName", m);
-            Assert.False(c.AddPatternField("P", "(?<value>\ud800)", FieldType.Text, null, out m)); Assert.Contains("InvalidPattern", m);
+            Assert.False(c.AddPatternField("P", "(?<value>\ud800)", FieldType.Text, DecimalStyle.DotDecimal, null, out m)); Assert.Contains("InvalidPattern", m);
             Assert.True(c.AddLabelFieldSimple("Rocket", "Launch \ud83d\ude80", FieldType.Text, out m), m);   // a proper pair is fine
         }
 
@@ -146,24 +166,26 @@ namespace TextExtractAutomation.Tests
             Assert.True(c.AddLabelFieldSimple(new string('n', 128), "L", FieldType.Text, out m), m);
             Assert.True(c.AddLabelFieldSimple("Total", "Total", FieldType.Amount, out m), m);
             Assert.False(c.AddLabelFieldSimple("TOTAL", "Sum", FieldType.Amount, out m)); Assert.Contains("DuplicateName", m);
-            Assert.False(c.AddPatternField("total", "(?<value>\\d+)", FieldType.Integer, null, out m)); Assert.Contains("DuplicateName", m);
+            Assert.False(c.AddPatternField("total", "(?<value>\\d+)", FieldType.Integer, DecimalStyle.DotDecimal, null, out m)); Assert.Contains("DuplicateName", m);
         }
 
         [Fact]
         public void UnknownEnumValues_AreRefused()
         {
             using var c = new TextExtractUtils();
-            Assert.False(c.AddLabelField("A", "L", (ValuePosition)9, FieldType.Text, null, true, Occurrence.RequireUnique, out string m)); Assert.Contains("UnknownEnumValue", m);
-            Assert.False(c.AddLabelField("A", "L", ValuePosition.SameLine, (FieldType)99, null, true, Occurrence.RequireUnique, out m)); Assert.Contains("UnknownEnumValue", m);
-            Assert.False(c.AddLabelField("A", "L", ValuePosition.SameLine, FieldType.Text, null, true, (Occurrence)(-1), out m)); Assert.Contains("UnknownEnumValue", m);
+            Assert.False(c.AddLabelField("A", "L", (ValuePosition)9, FieldType.Text, DecimalStyle.DotDecimal, null, true, Occurrence.RequireUnique, out string m)); Assert.Contains("UnknownEnumValue", m);
+            Assert.False(c.AddLabelField("A", "L", ValuePosition.SameLine, (FieldType)99, DecimalStyle.DotDecimal, null, true, Occurrence.RequireUnique, out m)); Assert.Contains("UnknownEnumValue", m);
+            Assert.False(c.AddLabelField("A", "L", ValuePosition.SameLine, FieldType.Text, DecimalStyle.DotDecimal, null, true, (Occurrence)(-1), out m)); Assert.Contains("UnknownEnumValue", m);
             Assert.False(c.AddLabelFieldSimple("A", "L", (FieldType)(-3), out m)); Assert.Contains("UnknownEnumValue", m);
+            Assert.False(c.AddLabelField("A", "L", ValuePosition.SameLine, FieldType.Amount, (DecimalStyle)5, null, true, Occurrence.RequireUnique, out m)); Assert.Contains("UnknownEnumValue", m);
+            Assert.False(c.AddPatternField("A", "(?<value>x)", FieldType.Amount, (DecimalStyle)5, null, out m)); Assert.Contains("UnknownEnumValue", m);
         }
 
         [Fact]
         public void PatternFields_NeedAValueGroup_AValidPattern_AndAreBounded()
         {
             using var c = new TextExtractUtils();
-            Assert.True(c.AddPatternField("Ref", "Ref:\\s*(?<value>[A-Z]{3}\\d+)", FieldType.Code, "", out string m), m);
+            Assert.True(c.AddPatternField("Ref", "Ref:\\s*(?<value>[A-Z]{3}\\d+)", FieldType.Code, DecimalStyle.DotDecimal, null, out string m), m);
             JsonElement f = Field(c, 0);
             Assert.Equal("Pattern", f.GetProperty("kind").GetString());
             Assert.Equal("Ref:\\s*(?<value>[A-Z]{3}\\d+)", f.GetProperty("pattern").GetString());
@@ -171,20 +193,20 @@ namespace TextExtractAutomation.Tests
             Assert.False(f.TryGetProperty("position", out _));
             Assert.True(f.GetProperty("required").GetBoolean());
 
-            Assert.False(c.AddPatternField("A", "Ref:\\s*(\\d+)", FieldType.Code, null, out m)); Assert.Contains("named group called value", m);
-            Assert.False(c.AddPatternField("A", "(?<value>[a-", FieldType.Code, null, out m)); Assert.Contains("not a valid regular expression", m);
-            Assert.False(c.AddPatternField("A", "", FieldType.Code, null, out m)); Assert.Contains("InvalidPattern", m);
-            Assert.False(c.AddPatternField("A", null, FieldType.Code, null, out m)); Assert.Contains("InvalidPattern", m);
-            Assert.False(c.AddPatternField("A", "(?<value>x)" + new string('y', 1014), FieldType.Code, null, out m)); Assert.Contains("longer than 1024", m);
-            Assert.True(c.AddPatternField("B", "(?<value>x)" + new string('y', 1013), FieldType.Code, null, out m), m);
-            Assert.False(c.AddPatternField("C", "(?<value>\\d+)", FieldType.Integer, "DotDecimal", out m)); Assert.Contains("InvalidFormat", m);
+            Assert.False(c.AddPatternField("A", "Ref:\\s*(\\d+)", FieldType.Code, DecimalStyle.DotDecimal, null, out m)); Assert.Contains("named group called value", m);
+            Assert.False(c.AddPatternField("A", "(?<value>[a-", FieldType.Code, DecimalStyle.DotDecimal, null, out m)); Assert.Contains("not a valid regular expression", m);
+            Assert.False(c.AddPatternField("A", "", FieldType.Code, DecimalStyle.DotDecimal, null, out m)); Assert.Contains("InvalidPattern", m);
+            Assert.False(c.AddPatternField("A", null, FieldType.Code, DecimalStyle.DotDecimal, null, out m)); Assert.Contains("InvalidPattern", m);
+            Assert.False(c.AddPatternField("A", "(?<value>x)" + new string('y', 1014), FieldType.Code, DecimalStyle.DotDecimal, null, out m)); Assert.Contains("longer than 1024", m);
+            Assert.True(c.AddPatternField("B", "(?<value>x)" + new string('y', 1013), FieldType.Code, DecimalStyle.DotDecimal, null, out m), m);
+            Assert.False(c.AddPatternField("C", "(?<value>\\d+)", FieldType.Integer, DecimalStyle.DotDecimal, "yyyy-MM-dd", out m)); Assert.Contains("InvalidFormat", m);
         }
 
         [Fact]
         public void APatternIsCompiledWithATimeout_SoACatastrophicPatternCannotHangTheRobot()
         {
             using var c = new TextExtractUtils();
-            Assert.True(c.AddPatternField("Bad", "^(?<value>(a+)+)$", FieldType.Text, null, out string m), m);
+            Assert.True(c.AddPatternField("Bad", "^(?<value>(a+)+)$", FieldType.Text, DecimalStyle.DotDecimal, null, out string m), m);
             FieldDef field = c.CurrentTemplate.Fields.Single();
             Assert.Equal(TimeSpan.FromMilliseconds(100), field.CompiledPattern.MatchTimeout);
             Assert.True((field.CompiledPattern.Options & System.Text.RegularExpressions.RegexOptions.CultureInvariant) != 0);
@@ -200,7 +222,7 @@ namespace TextExtractAutomation.Tests
             for (int i = 0; i < 200; i++) Assert.True(c.AddLabelFieldSimple("F" + i, "L" + i, FieldType.Text, out string m), m);
             Assert.False(c.AddLabelFieldSimple("F200", "L", FieldType.Text, out string message));
             Assert.Contains("TooManyFields", message);
-            Assert.False(c.AddPatternField("P", "(?<value>x)", FieldType.Text, null, out message));
+            Assert.False(c.AddPatternField("P", "(?<value>x)", FieldType.Text, DecimalStyle.DotDecimal, null, out message));
             Assert.Contains("TooManyFields", message);
         }
 
@@ -243,7 +265,7 @@ namespace TextExtractAutomation.Tests
             string Build()
             {
                 using var c = new TextExtractUtils();
-                Assert.True(c.AddLabelField("İnvoice", "Fatura No|INVOICE", ValuePosition.NextLine, FieldType.Amount, "CommaDecimal", true, Occurrence.First, out string m), m);
+                Assert.True(c.AddLabelField("İnvoice", "Fatura No|INVOICE", ValuePosition.NextLine, FieldType.Amount, DecimalStyle.CommaDecimal, null, true, Occurrence.First, out string m), m);
                 return Canonical(c);
             }
             string invariant = Build(), turkish = null;

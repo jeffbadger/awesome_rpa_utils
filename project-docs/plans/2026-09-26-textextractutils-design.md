@@ -56,5 +56,6 @@ Text 1,000,000 / 10,000,000 characters; fields 200; labels per field 20; label l
 1. **Tables are phase 2**: WP6 moves after the first release. Phase 1 ships WP1–WP5, WP7, WP8 without `AddTableColumn`, `TryReadNextRow` and `GetRowValue`; phase 2 adds them (additive, no phase 1 signature changes), with its own docs and release.
 2. **OCR label tolerance as specified** (the small confusion table, at most one slip per 6 characters, none in labels of 3 characters or fewer).
 3. **Name** `TextExtractUtils` / `TextExtractAutomation`.
+4. **Decimal style is a drop-down** (`DecimalStyle`: `DotDecimal`, `CommaDecimal`), one per field, never guessed. `AddLabelField(name, labels, position, type, decimalStyle, dateFormats, required, occurrence)` and `AddPatternField(name, pattern, type, decimalStyle, dateFormats)` replace the single `format` string; in JSON the options are `decimalStyle` (numeric types only) and `dateFormats` (an array, Date only).
 
 First step of WP1: commit this plan as `project-docs/plans/2026-09-26-textextractutils-design.md` in the WP1 PR.

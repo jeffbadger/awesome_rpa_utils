@@ -43,9 +43,9 @@ namespace TextExtractAutomation
         internal const int MaxDepth = 64;
 
         private static readonly string[] RootProperties = { "schemaVersion", "fields", "limits" };
-        private static readonly string[] CommonFieldProperties = { "name", "kind", "type", "format", "required", "occurrence" };
-        private static readonly string[] LabelFieldProperties = { "name", "kind", "labels", "position", "type", "format", "required", "occurrence" };
-        private static readonly string[] PatternFieldProperties = { "name", "kind", "pattern", "type", "format", "required", "occurrence" };
+        private static readonly string[] CommonFieldProperties = { "name", "kind", "type", "decimalStyle", "dateFormats", "required", "occurrence" };
+        private static readonly string[] LabelFieldProperties = { "name", "kind", "labels", "position", "type", "decimalStyle", "dateFormats", "required", "occurrence" };
+        private static readonly string[] PatternFieldProperties = { "name", "kind", "pattern", "type", "decimalStyle", "dateFormats", "required", "occurrence" };
         private static readonly string[] LimitProperties = { "maximumTextCharacters" };
 
         /// <summary>Parses <paramref name="json"/>. Returns the template, or null when there is any finding (see <paramref name="findings"/>).</summary>
@@ -289,17 +289,27 @@ namespace TextExtractAutomation
                 else typeOk = ReadEnum(p, "type", path, FieldType.Text, findings, out type);
                 ok &= typeOk;
 
-                string format = null;
-                if (p.ContainsKey("format"))
+                // decimalStyle belongs to Decimal, Amount and Percentage fields and dateFormats to Date fields; on any other type they are errors,
+                // because an option that is silently ignored is a plausible-looking wrong configuration.
+                DecimalStyle decimalStyle = DecimalStyle.DotDecimal;
+                if (p.ContainsKey("decimalStyle"))
                 {
-                    format = ReadString(p, "format", path, false, findings);
-                    if (format == null) ok = false;
+                    if (typeOk && !Template.UsesDecimalStyle(type)) { findings.Add(path + ".decimalStyle", "UnknownProperty", "decimalStyle applies only to Decimal, Amount and Percentage fields"); ok = false; }
+                    else ok &= ReadEnum(p, "decimalStyle", path, DecimalStyle.DotDecimal, findings, out decimalStyle);
                 }
-                string resolved = null;
-                if (typeOk)                                                   // a format can only be judged against a known type
+                string[] dateFormats = null;
+                if (typeOk)
                 {
-                    Finding f = Template.ResolveFormat(type, format, path + ".format", out resolved);
-                    if (f != null) { findings.Add(f); ok = false; }
+                    if (p.ContainsKey("dateFormats") && type != FieldType.Date) { findings.Add(path + ".dateFormats", "UnknownProperty", "dateFormats applies only to Date fields"); ok = false; }
+                    else if (type == FieldType.Date)
+                    {
+                        if (!ReadStringArray(p, "dateFormats", path, findings, out string[] given)) ok = false;
+                        else
+                        {
+                            Finding f = Template.CheckDateFormats(type, given, path + ".dateFormats", out dateFormats);
+                            if (f != null) { findings.Add(f); ok = false; }
+                        }
+                    }
                 }
                 ok &= ReadBool(p, "required", path, true, findings, out bool required);
                 ok &= ReadEnum(p, "occurrence", path, Occurrence.RequireUnique, findings, out Occurrence occurrence);
@@ -308,7 +318,7 @@ namespace TextExtractAutomation
                 template.Fields.Add(new FieldDef
                 {
                     Name = name, Kind = kind, Labels = labels, Position = position, Pattern = pattern, CompiledPattern = regex,
-                    Type = type, Format = resolved, Required = required, Occurrence = occurrence
+                    Type = type, DecimalStyle = decimalStyle, DateFormats = dateFormats, Required = required, Occurrence = occurrence
                 });
             }
         }
@@ -403,6 +413,24 @@ namespace TextExtractAutomation
                 return null;
             }
             return v.GetString();
+        }
+
+        /// <summary>Reads an optional array of strings (absent means empty). False, with a finding, when it is not an array of strings.</summary>
+        private static bool ReadStringArray(Dictionary<string, JsonElement> p, string name, string path, TemplateFindings findings, out string[] values)
+        {
+            values = Array.Empty<string>();
+            if (!p.TryGetValue(name, out JsonElement v)) return true;
+            if (v.ValueKind != JsonValueKind.Array) { findings.Add(path + "." + name, "InvalidType", name + " must be an array of strings"); return false; }
+            var list = new List<string>();
+            int i = 0;
+            foreach (JsonElement e in v.EnumerateArray())
+            {
+                if (e.ValueKind != JsonValueKind.String) { findings.Add(path + "." + name + "[" + i + "]", "InvalidType", "each entry must be a string"); return false; }
+                list.Add(e.GetString());
+                i++;
+            }
+            values = list.ToArray();
+            return true;
         }
 
         private static bool ReadBool(Dictionary<string, JsonElement> p, string name, string path, bool fallback, TemplateFindings findings, out bool value)

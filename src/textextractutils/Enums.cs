@@ -20,17 +20,17 @@ namespace TextExtractAutomation
         Code,
         /// <summary>A whole number.</summary>
         Integer,
-        /// <summary>A decimal number (format: DotDecimal or CommaDecimal).</summary>
+        /// <summary>A decimal number, read with the field's DecimalStyle.</summary>
         Decimal,
-        /// <summary>A money amount with optional currency symbol or code, grouping, parentheses or trailing minus (format: DotDecimal or CommaDecimal).</summary>
+        /// <summary>A money amount with optional currency symbol or code, grouping, parentheses or trailing minus read with the field's DecimalStyle.</summary>
         Amount,
-        /// <summary>A calendar date (format: one or more date formats separated by |, default yyyy-MM-dd).</summary>
+        /// <summary>A calendar date, read with the field's date formats (default yyyy-MM-dd).</summary>
         Date,
         /// <summary>An email address.</summary>
         Email,
         /// <summary>An IBAN, checksum-validated.</summary>
         Iban,
-        /// <summary>A percentage such as 12.5% (format: DotDecimal or CommaDecimal).</summary>
+        /// <summary>A percentage such as 12.5%, read with the field's DecimalStyle.</summary>
         Percentage
     }
 
@@ -43,5 +43,14 @@ namespace TextExtractAutomation
         First,
         /// <summary>Use the last occurrence.</summary>
         Last
+    }
+
+    /// <summary>How numbers are written in the text. One style per field: 1,234 means a thousand and more in one style and just over one in the other, so it is never guessed.</summary>
+    public enum DecimalStyle
+    {
+        /// <summary>A dot before the decimals and commas (or spaces) between thousands: 1,234.56.</summary>
+        DotDecimal,
+        /// <summary>A comma before the decimals and dots (or spaces) between thousands: 1.234,56.</summary>
+        CommaDecimal
     }
 }

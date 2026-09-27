@@ -42,7 +42,8 @@ namespace TextExtractAutomation
         internal string Pattern;                  // Pattern fields
         internal Regex CompiledPattern;           // Pattern fields: compiled once, culture-invariant, with a match timeout
         internal FieldType Type;
-        internal string Format;                   // resolved: "" for types without one, DotDecimal/CommaDecimal, or date formats joined by |
+        internal DecimalStyle DecimalStyle;       // Decimal, Amount and Percentage fields
+        internal string[] DateFormats;            // Date fields: the formats, tried in order (at least one)
         internal bool Required = true;
         internal Occurrence Occurrence = Occurrence.RequireUnique;
     }
@@ -51,8 +52,6 @@ namespace TextExtractAutomation
     internal sealed class Template
     {
         internal const int SchemaVersion = 1;
-        internal const string DotDecimal = "DotDecimal";
-        internal const string CommaDecimal = "CommaDecimal";
 
         internal List<FieldDef> Fields = new List<FieldDef>();
         internal TemplateLimits Limits = new TemplateLimits();
@@ -102,38 +101,35 @@ namespace TextExtractAutomation
             return null;
         }
 
-        /// <summary>Checks a type's format and returns the resolved form: "" when the type takes none, the decimal style, or the date formats joined by |.</summary>
-        internal static Finding ResolveFormat(FieldType type, string format, string path, out string resolved)
+        internal static bool UsesDecimalStyle(FieldType type) => type == FieldType.Decimal || type == FieldType.Amount || type == FieldType.Percentage;
+
+        /// <summary>
+        /// Checks the date formats of a field. A Date field gets its formats (default yyyy-MM-dd when none are given); any other type must be given none,
+        /// so a format meant for another field is not silently ignored.
+        /// </summary>
+        internal static Finding CheckDateFormats(FieldType type, IReadOnlyList<string> formats, string path, out string[] resolved)
         {
             resolved = null;
-            string text = format?.Trim() ?? string.Empty;
-            switch (type)
+            if (type != FieldType.Date)
             {
-                case FieldType.Decimal:
-                case FieldType.Amount:
-                case FieldType.Percentage:
-                    if (text.Length == 0) { resolved = DotDecimal; return null; }
-                    if (text == DotDecimal || text == CommaDecimal) { resolved = text; return null; }
-                    return new Finding(path, "InvalidFormat", "a " + type + " field's format must be DotDecimal (1,234.56) or CommaDecimal (1.234,56), or empty for DotDecimal");
-                case FieldType.Date:
-                {
-                    if (text.Length == 0) { resolved = DateCore.DefaultFormat; return null; }
-                    string[] formats = text.Split('|').Select(f => f.Trim()).ToArray();
-                    if (formats.Length > TemplateLimits.MaxDateFormats) return new Finding(path, "InvalidFormat", "a Date field may have at most " + TemplateLimits.MaxDateFormats + " formats");
-                    for (int i = 0; i < formats.Length; i++)
-                    {
-                        string problem = DateCore.CheckFormat(formats[i]);
-                        if (problem != null) return new Finding(path, "InvalidFormat", (formats.Length == 1 ? "the date format: " : "date format " + (i + 1) + ": ") + problem);
-                    }
-                    if (formats.Distinct(StringComparer.Ordinal).Count() != formats.Length) return new Finding(path, "InvalidFormat", "a date format is repeated");
-                    resolved = string.Join("|", formats);
-                    return null;
-                }
-                default:
-                    if (text.Length == 0) { resolved = string.Empty; return null; }
-                    return new Finding(path, "InvalidFormat", "a " + type + " field takes no format; leave it empty");
+                if (formats.Count == 0) return null;
+                return new Finding(path, "InvalidFormat", "date formats apply only to Date fields; leave them empty for a " + type + " field");
             }
+            if (formats.Count == 0) { resolved = new[] { DateCore.DefaultFormat }; return null; }
+            if (formats.Count > TemplateLimits.MaxDateFormats) return new Finding(path, "InvalidFormat", "a Date field may have at most " + TemplateLimits.MaxDateFormats + " date formats");
+            for (int i = 0; i < formats.Count; i++)
+            {
+                string problem = DateCore.CheckFormat(formats[i]);
+                if (problem != null) return new Finding(path, "InvalidFormat", (formats.Count == 1 ? "the date format: " : "date format " + (i + 1) + ": ") + problem);
+            }
+            if (formats.Distinct(StringComparer.Ordinal).Count() != formats.Count) return new Finding(path, "InvalidFormat", "a date format is repeated");
+            resolved = formats.ToArray();
+            return null;
         }
+
+        /// <summary>The builder form of date formats: alternatives separated by |, trimmed; null or white space means none.</summary>
+        internal static string[] SplitDateFormats(string dateFormats) =>
+            string.IsNullOrWhiteSpace(dateFormats) ? Array.Empty<string>() : dateFormats.Split('|').Select(f => f.Trim()).ToArray();
 
         /// <summary>
         /// Checks and compiles a pattern: a .NET regular expression with one named group <c>value</c>. It is compiled culture-invariant with a match
@@ -165,8 +161,9 @@ namespace TextExtractAutomation
             return null;
         }
 
-        private static Finding CheckEnums(ValuePosition position, FieldType type, Occurrence occurrence)
+        private static Finding CheckEnums(ValuePosition position, FieldType type, DecimalStyle decimalStyle, Occurrence occurrence)
         {
+            if (!Enum.IsDefined(typeof(DecimalStyle), decimalStyle)) return new Finding("decimalStyle", "UnknownEnumValue", "decimalStyle " + (int)decimalStyle + " is not a known DecimalStyle");
             if (!Enum.IsDefined(typeof(ValuePosition), position)) return new Finding("position", "UnknownEnumValue", "position " + (int)position + " is not a known ValuePosition");
             if (!Enum.IsDefined(typeof(FieldType), type)) return new Finding("type", "UnknownEnumValue", "type " + (int)type + " is not a known FieldType");
             if (!Enum.IsDefined(typeof(Occurrence), occurrence)) return new Finding("occurrence", "UnknownEnumValue", "occurrence " + (int)occurrence + " is not a known Occurrence");
@@ -175,33 +172,33 @@ namespace TextExtractAutomation
 
         // ------------------------------------------------------------------ builders (each works on a copy; null = accepted)
 
-        internal Finding TryAddLabelField(string name, string labels, ValuePosition position, FieldType type, string format, bool required, Occurrence occurrence)
+        internal Finding TryAddLabelField(string name, string labels, ValuePosition position, FieldType type, DecimalStyle decimalStyle, string dateFormats, bool required, Occurrence occurrence)
         {
             if (Fields.Count >= TemplateLimits.MaxFields) return new Finding("fields", "TooManyFields", "a template may have at most " + TemplateLimits.MaxFields + " fields");
             Finding f = CheckName(name, Fields.Select(x => x.Name), "name");
             if (f != null) return f;
             f = SplitLabels(labels, "labels", out string[] split);
             if (f != null) return f;
-            f = CheckEnums(position, type, occurrence);
+            f = CheckEnums(position, type, decimalStyle, occurrence);
             if (f != null) return f;
-            f = ResolveFormat(type, format, "format", out string resolved);
+            f = CheckDateFormats(type, SplitDateFormats(dateFormats), "dateFormats", out string[] formats);
             if (f != null) return f;
-            Fields.Add(new FieldDef { Name = name, Kind = FieldKind.Label, Labels = split, Position = position, Type = type, Format = resolved, Required = required, Occurrence = occurrence });
+            Fields.Add(new FieldDef { Name = name, Kind = FieldKind.Label, Labels = split, Position = position, Type = type, DecimalStyle = decimalStyle, DateFormats = formats, Required = required, Occurrence = occurrence });
             return null;
         }
 
-        internal Finding TryAddPatternField(string name, string pattern, FieldType type, string format)
+        internal Finding TryAddPatternField(string name, string pattern, FieldType type, DecimalStyle decimalStyle, string dateFormats)
         {
             if (Fields.Count >= TemplateLimits.MaxFields) return new Finding("fields", "TooManyFields", "a template may have at most " + TemplateLimits.MaxFields + " fields");
             Finding f = CheckName(name, Fields.Select(x => x.Name), "name");
             if (f != null) return f;
             f = CompilePattern(pattern, "pattern", out Regex regex);
             if (f != null) return f;
-            f = CheckEnums(ValuePosition.SameLine, type, Occurrence.RequireUnique);
+            f = CheckEnums(ValuePosition.SameLine, type, decimalStyle, Occurrence.RequireUnique);
             if (f != null) return f;
-            f = ResolveFormat(type, format, "format", out string resolved);
+            f = CheckDateFormats(type, SplitDateFormats(dateFormats), "dateFormats", out string[] formats);
             if (f != null) return f;
-            Fields.Add(new FieldDef { Name = name, Kind = FieldKind.Pattern, Pattern = pattern, CompiledPattern = regex, Type = type, Format = resolved, Required = true, Occurrence = Occurrence.RequireUnique });
+            Fields.Add(new FieldDef { Name = name, Kind = FieldKind.Pattern, Pattern = pattern, CompiledPattern = regex, Type = type, DecimalStyle = decimalStyle, DateFormats = formats, Required = true, Occurrence = Occurrence.RequireUnique });
             return null;
         }
 
@@ -257,7 +254,13 @@ namespace TextExtractAutomation
                             w.WriteString("pattern", f.Pattern);
                         }
                         w.WriteString("type", f.Type.ToString());
-                        w.WriteString("format", f.Format);
+                        if (UsesDecimalStyle(f.Type)) w.WriteString("decimalStyle", f.DecimalStyle.ToString());
+                        if (f.Type == FieldType.Date)
+                        {
+                            w.WriteStartArray("dateFormats");
+                            foreach (string format in f.DateFormats) w.WriteStringValue(format);
+                            w.WriteEndArray();
+                        }
                         w.WriteBoolean("required", f.Required);
                         w.WriteString("occurrence", f.Occurrence.ToString());
                         w.WriteEndObject();

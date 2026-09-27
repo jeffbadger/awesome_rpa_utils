@@ -11,9 +11,9 @@ namespace TextExtractAutomation.Tests
         // The canonical form escapes < > + as \u003C \u003E \u002B (safe to embed in HTML or script), so the pattern appears that way here.
         private const string Full =
             "{\"schemaVersion\":1,\"fields\":["
-            + "{\"name\":\"InvoiceNumber\",\"kind\":\"Label\",\"labels\":[\"Invoice No\",\"Invoice Number\"],\"position\":\"SameLine\",\"type\":\"Code\",\"format\":\"\",\"required\":true,\"occurrence\":\"RequireUnique\"},"
-            + "{\"name\":\"Total\",\"kind\":\"Label\",\"labels\":[\"Total\"],\"position\":\"NextLine\",\"type\":\"Amount\",\"format\":\"CommaDecimal\",\"required\":false,\"occurrence\":\"Last\"},"
-            + "{\"name\":\"Ref\",\"kind\":\"Pattern\",\"pattern\":\"Ref:\\\\s*(?\\u003Cvalue\\u003E\\\\S\\u002B)\",\"type\":\"Code\",\"format\":\"\",\"required\":true,\"occurrence\":\"First\"}"
+            + "{\"name\":\"InvoiceNumber\",\"kind\":\"Label\",\"labels\":[\"Invoice No\",\"Invoice Number\"],\"position\":\"SameLine\",\"type\":\"Code\",\"required\":true,\"occurrence\":\"RequireUnique\"},"
+            + "{\"name\":\"Total\",\"kind\":\"Label\",\"labels\":[\"Total\"],\"position\":\"NextLine\",\"type\":\"Amount\",\"decimalStyle\":\"CommaDecimal\",\"required\":false,\"occurrence\":\"Last\"},"
+            + "{\"name\":\"Ref\",\"kind\":\"Pattern\",\"pattern\":\"Ref:\\\\s*(?\\u003Cvalue\\u003E\\\\S\\u002B)\",\"type\":\"Code\",\"required\":true,\"occurrence\":\"First\"}"
             + "],\"limits\":{\"maximumTextCharacters\":2000000}}";
 
         private static List<(string path, string code)> Findings(string json)
@@ -44,8 +44,8 @@ namespace TextExtractAutomation.Tests
         {
             using var built = new TextExtractUtils();
             Assert.True(built.AddLabelFieldSimple("InvoiceNumber", "Invoice No|Invoice Number", FieldType.Code, out string m), m);
-            Assert.True(built.AddLabelField("Total", "Total", ValuePosition.NextLine, FieldType.Amount, "CommaDecimal", false, Occurrence.Last, out m), m);
-            Assert.True(built.AddPatternField("Ref", "Ref:\\s*(?<value>\\S+)", FieldType.Code, null, out m), m);
+            Assert.True(built.AddLabelField("Total", "Total", ValuePosition.NextLine, FieldType.Amount, DecimalStyle.CommaDecimal, null, false, Occurrence.Last, out m), m);
+            Assert.True(built.AddPatternField("Ref", "Ref:\\s*(?<value>\\S+)", FieldType.Code, DecimalStyle.DotDecimal, null, out m), m);
             Assert.True(built.ConfigureLimits(2000000, out m), m);
             Assert.True(built.GetTemplateJson(out string json, out m), m);
             Assert.Equal(Full.Replace("\"occurrence\":\"First\"", "\"occurrence\":\"RequireUnique\""), json);   // the builder's pattern fields are unique by default
@@ -57,7 +57,7 @@ namespace TextExtractAutomation.Tests
             using var c = new TextExtractUtils();
             Assert.True(c.LoadTemplateJson(OneField("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"Amount\"],\"type\":\"Amount\"}"), out string m), m);
             Assert.True(c.GetTemplateJson(out string json, out m), m);
-            Assert.Equal("{\"schemaVersion\":1,\"fields\":[{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"Amount\"],\"position\":\"SameLine\",\"type\":\"Amount\",\"format\":\"DotDecimal\",\"required\":true,\"occurrence\":\"RequireUnique\"}],\"limits\":{\"maximumTextCharacters\":1000000}}", json);
+            Assert.Equal("{\"schemaVersion\":1,\"fields\":[{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"Amount\"],\"position\":\"SameLine\",\"type\":\"Amount\",\"decimalStyle\":\"DotDecimal\",\"required\":true,\"occurrence\":\"RequireUnique\"}],\"limits\":{\"maximumTextCharacters\":1000000}}", json);
             Assert.True(c.LoadTemplateJson("{\"schemaVersion\":1}", out m), m);                 // an empty template is legal
         }
 
@@ -74,8 +74,14 @@ namespace TextExtractAutomation.Tests
         [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Text\",\"position\":\"Above\"}", "fields[0].position", "UnknownEnumValue")]
         [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Text\",\"occurrence\":0}", "fields[0].occurrence", "UnknownEnumValue")]
         [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Text\",\"required\":\"yes\"}", "fields[0].required", "InvalidType")]
-        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Text\",\"format\":5}", "fields[0].format", "InvalidType")]
-        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Date\",\"format\":\"yyyy\"}", "fields[0].format", "InvalidFormat")]
+        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Date\",\"dateFormats\":[\"yyyy\"]}", "fields[0].dateFormats", "InvalidFormat")]
+        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Date\",\"dateFormats\":\"yyyy-MM-dd\"}", "fields[0].dateFormats", "InvalidType")]
+        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Date\",\"dateFormats\":[1]}", "fields[0].dateFormats[0]", "InvalidType")]
+        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Amount\",\"dateFormats\":[\"yyyy-MM-dd\"]}", "fields[0].dateFormats", "UnknownProperty")]
+        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Text\",\"decimalStyle\":\"DotDecimal\"}", "fields[0].decimalStyle", "UnknownProperty")]
+        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Amount\",\"decimalStyle\":\"Comma\"}", "fields[0].decimalStyle", "UnknownEnumValue")]
+        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Amount\",\"decimalStyle\":1}", "fields[0].decimalStyle", "UnknownEnumValue")]
+        [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Text\",\"format\":\"\"}", "fields[0].format", "UnknownProperty")]
         [InlineData("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"Text\",\"pattern\":\"(?<value>x)\"}", "fields[0].pattern", "UnknownProperty")]
         [InlineData("{\"name\":\"A\",\"kind\":\"Pattern\",\"pattern\":\"(?<value>x)\",\"type\":\"Text\",\"labels\":[\"L\"]}", "fields[0].labels", "UnknownProperty")]
         [InlineData("{\"name\":\"A\",\"kind\":\"Pattern\",\"pattern\":\"(?<value>x)\",\"type\":\"Text\",\"position\":\"SameLine\"}", "fields[0].position", "UnknownProperty")]

@@ -24,8 +24,8 @@ stable label) is found by a regular expression with a named group `value`.
   "schemaVersion": 1,
   "fields": [
     { "name": "InvoiceNumber", "kind": "Label", "labels": ["Invoice No", "Invoice Number", "Invoice #"], "type": "Code" },
-    { "name": "Total", "kind": "Label", "labels": ["Total", "Amount Due"], "type": "Amount", "format": "CommaDecimal" },
-    { "name": "DueDate", "kind": "Label", "labels": ["Due Date"], "position": "NextLine", "type": "Date", "format": "dd/MM/yyyy|yyyy-MM-dd" }
+    { "name": "Total", "kind": "Label", "labels": ["Total", "Amount Due"], "type": "Amount", "decimalStyle": "CommaDecimal" },
+    { "name": "DueDate", "kind": "Label", "labels": ["Due Date"], "position": "NextLine", "type": "Date", "dateFormats": ["dd/MM/yyyy", "yyyy-MM-dd"] }
   ]
 }
 ```
@@ -33,8 +33,11 @@ stable label) is found by a regular expression with a named group `value`.
 - **Labels** are alternatives (`Invoice No|Invoice Number` in the builder methods). Each has a letter or digit, no line break, at most 128 characters; up to 20 per field.
 - **Position**: `SameLine` (default), `NextLine` or `Below`. **Occurrence** when a label appears more than once: `RequireUnique` (default, reported as ambiguous), `First` or `Last`.
 - **Type** decides what a valid value is: `Text`, `Code`, `Integer`, `Decimal`, `Amount`, `Date`, `Email`, `Iban`, `Percentage`.
-- **Format**: `DotDecimal` (default) or `CommaDecimal` for `Decimal`, `Amount` and `Percentage`; one or more date formats separated by `|` for `Date`
-  (built from `yyyy`, `MM`, `dd` and separators; default `yyyy-MM-dd`); empty for every other type. Never the machine culture.
+- **Decimal style** (a drop-down) for `Decimal`, `Amount` and `Percentage` fields: `DotDecimal` (1,234.56, the default) or `CommaDecimal` (1.234,56).
+  One style per field: `1,234` means a thousand and more in one style and just over one in the other, so it is never guessed. Text that mixes both
+  styles needs two templates (or two fields with different labels). Other types ignore it.
+- **Date formats** for `Date` fields: one or more formats, tried in order (`dd/MM/yyyy|yyyy-MM-dd` in the builder methods), built from `yyyy`, `MM`,
+  `dd` and separators; `yyyy-MM-dd` when none are given. Every other type must be given none. Never the machine culture.
 - Field names are unique ignoring case. A template has at most 200 fields and, as saved by `GetTemplateJson`, at most 256,000 characters, so
   anything accepted can be saved and loaded again. Unknown or repeated properties, wrong types and numeric enum values are errors.
 
@@ -48,9 +51,9 @@ numbers, `False` flags) and returns a message naming the operation; success has 
 | Method | Signature | Description |
 |---|---|---|
 | `ClearTemplate` | `bool ClearTemplate(out string message)` | Removes every field and restores the default limits. Also clears any results. |
-| `AddLabelFieldSimple` | `bool AddLabelFieldSimple(string name, string labels, FieldType type, out string message)` | Adds a required field whose value follows one of its labels on the same line. Labels are alternatives separated by |, for example Invoice No|Invoice Number. The type decides what a valid value is. |
-| `AddLabelField` | `bool AddLabelField(string name, string labels, ValuePosition position, FieldType type, string format, bool required, Occurrence occurrence, out string message)` | Adds a field with every option: where the value sits relative to the label, the type's format (DotDecimal or CommaDecimal for numbers, date formats separated by | for dates, empty otherwise), whether it is required, and what to do when the label appears more than once. |
-| `AddPatternField` | `bool AddPatternField(string name, string pattern, FieldType type, string format, out string message)` | Adds a required field found by a regular expression with a named group called value, for text that has no stable label (an escape hatch; label fields need no pattern). The match times out rather than hanging the robot. |
+| `AddLabelFieldSimple` | `bool AddLabelFieldSimple(string name, string labels, FieldType type, out string message)` | Adds a required field whose value follows one of its labels on the same line. Labels are alternatives separated by |, for example Invoice No|Invoice Number. The type decides what a valid value is; numbers use DotDecimal (1,234.56) and dates yyyy-MM-dd. |
+| `AddLabelField` | `bool AddLabelField(string name, string labels, ValuePosition position, FieldType type, DecimalStyle decimalStyle, string dateFormats, bool required, Occurrence occurrence, out string message)` | Adds a field with every option: where the value sits relative to the label, how numbers are written (DecimalStyle, used by Decimal, Amount and Percentage fields), the date formats for a Date field (separated by |; empty for yyyy-MM-dd, and empty for every other type), whether it is required, and what to do when the label appears more than once. |
+| `AddPatternField` | `bool AddPatternField(string name, string pattern, FieldType type, DecimalStyle decimalStyle, string dateFormats, out string message)` | Adds a required field found by a regular expression with a named group called value, for text that has no stable label (an escape hatch; label fields need no pattern). DecimalStyle and date formats work as in AddLabelField. The match times out rather than hanging the robot. |
 | `LoadTemplateJson` | `bool LoadTemplateJson(string templateJson, out string message)` | Replaces the whole template from JSON. An invalid template is rejected whole and the previous one stays in force. |
 | `GetTemplateJson` | `bool GetTemplateJson(out string templateJson, out string message)` | Returns the current template, including limits, as canonical JSON that LoadTemplateJson accepts. |
 | `ValidateTemplateJson` | `bool ValidateTemplateJson(string templateJson, out int errorCount, out string reportJson, out string message)` | Checks a JSON template without loading it. Returns True when the check ran; errorCount is 0 for a valid template and reportJson lists every problem with its path. |

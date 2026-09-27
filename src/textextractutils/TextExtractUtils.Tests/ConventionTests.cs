@@ -87,7 +87,7 @@ namespace TextExtractAutomation.Tests
         [Fact]
         public void EveryPublicTypeInTheAssembly_IsTheComponentOrADropDownEnum()
         {
-            Type[] expected = { typeof(TextExtractUtils), typeof(ValuePosition), typeof(FieldType), typeof(Occurrence) };
+            Type[] expected = { typeof(TextExtractUtils), typeof(ValuePosition), typeof(FieldType), typeof(Occurrence), typeof(DecimalStyle) };
             Assert.Equal(expected.Select(t => t.Name).OrderBy(n => n), typeof(TextExtractUtils).Assembly.GetExportedTypes().Select(t => t.Name).OrderBy(n => n));
         }
 
@@ -97,6 +97,8 @@ namespace TextExtractAutomation.Tests
             Assert.Equal(new[] { "SameLine", "NextLine", "Below" }, Enum.GetNames(typeof(ValuePosition)));
             Assert.Equal(new[] { "Text", "Code", "Integer", "Decimal", "Amount", "Date", "Email", "Iban", "Percentage" }, Enum.GetNames(typeof(FieldType)));
             Assert.Equal(new[] { "RequireUnique", "First", "Last" }, Enum.GetNames(typeof(Occurrence)));
+            Assert.Equal(new[] { "DotDecimal", "CommaDecimal" }, Enum.GetNames(typeof(DecimalStyle)));
+            Assert.Equal(DecimalStyle.DotDecimal, default(DecimalStyle));
             Assert.Equal(Occurrence.RequireUnique, default(Occurrence));
             Assert.Equal(ValuePosition.SameLine, default(ValuePosition));
         }
