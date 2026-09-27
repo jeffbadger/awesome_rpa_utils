@@ -84,8 +84,8 @@ A calendar date, read with the field's **date formats** and returned as `yyyy-MM
 
 ### `Email`
 
-The first email address in the text. The domain is returned in lower case and the part before `@` as written: `write to
-Jane.Doe@Example.COM` gives `Jane.Doe@example.com`. An address without a domain ending (`jane@localhost`) is `InvalidValue`.
+The first email address in the text. The domain is returned in lower case and the part before `@` as written:
+`write to Jane.Doe@Example.COM` gives `Jane.Doe@example.com`. An address without a domain ending (`jane@localhost`) is `InvalidValue`.
 
 ### `Iban`
 
