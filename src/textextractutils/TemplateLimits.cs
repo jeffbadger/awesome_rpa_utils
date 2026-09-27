@@ -13,7 +13,9 @@ namespace TextExtractAutomation
         internal const int MaxPatternLength = 1024;
         internal const int MaxDateFormats = 10;
         internal const int MaxTemplateJsonCharacters = 256000;
-        internal const int PatternTimeoutMilliseconds = 100;
+        internal const int PatternTimeoutMilliseconds = 100;          // one match attempt
+        internal const int PatternBudgetMilliseconds = 1000;          // all of one pattern field's matches in one extraction
+        internal const int MaxPatternMatches = 10000;                 // matches of one pattern field in one extraction
 
         internal int MaximumTextCharacters = DefaultTextCharacters;
 

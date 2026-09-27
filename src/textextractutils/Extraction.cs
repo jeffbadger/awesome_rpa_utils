@@ -57,7 +57,10 @@ namespace TextExtractAutomation
             internal bool Slipped;
         }
 
-        internal static ExtractionSnapshot Run(Template template, string text)
+        internal static ExtractionSnapshot Run(Template template, string text) => Run(template, text, TemplateLimits.PatternBudgetMilliseconds);
+
+        /// <summary>Runs the template. <paramref name="patternBudgetMilliseconds"/> bounds the time spent on each pattern field (tests lower it).</summary>
+        internal static ExtractionSnapshot Run(Template template, string text, int patternBudgetMilliseconds)
         {
             List<TextLine> lines = TextLines.Split(text);
             List<LabelCandidate> candidates = LabelLocator.Locate(template, text, lines);
@@ -65,11 +68,11 @@ namespace TextExtractAutomation
             for (int f = 0; f < template.Fields.Count; f++)
             {
                 FieldDef field = template.Fields[f];
-                bool timedOut = false;
+                PatternStop stop = PatternStop.None;
                 List<Hit> occurrences = field.Kind == FieldKind.Label
                     ? candidates.Where(c => c.FieldIndex == f).Select(c => FromLabel(field, text, c)).ToList()
-                    : FromPattern(field, text, lines, out timedOut);
-                results.Add(Decide(field, occurrences, timedOut));
+                    : FromPattern(field, text, patternBudgetMilliseconds, out stop);
+                results.Add(Decide(field, occurrences, stop));
             }
             return new ExtractionSnapshot(results);
         }
@@ -82,30 +85,64 @@ namespace TextExtractAutomation
             return new Hit { Value = value, Raw = raw, LineNumber = c.ValueLine != 0 ? c.ValueLine : c.LabelLine, LabelLine = c.LabelLine, Label = c.Label, Slipped = c.Slipped };
         }
 
+        private enum PatternStop { None, Timeout, TooManyMatches }
+
         /// <summary>
         /// Every match of the field's pattern in the original text. The value group is normalized like the rest of the text (so the types read it the
-        /// same way) and reported as it appeared. A pattern that runs past its time limit stops the search and is reported as PatternTimeout.
+        /// same way) and reported as it appeared. Hardened against patterns that are slow or match too often:
+        /// <list type="bullet">
+        /// <item>each match attempt has a 100 ms limit (set when the pattern is compiled), and all of one field's matches share a 1 s budget;</item>
+        /// <item>a match whose value group is empty is not an occurrence (so (?&lt;value&gt;\d*) finds numbers instead of matching everywhere);</item>
+        /// <item>a First field stops at its first occurrence, and no field reads more than 10,000 occurrences.</item>
+        /// </list>
         /// </summary>
-        private static List<Hit> FromPattern(FieldDef field, string text, List<TextLine> lines, out bool timedOut)
+        private static List<Hit> FromPattern(FieldDef field, string text, int budgetMilliseconds, out PatternStop stop)
         {
-            timedOut = false;
+            stop = PatternStop.None;
             var list = new List<Hit>();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var lines = new LineCounter(text);
             try
             {
                 foreach (Match m in field.CompiledPattern.Matches(text))
                 {
+                    if (clock.ElapsedMilliseconds > budgetMilliseconds) { stop = PatternStop.Timeout; break; }
                     Group g = m.Groups["value"];
-                    if (!g.Success) continue;
+                    if (!g.Success || g.Length == 0) continue;
+                    if (list.Count >= TemplateLimits.MaxPatternMatches) { stop = PatternStop.TooManyMatches; break; }
                     string normalized = string.Join(" ", TextLines.Split(g.Value).Select(l => l.Text));
                     Converted value = ValueConverter.Convert(field, normalized);
-                    list.Add(new Hit { Value = value, Raw = g.Length == 0 ? null : g.Value, LineNumber = LineOf(text, g.Index), LabelLine = LineOf(text, g.Index) });
+                    int line = lines.LineAt(g.Index);
+                    list.Add(new Hit { Value = value, Raw = g.Value, LineNumber = line, LabelLine = line });
+                    if (field.Occurrence == TextExtractAutomation.Occurrence.First) break;
                 }
             }
             catch (RegexMatchTimeoutException)
             {
-                timedOut = true;
+                stop = PatternStop.Timeout;
             }
             return list;
+        }
+
+        /// <summary>Line numbers for offsets that only move forward (matches come in order), counted incrementally instead of from the start each time.</summary>
+        internal sealed class LineCounter
+        {
+            private readonly string text;
+            private int position, line = 1;
+
+            internal LineCounter(string text) { this.text = text; }
+
+            internal int LineAt(int offset)
+            {
+                if (offset < position) { position = 0; line = 1; }           // never expected; stays correct anyway
+                for (; position < offset && position < text.Length; position++)
+                {
+                    char c = text[position];
+                    if (c == '\r') { if (position + 1 < text.Length && text[position + 1] == '\n' && position + 1 < offset) position++; line++; }
+                    else if (c == '\n' || c == '\u0085' || c == '\u2028' || c == '\u2029' || c == '\u000B' || c == '\u000C') line++;
+                }
+                return line;
+            }
         }
 
         /// <summary>The 1-based line of an offset, counting line breaks the same way <see cref="TextLines"/> does (CRLF once).</summary>
@@ -125,13 +162,19 @@ namespace TextExtractAutomation
         /// Applies the occurrence policy. First and Last take that occurrence as it is. RequireUnique accepts a label found more than once only when every
         /// valid occurrence has the same value (a total repeated in a header and a footer); two different values are AmbiguousValue, never a guess.
         /// </summary>
-        private static FieldResult Decide(FieldDef field, List<Hit> occurrences, bool timedOut)
+        private static FieldResult Decide(FieldDef field, List<Hit> occurrences, PatternStop stop)
         {
             var result = new FieldResult { Name = field.Name, Required = field.Required, Occurrences = occurrences.Count };
-            if (timedOut)
+            if (stop == PatternStop.Timeout)
             {
                 result.Reason = "PatternTimeout";
-                result.Explanation = "the pattern took longer than " + TemplateLimits.PatternTimeoutMilliseconds + " ms and was stopped; simplify it (nested repeats such as (a+)+ can take very long)";
+                result.Explanation = "the pattern took too long (over " + TemplateLimits.PatternTimeoutMilliseconds + " ms for one match, or " + TemplateLimits.PatternBudgetMilliseconds + " ms in all) and was stopped; simplify it (nested repeats such as (a+)+ can take very long)";
+                return result;
+            }
+            if (stop == PatternStop.TooManyMatches)
+            {
+                result.Reason = "TooManyMatches";
+                result.Explanation = "the pattern matched more than " + TemplateLimits.MaxPatternMatches + " times; make it more specific, or set the field's occurrence to First";
                 return result;
             }
             if (occurrences.Count == 0)

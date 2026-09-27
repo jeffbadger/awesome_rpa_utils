@@ -343,9 +343,17 @@ namespace TextExtractAutomation
             @"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?![A-Za-z0-9-])",
             RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(TemplateLimits.PatternTimeoutMilliseconds));
 
-        private static Converted Email(string span)
+        private static Converted Email(string span) => ReadEmail(span, EmailPattern);
+
+        /// <summary>
+        /// Reads an email address with <paramref name="pattern"/>. The built-in pattern runs in linear time on every input tried (hostile ones included),
+        /// but it still has a match limit, and running past it makes the value invalid rather than failing the whole extraction.
+        /// </summary>
+        internal static Converted ReadEmail(string span, Regex pattern)
         {
-            Match m = EmailPattern.Match(span);
+            Match m;
+            try { m = pattern.Match(span); }
+            catch (RegexMatchTimeoutException) { return Converted.Invalid("the text is too long or unusual to read as an email address"); }
             if (!m.Success) return Converted.Invalid("there is no email address");
             string address = m.Value;
             int at = address.IndexOf('@');
