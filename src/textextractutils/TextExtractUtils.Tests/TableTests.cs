@@ -131,6 +131,18 @@ namespace TextExtractAutomation.Tests
             Assert.Equal(new[] { "1:R1|1.00", "2:R2|2.00" }, Rows(c, "T", "Ref", "Amount"));
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void AnExactHeader_TakesItsPlaceBeforeAnOcrLookAlike_WhateverTheColumnOrder(bool reversed)
+        {
+            using var c = new TextExtractUtils();
+            foreach (string h in reversed ? new[] { "RetuM", "Return" } : new[] { "Return", "RetuM" })
+                Assert.True(c.AddTableColumn("T", h, FieldType.Integer, DecimalStyle.DotDecimal, "", out string m), m);
+            Assert.True(c.ExtractFromText("RetuM    Return\n    1         2\n", out _, out _, out string msg), msg);
+            Assert.Equal(new[] { "1:1|2" }, Rows(c, "T", "RetuM", "Return"));
+        }
+
         [Fact]
         public void AHeaderInsideAnotherHeader_TakesItsOwnPlace_WhateverTheColumnOrder()
         {

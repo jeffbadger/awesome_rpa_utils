@@ -209,7 +209,7 @@ namespace TextExtractAutomation
             if (first == 'M') yield return 'R';
         }
 
-        private static bool Exact(LabelPattern pattern, string folded, int start, int end)
+        internal static bool Exact(LabelPattern pattern, string folded, int start, int end)
         {
             // an exact match reads the label's letters in order, with runs of spaces where the label has one
             int i = 0, j = start;

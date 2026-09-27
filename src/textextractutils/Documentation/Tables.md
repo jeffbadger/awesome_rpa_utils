@@ -39,8 +39,9 @@ In a JSON template the same table is:
   the table name exactly as the first did.
 - A header follows the rules of a single label (a letter or digit, no line break, at most 128 characters) and may not contain `|`. Headers are
   unique within a table as they are matched, ignoring case and spacing. At most 50 columns per table and 20 tables per template.
-- The column order does not matter for finding the header line: longer headers claim their places first, as labels do, so `Amount` does not
-  take the `Amount` inside `Amount Due`.
+- The column order does not matter for finding the header line: as with labels, longer matches claim their places first and an exact match
+  comes before an OCR look-alike, so `Amount` does not take the `Amount` inside `Amount Due`, and `Return` does not take the place of a
+  column headed `RetuM`.
 - The type, decimal style and date formats of a column work exactly as for a field (see [Types](Types.md)).
 
 ## How a table is found
