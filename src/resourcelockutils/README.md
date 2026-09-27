@@ -29,7 +29,7 @@ Bots from using the same resource.
 
 ## Inputs
 
-- **resource**: letters, digits, `-`, `_` and `.`, starting with a letter or digit, not ending with a dot, not a Windows device name (`CON`,
+- **resource**: ASCII letters (`A`–`Z`, `a`–`z`, no accented letters), digits, `-`, `_` and `.` (the name becomes part of a file name), starting with a letter or digit, not ending with a dot, not a Windows device name (`CON`,
   `NUL`, `COM1`, `LPT1`, ...), at most 100 characters. Names are compared ignoring case.
 - **holder**: who holds the lock, as other robots see it (typically the robot name): 1 to 128 characters, no line breaks. Never put secrets in it.
 - **leaseSeconds** 5 to 86,400; **waitMilliseconds** 0 to 3,600,000; **capacity** 1 to 100.

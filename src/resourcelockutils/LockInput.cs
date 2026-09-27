@@ -18,17 +18,19 @@ namespace ResourceLockAutomation
             "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
         };
 
-        internal static string Scope(LockScope scope) =>
-            Enum.IsDefined(typeof(LockScope), scope) ? null : "scope " + (int)scope + " is not a known LockScope";
+        private static readonly char[] WindowsPathForbidden = { '"', '<', '>', '|', '*', '?' };
 
-        /// <summary>Letters, digits, - _ and . (it becomes part of a file name); starts with a letter or digit, does not end with a dot, is not a
+        internal static string Scope(LockScope scope) =>
+            Enum.IsDefined(typeof(LockScope), scope) ? null : "scope is not a known LockScope (Process or Machine)";
+
+        /// <summary>ASCII letters, digits, - _ and . (it becomes part of a file name on any file system); starts with a letter or digit, does not end with a dot, is not a
         /// Windows device name; at most 100 characters. Names are compared ignoring case.</summary>
         internal static string Resource(string resource)
         {
             if (string.IsNullOrEmpty(resource)) return "resource is required";
             if (resource.Length > LockLimits.MaxResourceLength) return "resource may have at most " + LockLimits.MaxResourceLength + " characters";
             if (!resource.All(c => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.'))
-                return "resource may contain only letters, digits, -, _ and .";
+                return "resource may contain only ASCII letters, digits, -, _ and .";
             if (!char.IsLetterOrDigit(resource[0])) return "resource must start with a letter or digit";
             if (resource[resource.Length - 1] == '.') return "resource must not end with a dot";
             string stem = resource.Split('.')[0];
@@ -74,7 +76,10 @@ namespace ResourceLockAutomation
             if (folderPath == null) return "folderPath is required (empty for the default folder)";
             if (folderPath.Length == 0) return null;
             if (folderPath.Length > LockLimits.MaxFolderPathLength) return "folderPath may have at most " + LockLimits.MaxFolderPathLength + " characters";
-            if (folderPath.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || folderPath.Any(char.IsControl)) return "folderPath contains characters a path cannot have";
+            // Explicit rather than Path.GetInvalidPathChars, which on Windows lets wildcards and quotes through (C:\RobotLocks* names no folder).
+            if (folderPath.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || folderPath.Any(char.IsControl) || folderPath.IndexOfAny(WindowsPathForbidden) >= 0
+                || folderPath.IndexOf(':', 2) >= 0)
+                return "folderPath contains characters a Windows path cannot have (\" < > | * ? or a : after the drive letter)";
             if (folderPath.StartsWith(@"\\", StringComparison.Ordinal) || folderPath.StartsWith("//", StringComparison.Ordinal))
                 return "folderPath must be a local folder; network paths are not supported by the Machine scope";
             if (!Path.IsPathFullyQualified(folderPath)) return "folderPath must be an absolute path, such as D:\\RobotLocks";

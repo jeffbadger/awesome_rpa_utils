@@ -21,11 +21,11 @@ namespace ResourceLockAutomation.Tests
         [Theory]
         [InlineData(null, "required")]
         [InlineData("", "required")]
-        [InlineData("has space", "only letters")]
-        [InlineData("path/part", "only letters")]
-        [InlineData("back\\slash", "only letters")]
-        [InlineData("colon:x", "only letters")]
-        [InlineData("naïve", "only letters")]           // file names on every file system: ASCII only
+        [InlineData("has space", "only ASCII letters")]
+        [InlineData("path/part", "only ASCII letters")]
+        [InlineData("back\\slash", "only ASCII letters")]
+        [InlineData("colon:x", "only ASCII letters")]
+        [InlineData("naïve", "only ASCII letters")]           // file names on every file system: ASCII only
         [InlineData("-lead", "start with a letter or digit")]
         [InlineData(".hidden", "start with a letter or digit")]
         [InlineData("trailing.", "end with a dot")]
@@ -89,6 +89,7 @@ namespace ResourceLockAutomation.Tests
             Assert.Null(LockInput.Scope(LockScope.Process));
             Assert.Null(LockInput.Scope(LockScope.Machine));
             Assert.Contains("not a known LockScope", LockInput.Scope((LockScope)2));
+            Assert.DoesNotContain("2", LockInput.Scope((LockScope)2));                           // the rule, never the value
         }
 
         [Fact]
@@ -103,7 +104,10 @@ namespace ResourceLockAutomation.Tests
             Assert.Contains("network", LockInput.FolderPath(@"\\server\share\locks"));
             Assert.Contains("network", LockInput.FolderPath("//server/share/locks"));
             Assert.Contains("at most 200", LockInput.FolderPath(Path.Combine(Path.GetTempPath(), new string('d', 200))));
-            Assert.Contains("characters a path cannot have", LockInput.FolderPath(absolute + "\0x"));
+            Assert.Contains("characters a Windows path cannot have", LockInput.FolderPath(absolute + "\0x"));
+            foreach (string bad in new[] { "*", "?", "\"", "<", ">", "|", ":stream" })
+                Assert.Contains("characters a Windows path cannot have", LockInput.FolderPath(absolute + bad));
+            if (OperatingSystem.IsWindows()) Assert.Null(LockInput.FolderPath(@"C:\RobotLocks"));                    // a drive letter's colon is fine
         }
 
         [Fact]
@@ -136,7 +140,7 @@ namespace ResourceLockAutomation.Tests
             using var c = new ResourceLockUtils();
             Assert.False(c.TryAcquireLock(LockScope.Machine, "Secret Customer 4711", "Robot", 60, out bool acquired, out string token, out string holder, out string m));
             Assert.Equal((false, (string)null, (string)null), (acquired, token, holder));
-            Assert.Equal("TryAcquireLock failed: resource may contain only letters, digits, -, _ and ..", m);
+            Assert.Equal("TryAcquireLock failed: resource may contain only ASCII letters, digits, -, _ and ..", m);
             Assert.DoesNotContain("4711", m);
             Assert.False(c.AcquireSlot(LockScope.Process, "Pool", 0, "Robot", 60, 1000, out _, out _, out _, out m));
             Assert.Contains("capacity must be between 1 and 100", m);
