@@ -94,6 +94,8 @@ namespace TextExtractAutomation
         internal string Value;            // normalized text of the value span, trimmed; empty when there is none
         internal string Raw;              // the same span in the original text
         internal bool Slipped;            // the label matched with at least one OCR confusion
+        internal TextLine SpanLine;       // the line the value span is on (null when there is none), so a captured part can be mapped back to the original
+        internal int SpanStart;           // the value span's first column on that line
     }
 
     /// <summary>Finds every label occurrence of every label field and the text its position points at. Types and occurrence policies come later.</summary>
@@ -270,6 +272,8 @@ namespace TextExtractAutomation
             while (end > start && line.Text[end - 1] == ' ') end--;
             if (end <= start) return;
             candidate.ValueLine = line.Number;
+            candidate.SpanLine = line;
+            candidate.SpanStart = start;
             candidate.Value = line.Text.Substring(start, end - start);
             candidate.Raw = line.Raw(original, start, end);
         }
