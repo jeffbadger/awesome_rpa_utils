@@ -5,8 +5,8 @@ out of text such as email bodies, OCR output and terminal screens, **without wri
 sees it (the labels in front of it, where the value sits and what type it is) and read back a validated, normalized value or a stable reason code.
 
 > **Status: under construction.** Work packages 1 to 4 of the [design plan](../../project-docs/plans/2026-09-26-textextractutils-design.md) are
-> in: templates, text normalization, label matching, typed values, `ExtractFromText` and the result readers all work. Still to come: pattern-field
-> hardening, the documentation pages and registration, measurement, and the first release. Do not use the component until a release says otherwise.
+> in: templates, text normalization, label matching, typed values, `ExtractFromText`, the result readers and hardened pattern fields all work.
+> Still to come: the documentation pages and registration, measurement, and the first release. Do not use the component until a release says otherwise.
 > It is registered in the solution so it builds and its tests run in CI, but it is deliberately not in any release, the root README or
 > `CrossReference.md` yet.
 
@@ -54,7 +54,13 @@ GetResultJson()                            -> everything, including the label th
 - `value` is normalized and culture-independent (`1234.50`, `2026-09-26`, an IBAN without spaces); `raw` is exactly the text it was read from.
 - `reason` is null when the field was found. Otherwise: `MissingLabel` (no label or pattern match), `MissingValue` (the label is there, the value is
   not), `InvalidValue` (text is there but is not a valid value of the type; `raw` shows it), `AmbiguousValue` (the label appears more than once with
-  different values under `RequireUnique`; the same value repeated is fine), or `PatternTimeout`. Explanations in the result JSON never quote the text.
+  different values under `RequireUnique`; the same value repeated is fine), `PatternTimeout` or `TooManyMatches`. Explanations in the result JSON never
+  quote the text.
+- Pattern fields run on the original text with .NET regular expressions (use inline options such as `(?i)` or `(?m)`; with `(?m)`, lines of Windows
+  text end in `\r\n`, so write `\r?$`). Each match attempt stops after 100 ms and each field's matches after 1 s in all (`PatternTimeout`); a match
+  whose `value` group is empty is not an occurrence; a `First` field stops at its first match; more than 10,000 matches is `TooManyMatches`. `AddPatternField` makes a
+  `RequireUnique` pattern field; to make one `First` or `Last`, set `occurrence` in a JSON template. A slow or
+  flooding pattern never affects the other fields.
 - `lineNumber` is the 1-based line of the value, or of the label when the value is missing, or 0.
 - `First` and `Last` take that occurrence as it is; `RequireUnique` never guesses between two different values.
 - Every accepted template change, `ClearResults` and every extraction attempt (even one that fails) discards the previous results and cursor; a
