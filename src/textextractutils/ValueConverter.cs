@@ -26,7 +26,7 @@ namespace TextExtractAutomation
     /// Reads a typed value out of the span of text a label points at. The type decides both what is captured (the first part of the span that
     /// looks like a value of that type) and whether it is valid, and gives a normalized form that never depends on the machine culture:
     /// <list type="bullet">
-    /// <item>Text: the whole span. Code: the first token of letters, digits and - / . _ (a trailing . or - dropped).</item>
+    /// <item>Text: the whole span. Code: the first token of letters, digits and - / . _ (a trailing full stop dropped).</item>
     /// <item>Integer, Decimal, Amount, Percentage: numbers written in the field's DecimalStyle only, with valid thousands grouping (groups of three),
     /// normalized to digits with a . decimal point and a leading - when negative, keeping the decimals as written; never rounded. Amounts may carry a
     /// currency symbol or three-letter code on either side and be negative by a sign, a trailing minus or parentheses. OCR slips inside a number
@@ -74,7 +74,7 @@ namespace TextExtractAutomation
             int s = i;
             while (i < span.Length && IsCodeChar(span[i])) i++;
             int e = i;
-            while (e > s && (span[e - 1] == '.' || span[e - 1] == '-' || span[e - 1] == '/' || span[e - 1] == '_')) e--;   // the full stop ending a sentence is not part of the code
+            while (e > s && span[e - 1] == '.') e--;   // the full stop ending a sentence is not part of the code; - / _ are, even at the end
             if (e <= s || !span.Skip(s).Take(e - s).Any(char.IsLetterOrDigit)) return Converted.Invalid("the text does not start with a code (letters, digits and - / . _)");
             return Converted.Found(span.Substring(s, e - s), s, e);
         }
@@ -125,17 +125,19 @@ namespace TextExtractAutomation
                 bool separator = c == group || c == '\'' || (c == ' ' && current > 0);
                 if (separator && current > 0 && i + 1 < text.Length && DigitValue(text, i + 1, start, runEnd) >= 0)
                 {
-                    // a separator is grouping only if exactly three digits follow before the next non-digit
+                    // A grouping separator must be followed by exactly three digits. The style's grouping character and the apostrophe are only ever
+                    // grouping, so any other count is refused (1'2345, 1,23); a space may also simply separate two numbers ("5 12/03"), so a space
+                    // followed by anything but three digits ends the number instead.
                     int k = i + 1, n = 0;
                     while (k < text.Length && DigitValue(text, k, start, runEnd) >= 0) { k++; n++; }
-                    if (n == 3 || (c == group && n > 0))
+                    if (n == 3 || c == group)
                     {
-                        if (c == ' ' && n != 3) break;
                         groups.Add(current);
                         current = 0;
                         i++;
                         continue;
                     }
+                    if (c == '\'') { badGrouping = true; return null; }
                     break;
                 }
                 break;
@@ -212,7 +214,7 @@ namespace TextExtractAutomation
 
         private static bool IsCurrencyCodeAt(string span, int i) =>
             i + 3 <= span.Length && span.Substring(i, 3).All(ch => ch >= 'A' && ch <= 'Z')
-            && (i == 0 || !char.IsLetterOrDigit(span[i - 1])) && (i + 3 == span.Length || !char.IsLetter(span[i + 3]));
+            && (i == 0 || !char.IsLetterOrDigit(span[i - 1])) && (i + 3 == span.Length || !char.IsLetterOrDigit(span[i + 3]));
 
         private static Converted Amount(string span, DecimalStyle style)
         {

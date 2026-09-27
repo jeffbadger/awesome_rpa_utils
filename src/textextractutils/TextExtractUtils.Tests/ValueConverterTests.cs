@@ -59,6 +59,10 @@ namespace TextExtractAutomation.Tests
         [InlineData("PX/00_12.A (reissued)", "PX/00_12.A")]
         [InlineData("\"AB123\"", "AB123")]
         [InlineData("88731 dated today", "88731")]
+        [InlineData("ABC/", "ABC/")]                                // - / _ belong to a code, even at its end
+        [InlineData("ABC_ next", "ABC_")]
+        [InlineData("ABC- next", "ABC-")]
+        [InlineData("ABC/.", "ABC/")]
         public void Code_IsTheFirstToken(string span, string value) => Assert.Equal(value, Value(FieldType.Code, span));
 
         [Theory]
@@ -83,6 +87,8 @@ namespace TextExtractAutomation.Tests
         [InlineData("O 12", "12")]                         // a look-alike on its own is a letter, not a digit
         [InlineData("I 5", "5")]
         [InlineData("No. 7", "7")]
+        [InlineData("5 12/03", "5")]                       // a space before a run that is not three digits separates two numbers
+        [InlineData("1 23", "1")]
         public void Integer_DotStyle(string span, string value) => Assert.Equal(value, Value(FieldType.Integer, span));
 
         [Theory]
@@ -99,6 +105,8 @@ namespace TextExtractAutomation.Tests
         [InlineData("1,23")]               // grouping of two: probably the other style, so refused
         [InlineData("1,2345")]
         [InlineData("12,34,567")]
+        [InlineData("1'2345")]             // an apostrophe is only ever grouping
+        [InlineData("1'23")]
         public void Integer_Invalid(string span) => Invalid(FieldType.Integer, span);
 
         [Theory]
@@ -165,6 +173,16 @@ namespace TextExtractAutomation.Tests
             Converted c = ValueConverter.Convert(Field(FieldType.Amount, DecimalStyle.CommaDecimal), span);
             Assert.True(c.Ok, c.Detail);
             Assert.Equal((value, currency), (c.Value, c.Currency));
+        }
+
+        [Fact]
+        public void ACurrencyCodeNeedsABoundaryOnBothSides()
+        {
+            Converted c = ValueConverter.Convert(Field(FieldType.Amount), "12 USD3");
+            Assert.True(c.Ok);
+            Assert.Null(c.Currency);                                       // USD3 is not a currency code
+            Assert.Equal("12", c.Value);
+            Assert.Equal("USD", ValueConverter.Convert(Field(FieldType.Amount), "12 USD.").Currency);
         }
 
         [Fact]
