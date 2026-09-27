@@ -59,7 +59,7 @@ rather than silently allowing more holders.
 
 | Group | Methods |
 |---|---|
-| Acquire | `TryAcquireLock(scope, resource, holder, leaseSeconds, out acquired, out token, out currentHolder)`; `AcquireLock(… , waitMilliseconds, …)` (polls with jittered backoff until acquired or the wait ends; run it on an asynchronous link); `TryAcquireSlot(scope, resource, capacity, holder, leaseSeconds, out acquired, out token, out holderCount)`; `AcquireSlot(… , waitMilliseconds, …)` |
+| Acquire | `TryAcquireLock(scope, resource, holder, leaseSeconds, out acquired, out token, out currentHolder)`; `AcquireLock(… , waitMilliseconds, …)` (takes the lock as soon as it is free or the wait ends; the Process scope is woken by a release, the Machine scope checks the lock files with jittered backoff; run it on an asynchronous link); `TryAcquireSlot(scope, resource, capacity, holder, leaseSeconds, out acquired, out token, out holderCount)`; `AcquireSlot(… , waitMilliseconds, …)` |
 | Hold | `RenewLock(scope, resource, token, leaseSeconds, out renewed, out expiresInSeconds)` — `renewed` False means the lease was lost; `ReleaseLock(scope, resource, token, out released)` — True when the call ran; `released` False means the lease had already expired or been taken over, so the work may have overlapped with another holder |
 | Inspect | `GetLockStatus(scope, resource, out held, out holders, out expiresInSeconds, out holderCount)` (slot holders separated by `|`); `GetLocksJson(scope, out locksJson)` |
 | Operate | `ForceReleaseLock(scope, resource, confirmForceRelease, out releasedCount)`; `ConfigureLockFolder(folderPath)`; `ValidateLockFolder(out usable, out reportJson)` |
@@ -116,3 +116,11 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    `ConfigureLockFolder` when files cannot be created. The default ProgramData ACL behaviour is to be confirmed on a real Server Bot host in WP3.
 3. **Losing a lease**: `ReleaseLock` returns True with `released` False, so the automation can flag possible overlap.
 4. **Name**: `ResourceLockUtils` / `ResourceLockAutomation`.
+5. **`Process` scope details** (WP2): leases are timed with a monotonic clock (`Environment.TickCount64`), so a system clock change neither
+   expires nor extends a lease; a release wakes waiters at once and a waiter also wakes at the earliest expiry it waits on (no polling); while a
+   resource is held it is either a lock or a slot pool with one capacity, and a call that disagrees fails (the capacity can change once nothing
+   holds it); a token given with the wrong resource name is `released`/`renewed` False, like a lost lease (the table cannot tell the two
+   apart); disposing a component releases what it still holds, and the table checks the owner is not disposed inside its own lock, so an acquire
+   admitted just before disposal cannot leave a lease behind; per-owner lease counts are kept (no scan per acquire) and every expired lease is
+   swept at least once a minute by a background timer that runs only while the table holds anything (plus lazily on every visit), so resource names that are never used again do not accumulate; holders may not contain `|`, the separator of
+   `GetLockStatus`'s holders; the JSON never contains tokens.
