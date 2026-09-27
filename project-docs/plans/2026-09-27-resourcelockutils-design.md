@@ -156,4 +156,9 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    that it has not expired and has no successor (a taker can only supersede an expired lease), and reports `released` False otherwise. A first
    version checked after the rewrite; the stress test showed clean releases reported lost, since the next robot may take the released lease
    at once. Test-only hooks force each timing.
+10. **`ValidateLockFolder` and damaged files** (WP4): the check runs every step the Machine scope needs on a probe file that lock operations
+    ignore (open or create the folder, list, create exclusively, read back, rewrite in place, delete) and surveys the lease files (unreadable by
+    this account, damaged, and whether this account can clean up another robot's old generation, tried only on one the protocol already allows
+    deleting). `usable` means locks can be taken; each problem gets a plain-language warning. Damaged files are **reported, not quarantined**:
+    moving or deleting another robot's top generation is what the protocol forbids, and an old unreadable top is superseded automatically.
 

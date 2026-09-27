@@ -10,9 +10,9 @@ namespace ResourceLockAutomation
     /// </summary>
     /// <remarks>
     /// Work in progress: both scopes work (Process: every thread and automation in this Robot Runtime; Machine: every robot on the machine,
-    /// through lease files in the lock folder); <c>ValidateLockFolder</c> reports that it is not implemented yet. See project-docs/plans/2026-09-27-resourcelockutils-design.md.
+    /// through lease files in the lock folder), and ValidateLockFolder checks a lock folder; the documentation and registration come next. See project-docs/plans/2026-09-27-resourcelockutils-design.md.
     /// </remarks>
-    [Description("Locks on named resources that any thread can release and that Server Bots on one machine share: a lease owned by a token, renewed or released from any thread, that expires if its holder crashes or hangs. Under construction: both scopes work; ValidateLockFolder is not implemented yet. Never throws.")]
+    [Description("Locks on named resources that any thread can release and that Server Bots on one machine share: a lease owned by a token, renewed or released from any thread, that expires if its holder crashes or hangs. Under construction: both scopes and ValidateLockFolder work; documentation and registration are still to come. Never throws.")]
     public sealed class ResourceLockUtils : Component
     {
         private readonly object syncRoot = new object();
@@ -214,8 +214,19 @@ namespace ResourceLockAutomation
         [Description("Checks the Machine-scope lock folder: usable is True when this robot can create lock files there, and reportJson also says whether it can delete its own and other robots' files. Run it once under each robot account when setting up a server. Never throws.")]
         public bool ValidateLockFolder(out bool usable, out string reportJson, out string message)
         {
-            usable = false; reportJson = null;
-            return NotYetImplemented(nameof(ValidateLockFolder), out message);
+            usable = false; reportJson = null; message = null;
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (disposed) { message = DisposedMessage(nameof(ValidateLockFolder)); return false; }
+                }
+                FolderCheck.Report report = FolderCheck.Run(LockFolder);
+                usable = report.Usable;
+                reportJson = FolderCheck.ToJson(report);
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { usable = false; reportJson = null; message = NeverThrowsGuard.Failure(nameof(ValidateLockFolder), ex); return false; }
         }
 
         // ------------------------------------------------------------------ plumbing
@@ -255,23 +266,6 @@ namespace ResourceLockAutomation
             acquired = r.Acquired; token = r.Token; currentHolder = r.Acquired ? null : r.CurrentHolder; holderCount = r.HolderCount;
             message = null;
             return true;
-        }
-
-        /// <summary>A disposed component fails first; then the first invalid input fails the call; otherwise the operation is not built yet.</summary>
-        private bool NotYetImplemented(string operation, out string message, params string[] problems)
-        {
-            try
-            {
-                lock (syncRoot)
-                {
-                    if (disposed) { message = DisposedMessage(operation); return false; }
-                }
-                foreach (string problem in problems)
-                    if (problem != null) { message = operation + " failed: " + problem + "."; return false; }
-                message = operation + " is not implemented yet.";
-                return false;
-            }
-            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { message = NeverThrowsGuard.Failure(operation, ex); return false; }
         }
 
         /// <summary>

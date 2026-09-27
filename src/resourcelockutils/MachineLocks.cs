@@ -122,7 +122,7 @@ namespace ResourceLockAutomation
 
         private static readonly object Sync = new object();
         private static readonly Dictionary<object, List<Holding>> Holdings = new Dictionary<object, List<Holding>>(ReferenceEqualityComparer.Instance);
-        private static readonly Regex LeaseName = new Regex(@"^(?<resource>.+)\.(?<slot>\d{1,3})\.(?<gen>\d{1,18})\.lease$", RegexOptions.CultureInvariant);
+        internal static readonly Regex LeaseName = new Regex(@"^(?<resource>.+)\.(?<slot>\d{1,3})\.(?<gen>\d{1,18})\.lease$", RegexOptions.CultureInvariant);
 
         private static readonly Lazy<(int Id, long StartTicks, int Session)> Self = new Lazy<(int, long, int)>(() =>
         {
@@ -235,7 +235,7 @@ namespace ResourceLockAutomation
         internal const int UnreadableGraceSeconds = 10;
 
         /// <summary>Whether a present file was written less than the given seconds ago. A timestamp that cannot be read counts as young (held).</summary>
-        private static bool IsYoung(string path, DateTime now, int seconds)
+        internal static bool IsYoung(string path, DateTime now, int seconds)
         {
             if (!Present(path)) return false;
             try { return (now - File.GetLastWriteTimeUtc(path)).TotalSeconds < seconds; }
@@ -248,7 +248,7 @@ namespace ResourceLockAutomation
         /// <summary>A lease file's record; null when it is missing or not a valid lease. Opened so that a holder can replace it meanwhile.</summary>
         private static LeaseRecord ReadRecord(string path) => ReadRecord(path, out _);
 
-        private static LeaseRecord ReadRecord(string path, out bool accessDenied)
+        internal static LeaseRecord ReadRecord(string path, out bool accessDenied)
         {
             accessDenied = false;
             try
