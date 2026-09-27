@@ -87,7 +87,7 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
   another, many threads contending, and expiry of an abandoned lease.
 - **WP3** `Machine` scope: lease files, atomic acquire, process liveness, the takeover protocol, atomic renewal, slots; multi-process stress
   tests (child processes acquiring, renewing, crashing and taking over) asserting that no two processes ever hold the same lock.
-- **WP4** Folder configuration and validation, status and JSON, `ForceReleaseLock`, corrupt-file handling (quarantine, as LocalQueueUtils does).
+- **WP4** `ValidateLockFolder` (the folder's real permissions) and corrupt-file handling (status, JSON and `ForceReleaseLock` moved into WP3).
 - **WP5** Docs (README; Documentation: QuickStart, CrossThread, ServerBots with the folder setup, Slots, Limits), registration
   (`src/AwesomeRpaUtils.sln`, `$releaseAssemblies` in `scripts/Package-Release.ps1`, root README row/links/test line and the DLL count
   "twenty-five" → "twenty-six", `CrossReference.md`, `TESTING.md`), Pega usability review + index, documentation sync/example tests.
@@ -124,3 +124,19 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
    admitted just before disposal cannot leave a lease behind; per-owner lease counts are kept (no scan per acquire) and every expired lease is
    swept at least once a minute by a background timer that runs only while the table holds anything (plus lazily on every visit), so resource names that are never used again do not accumulate; holders may not contain `|`, the separator of
    `GetLockStatus`'s holders; the JSON never contains tokens.
+6. **`Machine` scope protocol, as built and stress-tested** (WP3). The multi-process stress test (8 processes x 300 acquisitions, repeated) found
+   two flaws in the first version, both now fixed and covered:
+   - A move "without overwrite" is not atomic on Linux: .NET checks for the target and then renames (2,989 of 3,000 races had several
+     winners). Lease files are created exclusively instead (`FileMode.CreateNew`: `O_EXCL` / `CREATE_NEW`). A new file can be read before its
+     content is written, so readers retry briefly and an unreadable file younger than 10 s counts as held; an older one is superseded.
+   - A directory listing is only guaranteed to include files that are neither created nor deleted while it runs. A robot that missed the new top
+     generation and its just-deleted predecessor created a lower number: two holders. So the top is found by looking up n+1, n+2, ... by name
+     from the listing's highest number; holders renew and release by rewriting their own file in place (never renaming); and a generation is
+     deleted only once its successor is 5 minutes old, while an acquire that takes over 60 s between reading and creating starts over. No
+     generation at or above an operation's starting top can then disappear during it, so numbers only grow.
+   After the fixes: no overlap and no lost lease in 6 runs of 2,400 acquisitions each. A lease is dead when its process has ended or its process
+   ID belongs to a process started at another time; a process that cannot be inspected is trusted until its lease ends. Status, JSON (never
+   tokens) and force release (a released generation) are in WP3 rather than WP4; WP4 keeps `ValidateLockFolder` and corrupt-file handling.
+   The test assembly doubles as the child process (`dotnet ResourceLockUtils.Tests.dll stress-host ...`, its own `Main`), so no helper project
+   can end up in a package; every child has a time limit, so a broken build fails the tests instead of hanging CI.
+

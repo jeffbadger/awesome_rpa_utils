@@ -9,10 +9,10 @@ namespace ResourceLockAutomation
     /// lease that is not renewed expires, so a crashed or hung holder cannot block everyone forever.
     /// </summary>
     /// <remarks>
-    /// Work in progress: the Process scope works (locks and slots shared by every thread and automation in this Robot Runtime); the Machine scope
-    /// and <c>ValidateLockFolder</c> report that they are not implemented yet. See project-docs/plans/2026-09-27-resourcelockutils-design.md.
+    /// Work in progress: both scopes work (Process: every thread and automation in this Robot Runtime; Machine: every robot on the machine,
+    /// through lease files in the lock folder); <c>ValidateLockFolder</c> reports that it is not implemented yet. See project-docs/plans/2026-09-27-resourcelockutils-design.md.
     /// </remarks>
-    [Description("Locks on named resources that any thread can release and that Server Bots on one machine share: a lease owned by a token, renewed or released from any thread, that expires if its holder crashes or hangs. Under construction: the Process scope works; the Machine scope is not implemented yet. Never throws.")]
+    [Description("Locks on named resources that any thread can release and that Server Bots on one machine share: a lease owned by a token, renewed or released from any thread, that expires if its holder crashes or hangs. Under construction: both scopes work; ValidateLockFolder is not implemented yet. Never throws.")]
     public sealed class ResourceLockUtils : Component
     {
         private readonly object syncRoot = new object();
@@ -36,7 +36,9 @@ namespace ResourceLockAutomation
             try
             {
                 if (!Ready(nameof(TryAcquireLock), scope, out message, LockInput.Scope(scope), LockInput.Resource(resource), LockInput.Holder(holder), LockInput.LeaseSeconds(leaseSeconds))) return false;
-                AcquireResult r = ProcessLocks.TryAcquire(resource, LockKind.Lock, 1, holder, leaseSeconds * 1000L, this);
+                AcquireResult r = scope == LockScope.Process
+                    ? ProcessLocks.TryAcquire(resource, LockKind.Lock, 1, holder, leaseSeconds * 1000L, this)
+                    : MachineLocks.TryAcquire(LockFolder, resource, LockKind.Lock, 1, holder, TimeSpan.FromSeconds(leaseSeconds), this);
                 return Finish(nameof(TryAcquireLock), r, out acquired, out token, out currentHolder, out _, out message);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { acquired = false; token = null; currentHolder = null; message = NeverThrowsGuard.Failure(nameof(TryAcquireLock), ex); return false; }
@@ -52,7 +54,9 @@ namespace ResourceLockAutomation
             {
                 if (!Ready(nameof(AcquireLock), scope, out message, LockInput.Scope(scope), LockInput.Resource(resource), LockInput.Holder(holder), LockInput.LeaseSeconds(leaseSeconds),
                     LockInput.WaitMilliseconds(waitMilliseconds))) return false;
-                AcquireResult r = ProcessLocks.Acquire(resource, LockKind.Lock, 1, holder, leaseSeconds * 1000L, waitMilliseconds, this);
+                AcquireResult r = scope == LockScope.Process
+                    ? ProcessLocks.Acquire(resource, LockKind.Lock, 1, holder, leaseSeconds * 1000L, waitMilliseconds, this)
+                    : MachineLocks.Acquire(LockFolder, resource, LockKind.Lock, 1, holder, TimeSpan.FromSeconds(leaseSeconds), TimeSpan.FromMilliseconds(waitMilliseconds), this);
                 return Finish(nameof(AcquireLock), r, out acquired, out token, out currentHolder, out _, out message);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { acquired = false; token = null; currentHolder = null; message = NeverThrowsGuard.Failure(nameof(AcquireLock), ex); return false; }
@@ -68,7 +72,9 @@ namespace ResourceLockAutomation
             {
                 if (!Ready(nameof(TryAcquireSlot), scope, out message, LockInput.Scope(scope), LockInput.Resource(resource), LockInput.Capacity(capacity), LockInput.Holder(holder),
                     LockInput.LeaseSeconds(leaseSeconds))) return false;
-                AcquireResult r = ProcessLocks.TryAcquire(resource, LockKind.Slot, capacity, holder, leaseSeconds * 1000L, this);
+                AcquireResult r = scope == LockScope.Process
+                    ? ProcessLocks.TryAcquire(resource, LockKind.Slot, capacity, holder, leaseSeconds * 1000L, this)
+                    : MachineLocks.TryAcquire(LockFolder, resource, LockKind.Slot, capacity, holder, TimeSpan.FromSeconds(leaseSeconds), this);
                 return Finish(nameof(TryAcquireSlot), r, out acquired, out token, out _, out holderCount, out message);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { acquired = false; token = null; holderCount = 0; message = NeverThrowsGuard.Failure(nameof(TryAcquireSlot), ex); return false; }
@@ -84,7 +90,9 @@ namespace ResourceLockAutomation
             {
                 if (!Ready(nameof(AcquireSlot), scope, out message, LockInput.Scope(scope), LockInput.Resource(resource), LockInput.Capacity(capacity), LockInput.Holder(holder),
                     LockInput.LeaseSeconds(leaseSeconds), LockInput.WaitMilliseconds(waitMilliseconds))) return false;
-                AcquireResult r = ProcessLocks.Acquire(resource, LockKind.Slot, capacity, holder, leaseSeconds * 1000L, waitMilliseconds, this);
+                AcquireResult r = scope == LockScope.Process
+                    ? ProcessLocks.Acquire(resource, LockKind.Slot, capacity, holder, leaseSeconds * 1000L, waitMilliseconds, this)
+                    : MachineLocks.Acquire(LockFolder, resource, LockKind.Slot, capacity, holder, TimeSpan.FromSeconds(leaseSeconds), TimeSpan.FromMilliseconds(waitMilliseconds), this);
                 return Finish(nameof(AcquireSlot), r, out acquired, out token, out _, out holderCount, out message);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { acquired = false; token = null; holderCount = 0; message = NeverThrowsGuard.Failure(nameof(AcquireSlot), ex); return false; }
@@ -101,7 +109,9 @@ namespace ResourceLockAutomation
             try
             {
                 if (!Ready(nameof(RenewLock), scope, out message, LockInput.Scope(scope), LockInput.Resource(resource), LockInput.Token(token), LockInput.LeaseSeconds(leaseSeconds))) return false;
-                renewed = ProcessLocks.Renew(resource, token, leaseSeconds * 1000L, out long expiresInMs);
+                long expiresInMs;
+                if (scope == LockScope.Process) renewed = ProcessLocks.Renew(resource, token, leaseSeconds * 1000L, out expiresInMs);
+                else { renewed = MachineLocks.Renew(LockFolder, resource, token, TimeSpan.FromSeconds(leaseSeconds), out TimeSpan left); expiresInMs = (long)left.TotalMilliseconds; }
                 expiresInSeconds = ProcessLocks.Seconds(expiresInMs);
                 return true;
             }
@@ -117,7 +127,7 @@ namespace ResourceLockAutomation
             try
             {
                 if (!Ready(nameof(ReleaseLock), scope, out message, LockInput.Scope(scope), LockInput.Resource(resource), LockInput.Token(token))) return false;
-                released = ProcessLocks.Release(resource, token);
+                released = scope == LockScope.Process ? ProcessLocks.Release(resource, token) : MachineLocks.Release(LockFolder, resource, token);
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { released = false; message = NeverThrowsGuard.Failure(nameof(ReleaseLock), ex); return false; }
@@ -134,7 +144,8 @@ namespace ResourceLockAutomation
             try
             {
                 if (!Ready(nameof(GetLockStatus), scope, out message, LockInput.Scope(scope), LockInput.Resource(resource))) return false;
-                ProcessLocks.Status(resource, out held, out holders, out expiresInSeconds, out holderCount);
+                if (scope == LockScope.Process) ProcessLocks.Status(resource, out held, out holders, out expiresInSeconds, out holderCount);
+                else MachineLocks.Status(LockFolder, resource, out held, out holders, out expiresInSeconds, out holderCount);
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -154,7 +165,7 @@ namespace ResourceLockAutomation
             try
             {
                 if (!Ready(nameof(GetLocksJson), scope, out message, LockInput.Scope(scope))) return false;
-                locksJson = ProcessLocks.Json();
+                locksJson = scope == LockScope.Process ? ProcessLocks.Json() : MachineLocks.Json(LockFolder);
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { locksJson = null; message = NeverThrowsGuard.Failure(nameof(GetLocksJson), ex); return false; }
@@ -172,7 +183,7 @@ namespace ResourceLockAutomation
             {
                 if (!Ready(nameof(ForceReleaseLock), scope, out message, LockInput.Scope(scope), LockInput.Resource(resource),
                     confirmForceRelease ? null : "confirmForceRelease must be True to force a release")) return false;
-                releasedCount = ProcessLocks.ForceRelease(resource);
+                releasedCount = scope == LockScope.Process ? ProcessLocks.ForceRelease(resource) : MachineLocks.ForceRelease(LockFolder, resource, "ForceReleaseLock");
                 return true;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { releasedCount = 0; message = NeverThrowsGuard.Failure(nameof(ForceReleaseLock), ex); return false; }
@@ -218,7 +229,7 @@ namespace ResourceLockAutomation
         private static string DisposedMessage(string operation) => operation + " failed: the component has been disposed.";
 
         /// <summary>
-        /// Whether an operation may run: a disposed component fails first, then the first invalid input, then the Machine scope (not built yet).
+        /// Whether an operation may run: a disposed component fails first, then the first invalid input.
         /// </summary>
         private bool Ready(string operation, LockScope scope, out string message, params string[] problems)
         {
@@ -228,7 +239,6 @@ namespace ResourceLockAutomation
             }
             foreach (string problem in problems)
                 if (problem != null) { message = operation + " failed: " + problem + "."; return false; }
-            if (scope == LockScope.Machine) { message = operation + " failed: the Machine scope is not implemented yet."; return false; }
             message = null;
             return true;
         }
@@ -273,7 +283,7 @@ namespace ResourceLockAutomation
             if (disposing)
             {
                 lock (syncRoot) { disposed = true; }
-                try { ProcessLocks.ReleaseAllOwnedBy(this); }
+                try { ProcessLocks.ReleaseAllOwnedBy(this); MachineLocks.ReleaseAllOwnedBy(this); }
                 catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }                  // the leases still expire on their own
             }
             base.Dispose(disposing);
