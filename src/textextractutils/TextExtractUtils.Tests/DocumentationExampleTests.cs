@@ -195,6 +195,11 @@ namespace TextExtractAutomation.Tests
             Assert.Equal(6, call.Split(',').Length);
             string readme = File.ReadAllText(Path.Combine(ComponentDirectory(), "..", "localqueueutils", "README.md"));
             Assert.Contains("bool AddJson(string queuePath, string payloadJson, out string itemId, out bool duplicate, out string message, string businessKey", readme);
+
+            // the page states the duplicate check the way LocalQueueUtils implements it: active items only
+            Assert.Contains("still waiting or being worked", page);
+            string queueCode = File.ReadAllText(Path.Combine(ComponentDirectory(), "..", "localqueueutils", "LocalQueueUtils.cs"));
+            Assert.Contains("ReadItems(full, \"ready\", \"delayed\", \"in-progress\")", queueCode);
         }
     }
 }

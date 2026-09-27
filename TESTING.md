@@ -820,7 +820,8 @@ The platform-independent xunit coverage is in
   fields are still extracted.
 - Run once with a non-English regional format (for example Turkish or German): the result JSON must be identical.
 - Confirm no message or explanation contains text from the input (put a recognizable marker in a field that fails).
-- Hand the result to a `LocalQueueUtils` queue as in `Documentation/EmailIntake.md` and verify a re-sent email becomes a duplicate.
+- Hand the result to a `LocalQueueUtils` queue as in `Documentation/EmailIntake.md` and verify a re-sent email becomes a duplicate while
+  the first item is still ready or in progress, and a new item once the first has been completed.
 
 The platform-independent xunit coverage is in `src/textextractutils/TextExtractUtils.Tests`
 (`dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj`), including `DocumentationExampleTests`, which runs the
