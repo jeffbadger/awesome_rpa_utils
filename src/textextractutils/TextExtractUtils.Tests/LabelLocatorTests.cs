@@ -201,6 +201,13 @@ namespace TextExtractAutomation.Tests
             Assert.Equal((3, 8), (s, e));                                                              // one space keeps "bb cc" together
         }
 
+        [Fact]
+        public void Below_SkipsBlankLines_LikeNextLine_ButStillNeedsACellUnderTheLabel()
+        {
+            Assert.Equal("PX-1", Single("Policy No", "Policy No     Holder\n\n   \nPX-1          Jane", ValuePosition.Below));          // double-spaced OCR output
+            Assert.Equal("", Single("Policy No", "Policy No\n\n                    unrelated text far to the right", ValuePosition.Below));   // nothing under the label
+        }
+
         // ------------------------------------------------------------------ golden samples
 
         [Fact]

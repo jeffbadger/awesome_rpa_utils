@@ -178,6 +178,7 @@ namespace TextExtractAutomation
                         }
                         case ValuePosition.Below:
                         {
+                            // Blank lines are skipped like NextLine: OCR often double-spaces a form. The value must still sit under the label's columns.
                             int next = NextNonBlank(lines, li);
                             if (next >= 0 && CellUnder(lines[next].Text, h.Start, h.End, out int cellStart, out int cellEnd))
                                 SetSpan(candidate, original, lines[next], cellStart, cellEnd);
