@@ -30,6 +30,7 @@ for checking whether something already exists before writing it yourself.
 | [stackutils](src/stackutils/README.md) | `StackAutomation` | Holds variable-count text, JSON, or file-reference work in an instance-local, in-memory LIFO stack without a collection proxy. |
 | [statemachineutils](src/statemachineutils/README.md) | `StateMachineAutomation` | Models a process as states, triggers, and guarded transitions declared in JSON or method calls, with events on every state change and optional crash-safe persistence, so a long-running flow can resume where it stopped. |
 | [terminalutils](src/terminalutils/README.md) | `TerminalAutomation` | Reads and interacts with a target process's live console screen buffer: visible-screen capture, cursor position, waiting for a prompt or a screen change, keystroke injection, and starting/attaching to a console process. |
+| [textextractutils](src/textextractutils/README.md) | `TextExtractAutomation` | Extracts labelled, typed fields (invoice numbers, totals, dates, IBANs) from email, OCR or screen text without writing regular expressions, with OCR-tolerant labels, exact culture-independent values and a reason for every field it cannot read. |
 | [uiautomationutils](src/uiautomationutils/README.md) | `UIAutomation` | Finds and drives modern (WinUI3/UWP/WPF/browser-hosted) UI via Windows UI Automation, for controls WindowUtils/DialogUtils can't see. |
 | [valuestoreutils](src/valuestoreutils/README.md) | `ValueStoreAutomation` | Holds freeform named values with forgiving typed getters, dot-notation path access, wildcard key search, and JSON interop, without a schema to define or seal. |
 | [windowutils](src/windowutils/README.md) | `WindowAutomation` | Enumerates, locates, moves/resizes, activates, and closes windows via the Win32 window APIs. |
@@ -107,7 +108,7 @@ To build and create everything this repository produces, run from PowerShell:
 The command creates two self-contained archives — one per target framework,
 each holding the complete release:
 
-- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-four project DLLs built
+- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-five project DLLs built
   for `net8.0-windows` plus three bundled archives:
   `AwesomeRpaUtils-SupportLibraries.zip` (the three NuGet runtime DLLs needed
   by ServiceUtils, packaged in the flavor matching the enclosing archive's
@@ -115,7 +116,7 @@ each holding the complete release:
   [REST code generator](tools/README.md)), and
   `AwesomeRpaUtils-Documentation.zip` (the documentation bundle described
   below).
-- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-four DLLs built
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-five DLLs built
   for `net10.0-windows` with the same three bundled archives (the support
   DLLs in the newest flavor the packages ship, which the .NET 10 runtime
   loads; the .NET 8 runtime only loads the `net8.0` flavor).
@@ -266,6 +267,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [stackutils/README.md](src/stackutils/README.md) and [stackutils/Documentation/](src/stackutils/Documentation/README.md)
 - [statemachineutils/README.md](src/statemachineutils/README.md) and [statemachineutils/Documentation/](src/statemachineutils/Documentation/README.md)
 - [terminalutils/README.md](src/terminalutils/README.md) and [terminalutils/Documentation/](src/terminalutils/Documentation/README.md)
+- [textextractutils/README.md](src/textextractutils/README.md) and [textextractutils/Documentation/](src/textextractutils/Documentation/README.md)
 - [uiautomationutils/README.md](src/uiautomationutils/README.md) and [uiautomationutils/Documentation/](src/uiautomationutils/Documentation/README.md)
 - [valuestoreutils/README.md](src/valuestoreutils/README.md) and [valuestoreutils/Documentation/](src/valuestoreutils/Documentation/README.md)
 - [windowutils/README.md](src/windowutils/README.md) and [windowutils/Documentation/](src/windowutils/Documentation/README.md)
@@ -332,7 +334,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `WinEventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, `InterruptUtils`, `ClipboardUtils`, `StateMachineUtils`, and `ReconciliationUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, `InterruptUtils`, `ClipboardUtils`, `StateMachineUtils`, `ReconciliationUtils`, and `TextExtractUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -359,7 +361,9 @@ and
 and
 `dotnet test src/statemachineutils/StateMachineUtils.Tests/StateMachineUtils.Tests.csproj`,
 and
-`dotnet test src/reconciliationutils/ReconciliationUtils.Tests/ReconciliationUtils.Tests.csproj` —
+`dotnet test src/reconciliationutils/ReconciliationUtils.Tests/ReconciliationUtils.Tests.csproj`,
+and
+`dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category

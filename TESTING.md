@@ -805,6 +805,27 @@ The platform-independent xunit coverage is in
 (`dotnet test src/reconciliationutils/ReconciliationUtils.Tests/ReconciliationUtils.Tests.csproj`), including
 `DocumentationExampleTests`, which runs the worked examples straight from the documentation pages.
 
+### TextExtractUtils (no setup required; Cleanup: dispose the component)
+
+- Follow `Documentation/QuickStart.md`: add the four fields with `AddLabelFieldSimple`/`AddLabelField`, run `ExtractFromText` on the sample email,
+  and verify `foundCount` 4, `missingRequiredCount` 0 and the documented value, raw text and line of each field.
+- **Design surface:** confirm `FieldType`, `ValuePosition`, `DecimalStyle` and `Occurrence` show as drop-downs; wire `TryReadNextField`'s
+  `hasItem` as a `While` condition and `reason` into a `StringSwitch`; confirm every output binds as a scalar port (line number 0 when absent).
+- Load the `Documentation/EmailIntake.md` template from a Robot Studio asset with `LoadTemplateJson`; verify a template with a typo (`"lables"`)
+  is refused whole (with `ValidateTemplateJson` listing the problem) and the previous template keeps working.
+- Extract from real OCR output (`OcrUtils`) of a scanned invoice and from a `TerminalUtils` screen dump with aligned columns (`Below` fields);
+  verify OCR slips in labels are tolerated and reported (`labelSlipped` in `GetResultJson`), and that `raw` shows the text exactly as captured.
+- Verify each reason: a missing label, a label with no value, an invalid amount, a label repeated with two different values, and a pattern field
+  with a catastrophic pattern (`^(a+)+$` on a long run of `a` followed by `!`), which must report `PatternTimeout` within seconds while the other
+  fields are still extracted.
+- Run once with a non-English regional format (for example Turkish or German): the result JSON must be identical.
+- Confirm no message or explanation contains text from the input (put a recognizable marker in a field that fails).
+- Hand the result to a `LocalQueueUtils` queue as in `Documentation/EmailIntake.md` and verify a re-sent email becomes a duplicate.
+
+The platform-independent xunit coverage is in `src/textextractutils/TextExtractUtils.Tests`
+(`dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj`), including `DocumentationExampleTests`, which runs the
+examples straight from the documentation pages.
+
 ### DataContractUtils (no external setup; configure properties before initialization)
 
 - Preload typed definitions from design-time JSON and a relative/absolute JSON
