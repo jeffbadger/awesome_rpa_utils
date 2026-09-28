@@ -47,12 +47,15 @@ namespace TestHarness
             Name = "MainForm";
             Text = "Awesome RPA Utils - Test Harness";
             Width = 460;
-            // Height is the OUTER window size (title bar + borders included), not the
-            // client area - stacking every feature row (dialog buttons, cursor zones,
-            // combo/trackbar/radio group) needs the group box's bottom (805) plus real
-            // margin below it, regardless of the title bar/border chrome a given
-            // Windows theme/DPI setting actually uses.
-            Height = 880;
+            // Stacking every feature row (dialog buttons, cursor zones,
+            // combo/trackbar/radio group) needs content down to y=805
+            // (grpRadioOptions' bottom) plus margin - taller than fits on a common
+            // 768px-high display once the title bar/border chrome and high-DPI
+            // scaling are accounted for. Keep the window itself modest and let
+            // AutoScroll reveal whatever doesn't fit, rather than growing Height
+            // to match the content and risking controls no display can show at all.
+            Height = 650;
+            AutoScroll = true;
 
             ClickButton = new Button
             {
