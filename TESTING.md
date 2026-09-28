@@ -283,7 +283,10 @@ condition.
 - `WaitForWindow`, `WaitForWindowToClose`, `WaitForWindowActive` (both a
   within-timeout and a timeout-exceeded case)
 - `GetChildWindows`, `FindChildWindow` (both exact and `exactMatch: false`
-  substring matching; null/empty filters skip that axis)
+  substring matching; null/empty filters skip that axis; open one `ChildForm`
+  and one `SecondChildForm` via `btnOpenChildWindow`/`btnOpenSecondChildWindow`
+  and assert `GetChildWindows` returns both distinct-class windows, versus
+  opening two `ChildForm`s for the same-class duplicate case)
 - `TryGetWindowState`, `IsWindowMinimized`, `IsWindowMaximized` (drive the
   harness window through `SetWindowState` Minimized/Maximized/Restore and assert
   each; minimize it *from* maximized and assert it reports `Minimized` only;
@@ -295,7 +298,11 @@ condition.
   and both patterns; a WinForms class name with a per-run suffix matched by its
   stable prefix; not found → `false` with a **null** `message`, versus no
   pattern / invalid pattern / stale parent handle → `false` with a non-null
-  `message`; `ignoreCase: false` misses a differently-cased title)
+  `message`; `ignoreCase: false` misses a differently-cased title; with both
+  `btnOpenChildWindow`'s `ChildForm` and `btnOpenSecondChildWindow`'s
+  `SecondChildForm` open, a `classNamePattern` matching one's class must not
+  also match the other's — proving the pattern actually excludes a real,
+  non-matching class rather than trivially matching everything on screen)
 - `EnumerateWindowsJson` (the harness window appears with the expected `Title`,
   `ClassName`, `ProcessId`, `IsEnabled`, `State`, and sane bounds; `processId`
   narrows to one process; an unknown process ID → `[]`; a negative one →

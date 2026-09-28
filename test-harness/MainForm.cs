@@ -26,6 +26,7 @@ namespace TestHarness
         public TreeView SampleTreeView;
         public Button ShowMessageBoxButton;
         public Button OpenChildWindowButton;
+        public Button OpenSecondChildWindowButton;
 
         public MainForm()
         {
@@ -170,11 +171,29 @@ namespace TestHarness
                 child.Show(this);
             };
 
+            // A second, distinct child window type: WinForms auto-generates one Win32
+            // window class per Form subtype, so ChildForm and SecondChildForm are
+            // guaranteed to have different class names at runtime. Covers
+            // TryFindWindowByRegex's classNamePattern (nothing to wrongly match before
+            // this existed) and GetChildWindows' duplicate-vs-distinct-class cases.
+            OpenSecondChildWindowButton = new Button
+            {
+                Name = "btnOpenSecondChildWindow",
+                Text = "Open Second Child Window",
+                Location = new Point(20, 480),
+                Width = 180
+            };
+            OpenSecondChildWindowButton.Click += (s, e) =>
+            {
+                var child = new SecondChildForm();
+                child.Show(this);
+            };
+
             Controls.AddRange(new Control[]
             {
                 ClickButton, ClickCountLabel, ClickDetailLabel, InputTextBox,
                 OptionCheckBox, ItemsListBox, DragTargetPanel, SampleTreeView,
-                ShowMessageBoxButton, OpenChildWindowButton
+                ShowMessageBoxButton, OpenChildWindowButton, OpenSecondChildWindowButton
             });
         }
     }
@@ -193,6 +212,31 @@ namespace TestHarness
             {
                 Name = "lblChildContent",
                 Text = "This is a child window.",
+                Location = new Point(20, 20),
+                AutoSize = true
+            };
+            Controls.Add(label);
+        }
+    }
+
+    /// <summary>
+    /// A second, differently-classed child window, for WindowUtils scenarios that need
+    /// more than one distinct child window type on screen at once (e.g. proving
+    /// TryFindWindowByRegex's classNamePattern actually excludes a non-matching class).
+    /// </summary>
+    public class SecondChildForm : Form
+    {
+        public SecondChildForm()
+        {
+            Name = "SecondChildForm";
+            Text = "Second Child Window";
+            Width = 300;
+            Height = 200;
+
+            var label = new Label
+            {
+                Name = "lblSecondChildContent",
+                Text = "This is a second, differently-classed child window.",
                 Location = new Point(20, 20),
                 AutoSize = true
             };
