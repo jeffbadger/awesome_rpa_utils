@@ -26,12 +26,17 @@ namespace TestHarness
         public TreeView SampleTreeView;
         public Button ShowMessageBoxButton;
         public Button OpenChildWindowButton;
+        public Panel CursorHandPanel;
+        public Panel CursorSizeAllPanel;
+        public Panel CursorNoPanel;
+        public Panel CursorCrossPanel;
+        public Panel CursorWaitPanel;
 
         public MainForm()
         {
             Name = "MainForm";
             Text = "Awesome RPA Utils - Test Harness";
-            Width = 420;
+            Width = 440;
             Height = 560;
 
             ClickButton = new Button
@@ -170,12 +175,44 @@ namespace TestHarness
                 child.Show(this);
             };
 
+            // Five zones with distinct Cursor settings, for MouseUtils.GetCurrentCursorType:
+            // hover the pointer inside one and assert the matching CurrentCursorType.
+            // Note Cursors.Cross maps to CurrentCursorType.Crosshair, not "Cross".
+            CursorHandPanel = MakeCursorZonePanel("pnlCursorHand", "Hand", Cursors.Hand, new Point(20, 480), Color.MistyRose);
+            CursorSizeAllPanel = MakeCursorZonePanel("pnlCursorSizeAll", "SizeAll", Cursors.SizeAll, new Point(100, 480), Color.Honeydew);
+            CursorNoPanel = MakeCursorZonePanel("pnlCursorNo", "No", Cursors.No, new Point(180, 480), Color.LightYellow);
+            CursorCrossPanel = MakeCursorZonePanel("pnlCursorCross", "Cross", Cursors.Cross, new Point(260, 480), Color.Lavender);
+            CursorWaitPanel = MakeCursorZonePanel("pnlCursorWait", "Wait", Cursors.WaitCursor, new Point(340, 480), Color.PaleTurquoise);
+
             Controls.AddRange(new Control[]
             {
                 ClickButton, ClickCountLabel, ClickDetailLabel, InputTextBox,
                 OptionCheckBox, ItemsListBox, DragTargetPanel, SampleTreeView,
-                ShowMessageBoxButton, OpenChildWindowButton
+                ShowMessageBoxButton, OpenChildWindowButton,
+                CursorHandPanel, CursorSizeAllPanel, CursorNoPanel, CursorCrossPanel, CursorWaitPanel
             });
+        }
+
+        private static Panel MakeCursorZonePanel(string name, string label, Cursor cursor, Point location, Color backColor)
+        {
+            var panel = new Panel
+            {
+                Name = name,
+                Cursor = cursor,
+                Location = location,
+                Width = 70,
+                Height = 40,
+                BackColor = backColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            panel.Controls.Add(new Label
+            {
+                Text = label,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Cursor = cursor
+            });
+            return panel;
         }
     }
 

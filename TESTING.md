@@ -222,9 +222,11 @@ genuine timeout case (`false` with `message == null`).
   `timeoutMs`, or one exceeding the 30-minute cap, → `false` + message
   instead of an immediate/unbounded poll)
 - `GetCurrentCursorType` (hover the pointer over harness controls with known
-  `Cursor` settings - default arrow, a `TextBox` I-beam, and panels set to
-  Hand, SizeAll, No, Cross, WaitCursor, and so on - and assert the matching
-  `CurrentCursorType` after the pointer settles; `Cursors.Help` and a
+  `Cursor` settings - default arrow, `txtInput`'s `TextBox` I-beam, and the
+  `pnlCursorHand`/`pnlCursorSizeAll`/`pnlCursorNo`/`pnlCursorCross`/`pnlCursorWait`
+  panels - and assert the matching `CurrentCursorType` after the pointer
+  settles (note `pnlCursorCross` expects `Crosshair`, not `Cross`);
+  `Cursors.Help` and a
   bitmap-drawn cursor → `Unknown`; a panel whose cursor the harness hides from
   its own UI thread → `Hidden`; a slot replaced via `ReplaceSystemCursor`
   still reports its own name. The slot-classification logic itself is covered
