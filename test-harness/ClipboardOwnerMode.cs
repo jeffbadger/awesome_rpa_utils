@@ -92,6 +92,7 @@ namespace TestHarness
             // pass with an incomplete clipboard.
             if (options.TryGetValue("image", out var imagePathToCheck) && !File.Exists(imagePathToCheck))
             {
+                Environment.ExitCode = 1;
                 Console.Error.WriteLine($"--image path does not exist: {imagePathToCheck}");
                 return;
             }
