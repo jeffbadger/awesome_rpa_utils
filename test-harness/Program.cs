@@ -48,6 +48,12 @@ namespace TestHarness
             bool delayedButton = options.ContainsKey("delayed-button");
             MessageBoxButtons buttons = ParseButtons(GetString(options, "button", "OK"));
 
+            if (noButton && delayedButton)
+            {
+                Console.Error.WriteLine("--no-button and --delayed-button describe different popup shapes and cannot be combined.");
+                return;
+            }
+
             for (int i = 0; i < repeat; i++)
             {
                 if (delayedButton)

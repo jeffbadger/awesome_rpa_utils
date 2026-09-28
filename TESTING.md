@@ -909,9 +909,11 @@ nothing.
   does the same for one rule.
 - Open a popup *before* calling `Start` (run `--delayed-popup --delay-ms=0`) and verify the
   periodic scan dismisses it.
-- `--delayed-button` — a form whose button is created a moment after the window appears (not
-  a `#32770`, so pass `className: "*"`) is still dismissed; `--no-button` — a button-less
-  window is closed by a close rule.
+- Both `--delayed-button` and `--no-button` show a plain WinForms window, not a native
+  `#32770` dialog — pass `className: "*"` on the rule for either case, or it will never
+  match. `--delayed-button` — a form whose button is created a moment after the window
+  appears is still dismissed once it exists; `--no-button` — a button-less window is closed
+  by a close rule.
 - `--repeat=N --interval-ms=...` — a popup that returns every time trips
   `maxDismissalsPerMinute`: `InterruptError` fires, the rule lists as `"stopped": true`, the
   next popup stays open, and `SetRuleEnabled(true)` resumes it.
