@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using TerminalAutomation;
@@ -16,12 +15,17 @@ namespace Exerciser.Menus
     /// </summary>
     internal static class TerminalMenu
     {
-        // Tracks PIDs from "Launch independent console target" so they can be
-        // cleaned up explicitly or on exit - CreateProcess closing its handles
-        // only releases this process's reference to them, it does not terminate
-        // the launched target, so without this every interactive session would
-        // leave orphaned console windows behind.
-        private static readonly List<int> _launchedProcessIds = new List<int>();
+        // Tracks (PID, process handle) from "Launch independent console target" so
+        // they can be cleaned up explicitly or on exit - CreateProcess closing its
+        // handles only releases this process's reference to them, it does not
+        // terminate the launched target, so without this every interactive session
+        // would leave orphaned console windows behind. The handle - not just the
+        // PID - is what's kept open and used to terminate: Windows aggressively
+        // reuses PIDs once a process exits, so re-resolving by PID later
+        // (Process.GetProcessById) could terminate a completely unrelated process
+        // that happened to get the same PID in the meantime. A still-open handle
+        // unambiguously identifies the original process regardless of PID reuse.
+        private static readonly List<(int ProcessId, IntPtr Handle)> _launchedProcesses = new List<(int, IntPtr)>();
         private static bool _cleanupRegistered;
 
         internal static MenuItem[] Build(TerminalUtils terminal)
@@ -52,9 +56,9 @@ namespace Exerciser.Menus
                 {
                     string fileName = Prompt.String("File name", "cmd.exe");
                     string arguments = Prompt.String("Arguments", null);
-                    if (TryLaunchIndependentConsoleTarget(fileName, arguments ?? string.Empty, out int processId, out string error))
+                    if (TryLaunchIndependentConsoleTarget(fileName, arguments ?? string.Empty, out int processId, out IntPtr processHandle, out string error))
                     {
-                        _launchedProcessIds.Add(processId);
+                        _launchedProcesses.Add((processId, processHandle));
                         Report.Result(true, null, ("processId", processId));
                     }
                     else
@@ -122,7 +126,7 @@ namespace Exerciser.Menus
 
         private static void CleanupLaunchedProcesses(bool quiet)
         {
-            if (_launchedProcessIds.Count == 0)
+            if (_launchedProcesses.Count == 0)
             {
                 if (!quiet)
                 {
@@ -131,41 +135,41 @@ namespace Exerciser.Menus
                 return;
             }
 
-            foreach (int pid in _launchedProcessIds)
+            foreach ((int pid, IntPtr handle) in _launchedProcesses)
             {
                 try
                 {
-                    using Process process = Process.GetProcessById(pid);
-                    if (!process.HasExited)
+                    // Terminate via the handle captured at creation time, not by
+                    // re-resolving the PID - see the field comment on
+                    // _launchedProcesses for why that would be unsafe. Attempting
+                    // this against an already-exited process (e.g. the tester
+                    // closed the window by hand) is harmless: TerminateProcess
+                    // simply fails for it, and the handle we hold never refers to
+                    // anything else in the meantime.
+                    if (TerminateProcess(handle, 1) && !quiet)
                     {
-                        process.Kill();
-                        if (!quiet)
-                        {
-                            Console.WriteLine($"  Closed process {pid}.");
-                        }
+                        Console.WriteLine($"  Closed process {pid}.");
                     }
                 }
-                catch (ArgumentException)
+                finally
                 {
-                    // Already exited (e.g. the tester closed the window by hand) -
-                    // GetProcessById throws for a PID that no longer exists.
-                }
-                catch (InvalidOperationException)
-                {
-                    // Exited between HasExited and Kill.
+                    CloseHandle(handle);
                 }
             }
 
-            _launchedProcessIds.Clear();
+            _launchedProcesses.Clear();
         }
 
         // Starts a process with its own genuinely separate console (CREATE_NEW_CONSOLE),
         // rather than System.Diagnostics.Process.Start's default of attaching to/sharing
         // the caller's existing one. ProcessStartInfo has no way to request this, so this
-        // calls CreateProcess directly.
-        private static bool TryLaunchIndependentConsoleTarget(string fileName, string arguments, out int processId, out string error)
+        // calls CreateProcess directly. The returned process handle is intentionally left
+        // open - the caller tracks it for cleanup (see _launchedProcesses); only the
+        // thread handle, never needed after creation, is closed here.
+        private static bool TryLaunchIndependentConsoleTarget(string fileName, string arguments, out int processId, out IntPtr processHandle, out string error)
         {
             processId = 0;
+            processHandle = IntPtr.Zero;
             error = null;
 
             var commandLine = new StringBuilder(arguments.Length > 0 ? $"\"{fileName}\" {arguments}" : $"\"{fileName}\"");
@@ -191,7 +195,7 @@ namespace Exerciser.Menus
             }
 
             processId = processInfo.dwProcessId;
-            CloseHandle(processInfo.hProcess);
+            processHandle = processInfo.hProcess;
             CloseHandle(processInfo.hThread);
             return true;
         }
@@ -245,5 +249,8 @@ namespace Exerciser.Menus
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
     }
 }
