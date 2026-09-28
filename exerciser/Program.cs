@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Exerciser.Menus;
 using EventLogAutomation;
 using OcrAutomation;
+using ResourceLockAutomation;
 using ServiceAutomation;
 using SessionAutomation;
 using TerminalAutomation;
@@ -22,6 +23,7 @@ namespace Exerciser
             using TerminalUtils terminal = new TerminalUtils();
             using ServiceUtils service = new ServiceUtils();
             using EventLogUtils eventLog = new EventLogUtils();
+            using ResourceLockUtils resourceLock = new ResourceLockUtils();
 
             var components = new List<(string Name, MenuItem[] Items)>
             {
@@ -30,7 +32,8 @@ namespace Exerciser
                 ("OcrUtils", OcrMenu.Build(ocr)),
                 ("TerminalUtils", TerminalMenu.Build(terminal)),
                 ("ServiceUtils", ServiceMenu.Build(service)),
-                ("EventLogUtils", EventLogMenu.Build(eventLog))
+                ("EventLogUtils", EventLogMenu.Build(eventLog)),
+                ("ResourceLockUtils", ResourceLockMenu.Build(resourceLock))
             };
 
             while (true)

@@ -19,6 +19,7 @@
     <ProjectReference Include="..\src\terminalutils\TerminalUtils.csproj" />
     <ProjectReference Include="..\src\serviceutils\ServiceUtils.csproj" />
     <ProjectReference Include="..\src\eventlogutils\EventLogUtils.csproj" />
+    <ProjectReference Include="..\src\resourcelockutils\ResourceLockUtils.csproj" />
   </ItemGroup>
 
   <ItemGroup>

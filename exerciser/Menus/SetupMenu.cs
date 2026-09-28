@@ -64,6 +64,15 @@ namespace Exerciser.Menus
                 {
                     string sourceName = Prompt.String("Source name", "ZZTestEventLogUtils");
                     RunPowerShellCommand($"Remove-EventLog -Source '{sourceName}'");
+                }),
+                new MenuItem("ResourceLockUtils reminder", "Process scope needs no fixture. Machine scope needs a folder ACL this tool can't grant itself.", () =>
+                {
+                    Console.WriteLine("ResourceLockUtils' Process scope needs no setup at all - it's held in memory for this Robot Runtime.");
+                    Console.WriteLine("Machine scope needs a lock folder (default C:\\ProgramData\\AwesomeRpaUtils\\Locks) where every robot");
+                    Console.WriteLine("account that will contend for locks can list the folder, read its files, create files, and write to");
+                    Console.WriteLine("the files it creates. Granting that ACL is an account-provisioning step outside any single process's");
+                    Console.WriteLine("power, so it isn't automated here - see Documentation/ServerBots.md, then use the ResourceLockUtils");
+                    Console.WriteLine("menu's ConfigureLockFolder/ValidateLockFolder entries to point at and check the folder.");
                 })
             };
         }
