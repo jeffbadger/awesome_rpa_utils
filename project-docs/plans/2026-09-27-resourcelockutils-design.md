@@ -161,4 +161,8 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
     this account, damaged, and whether this account can clean up another robot's old generation, tried only on one the protocol already allows
     deleting). `usable` means locks can be taken; each problem gets a plain-language warning. Damaged files are **reported, not quarantined**:
     moving or deleting another robot's top generation is what the protocol forbids, and an old unreadable top is superseded automatically.
+11. **Documentation and registration** (WP5): five pages (QuickStart, CrossThread, ServerBots with the folder setup and an `icacls` example,
+    Slots, Limits) whose examples and numbers are checked by `DocumentationExampleTests`; registered in the release script (26 DLLs), the root
+    README, `CrossReference.md`, `TESTING.md` (including the Server Bot checks still to run on a real server) and the Pega usability review.
+    The component README carries no status note.
 

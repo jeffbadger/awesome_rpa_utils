@@ -2,7 +2,7 @@
 
 A single searchable index of every **PME** — Property, Method, and Event —
 exposed by every component in this repository. Use it to answer "does
-anything in this library already do X" without opening 25 different
+anything in this library already do X" without opening 26 different
 READMEs: `Ctrl+F` for a method name, a keyword from what you're trying to
 do, or a parameter/return type, or jump straight to a component from the
 quick-reference table below.
@@ -32,6 +32,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | [MouseUtils](#mouseutils) | `MouseAutomation` | 92 (99 rows) | 0 | 0 | Moves, clicks, drags, and scrolls the mouse; controls cursor appearance, visibility, and confinement. |
 | [OcrUtils](#ocrutils) | `OcrAutomation` | 11 | 0 | 0 | Recognizes text from the screen or an image file via `Windows.Media.Ocr`. |
 | [ReconciliationUtils](#reconciliationutils) | `ReconciliationAutomation` | 31 | 0 | 0 | Reconciles two JSON datasets or DataTables by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal, text, Boolean, currency-gated money and explicit-format date and instant comparison and scalar results for routing. |
+| [ResourceLockUtils](#resourcelockutils) | `ResourceLockAutomation` | 11 | 0 | 0 | Locks on named resources (a legacy login, a license seat, a shared workbook) that any thread can release and that every robot on a machine shares, including Server Bots under other Windows accounts: token-owned leases that end on their own if a holder crashes or hangs, single locks or pools with a capacity. |
 | [ScreenCaptureUtils](#screencaptureutils) | `ScreenCaptureAutomation` | 28 (34 rows) | 0 | 0 | Captures the screen/region/window to file or clipboard; compares against a baseline; annotates/redacts saved screenshots. |
 | [ServiceUtils](#serviceutils) | `ServiceAutomation` | 24 (25 rows) | 0 | 0 | Queries, starts, stops, restarts, pauses/resumes, and configures the startup type of Windows services. |
 | [SessionUtils](#sessionutils) | `SessionAutomation` | 31 | 0 | 0 | Reports on and acts on Windows session/workstation state — identity, kind, connect state, lock, idle time. |
@@ -621,6 +622,28 @@ Reconciles two JSON datasets or DataTables by business key and reports matches, 
 | `TryReadNextDifference` | `bool TryReadNextDifference(out bool hasItem, out string ruleName, out string reasonCode, out string leftValueJson, out string rightValueJson, out string explanation, out string message)` | Reads the next field difference of the exception most recently read. hasItem is False when there are no more. A missing value is null; a JSON null is the text null. |
 | `TryReadNextException` | `bool TryReadNextException(out bool hasItem, out string resultId, out string kind, out string keyJson, out int leftRowIndex, out int rightRowIndex, out string reason, out int differenceCount, out string message)` | Reads the next exception of the last run. hasItem is False when there are no more. kind is a stable code such as Different or OnlyLeft; a row index is -1 when absent or ambiguous. |
 | `ValidateDefinitionJson` | `bool ValidateDefinitionJson(string definitionJson, out int errorCount, out string reportJson, out string message)` | Validates a JSON definition without loading it. Returns True when validation ran; errorCount is 0 for a valid definition and reportJson lists the findings. |
+
+## ResourceLockUtils
+
+Locks on named resources (a legacy login, a license seat, a shared workbook) that any thread can release and that every robot on a machine shares, including Server Bots under other Windows accounts: token-owned leases that end on their own if a holder crashes or hangs, single locks or pools with a capacity.
+
+**Namespace:** `ResourceLockAutomation` | **Assembly:** `ResourceLockAutomation`
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `AcquireLock` | `bool AcquireLock(LockScope scope, string resource, string holder, int leaseSeconds, int waitMilliseconds, out bool acquired, out string token, out string currentHolder, out string message)` | Waits up to waitMilliseconds for a lock on a resource and takes it as soon as it is free. acquired is False when the wait ended first, and currentHolder then names who has it. Run it on an asynchronous link so the wait does not block the user interface. |
+| `AcquireSlot` | `bool AcquireSlot(LockScope scope, string resource, int capacity, string holder, int leaseSeconds, int waitMilliseconds, out bool acquired, out string token, out int holderCount, out string message)` | Waits up to waitMilliseconds for one of capacity slots on a resource and takes it as soon as one is free. acquired is False when the wait ended first. Run it on an asynchronous link so the wait does not block the user interface. |
+| `ConfigureLockFolder` | `bool ConfigureLockFolder(string folderPath, out string message)` | Sets the folder that holds Machine-scope locks for this component: an absolute local path, or empty for the default (ProgramData\AwesomeRpaUtils\Locks). Every robot that shares locks must use the same folder. |
+| `ForceReleaseLock` | `bool ForceReleaseLock(LockScope scope, string resource, bool confirmForceRelease, out int releasedCount, out string message)` | Releases a resource whatever holds it, for an operator who knows the holder is gone; confirmForceRelease must be True. releasedCount is how many holders lost their lease; each is told so by RenewLock or ReleaseLock. |
+| `GetLockStatus` | `bool GetLockStatus(LockScope scope, string resource, out bool held, out string holders, out int expiresInSeconds, out int holderCount, out string message)` | Reports whether a resource is held, by whom (the holders of slots separated by \|), in how many seconds the first lease ends, and how many holders it has. Changes nothing. |
+| `GetLocksJson` | `bool GetLocksJson(LockScope scope, out string locksJson, out string message)` | Returns every held lock and slot in the scope as JSON: the resource, holder and lease end, and for the Machine scope the holder's machine, session and process. Changes nothing. |
+| `ReleaseLock` | `bool ReleaseLock(LockScope scope, string resource, string token, out bool released, out string message)` | Releases a lock or slot, from any thread that has the token. released is False when the lease had already been lost (it expired or another holder took it over), so the work may have overlapped with another holder's. |
+| `RenewLock` | `bool RenewLock(LockScope scope, string resource, string token, int leaseSeconds, out bool renewed, out int expiresInSeconds, out string message)` | Extends a held lock or slot to leaseSeconds from now, from any thread that has the token. renewed is False when the lease was already lost (it expired or another holder took it over): stop using the resource. |
+| `TryAcquireLock` | `bool TryAcquireLock(LockScope scope, string resource, string holder, int leaseSeconds, out bool acquired, out string token, out string currentHolder, out string message)` | Takes a lock on a resource now if it is free, without waiting. acquired is False when another holder has it, and currentHolder then names who. Keep the token: RenewLock and ReleaseLock need it, from any thread. The lease ends after leaseSeconds unless it is renewed. |
+| `TryAcquireSlot` | `bool TryAcquireSlot(LockScope scope, string resource, int capacity, string holder, int leaseSeconds, out bool acquired, out string token, out int holderCount, out string message)` | Takes one of capacity slots on a resource now if one is free (a pool of licenses, logins or sessions), without waiting. holderCount is how many slots are taken. Every caller must give the same capacity for the resource. The token works with RenewLock and ReleaseLock. |
+| `ValidateLockFolder` | `bool ValidateLockFolder(out bool usable, out string reportJson, out string message)` | Checks the Machine-scope lock folder: usable is True when this robot can create lock files there, and reportJson also says whether it can delete its own and other robots' files. Run it once under each robot account when setting up a server. |
 
 ## ScreenCaptureUtils
 

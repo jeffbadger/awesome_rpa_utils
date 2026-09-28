@@ -9,10 +9,11 @@ namespace ResourceLockAutomation
     /// lease that is not renewed expires, so a crashed or hung holder cannot block everyone forever.
     /// </summary>
     /// <remarks>
-    /// Work in progress: both scopes work (Process: every thread and automation in this Robot Runtime; Machine: every robot on the machine,
-    /// through lease files in the lock folder), and ValidateLockFolder checks a lock folder; the documentation and registration come next. See project-docs/plans/2026-09-27-resourcelockutils-design.md.
+    /// Scopes: Process (every thread and automation in this Robot Runtime, in memory) and Machine (every robot on the machine, including Server
+    /// Bots under other Windows accounts, through lease files in the lock folder). See the Documentation folder and
+    /// project-docs/plans/2026-09-27-resourcelockutils-design.md.
     /// </remarks>
-    [Description("Locks on named resources that any thread can release and that Server Bots on one machine share: a lease owned by a token, renewed or released from any thread, that expires if its holder crashes or hangs. Under construction: both scopes and ValidateLockFolder work; documentation and registration are still to come. Never throws.")]
+    [Description("Locks on named resources that any thread can release and that Server Bots on one machine share: a lease owned by a token, renewed or released from any thread, that expires if its holder crashes or hangs. Never throws.")]
     public sealed class ResourceLockUtils : Component
     {
         private readonly object syncRoot = new object();

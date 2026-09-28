@@ -5,15 +5,16 @@ rate-limited portal) that **any thread can release** and that **Server Bots on o
 component: a `Lock` can only be released by the thread that took it, and it is in memory inside one Robot Runtime, so it cannot stop two Server
 Bots from using the same resource.
 
-> **Status: under construction.** Work packages 1 to 4 of the [design plan](../../project-docs/plans/2026-09-27-resourcelockutils-design.md)
-> are in: every method works, in both scopes: `Process` (every thread and automation in one Robot Runtime) and `Machine` (every robot on the
-> machine, including Server Bots under other Windows accounts), and `ValidateLockFolder` checks a lock folder. The documentation pages and the
-> registration (root README, `CrossReference.md`, releases) come next. Do not use the component until a release says otherwise.
-
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ResourceLockAutomation`
 - Assembly: `ResourceLockAutomation`
 - No NuGet dependencies. Messages never contain resource names, holders or tokens.
+
+## Documentation
+
+The [Documentation](Documentation/README.md) folder has the [QuickStart](Documentation/QuickStart.md), releasing from another thread
+([CrossThread](Documentation/CrossThread.md)), setting up and checking a lock folder for Server Bots ([ServerBots](Documentation/ServerBots.md)),
+pools with a capacity ([Slots](Documentation/Slots.md)) and every [limit](Documentation/Limits.md).
 
 ## How it works
 
