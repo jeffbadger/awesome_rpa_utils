@@ -27,13 +27,21 @@ namespace TestHarness
         public Button ShowMessageBoxButton;
         public Button OpenChildWindowButton;
         public Button OpenSecondChildWindowButton;
+        public Button ShowNonNativeDialogButton;
+        public Button ShowDuplicateDialogsButton;
+        public Button ShowDisabledButtonDialogButton;
+        public Panel CursorHandPanel;
+        public Panel CursorSizeAllPanel;
+        public Panel CursorNoPanel;
+        public Panel CursorCrossPanel;
+        public Panel CursorWaitPanel;
 
         public MainForm()
         {
             Name = "MainForm";
             Text = "Awesome RPA Utils - Test Harness";
-            Width = 420;
-            Height = 560;
+            Width = 460;
+            Height = 610;
 
             ClickButton = new Button
             {
@@ -171,6 +179,62 @@ namespace TestHarness
                 child.Show(this);
             };
 
+            // Dismiss control is a Label, never a real Button, so DialogUtils.CanDismissDialog
+            // (which only ever looks for a native "Button"-classed child window) reliably
+            // reports canDismiss = false, without depending on an actual WinUI3 dialog.
+            ShowNonNativeDialogButton = new Button
+            {
+                Name = "btnShowNonNativeDialog",
+                Text = "Show Non-Native Dialog",
+                Location = new Point(20, 480),
+                Width = 130
+            };
+            ShowNonNativeDialogButton.Click += (s, e) =>
+            {
+                var dialog = new NonNativeDialogForm();
+                dialog.Show(this);
+            };
+
+            // Opens two windows with identical Text at once, for FindDialog's first-match
+            // and FindAllDialogs' multi-match (returns both) behavior.
+            ShowDuplicateDialogsButton = new Button
+            {
+                Name = "btnShowDuplicateDialogs",
+                Text = "Show Duplicate Dialogs",
+                Location = new Point(160, 480),
+                Width = 130
+            };
+            ShowDuplicateDialogsButton.Click += (s, e) =>
+            {
+                new DuplicateDialogForm("Instance A").Show(this);
+                new DuplicateDialogForm("Instance B").Show(this);
+            };
+
+            // btnConfirm starts disabled, so ClickDialogButtonByText/ById's wasEnabled
+            // output can be asserted false; chkConfirmEnabled lets a tester enable it
+            // mid-wait to also cover the true case.
+            ShowDisabledButtonDialogButton = new Button
+            {
+                Name = "btnShowDisabledButtonDialog",
+                Text = "Show Disabled Button Dialog",
+                Location = new Point(300, 480),
+                Width = 140
+            };
+            ShowDisabledButtonDialogButton.Click += (s, e) =>
+            {
+                var dialog = new DisabledButtonDialogForm();
+                dialog.Show(this);
+            };
+
+            // Five zones with distinct Cursor settings, for MouseUtils.GetCurrentCursorType:
+            // hover the pointer inside one and assert the matching CurrentCursorType.
+            // Note Cursors.Cross maps to CurrentCursorType.Crosshair, not "Cross".
+            CursorHandPanel = MakeCursorZonePanel("pnlCursorHand", "Hand", Cursors.Hand, new Point(20, 530), Color.MistyRose);
+            CursorSizeAllPanel = MakeCursorZonePanel("pnlCursorSizeAll", "SizeAll", Cursors.SizeAll, new Point(100, 530), Color.Honeydew);
+            CursorNoPanel = MakeCursorZonePanel("pnlCursorNo", "No", Cursors.No, new Point(180, 530), Color.LightYellow);
+            CursorCrossPanel = MakeCursorZonePanel("pnlCursorCross", "Cross", Cursors.Cross, new Point(260, 530), Color.Lavender);
+            CursorWaitPanel = MakeCursorZonePanel("pnlCursorWait", "Wait", Cursors.WaitCursor, new Point(340, 530), Color.PaleTurquoise);
+
             // A second, distinct top-level window type. These are owned windows
             // (Show(this), not WS_CHILD descendants), and WinForms does NOT derive a
             // distinct native window class per CLR Form subtype - every plain Form,
@@ -184,7 +248,7 @@ namespace TestHarness
             {
                 Name = "btnOpenSecondChildWindow",
                 Text = "Open Second Child Window",
-                Location = new Point(20, 480),
+                Location = new Point(20, 575),
                 Width = 180
             };
             OpenSecondChildWindowButton.Click += (s, e) =>
@@ -197,8 +261,32 @@ namespace TestHarness
             {
                 ClickButton, ClickCountLabel, ClickDetailLabel, InputTextBox,
                 OptionCheckBox, ItemsListBox, DragTargetPanel, SampleTreeView,
-                ShowMessageBoxButton, OpenChildWindowButton, OpenSecondChildWindowButton
+                ShowMessageBoxButton, OpenChildWindowButton, OpenSecondChildWindowButton,
+                ShowNonNativeDialogButton, ShowDuplicateDialogsButton, ShowDisabledButtonDialogButton,
+                CursorHandPanel, CursorSizeAllPanel, CursorNoPanel, CursorCrossPanel, CursorWaitPanel
             });
+        }
+
+        private static Panel MakeCursorZonePanel(string name, string label, Cursor cursor, Point location, Color backColor)
+        {
+            var panel = new Panel
+            {
+                Name = name,
+                Cursor = cursor,
+                Location = location,
+                Width = 70,
+                Height = 40,
+                BackColor = backColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            panel.Controls.Add(new Label
+            {
+                Text = label,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Cursor = cursor
+            });
+            return panel;
         }
     }
 
@@ -259,6 +347,117 @@ namespace TestHarness
                 cp.ClassName = "TestHarnessSecondChildForm";
                 return cp;
             }
+        }
+    }
+
+    /// <summary>
+    /// A dialog whose only dismiss control is a Label styled as a button, never a real
+    /// Button. DialogUtils.CanDismissDialog only ever reports true for a native "Button"-
+    /// classed child window, so this form deterministically drives canDismiss = false,
+    /// covering the "non-native dialog" case without an actual WinUI3 dependency.
+    /// </summary>
+    public class NonNativeDialogForm : Form
+    {
+        public NonNativeDialogForm()
+        {
+            Name = "NonNativeDialogForm";
+            Text = "Non-Native Dialog";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            Width = 320;
+            Height = 160;
+
+            var pseudoButton = new Label
+            {
+                Name = "lblPseudoOkButton",
+                Text = "OK",
+                BorderStyle = BorderStyle.FixedSingle,
+                Cursor = Cursors.Hand,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Location = new Point(110, 90),
+                Width = 80,
+                Height = 30
+            };
+            pseudoButton.Click += (s, e) => Close();
+            Controls.Add(pseudoButton);
+        }
+    }
+
+    /// <summary>
+    /// A dialog with identical Text on every instance and a real Button to close it.
+    /// Opening two at once (see MainForm.ShowDuplicateDialogsButton) exercises
+    /// FindDialog's first-match and FindAllDialogs' multi-match (returns both) behavior.
+    /// </summary>
+    public class DuplicateDialogForm : Form
+    {
+        public DuplicateDialogForm(string instanceLabel)
+        {
+            Name = "DuplicateDialogForm";
+            Text = "Duplicate Dialog";
+            Width = 280;
+            Height = 140;
+
+            var instanceLabelControl = new Label
+            {
+                Name = "lblInstance",
+                Text = instanceLabel,
+                AutoSize = true,
+                Location = new Point(20, 20)
+            };
+            var ok = new Button
+            {
+                Name = "btnDuplicateOk",
+                Text = "OK",
+                // System (not the WinForms default) renders via real native BS_PUSHBUTTON
+                // painting rather than owner-drawing it, so DialogUtils' BM_CLICK-based
+                // ClickButton/ClickDialogButtonByText can actually target it - a default
+                // WinForms button is owner-drawn and DialogUtils' own README documents
+                // that as possibly unresponsive to BM_CLICK.
+                FlatStyle = FlatStyle.System,
+                Location = new Point(90, 70),
+                Width = 80
+            };
+            ok.Click += (s, e) => Close();
+            Controls.Add(instanceLabelControl);
+            Controls.Add(ok);
+        }
+    }
+
+    /// <summary>
+    /// A dialog whose Confirm button starts disabled, so ClickDialogButtonByText/ById's
+    /// wasEnabled output can be asserted false; the checkbox lets a tester enable it
+    /// mid-wait to also cover the true case.
+    /// </summary>
+    public class DisabledButtonDialogForm : Form
+    {
+        public DisabledButtonDialogForm()
+        {
+            Name = "DisabledButtonDialogForm";
+            Text = "Disabled Button Dialog";
+            Width = 300;
+            Height = 160;
+
+            var confirm = new Button
+            {
+                Name = "btnConfirm",
+                Text = "Confirm",
+                Enabled = false,
+                // Same reasoning as DuplicateDialogForm's OK button: real native
+                // BS_PUSHBUTTON painting, not WinForms' owner-drawn default, so
+                // DialogUtils can find and click it via BM_CLICK.
+                FlatStyle = FlatStyle.System,
+                Location = new Point(90, 80),
+                Width = 100
+            };
+            var enableToggle = new CheckBox
+            {
+                Name = "chkConfirmEnabled",
+                Text = "Enable Confirm",
+                Location = new Point(20, 20),
+                AutoSize = true
+            };
+            enableToggle.CheckedChanged += (s, e) => confirm.Enabled = enableToggle.Checked;
+            Controls.Add(enableToggle);
+            Controls.Add(confirm);
         }
     }
 }
