@@ -274,6 +274,14 @@ condition.
 - `GetTopLevelWindows`, `FindWindowByTitle` (exact/substring/not-found; a
   null/empty title returns `IntPtr.Zero` rather than throwing),
   `FindWindowByClass`, `FindWindowsByProcessId`, `GetForegroundWindow`
+  (open one `ChildForm` and one `SecondChildForm` via
+  `btnOpenChildWindow`/`btnOpenSecondChildWindow` — both are owned top-level
+  windows, not `WS_CHILD` descendants of the harness window, so they show up
+  here, not under `GetChildWindows` below — and assert `GetTopLevelWindows`
+  includes both, `FindWindowByClass` matching `SecondChildForm`'s explicit
+  class finds only it, and matching `ChildForm`'s class finds it but not
+  `SecondChildForm`; opening two `ChildForm`s instead covers the same-class
+  duplicate case)
 - `GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow` (assert
   bounds before/after; invalid handle/negative dimensions → `false` + message)
 - `GetWindowTitle`, `GetWindowClassName`, `GetWindowProcessId`,
@@ -302,7 +310,11 @@ condition.
   and both patterns; a WinForms class name with a per-run suffix matched by its
   stable prefix; not found → `false` with a **null** `message`, versus no
   pattern / invalid pattern / stale parent handle → `false` with a non-null
-  `message`; `ignoreCase: false` misses a differently-cased title)
+  `message`; `ignoreCase: false` misses a differently-cased title; with both
+  `btnOpenChildWindow`'s `ChildForm` and `btnOpenSecondChildWindow`'s
+  `SecondChildForm` open, a `classNamePattern` matching one's class must not
+  also match the other's — proving the pattern actually excludes a real,
+  non-matching class rather than trivially matching everything on screen)
 - `EnumerateWindowsJson` (the harness window appears with the expected `Title`,
   `ClassName`, `ProcessId`, `IsEnabled`, `State`, and sane bounds; `processId`
   narrows to one process; an unknown process ID → `[]`; a negative one →
@@ -389,7 +401,7 @@ failure (`message` set) from a normal not-changed/exceeds-tolerance result
   against a pre-rendered "expected annotated" fixture; missing image file →
   `false` + message)
 
-### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, and tree; Cleanup: close it)
+### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, tree, combo box, track bar, and radio buttons; Cleanup: close it)
 
 All methods here except `GetRootElement`, `FromWindowHandle`, `FromPoint`, and
 `IsElementAvailable` return `bool` with an `out string message` and never
@@ -405,7 +417,7 @@ argument error (`false` + non-null `message`) from a normal not-found result
 - `FindByAutomationId`, `FindByName`, `FindByClassName`, `FindByControlType`, `FindAllByControlType`, `GetChildren` (found and not-found cases against harness controls; `descendantsOnly` true/false cases; null parent → `false` + non-null message)
 - `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName`, `GetBoundingRectangle`, `IsEnabled`, `IsOffscreen` (assert against known harness control properties; null element → `false` + message)
 - `IsElementAvailable` (true for a live control; false after closing the harness window and re-checking a cached reference)
-- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, → `false` + message instead of an exception)
+- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; also `Select`/`IsSelected` against `cboOptions`' items, a different UIA tree shape than `lstItems` — **call `Expand` on `cboOptions` first**: like most UIA `ComboBox` providers, its item elements are not present in the tree while collapsed, so `FindByControlType`/`Select` against them only work after expanding, and `Collapse` afterward to restore the harness's default state; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, or on `radOptionA`/`B`/`C` (`SelectionItemPattern`, not `TogglePattern`), or `SetValue`/`Toggle`/`Select` on `trkVolume` (only `RangeValuePattern`) → `false` + message instead of an exception)
 
 The platform-independent input guards, `UiControlType` mapping, and Wait
 abort-on-argument-error paths have xunit coverage in
@@ -891,28 +903,35 @@ The platform-independent xunit coverage is in
 `src/datacontractutils/DataContractUtils.Tests`
 (`dotnet test src/datacontractutils/DataContractUtils.Tests/DataContractUtils.Tests.csproj`).
 
-### InterruptUtils (needs a desktop; Setup: a second process that shows popups on demand - a small WinForms harness whose child process calls `MessageBox.Show` after a delay; Cleanup: close any popup left open and dispose the component)
+### InterruptUtils (needs a desktop; Setup: a second process that shows popups on demand — `TestHarness.exe --delayed-popup` (see [`test-harness/README.md`](test-harness/README.md#second-process-modes)), which calls `MessageBox.Show` after a delay; Cleanup: close any popup left open and dispose the component)
 
 The popup must come from a **different process** than the automation: a popup owned by the
 automation's own process is deliberately never touched, so a same-process dialog proves
 nothing.
 
 - Add a dismiss rule for the popup, `Start`, then block the automation's thread in a long
-  wait (`Thread.Sleep`/a wait step) while the child shows the popup after a few seconds.
-  Verify the child's `MessageBox` returned the rule's button, `PopupDismissed` fired once
-  with the expected rule, title, message, button and process, `GetDismissalCount` is 1 and
-  `GetLogJson` has the entry. Try it with `sweepIntervalMs: 0` (window events alone) and
-  with the default.
-- A popup whose title does not match, or whose process does not match, stays open. A
-  watch-only rule raises `PopupDetected` once and leaves the popup open.
+  wait (`Thread.Sleep`/a wait step) while `TestHarness.exe --delayed-popup --delay-ms=3000`
+  shows the popup after a few seconds. Verify the child's `MessageBox` returned the rule's
+  button, `PopupDismissed` fired once with the expected rule, title, message, button and
+  process, `GetDismissalCount` is 1 and `GetLogJson` has the entry. Try it with
+  `sweepIntervalMs: 0` (window events alone) and with the default.
+- A popup whose title does not match (`--title=...`), or whose process does not match, stays
+  open. A watch-only rule raises `PopupDetected` once and leaves the popup open.
 - `Pause` leaves a matching popup open; `Resume` then dismisses it. `SetRuleEnabled(false)`
   does the same for one rule.
-- Open a popup *before* calling `Start` and verify the periodic scan dismisses it.
-- A form whose button is created a moment after the window appears (not a `#32770`, so pass
-  `className: "*"`) is still dismissed; a button-less window is closed by a close rule.
-- A popup that returns every time trips `maxDismissalsPerMinute`: `InterruptError` fires,
-  the rule lists as `"stopped": true`, the next popup stays open, and `SetRuleEnabled(true)`
-  resumes it.
+- Open a popup *before* calling `Start` (run `--delayed-popup --delay-ms=0`) and verify the
+  periodic scan dismisses it.
+- Both `--delayed-button` and `--no-button` show a plain WinForms window, not a native
+  `#32770` dialog — pass `className: "*"` on the rule for either case, or it will never
+  match. `--delayed-button` (button appears after `--button-delay-ms`, default 500 —
+  deliberately short: `InterruptUtils` only retries a newly seen popup at
+  0/150/400/1000/2000 ms after first detecting it before giving up, so `--delay-ms`'s
+  3000 ms default would arrive too late to ever be caught) — a form whose button is
+  created a moment after the window appears is still dismissed once it exists;
+  `--no-button` — a button-less window is closed by a close rule.
+- `--repeat=N --interval-ms=...` — a popup that returns every time trips
+  `maxDismissalsPerMinute`: `InterruptError` fires, the rule lists as `"stopped": true`, the
+  next popup stays open, and `SetRuleEnabled(true)` resumes it.
 - A popup with no button matching the rule, or whose button never closes it, ends in
   `PopupDismissFailed` with a `Detail` naming the reason, and `HasUnresolvedPopup` is true.
 - Cycle `Start`/`Stop` many times and dispose while running: the thread count must not grow.

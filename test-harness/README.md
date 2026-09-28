@@ -35,6 +35,7 @@ can still catch compile errors in CI or on a Linux dev machine.
 | `treeSample` | TreeView | "Documents" node with two children, for `UIAutomationUtils.Expand`/`Collapse`/`Select` |
 | `btnShowMessageBox` | Button | Opens a Yes/No `MessageBox` for `DialogUtils` |
 | `btnOpenChildWindow` | Button | Opens `ChildForm` for `WindowUtils` child-window tests; no singleton guard, so repeated clicks open multiple same-class, same-title windows — useful for `FindDialog`/`GetChildWindows` multi-match cases |
+| `btnOpenSecondChildWindow` | Button | Opens `SecondChildForm`, an owned top-level window (not `WS_CHILD`) with an explicit, distinct Win32 window class from `ChildForm`'s — registered via `RegisterClassEx` (plain WinForms `Form`s don't get a distinct class per CLR subtype, and `CreateParams.ClassName` alone doesn't register one) — for `WindowUtils.TryFindWindowByRegex`'s `classNamePattern` and `GetTopLevelWindows`/`FindWindowByClass`'s duplicate-vs-distinct-class cases |
 | `btnShowNonNativeDialog` | Button | Opens `NonNativeDialogForm`, whose dismiss control is a `Label` styled as a button rather than a real `Button` — `DialogUtils.CanDismissDialog`/`FindDialog`'s `canDismiss` reliably reports `false` against it, covering the "non-native dialog" case without a WinUI3 dependency |
 | `btnShowDuplicateDialogs` | Button | Opens two `DuplicateDialogForm` instances at once, both titled "Duplicate Dialog" with a real `Button` (`btnDuplicateOk`) — covers `FindDialog`'s first-match and `FindAllDialogs`' multi-match (returns both) behavior |
 | `btnShowDisabledButtonDialog` | Button | Opens `DisabledButtonDialogForm`, whose `btnConfirm` starts `Enabled = false` — covers `ClickDialogButtonByText`/`ById`'s `wasEnabled = false` case; its `chkConfirmEnabled` checkbox lets a tester flip it enabled mid-wait to also cover the `true` case |
@@ -43,6 +44,10 @@ can still catch compile errors in CI or on a Linux dev machine.
 | `pnlCursorNo` | Panel | `Cursor = Cursors.No` — expect `CurrentCursorType.No` |
 | `pnlCursorCross` | Panel | `Cursor = Cursors.Cross` — expect `CurrentCursorType.Crosshair` (name differs from the WinForms `Cursors.Cross` value) |
 | `pnlCursorWait` | Panel | `Cursor = Cursors.WaitCursor` — expect `CurrentCursorType.Wait` |
+| `cboOptions` | ComboBox (drop-down list) | A different UIA tree shape from `lstItems`, for `UIAutomationUtils.Select`/`IsSelected` — call `Expand` first, its items aren't in the UIA tree while collapsed |
+| `trkVolume` | TrackBar (0-100, starts at 50) | Only exposes `RangeValuePattern` — negative case for `SetValue`/`Toggle`/`Select` against a control supporting none of those patterns |
+| `grpRadioOptions` | GroupBox | Contains `radOptionA`/`radOptionB`/`radOptionC` |
+| `radOptionA`, `radOptionB`, `radOptionC` | RadioButton | Expose `SelectionItemPattern`, not `TogglePattern` — negative case for `UIAutomationUtils.Toggle`/`IsToggled`, complementing `chkOption` |
 
 Each control's `Name` doubles as its Win32 window text lookup key and, for
 standard WinForms controls, its UI Automation `AutomationId` — though per
@@ -52,16 +57,47 @@ before writing a test case against it.
 
 ## Second-process modes
 
-`ClipboardUtils` needs a real clipboard owned by a **different process**, and
-a window in another process that can take the focus. Instead of the normal
-harness window, `TestHarness.exe` can run as that second process:
+`InterruptUtils` needs its popup to come from a *different process* than the
+automation dismissing it — a same-process dialog would not catch a real
+regression. `ClipboardUtils` needs a real clipboard owned by a **different
+process**, and a window in another process that can take the focus. Instead
+of the normal harness window, `TestHarness.exe` can run as that second
+process:
 
 ```bash
+TestHarness.exe --delayed-popup [--title=T] [--message=M] [--delay-ms=N]
+  [--button=OK|OKCancel|YesNo|YesNoCancel|AbortRetryIgnore|RetryCancel]
+  [--repeat=N] [--interval-ms=N] [--no-button]
+  [--delayed-button] [--button-delay-ms=N]
 TestHarness.exe --clipboard-owner [--text=T] [--html=H] [--rtf=R]
   [--image=path] [--files=path1;path2] [--custom-format=name:payload]
   [--hang] [--render-on-demand]
 TestHarness.exe --focus-textbox
 ```
+
+### `--delayed-popup` (InterruptUtils)
+
+Sleeps `--delay-ms` (default 3000), then shows a real `MessageBox` from its
+own process — satisfying TESTING.md's "a second process that shows popups on
+demand." Defaults: `--title="Test Harness Popup"`,
+`--message="This is a delayed popup."`, `--button=OK`.
+
+- `--repeat=N --interval-ms=N`: shows the popup `N` times, `--interval-ms`
+  apart, for `InterruptUtils`' `maxDismissalsPerMinute` case (a popup that
+  returns every time).
+- `--no-button`: shows a fixed-dialog window (`FormBorderStyle.FixedDialog`,
+  so it still has a title bar and border) with no `Button`-classed child at
+  all, for "a button-less window is closed by a close rule."
+- `--delayed-button`: shows the window immediately, then adds its `Button`
+  on a timer tick after `--button-delay-ms` (default 500, **not**
+  `--delay-ms`), for "a form whose button is created a moment after the
+  window appears" (pass `className: "*"` on the `InterruptUtils` side, since
+  it's not a native `#32770` dialog). The default is deliberately short:
+  `InterruptUtils` only retries a newly seen popup at 0/150/400/1000/2000 ms
+  after first detecting it before giving up (`PopupDismissFailed`), so a
+  button delayed by `--delay-ms`'s 3000 ms default would never be caught.
+
+### `--clipboard-owner` / `--focus-textbox` (ClipboardUtils)
 
 `--clipboard-owner` puts a rich clipboard on the system clipboard — one entry
 per format flag supplied (text, HTML, RTF, an image file, a file-drop list, a
