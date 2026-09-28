@@ -21,7 +21,7 @@ namespace Exerciser.Menus
                     bool ok = terminal.IsConsoleAttachable(processId, out bool attachable, out string message);
                     Report.Result(ok, message, ("attachable", attachable));
                 }),
-                new MenuItem("StartConsoleProcess", "Launches its own target console process, e.g. cmd.exe - use the returned processId for every other method below.", () =>
+                new MenuItem("StartConsoleProcess", "Launches its own target console process, e.g. cmd.exe - use the returned processId for every other method below. Note: since the exerciser is itself a console app, the launched process attaches to/shares this console rather than getting a genuinely separate window (standard Windows behavior for a console-hosted parent) - TESTING.md's 'own real, visible console window' assertion is really about a non-console caller like Robot Studio and can't be fully confirmed this way.", () =>
                 {
                     string fileName = Prompt.String("File name", "cmd.exe");
                     string arguments = Prompt.String("Arguments", null);
