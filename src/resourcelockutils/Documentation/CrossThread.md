@@ -34,7 +34,8 @@ A lease ends after `leaseSeconds` unless it is renewed. For long work, renew bet
 ## Waiting
 
 - `TryAcquireLock` tries once. `AcquireLock` waits up to `waitMilliseconds` and takes the lock as soon as it is free. In the `Process` scope a
-  release wakes the waiter at once; in the `Machine` scope the lock files are checked with growing pauses (50 ms up to 1 s).
+  release wakes the waiter at once; in the `Machine` scope the lock files are checked with growing pauses (50 ms up to 1 s), so after a long
+  wait a release may take up to about a second to be noticed (see [Limits](Limits.md#measured-cost)).
 - When the wait ends, one last attempt is made, so `waitMilliseconds` 0 is a single attempt, like `TryAcquireLock`.
 - There is no queue: when several automations wait, whichever checks first after a release wins. For ordered work, use `LocalQueueUtils`.
 - Disposing the component ends its own waits at once and releases every lock it still holds.

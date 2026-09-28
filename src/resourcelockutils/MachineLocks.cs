@@ -108,6 +108,9 @@ namespace ResourceLockAutomation
     /// rewrites it on every renewal, and no lease is longer, so it is never superseded while it may be live (ValidateLockFolder reports such a
     /// folder).</item>
     /// </list>
+    /// Durability: lease files are written to the operating system, not forced to disk. Other processes read the same OS cache, and after a power
+    /// loss or restart every holder's process is gone, so its locks are free anyway; forcing each write to disk cost milliseconds per lock (and
+    /// over 100 ms on some file systems) for nothing.
     /// Within this process all Machine-scope operations are serialized, and a disposed component is refused inside that lock, like the Process
     /// scope. Times are UTC wall-clock times, since several processes must agree on them.
     /// </summary>
@@ -310,7 +313,7 @@ namespace ResourceLockAutomation
             using (stream)
             {
                 stream.Write(content, 0, content.Length);
-                stream.Flush(true);
+                stream.Flush();                                                  // to the OS, not the disk (see Durability)
             }
             return true;
         }
@@ -331,7 +334,7 @@ namespace ResourceLockAutomation
                     using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
                     stream.SetLength(0);
                     stream.Write(content, 0, content.Length);
-                    stream.Flush(true);
+                    stream.Flush();                                                  // to the OS, not the disk (see Durability)
                     return true;
                 }
                 catch (FileNotFoundException) { return false; }
@@ -358,24 +361,41 @@ namespace ResourceLockAutomation
         /// <summary>An acquire that took longer than this between reading the chains and creating a generation starts over.</summary>
         internal const int MaxDecisionSeconds = 60;
 
+        /// <summary>The most old generations one operation examines for cleanup, so a lock taken very often never makes an operation slow.</summary>
+        internal const int MaxCleanupPerCall = 32;
+
         /// <summary>
         /// Cleanup: deletes generations of a chain below the top whose successor is at least SafeDeleteMinutes old, where this robot may (at least
         /// its own). A younger predecessor stays, so a robot that is still deciding from an older reading cannot find a gap and fill it.
+        /// Generations are created in increasing order, so the oldest are examined first and the walk stops at the first successor that is still
+        /// young: every later successor was created after it. At most MaxCleanupPerCall are examined per call; the rest wait for the next one.
+        /// The generations come from the operation's own listing when it has one, so cleanup adds no second listing.
         /// </summary>
-        private static void DeleteOldGenerations(string folder, string resource, int slot, long highest)
+        private static void DeleteOldGenerations(string folder, string resource, int slot, long highest, IEnumerable<long> listed = null)
         {
             string key = Key(resource);
             DateTime now = UtcNow;
-            foreach (string path in Directory.EnumerateFiles(folder, key + "." + slot.ToString(CultureInfo.InvariantCulture) + ".*.lease"))
+            if (listed == null)
             {
-                Match m = LeaseName.Match(Path.GetFileName(path));
-                if (!m.Success || m.Groups["resource"].Value != key || int.Parse(m.Groups["slot"].Value, CultureInfo.InvariantCulture) != slot) continue;
-                long generation = long.Parse(m.Groups["gen"].Value, CultureInfo.InvariantCulture);
-                if (generation >= highest) continue;
+                var found = new List<long>();
+                foreach (string path in Directory.EnumerateFiles(folder, key + "." + slot.ToString(CultureInfo.InvariantCulture) + ".*.lease"))
+                {
+                    Match m = LeaseName.Match(Path.GetFileName(path));
+                    if (m.Success && m.Groups["resource"].Value == key && int.Parse(m.Groups["slot"].Value, CultureInfo.InvariantCulture) == slot)
+                        found.Add(long.Parse(m.Groups["gen"].Value, CultureInfo.InvariantCulture));
+                }
+                listed = found;
+            }
+            int examined = 0;
+            foreach (long generation in listed.Where(g => g < highest).OrderBy(g => g))
+            {
+                if (examined++ >= MaxCleanupPerCall) break;
                 string successor = Path.Combine(folder, FileName(resource, slot, generation + 1));
                 try
                 {
-                    if (Present(successor) && !IsYoung(successor, now, SafeDeleteMinutes * 60)) TryDelete(path);
+                    if (!Present(successor)) continue;                                      // a gap left by earlier cleanup below: nothing to judge by
+                    if (IsYoung(successor, now, SafeDeleteMinutes * 60)) break;              // every later successor is younger still
+                    TryDelete(Path.Combine(folder, FileName(resource, slot, generation)));
                 }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
             }
@@ -513,11 +533,13 @@ namespace ResourceLockAutomation
                     }
                     Remember(owner, folder, resource, token);
                     // The lease exists now: nothing after this may turn it into a failed acquire, so cleanup and the count are best effort.
-                    int holderCount = chains.Values.Count(c => c.Held) + 1;
+                    int holderCount = capacity == 1 ? 1 : chains.Values.Count(c => c.Held) + 1;
                     try
                     {
-                        DeleteOldGenerations(folder, resource, slot, generation);
-                        holderCount = ReadChains(folder, resource, UtcNow, capacity).Values.Count(c => c.Held);
+                        DeleteOldGenerations(folder, resource, slot, generation, chain?.Files.Select(f => f.Generation) ?? Enumerable.Empty<long>());
+                        // A lock just acquired has exactly one holder. A pool is counted again after the create: other robots may have taken
+                        // other slots meanwhile, and holderCount is documented as how many slots are taken.
+                        if (capacity > 1) holderCount = ReadChains(folder, resource, UtcNow, capacity).Values.Count(c => c.Held);
                     }
                     catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
                     return new AcquireResult(true, token, null, holderCount, null);
@@ -602,7 +624,7 @@ namespace ResourceLockAutomation
                     if (!Overwrite(path, record)) wasHeld = false;                           // never deleted or renamed: generation numbers only grow
                     AfterReleaseForTests?.Invoke(path);
                 }
-                try { DeleteOldGenerations(folder, resource, chain.Slot, chain.Highest); }
+                try { DeleteOldGenerations(folder, resource, chain.Slot, chain.Highest, chain.Files.Select(f => f.Generation)); }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
                 return wasHeld;
             }

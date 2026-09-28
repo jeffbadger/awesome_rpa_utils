@@ -94,6 +94,29 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void ASlotTakenElsewhereDuringTheAcquire_IsCountedInHolderCount()
+        {
+            // Two robots see an empty pool and take different slots at the same moment: each must report both holders, not its own reading.
+            using Process self = Process.GetCurrentProcess();
+            long start = MachineLocks.StartIdentity(self);
+            MachineLocks.BeforeCreateForTests = path =>
+            {
+                MachineLocks.BeforeCreateForTests = null;                                                   // once: another robot takes slot 1 now
+                var other = new LeaseRecord { Token = Guid.NewGuid().ToString("N"), Holder = "other robot", Kind = LockKind.Slot, Capacity = 3,
+                    AcquiredUtc = DateTime.UtcNow, ExpiresUtc = DateTime.UtcNow.AddMinutes(1), Machine = Environment.MachineName, SessionId = 1,
+                    ProcessId = self.Id, ProcessStart = start };
+                File.WriteAllText(Path.Combine(folder, "race-pool.1.1.lease"), other.ToJson());
+            };
+            try
+            {
+                using var c = New();
+                Assert.True(c.TryAcquireSlot(LockScope.Machine, "race-pool", 3, "me", 60, out bool acquired, out _, out int holderCount, out string m), m);
+                Assert.Equal((true, 2), (acquired, holderCount));
+            }
+            finally { MachineLocks.BeforeCreateForTests = null; }
+        }
+
+        [Fact]
         public void KindAndCapacityMismatches_AreRefused_WhileHeld()
         {
             using var c = New();
@@ -193,6 +216,28 @@ namespace ResourceLockAutomation.Tests
             File.SetLastWriteTimeUtc(Path.Combine(folder, "cleanup.0.2.lease"), old);                          // 1's successor is old; 2's is not
             Acquire(c, "cleanup");
             Assert.Equal(new[] { "cleanup.0.2.lease", "cleanup.0.3.lease", "cleanup.0.4.lease" }, Files());
+        }
+
+        [Fact]
+        public void Cleanup_WorksUpFromTheOldest_StopsAtAYoungSuccessor_AndIsCappedPerCall()
+        {
+            using var c = New();
+            for (int i = 0; i < 45; i++)
+            {
+                string token = Acquire(c, "backlog");
+                Assert.True(c.ReleaseLock(LockScope.Machine, "backlog", token, out _, out string m), m);
+            }
+            DateTime old = DateTime.UtcNow.AddMinutes(-(MachineLocks.SafeDeleteMinutes + 1));
+            for (int g = 1; g <= 45; g++) File.SetLastWriteTimeUtc(Path.Combine(folder, "backlog.0." + g + ".lease"), old);
+            File.SetLastWriteTimeUtc(Path.Combine(folder, "backlog.0.41.lease"), DateTime.UtcNow);            // renewed recently: young
+            string held = Acquire(c, "backlog");                                                           // generation 46: one cleanup pass
+            Assert.Equal(46 - MachineLocks.MaxCleanupPerCall, Files().Length);                              // at most 32 examined (and deleted)
+            Assert.Contains("backlog.0.33.lease", Files());
+            Assert.True(c.ReleaseLock(LockScope.Machine, "backlog", held, out _, out string msg), msg);   // the release is the next pass
+            var left = Files().Where(f => f.StartsWith("backlog.")).ToArray();
+            Assert.Contains("backlog.0.40.lease", left);                                                    // its successor 41 is young: the walk stops there
+            Assert.Contains("backlog.0.41.lease", left);
+            Assert.DoesNotContain("backlog.0.39.lease", left);                                              // 33 to 39 went on the next pass
         }
 
         [Fact]
@@ -654,6 +699,7 @@ namespace ResourceLockAutomation.Tests
                 try { host.Kill(true); } catch (InvalidOperationException) { }
                 Assert.Fail("a child process did not finish within " + limit.TotalSeconds + " s");
             }
+            Assert.True(host.ExitCode == 0, "a child process exited with code " + host.ExitCode);        // a crash fails the test
             return output.GetAwaiter().GetResult();
         }
 
