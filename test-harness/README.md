@@ -34,7 +34,10 @@ can still catch compile errors in CI or on a Linux dev machine.
 | `lstItems` | ListBox (multi-select) | Scrollable, multi-selectable list for `MouseUtils` click/scroll/`ClickWithModifiers` |
 | `treeSample` | TreeView | "Documents" node with two children, for `UIAutomationUtils.Expand`/`Collapse`/`Select` |
 | `btnShowMessageBox` | Button | Opens a Yes/No `MessageBox` for `DialogUtils` |
-| `btnOpenChildWindow` | Button | Opens `ChildForm` for `WindowUtils` child-window tests |
+| `btnOpenChildWindow` | Button | Opens `ChildForm` for `WindowUtils` child-window tests; no singleton guard, so repeated clicks open multiple same-class, same-title windows — useful for `FindDialog`/`GetChildWindows` multi-match cases |
+| `btnShowNonNativeDialog` | Button | Opens `NonNativeDialogForm`, whose dismiss control is a `Label` styled as a button rather than a real `Button` — `DialogUtils.CanDismissDialog`/`FindDialog`'s `canDismiss` reliably reports `false` against it, covering the "non-native dialog" case without a WinUI3 dependency |
+| `btnShowDuplicateDialogs` | Button | Opens two `DuplicateDialogForm` instances at once, both titled "Duplicate Dialog" with a real `Button` (`btnDuplicateOk`) — covers `FindDialog`'s first-match and `FindAllDialogs`' multi-match (returns both) behavior |
+| `btnShowDisabledButtonDialog` | Button | Opens `DisabledButtonDialogForm`, whose `btnConfirm` starts `Enabled = false` — covers `ClickDialogButtonByText`/`ById`'s `wasEnabled = false` case; its `chkConfirmEnabled` checkbox lets a tester flip it enabled mid-wait to also cover the `true` case |
 
 Each control's `Name` doubles as its Win32 window text lookup key and, for
 standard WinForms controls, its UI Automation `AutomationId` — though per
