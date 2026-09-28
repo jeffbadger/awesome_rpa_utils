@@ -30,6 +30,44 @@ namespace TextExtractAutomation.Tests
         private static string OneField(string field) => "{\"schemaVersion\":1,\"fields\":[" + field + "]}";
 
         [Fact]
+        public void AnIntegersDecimalStyle_SurvivesSavingAndLoading_ForFieldsAndTableColumns()
+        {
+            // Regression (PR #164 review): Integer reads its grouping in the field's style (1.234.567 under CommaDecimal), but the JSON dropped the
+            // style and refused it, so a saved and reloaded template read the same text as InvalidValue.
+            using var built = new TextExtractUtils();
+            Assert.True(built.AddLabelField("Qty", "Qty", ValuePosition.SameLine, FieldType.Integer, DecimalStyle.CommaDecimal, "", true, Occurrence.RequireUnique, out string m), m);
+            Assert.True(built.AddTableColumn("Lines", "Units", FieldType.Integer, DecimalStyle.CommaDecimal, "", out m), m);
+            Assert.True(built.GetTemplateJson(out string json, out m), m);
+            Assert.Contains("\"type\":\"Integer\",\"decimalStyle\":\"CommaDecimal\"", json);
+            Assert.Contains("{\"header\":\"Units\",\"type\":\"Integer\",\"decimalStyle\":\"CommaDecimal\"}", json);
+            Assert.Empty(Findings(json));
+
+            using var loaded = new TextExtractUtils();
+            Assert.True(loaded.LoadTemplateJson(json, out m), m);
+            Assert.True(loaded.GetTemplateJson(out string again, out m), m);
+            Assert.Equal(json, again);
+            const string text = "Qty: 1.234.567\n\nUnits\n2.500\n";
+            foreach (TextExtractUtils c in new[] { built, loaded })
+            {
+                Assert.True(c.ExtractFromText(text, out _, out _, out m), m);
+                Assert.True(c.GetField("Qty", out bool found, out string value, out _, out _, out _, out m), m);
+                Assert.Equal((true, "1234567"), (found, value));
+                Assert.True(c.TryReadNextRow("Lines", out bool row, out _, out _, out m) && row, m);
+                Assert.True(c.GetRowValue("Units", out found, out value, out _, out _, out m), m);
+                Assert.Equal((true, "2500"), (found, value));
+            }
+        }
+
+        [Fact]
+        public void DecimalStyle_IsAcceptedForTheNumberTypes_AndRefusedForTheOthers()
+        {
+            foreach (string type in new[] { "Integer", "Decimal", "Amount", "Percentage" })
+                Assert.Empty(Findings(OneField("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"" + type + "\",\"decimalStyle\":\"CommaDecimal\"}")));
+            foreach (string type in new[] { "Text", "Code", "Date", "Email", "Iban" })
+                Assert.Contains(("fields[0].decimalStyle", "UnknownProperty"), Findings(OneField("{\"name\":\"A\",\"kind\":\"Label\",\"labels\":[\"L\"],\"type\":\"" + type + "\",\"decimalStyle\":\"DotDecimal\"}")));
+        }
+
+        [Fact]
         public void ACanonicalTemplate_LoadsAndRoundTripsExactly()
         {
             using var c = new TextExtractUtils();

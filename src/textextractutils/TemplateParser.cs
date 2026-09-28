@@ -305,7 +305,7 @@ namespace TextExtractAutomation
         }
 
         /// <summary>
-        /// Reads type, decimalStyle and dateFormats, reporting every problem. decimalStyle belongs to Decimal, Amount and Percentage fields and dateFormats
+        /// Reads type, decimalStyle and dateFormats, reporting every problem. decimalStyle belongs to Integer, Decimal, Amount and Percentage fields and dateFormats
         /// to Date fields; on any other type they are errors, because an option that is silently ignored is a plausible-looking wrong configuration. When
         /// the type itself is missing or unknown, the options are still checked on their own terms (a malformed value or date format is still reported).
         /// </summary>
@@ -321,7 +321,7 @@ namespace TextExtractAutomation
 
             if (p.ContainsKey("decimalStyle"))
             {
-                if (typeOk && !Template.UsesDecimalStyle(type)) { findings.Add(path + ".decimalStyle", "UnknownProperty", "decimalStyle applies only to Decimal, Amount and Percentage fields"); ok = false; }
+                if (typeOk && !Template.UsesDecimalStyle(type)) { findings.Add(path + ".decimalStyle", "UnknownProperty", "decimalStyle applies only to Integer, Decimal, Amount and Percentage fields"); ok = false; }
                 else ok &= ReadEnum(p, "decimalStyle", path, DecimalStyle.DotDecimal, findings, out decimalStyle);
             }
 

@@ -8,7 +8,7 @@ validated, normalized value, or a reason code saying why there is none. No regul
 |---|---|
 | [QuickStart](QuickStart.md) | The smallest complete flow: define fields, extract, read each value, walk every field. |
 | [Labels](Labels.md) | How labels are matched (case, spacing, separators, word boundaries, OCR slips) and where the value is taken from (`SameLine`, `NextLine`, `Below`). |
-| [Types](Types.md) | What each type accepts and returns: text, codes, numbers, amounts, percentages, dates, emails, IBANs. |
+| [Types](Types.md) | Each field type explained (what it is for, what it captures, what `value` looks like, what is refused) and how to choose one. |
 | [Results](Results.md) | Found values, `raw`, reason codes, line numbers, occurrence policies, the result JSON and what discards results. |
 | [Tables](Tables.md) | Fixed-width tables: rows under a header line, typed columns, page breaks, reading row by row with `TryReadNextRow` and `GetRowValue`. |
 | [Patterns](Patterns.md) | Pattern fields (a regular expression with a `value` group) for text with no stable label, and their limits. |

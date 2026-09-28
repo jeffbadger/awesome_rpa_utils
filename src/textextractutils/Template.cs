@@ -42,7 +42,7 @@ namespace TextExtractAutomation
         internal string Pattern;                  // Pattern fields
         internal Regex CompiledPattern;           // Pattern fields: compiled once, culture-invariant, with a match timeout
         internal FieldType Type;
-        internal DecimalStyle DecimalStyle;       // Decimal, Amount and Percentage fields
+        internal DecimalStyle DecimalStyle;       // Integer, Decimal, Amount and Percentage fields
         internal string[] DateFormats;            // Date fields: the formats, tried in order (at least one)
         internal bool Required = true;
         internal Occurrence Occurrence = Occurrence.RequireUnique;
@@ -126,7 +126,7 @@ namespace TextExtractAutomation
             return null;
         }
 
-        internal static bool UsesDecimalStyle(FieldType type) => type == FieldType.Decimal || type == FieldType.Amount || type == FieldType.Percentage;
+        internal static bool UsesDecimalStyle(FieldType type) => type == FieldType.Integer || type == FieldType.Decimal || type == FieldType.Amount || type == FieldType.Percentage;   // Integer too: its grouping (1,234 or 1.234) follows the style
 
         /// <summary>
         /// Checks the date formats of a field. A Date field gets its formats (default yyyy-MM-dd when none are given); any other type must be given none,
