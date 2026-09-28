@@ -59,15 +59,23 @@ before writing a test case against it.
 
 `InterruptUtils` needs its popup to come from a *different process* than the
 automation dismissing it — a same-process dialog would not catch a real
-regression. Instead of the normal harness window, `TestHarness.exe` can run
-as that second process:
+regression. `ClipboardUtils` needs a real clipboard owned by a **different
+process**, and a window in another process that can take the focus. Instead
+of the normal harness window, `TestHarness.exe` can run as that second
+process:
 
 ```bash
 TestHarness.exe --delayed-popup [--title=T] [--message=M] [--delay-ms=N]
   [--button=OK|OKCancel|YesNo|YesNoCancel|AbortRetryIgnore|RetryCancel]
   [--repeat=N] [--interval-ms=N] [--no-button]
   [--delayed-button] [--button-delay-ms=N]
+TestHarness.exe --clipboard-owner [--text=T] [--html=H] [--rtf=R]
+  [--image=path] [--files=path1;path2] [--custom-format=name:payload]
+  [--hang] [--render-on-demand]
+TestHarness.exe --focus-textbox
 ```
+
+### `--delayed-popup` (InterruptUtils)
 
 Sleeps `--delay-ms` (default 3000), then shows a real `MessageBox` from its
 own process — satisfying TESTING.md's "a second process that shows popups on
@@ -88,3 +96,35 @@ demand." Defaults: `--title="Test Harness Popup"`,
   `InterruptUtils` only retries a newly seen popup at 0/150/400/1000/2000 ms
   after first detecting it before giving up (`PopupDismissFailed`), so a
   button delayed by `--delay-ms`'s 3000 ms default would never be caught.
+
+### `--clipboard-owner` / `--focus-textbox` (ClipboardUtils)
+
+`--clipboard-owner` puts a rich clipboard on the system clipboard — one entry
+per format flag supplied (text, HTML, RTF, an image file, a file-drop list, a
+custom registered format) — then shows a small "Clipboard Owner" window and
+blocks until it's closed, keeping this process alive as the clipboard's owner
+for `SaveClipboard`/`RestoreClipboard` and similar cases to act on from
+another process. (This project is a `WinExe` with no guaranteed attached
+console, so the lifetime signal is a visible window, not console input.) By
+default it uses the managed `Clipboard`/`DataObject` API, which renders every
+format eagerly and flushes it so the data survives this process exiting.
+
+- `--hang`: uses delayed (lazy) rendering, and blocks its own message loop
+  forever the moment `WM_RENDERFORMAT` for any requested format arrives —
+  for `ClipboardUtils`' "hung owner" case, where `SaveClipboard` must fail
+  fast with a reason rather than hang itself. `WM_RENDERFORMAT` is delivered
+  via a synchronous cross-process call, so once this fires the harness
+  process is genuinely unresponsive, including its own "Clipboard Owner"
+  window's Close button — **the only way out is to kill the process** (e.g.
+  Task Manager or `taskkill`), matching TESTING.md's documented recovery.
+- `--render-on-demand`: also uses delayed rendering, but renders the real data
+  the moment `WM_RENDERFORMAT` asks for it — for the "another process owns
+  the clipboard [and] renders it on demand" case.
+- `--hang` and `--render-on-demand` are mutually exclusive, and only support
+  the `--text`/`--html`/`--rtf`/`--custom-format` formats — combining either
+  with `--image`/`--files`, or combining both together, is rejected with an
+  error rather than silently doing something other than what was asked for.
+
+`--focus-textbox` opens a small window with a single, immediately-focused
+`TextBox` (`txtClipboardTarget`) — the "small text-box window that can take
+the focus" `PasteText`'s real-focus test case needs.

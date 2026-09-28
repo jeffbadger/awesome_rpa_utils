@@ -11,10 +11,21 @@ namespace TestHarness
         [STAThread]
         private static void Main(string[] args)
         {
-            if (args.Length > 0 && string.Equals(args[0], "--delayed-popup", StringComparison.OrdinalIgnoreCase))
+            if (args.Length > 0)
             {
-                RunDelayedPopupMode(ParseArgs(args));
-                return;
+                var options = ParseArgs(args);
+                switch (args[0].ToLowerInvariant())
+                {
+                    case "--delayed-popup":
+                        RunDelayedPopupMode(options);
+                        return;
+                    case "--clipboard-owner":
+                        ClipboardOwnerMode.Run(options);
+                        return;
+                    case "--focus-textbox":
+                        ClipboardOwnerMode.RunFocusTextBox(options);
+                        return;
+                }
             }
 
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
