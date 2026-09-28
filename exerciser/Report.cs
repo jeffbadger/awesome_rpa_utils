@@ -8,7 +8,13 @@ namespace Exerciser
     /// Prints a never-throws call's result. Labels a null message as a "normal
     /// negative" rather than leaving it blank, so the documented distinction
     /// between "normal negative" (false, message == null) and "real failure"
-    /// (false, message != null) is never missed.
+    /// (false, message != null) is never missed. That distinction is the
+    /// general never-throws convention, but not universal: some wait-style
+    /// methods (e.g. TerminalUtils.WaitForScreenText, SessionUtils' wait
+    /// methods) intentionally set a non-null message on a normal timeout too
+    /// (timedOut = true plus a "Timed out after..." message) - check the
+    /// method's own TESTING.md entry before reading a non-null message as
+    /// necessarily a bug.
     /// </summary>
     internal static class Report
     {
