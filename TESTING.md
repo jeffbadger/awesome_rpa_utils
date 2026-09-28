@@ -274,6 +274,14 @@ condition.
 - `GetTopLevelWindows`, `FindWindowByTitle` (exact/substring/not-found; a
   null/empty title returns `IntPtr.Zero` rather than throwing),
   `FindWindowByClass`, `FindWindowsByProcessId`, `GetForegroundWindow`
+  (open one `ChildForm` and one `SecondChildForm` via
+  `btnOpenChildWindow`/`btnOpenSecondChildWindow` — both are owned top-level
+  windows, not `WS_CHILD` descendants of the harness window, so they show up
+  here, not under `GetChildWindows` below — and assert `GetTopLevelWindows`
+  includes both, `FindWindowByClass` matching `SecondChildForm`'s explicit
+  class finds only it, and matching `ChildForm`'s class finds it but not
+  `SecondChildForm`; opening two `ChildForm`s instead covers the same-class
+  duplicate case)
 - `GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow` (assert
   bounds before/after; invalid handle/negative dimensions → `false` + message)
 - `GetWindowTitle`, `GetWindowClassName`, `GetWindowProcessId`,
@@ -302,7 +310,11 @@ condition.
   and both patterns; a WinForms class name with a per-run suffix matched by its
   stable prefix; not found → `false` with a **null** `message`, versus no
   pattern / invalid pattern / stale parent handle → `false` with a non-null
-  `message`; `ignoreCase: false` misses a differently-cased title)
+  `message`; `ignoreCase: false` misses a differently-cased title; with both
+  `btnOpenChildWindow`'s `ChildForm` and `btnOpenSecondChildWindow`'s
+  `SecondChildForm` open, a `classNamePattern` matching one's class must not
+  also match the other's — proving the pattern actually excludes a real,
+  non-matching class rather than trivially matching everything on screen)
 - `EnumerateWindowsJson` (the harness window appears with the expected `Title`,
   `ClassName`, `ProcessId`, `IsEnabled`, `State`, and sane bounds; `processId`
   narrows to one process; an unknown process ID → `[]`; a negative one →
@@ -389,7 +401,7 @@ failure (`message` set) from a normal not-changed/exceeds-tolerance result
   against a pre-rendered "expected annotated" fixture; missing image file →
   `false` + message)
 
-### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, and tree; Cleanup: close it)
+### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, tree, combo box, track bar, and radio buttons; Cleanup: close it)
 
 All methods here except `GetRootElement`, `FromWindowHandle`, `FromPoint`, and
 `IsElementAvailable` return `bool` with an `out string message` and never
@@ -405,7 +417,7 @@ argument error (`false` + non-null `message`) from a normal not-found result
 - `FindByAutomationId`, `FindByName`, `FindByClassName`, `FindByControlType`, `FindAllByControlType`, `GetChildren` (found and not-found cases against harness controls; `descendantsOnly` true/false cases; null parent → `false` + non-null message)
 - `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName`, `GetBoundingRectangle`, `IsEnabled`, `IsOffscreen` (assert against known harness control properties; null element → `false` + message)
 - `IsElementAvailable` (true for a live control; false after closing the harness window and re-checking a cached reference)
-- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, → `false` + message instead of an exception)
+- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; also `Select`/`IsSelected` against `cboOptions`' items, a different UIA tree shape than `lstItems` — **call `Expand` on `cboOptions` first**: like most UIA `ComboBox` providers, its item elements are not present in the tree while collapsed, so `FindByControlType`/`Select` against them only work after expanding, and `Collapse` afterward to restore the harness's default state; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, or on `radOptionA`/`B`/`C` (`SelectionItemPattern`, not `TogglePattern`), or `SetValue`/`Toggle`/`Select` on `trkVolume` (only `RangeValuePattern`) → `false` + message instead of an exception)
 
 The platform-independent input guards, `UiControlType` mapping, and Wait
 abort-on-argument-error paths have xunit coverage in

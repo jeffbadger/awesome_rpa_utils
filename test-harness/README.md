@@ -35,6 +35,7 @@ can still catch compile errors in CI or on a Linux dev machine.
 | `treeSample` | TreeView | "Documents" node with two children, for `UIAutomationUtils.Expand`/`Collapse`/`Select` |
 | `btnShowMessageBox` | Button | Opens a Yes/No `MessageBox` for `DialogUtils` |
 | `btnOpenChildWindow` | Button | Opens `ChildForm` for `WindowUtils` child-window tests; no singleton guard, so repeated clicks open multiple same-class, same-title windows — useful for `FindDialog`/`GetChildWindows` multi-match cases |
+| `btnOpenSecondChildWindow` | Button | Opens `SecondChildForm`, an owned top-level window (not `WS_CHILD`) with an explicit, distinct Win32 window class from `ChildForm`'s — registered via `RegisterClassEx` (plain WinForms `Form`s don't get a distinct class per CLR subtype, and `CreateParams.ClassName` alone doesn't register one) — for `WindowUtils.TryFindWindowByRegex`'s `classNamePattern` and `GetTopLevelWindows`/`FindWindowByClass`'s duplicate-vs-distinct-class cases |
 | `btnShowNonNativeDialog` | Button | Opens `NonNativeDialogForm`, whose dismiss control is a `Label` styled as a button rather than a real `Button` — `DialogUtils.CanDismissDialog`/`FindDialog`'s `canDismiss` reliably reports `false` against it, covering the "non-native dialog" case without a WinUI3 dependency |
 | `btnShowDuplicateDialogs` | Button | Opens two `DuplicateDialogForm` instances at once, both titled "Duplicate Dialog" with a real `Button` (`btnDuplicateOk`) — covers `FindDialog`'s first-match and `FindAllDialogs`' multi-match (returns both) behavior |
 | `btnShowDisabledButtonDialog` | Button | Opens `DisabledButtonDialogForm`, whose `btnConfirm` starts `Enabled = false` — covers `ClickDialogButtonByText`/`ById`'s `wasEnabled = false` case; its `chkConfirmEnabled` checkbox lets a tester flip it enabled mid-wait to also cover the `true` case |
@@ -43,6 +44,10 @@ can still catch compile errors in CI or on a Linux dev machine.
 | `pnlCursorNo` | Panel | `Cursor = Cursors.No` — expect `CurrentCursorType.No` |
 | `pnlCursorCross` | Panel | `Cursor = Cursors.Cross` — expect `CurrentCursorType.Crosshair` (name differs from the WinForms `Cursors.Cross` value) |
 | `pnlCursorWait` | Panel | `Cursor = Cursors.WaitCursor` — expect `CurrentCursorType.Wait` |
+| `cboOptions` | ComboBox (drop-down list) | A different UIA tree shape from `lstItems`, for `UIAutomationUtils.Select`/`IsSelected` — call `Expand` first, its items aren't in the UIA tree while collapsed |
+| `trkVolume` | TrackBar (0-100, starts at 50) | Only exposes `RangeValuePattern` — negative case for `SetValue`/`Toggle`/`Select` against a control supporting none of those patterns |
+| `grpRadioOptions` | GroupBox | Contains `radOptionA`/`radOptionB`/`radOptionC` |
+| `radOptionA`, `radOptionB`, `radOptionC` | RadioButton | Expose `SelectionItemPattern`, not `TogglePattern` — negative case for `UIAutomationUtils.Toggle`/`IsToggled`, complementing `chkOption` |
 
 Each control's `Name` doubles as its Win32 window text lookup key and, for
 standard WinForms controls, its UI Automation `AutomationId` — though per
