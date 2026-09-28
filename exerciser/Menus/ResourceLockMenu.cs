@@ -28,7 +28,7 @@ namespace Exerciser.Menus
                     bool ok = resourceLock.TryAcquireLock(scope, resource, holder, leaseSeconds, out bool acquired, out string token, out string currentHolder, out string message);
                     Report.Result(ok, message, ("acquired", acquired), ("token", token), ("currentHolder", currentHolder));
                 }),
-                new MenuItem("AcquireLock", "Blocking - waits up to waitMilliseconds for a lock held by another holder to free up; the wait keeps the UI/automation responsive rather than busy-looping.", () =>
+                new MenuItem("AcquireLock", "Blocking - this menu calls it synchronously, so the exerciser itself is unresponsive for up to waitMilliseconds while it waits for a lock held by another holder to free up. (In real Robot Studio usage on an asynchronous link, the wait itself doesn't busy-loop and the UI stays responsive - it's specifically this synchronous menu call that blocks, not the underlying wait.)", () =>
                 {
                     LockScope scope = Prompt.Enum<LockScope>("Scope");
                     string resource = Prompt.String("Resource", "ZZTestResource");
