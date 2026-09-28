@@ -382,7 +382,7 @@ failure (`message` set) from a normal not-changed/exceeds-tolerance result
   against a pre-rendered "expected annotated" fixture; missing image file →
   `false` + message)
 
-### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, and tree; Cleanup: close it)
+### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, tree, combo box, track bar, and radio buttons; Cleanup: close it)
 
 All methods here except `GetRootElement`, `FromWindowHandle`, `FromPoint`, and
 `IsElementAvailable` return `bool` with an `out string message` and never
@@ -398,7 +398,7 @@ argument error (`false` + non-null `message`) from a normal not-found result
 - `FindByAutomationId`, `FindByName`, `FindByClassName`, `FindByControlType`, `FindAllByControlType`, `GetChildren` (found and not-found cases against harness controls; `descendantsOnly` true/false cases; null parent → `false` + non-null message)
 - `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName`, `GetBoundingRectangle`, `IsEnabled`, `IsOffscreen` (assert against known harness control properties; null element → `false` + message)
 - `IsElementAvailable` (true for a live control; false after closing the harness window and re-checking a cached reference)
-- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, → `false` + message instead of an exception)
+- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; also `Select`/`IsSelected` against `cboOptions`' items, a different UIA tree shape than `lstItems`; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, or on `radOptionA`/`B`/`C` (`SelectionItemPattern`, not `TogglePattern`), or `SetValue`/`Toggle`/`Select` on `trkVolume` (only `RangeValuePattern`) → `false` + message instead of an exception)
 
 The platform-independent input guards, `UiControlType` mapping, and Wait
 abort-on-argument-error paths have xunit coverage in

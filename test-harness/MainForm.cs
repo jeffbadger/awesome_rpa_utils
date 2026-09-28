@@ -26,13 +26,18 @@ namespace TestHarness
         public TreeView SampleTreeView;
         public Button ShowMessageBoxButton;
         public Button OpenChildWindowButton;
+        public ComboBox OptionsComboBox;
+        public TrackBar VolumeTrackBar;
+        public RadioButton RadioOptionA;
+        public RadioButton RadioOptionB;
+        public RadioButton RadioOptionC;
 
         public MainForm()
         {
             Name = "MainForm";
             Text = "Awesome RPA Utils - Test Harness";
             Width = 420;
-            Height = 560;
+            Height = 700;
 
             ClickButton = new Button
             {
@@ -170,11 +175,54 @@ namespace TestHarness
                 child.Show(this);
             };
 
+            // A real dropdown selection list, for UIAutomationUtils.Select/IsSelected
+            // against a genuinely different UIA tree shape than lstItems (a ComboBox's
+            // items are reached differently, and collapsed by default).
+            OptionsComboBox = new ComboBox
+            {
+                Name = "cboOptions",
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(20, 480),
+                Width = 200
+            };
+            OptionsComboBox.Items.AddRange(new object[] { "Option 1", "Option 2", "Option 3" });
+
+            // Its only native pattern is RangeValuePattern, which UIAutomationUtils has
+            // no dedicated method for at all - useful as the negative case for calling
+            // SetValue/Toggle/Select (ValuePattern/TogglePattern/SelectionItemPattern)
+            // against a control that supports none of them.
+            VolumeTrackBar = new TrackBar
+            {
+                Name = "trkVolume",
+                Location = new Point(20, 525),
+                Width = 200,
+                Minimum = 0,
+                Maximum = 100,
+                Value = 50
+            };
+
+            // RadioButtons expose SelectionItemPattern, not TogglePattern - calling
+            // Toggle/IsToggled against one is the documented "wrong pattern on wrong
+            // control type" negative case, complementing chkOption (TogglePattern-shaped).
+            var radioGroup = new GroupBox
+            {
+                Name = "grpRadioOptions",
+                Text = "Radio Group",
+                Location = new Point(20, 585),
+                Width = 200,
+                Height = 110
+            };
+            RadioOptionA = new RadioButton { Name = "radOptionA", Text = "Option A", Location = new Point(10, 20), AutoSize = true, Checked = true };
+            RadioOptionB = new RadioButton { Name = "radOptionB", Text = "Option B", Location = new Point(10, 45), AutoSize = true };
+            RadioOptionC = new RadioButton { Name = "radOptionC", Text = "Option C", Location = new Point(10, 70), AutoSize = true };
+            radioGroup.Controls.AddRange(new Control[] { RadioOptionA, RadioOptionB, RadioOptionC });
+
             Controls.AddRange(new Control[]
             {
                 ClickButton, ClickCountLabel, ClickDetailLabel, InputTextBox,
                 OptionCheckBox, ItemsListBox, DragTargetPanel, SampleTreeView,
-                ShowMessageBoxButton, OpenChildWindowButton
+                ShowMessageBoxButton, OpenChildWindowButton,
+                OptionsComboBox, VolumeTrackBar, radioGroup
             });
         }
     }
