@@ -55,7 +55,7 @@ namespace TextExtractAutomation
 
         /// <summary>Adds a field with every option: where the value sits, how numbers are written (DecimalStyle), the date formats for a Date field (separated by |), whether it is required, and what to do when its label appears more than once.</summary>
         [Category("Text Extract - Template")]
-        [Description("Adds a field with every option: where the value sits relative to the label, how numbers are written (DecimalStyle, used by Decimal, Amount and Percentage fields), the date formats for a Date field (separated by |; empty for yyyy-MM-dd, and empty for every other type), whether it is required, and what to do when the label appears more than once. Never throws.")]
+        [Description("Adds a field with every option: where the value sits relative to the label, how numbers are written (DecimalStyle, used by Integer, Decimal, Amount and Percentage fields), the date formats for a Date field (separated by |; empty for yyyy-MM-dd, and empty for every other type), whether it is required, and what to do when the label appears more than once. Never throws.")]
         public bool AddLabelField(string name, string labels, ValuePosition position, FieldType type, DecimalStyle decimalStyle, string dateFormats, bool required, Occurrence occurrence, out string message)
         {
             message = null;

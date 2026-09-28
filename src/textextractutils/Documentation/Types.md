@@ -30,7 +30,8 @@ When in doubt between `Text` and `Code`: use `Code` for an identifier that is on
 out), and `Text` for anything that may contain spaces. Between `Decimal` and `Amount`: use `Amount` for money, since it also accepts a currency
 and accounting negatives.
 
-**Decimal style** (`DotDecimal` or `CommaDecimal`) matters only for `Integer`, `Decimal`, `Amount` and `Percentage`; other types ignore it.
+**Decimal style** (`DotDecimal` or `CommaDecimal`) matters only for `Integer`, `Decimal`, `Amount` and `Percentage`; the builder methods
+ignore it for other types, and a JSON template may not give them one.
 **Date formats** apply only to `Date`, and must be left empty for every other type.
 
 ## The types
@@ -61,8 +62,8 @@ A number that may have decimals, read in the field's decimal style. `value` keep
 
 A money amount: a number in the field's decimal style, optionally with a currency and a negative sign.
 
-- The currency may be a symbol (`$`, `€`, `£`) or a three-letter code in capitals (`EUR`, `USD`), before or after the number, at most a space
-  away. It is not part of `value`; the result JSON reports it as `currency` (null when there is none). An amount without a currency is fine.
+- The currency may be a symbol (`$`, `€`, `£`) or a three-letter code in capitals (`EUR`, `USD`), before or after the number, with nothing
+  but spaces between. It is not part of `value`; the result JSON reports it as `currency` (null when there is none). An amount without a currency is fine.
 - An amount is negative by a leading minus, a trailing minus (`12.00-`) or accounting parentheses (`(12.00)`); `value` then starts with `-`.
 - `value` keeps the decimals as written: `$1,234.50` gives `1234.50`, and `1.234,50 EUR` gives `1234.50` with `CommaDecimal`.
 
@@ -122,6 +123,7 @@ These apply to `Integer`, `Decimal`, `Amount` and `Percentage`.
 | `Amount` | `DotDecimal` | `(12.00)` | `-12.00` |
 | `Amount` | `DotDecimal` | `12.00- USD` | `-12.00` |
 | `Amount` | `CommaDecimal` | `1.234,50 EUR` | `1234.50` |
+| `Amount` | `DotDecimal` | `EUR   12.00` | `12.00` |
 | `Percentage` | `DotDecimal` | `12.5 %` | `12.5` |
 | `Date` | `dd/MM/yyyy` | `due 26/09/2026` | `2026-09-26` |
 | `Date` | `dd/MM/yyyy\|yyyy-MM-dd` | `2026-09-26` | `2026-09-26` |
