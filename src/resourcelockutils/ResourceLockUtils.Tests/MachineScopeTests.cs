@@ -196,6 +196,28 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void Cleanup_WorksUpFromTheOldest_StopsAtAYoungSuccessor_AndIsCappedPerCall()
+        {
+            using var c = New();
+            for (int i = 0; i < 45; i++)
+            {
+                string token = Acquire(c, "backlog");
+                Assert.True(c.ReleaseLock(LockScope.Machine, "backlog", token, out _, out string m), m);
+            }
+            DateTime old = DateTime.UtcNow.AddMinutes(-(MachineLocks.SafeDeleteMinutes + 1));
+            for (int g = 1; g <= 45; g++) File.SetLastWriteTimeUtc(Path.Combine(folder, "backlog.0." + g + ".lease"), old);
+            File.SetLastWriteTimeUtc(Path.Combine(folder, "backlog.0.41.lease"), DateTime.UtcNow);            // renewed recently: young
+            string held = Acquire(c, "backlog");                                                           // generation 46: one cleanup pass
+            Assert.Equal(46 - MachineLocks.MaxCleanupPerCall, Files().Length);                              // at most 32 examined (and deleted)
+            Assert.Contains("backlog.0.33.lease", Files());
+            Assert.True(c.ReleaseLock(LockScope.Machine, "backlog", held, out _, out string msg), msg);   // the release is the next pass
+            var left = Files().Where(f => f.StartsWith("backlog.")).ToArray();
+            Assert.Contains("backlog.0.40.lease", left);                                                    // its successor 41 is young: the walk stops there
+            Assert.Contains("backlog.0.41.lease", left);
+            Assert.DoesNotContain("backlog.0.39.lease", left);                                              // 33 to 39 went on the next pass
+        }
+
+        [Fact]
         public void TheTop_IsFoundByName_EvenWhenTheListingMissesIt()
         {
             // A listing may miss files created or deleted while it runs; the stress test found two holders when a robot trusted it. Here the
