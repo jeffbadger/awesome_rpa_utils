@@ -46,23 +46,24 @@ before writing a test case against it.
 
 `ClipboardUtils` needs a real clipboard owned by a **different process**, and
 a window in another process that can take the focus. Instead of the normal
-harness window, `test-harness.exe` can run as that second process:
+harness window, `TestHarness.exe` can run as that second process:
 
 ```bash
-test-harness.exe --clipboard-owner [--text=T] [--html=H] [--rtf=R]
+TestHarness.exe --clipboard-owner [--text=T] [--html=H] [--rtf=R]
   [--image=path] [--files=path1;path2] [--custom-format=name:payload]
   [--hang] [--render-on-demand]
-test-harness.exe --focus-textbox
+TestHarness.exe --focus-textbox
 ```
 
 `--clipboard-owner` puts a rich clipboard on the system clipboard — one entry
 per format flag supplied (text, HTML, RTF, an image file, a file-drop list, a
-custom registered format) — then blocks (press Enter in its console to exit),
-keeping this process alive as the clipboard's owner for
-`SaveClipboard`/`RestoreClipboard` and similar cases to act on from another
-process. By default it uses the managed `Clipboard`/`DataObject` API, which
-renders every format eagerly and flushes it so the data survives this process
-exiting.
+custom registered format) — then shows a small "Clipboard Owner" window and
+blocks until it's closed, keeping this process alive as the clipboard's owner
+for `SaveClipboard`/`RestoreClipboard` and similar cases to act on from
+another process. (This project is a `WinExe` with no guaranteed attached
+console, so the lifetime signal is a visible window, not console input.) By
+default it uses the managed `Clipboard`/`DataObject` API, which renders every
+format eagerly and flushes it so the data survives this process exiting.
 
 - `--hang`: uses delayed (lazy) rendering instead, and never answers
   `WM_RENDERFORMAT` for any requested format — for `ClipboardUtils`' "hung

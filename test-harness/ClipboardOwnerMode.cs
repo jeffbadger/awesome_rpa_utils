@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Drawing;
 using System.IO;
-using System.Threading;
 using System.Windows.Forms;
 
 namespace TestHarness
@@ -16,10 +15,10 @@ namespace TestHarness
     /// calls ClipboardUtils itself - it only creates the clipboard-owner
     /// conditions a real ClipboardUtils-driven automation reacts to.
     ///
-    /// Usage: test-harness.exe --clipboard-owner [--text=T] [--html=H] [--rtf=R]
+    /// Usage: TestHarness.exe --clipboard-owner [--text=T] [--html=H] [--rtf=R]
     ///   [--image=path] [--files=path1;path2] [--custom-format=name:payload]
     ///   [--hang] [--render-on-demand]
-    ///        test-harness.exe --focus-textbox
+    ///        TestHarness.exe --focus-textbox
     /// </summary>
     internal static class ClipboardOwnerMode
     {
@@ -112,7 +111,7 @@ namespace TestHarness
 
             Clipboard.SetDataObject(data, copy: true);
 
-            RunUntilEnterPressed();
+            RunUntilClosed("Managed clipboard owner running.");
         }
 
         // The lazy-rendering path: registers a placeholder for every requested
@@ -124,27 +123,36 @@ namespace TestHarness
         {
             using var owner = new NativeClipboardOwnerWindow(options, hang);
             owner.Claim();
-            RunUntilEnterPressed();
+            RunUntilClosed(hang ? "Native (hung) clipboard owner running." : "Native (render-on-demand) clipboard owner running.");
         }
 
         // Blocks the process (pumping the WinForms message loop, so WM_RENDERFORMAT
-        // and similar messages keep flowing) until the tester presses Enter in the
-        // console. Keeps this process - and its clipboard ownership - alive for as
-        // long as a real ClipboardUtils-driven automation needs to interact with it.
-        private static void RunUntilEnterPressed()
+        // and similar messages keep flowing) until the tester closes this window.
+        // This project is a WinExe, so it is not guaranteed to have an attached
+        // console/stdin - Console.ReadLine() can return null immediately in that
+        // case, exiting the message loop (and releasing the clipboard) before an
+        // automation can interact with it. A visible WinForms lifetime signal
+        // works regardless of how the process was launched.
+        private static void RunUntilClosed(string description)
         {
-            using var context = new ApplicationContext();
-            var exitThread = new Thread(() =>
+            using var form = new Form
             {
-                Console.WriteLine("Clipboard owner running. Press Enter to exit.");
-                Console.ReadLine();
-                context.ExitThread();
-            })
-            {
-                IsBackground = true
+                Text = "Test Harness - Clipboard Owner",
+                Width = 380,
+                Height = 150,
+                StartPosition = FormStartPosition.CenterScreen,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MinimizeBox = false,
+                MaximizeBox = false
             };
-            exitThread.Start();
-            Application.Run(context);
+            form.Controls.Add(new Label
+            {
+                Text = description + " Close this window to release the clipboard and exit.",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Padding = new Padding(12)
+            });
+            Application.Run(form);
         }
     }
 }

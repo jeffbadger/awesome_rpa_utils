@@ -37,17 +37,26 @@ namespace TestHarness
 
         internal void Claim()
         {
-            string text = _options.TryGetValue("text", out var t) ? t : string.Empty;
-            RegisterRenderer(CF_TEXT, () => RenderAnsiText(text));
-            RegisterRenderer(CF_UNICODETEXT, () => RenderUnicodeText(text));
+            if (_options.TryGetValue("text", out var text))
+            {
+                RegisterRenderer(CF_TEXT, () => RenderAnsiText(text));
+                RegisterRenderer(CF_UNICODETEXT, () => RenderUnicodeText(text));
+            }
 
             if (_options.TryGetValue("html", out var html))
             {
-                RegisterRenderer(RegisterClipboardFormat("HTML Format"), () => RenderUnicodeText(html));
+                // "HTML Format" is a byte-oriented, UTF-8 registered format (like
+                // ClipboardUtils' own tests treat it - see
+                // ClipboardUtils.Tests/TestSupport.cs's WithRichContent), not
+                // UTF-16 - RenderUnicodeText here would produce NUL-interleaved,
+                // invalid data.
+                RegisterRenderer(RegisterClipboardFormat("HTML Format"), () => RenderUtf8Text(html));
             }
             if (_options.TryGetValue("rtf", out var rtf))
             {
-                RegisterRenderer(RegisterClipboardFormat("Rich Text Format"), () => RenderUnicodeText(rtf));
+                // RTF is conventionally 7-bit ASCII (non-ASCII characters are
+                // \uNNNN-escaped within the RTF text itself), not UTF-16 either.
+                RegisterRenderer(RegisterClipboardFormat("Rich Text Format"), () => RenderAsciiText(rtf));
             }
             if (_options.TryGetValue("custom-format", out var customFormat))
             {
@@ -135,6 +144,25 @@ namespace TestHarness
         private static IntPtr RenderUnicodeText(string text)
         {
             byte[] bytes = Encoding.Unicode.GetBytes(text + "\0");
+            return AllocGlobal(bytes);
+        }
+
+        // Registered formats (unlike CF_TEXT/CF_UNICODETEXT) have no OS-level
+        // termination convention - the reader determines the payload length via
+        // GlobalSize, not by scanning for a NUL, so these deliberately don't add
+        // one (matching ClipboardUtils.Tests/TestSupport.cs's WithRichContent,
+        // which registers "HTML Format" as raw UTF-8 bytes with no terminator).
+        private static IntPtr RenderUtf8Text(string text)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(text);
+            return AllocGlobal(bytes);
+        }
+
+        // RTF is conventionally 7-bit ASCII text (non-ASCII characters are
+        // \uNNNN-escaped within the RTF markup itself), not UTF-16.
+        private static IntPtr RenderAsciiText(string text)
+        {
+            byte[] bytes = Encoding.ASCII.GetBytes(text);
             return AllocGlobal(bytes);
         }
 
