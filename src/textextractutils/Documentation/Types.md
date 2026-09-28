@@ -38,7 +38,8 @@ ignore it for other types, and a JSON template may not give them one.
 
 ### `Text`
 
-Any text. `value` is the whole text where the value sits, trimmed: for `SameLine`, the rest of the line up to the next label of another field.
+Any text. `value` is the whole text where the value sits, trimmed: for `SameLine`, the rest of the line up to the next label of any field on
+that line, its own labels included (see [Labels](Labels.md)).
 A `Text` field is never `InvalidValue`; it is `MissingValue` only when there is nothing there. Use it for supplier names, subjects,
 descriptions and payment terms (`Net 30 days`).
 

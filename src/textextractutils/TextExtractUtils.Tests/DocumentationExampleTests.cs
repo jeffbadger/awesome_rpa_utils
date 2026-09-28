@@ -139,6 +139,13 @@ namespace TextExtractAutomation.Tests
             Assert.Equal("1234.50", Value(FieldType.Amount, "DotDecimal", "1,234.50"));                  // no currency is fine
             Assert.Equal("2026-09-26", Value(FieldType.Date, "yyyy-MM-dd|dd/MM/yyyy", "from 26/09/2026 to 2026-10-01"));   // the first date in the text wins
             Assert.Equal("5", Value(FieldType.Integer, "DotDecimal", "5 12/03"));
+
+            // SameLine Text ends at the next label of any field on the line, a repeat of its own label included
+            Assert.Contains("up to the next label of any field on\nthat line, its own labels included", page);
+            using var extract = new TextExtractUtils();
+            Assert.True(extract.AddLabelField("Note", "Note", ValuePosition.SameLine, FieldType.Text, DecimalStyle.DotDecimal, "", true, Occurrence.First, out string m), m);
+            Assert.True(extract.ExtractFromText("Note: first remark   Note: second remark", out _, out _, out m), m);
+            Assert.Equal("first remark", Get(extract, "Note").value);
         }
 
         [Fact]
