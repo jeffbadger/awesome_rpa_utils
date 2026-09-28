@@ -34,8 +34,16 @@ can still catch compile errors in CI or on a Linux dev machine.
 | `lstItems` | ListBox (multi-select) | Scrollable, multi-selectable list for `MouseUtils` click/scroll/`ClickWithModifiers` |
 | `treeSample` | TreeView | "Documents" node with two children, for `UIAutomationUtils.Expand`/`Collapse`/`Select` |
 | `btnShowMessageBox` | Button | Opens a Yes/No `MessageBox` for `DialogUtils` |
-| `btnOpenChildWindow` | Button | Opens `ChildForm` for `WindowUtils` child-window tests |
-| `cboOptions` | ComboBox (drop-down list) | A different UIA tree shape from `lstItems`, for `UIAutomationUtils.Select`/`IsSelected` |
+| `btnOpenChildWindow` | Button | Opens `ChildForm` for `WindowUtils` child-window tests; no singleton guard, so repeated clicks open multiple same-class, same-title windows — useful for `FindDialog`/`GetChildWindows` multi-match cases |
+| `btnShowNonNativeDialog` | Button | Opens `NonNativeDialogForm`, whose dismiss control is a `Label` styled as a button rather than a real `Button` — `DialogUtils.CanDismissDialog`/`FindDialog`'s `canDismiss` reliably reports `false` against it, covering the "non-native dialog" case without a WinUI3 dependency |
+| `btnShowDuplicateDialogs` | Button | Opens two `DuplicateDialogForm` instances at once, both titled "Duplicate Dialog" with a real `Button` (`btnDuplicateOk`) — covers `FindDialog`'s first-match and `FindAllDialogs`' multi-match (returns both) behavior |
+| `btnShowDisabledButtonDialog` | Button | Opens `DisabledButtonDialogForm`, whose `btnConfirm` starts `Enabled = false` — covers `ClickDialogButtonByText`/`ById`'s `wasEnabled = false` case; its `chkConfirmEnabled` checkbox lets a tester flip it enabled mid-wait to also cover the `true` case |
+| `pnlCursorHand` | Panel | `Cursor = Cursors.Hand` — hover inside and assert `MouseUtils.GetCurrentCursorType` reports `Hand` |
+| `pnlCursorSizeAll` | Panel | `Cursor = Cursors.SizeAll` — expect `CurrentCursorType.SizeAll` |
+| `pnlCursorNo` | Panel | `Cursor = Cursors.No` — expect `CurrentCursorType.No` |
+| `pnlCursorCross` | Panel | `Cursor = Cursors.Cross` — expect `CurrentCursorType.Crosshair` (name differs from the WinForms `Cursors.Cross` value) |
+| `pnlCursorWait` | Panel | `Cursor = Cursors.WaitCursor` — expect `CurrentCursorType.Wait` |
+| `cboOptions` | ComboBox (drop-down list) | A different UIA tree shape from `lstItems`, for `UIAutomationUtils.Select`/`IsSelected` — call `Expand` first, its items aren't in the UIA tree while collapsed |
 | `trkVolume` | TrackBar (0-100, starts at 50) | Only exposes `RangeValuePattern` — negative case for `SetValue`/`Toggle`/`Select` against a control supporting none of those patterns |
 | `grpRadioOptions` | GroupBox | Contains `radOptionA`/`radOptionB`/`radOptionC` |
 | `radOptionA`, `radOptionB`, `radOptionC` | RadioButton | Expose `SelectionItemPattern`, not `TogglePattern` — negative case for `UIAutomationUtils.Toggle`/`IsToggled`, complementing `chkOption` |
