@@ -70,7 +70,10 @@ namespace Exerciser
                 {
                     return (T)System.Enum.Parse(typeof(T), names[index]);
                 }
-                if (System.Enum.TryParse(input, true, out T parsed))
+                // Enum.TryParse accepts any numeric string as the underlying value,
+                // even one no member defines (e.g. "99") - IsDefined rejects that,
+                // so an out-of-range number reprompts instead of returning garbage.
+                if (System.Enum.TryParse(input, true, out T parsed) && System.Enum.IsDefined(typeof(T), parsed))
                 {
                     return parsed;
                 }

@@ -334,10 +334,12 @@ dotnet run --project test-harness/TestHarness.csproj
 
 [Exerciser](exerciser/README.md) is a menu-driven console app for the
 host-dependent, non-UI-shaped components Test Harness's WinForms-target
-pattern doesn't fit: `SessionUtils`, `ServiceUtils`, `EventLogUtils`,
-`OcrUtils`, `TerminalUtils`, and `ResourceLockUtils`. It picks a component and
-method, prompts for inputs, and prints the result, for fast, consistent manual
-verification against [TESTING.md](TESTING.md)'s documented cases.
+pattern doesn't fit. Today it covers `SessionUtils`, `OcrUtils`, and
+`TerminalUtils`; `ServiceUtils`, `EventLogUtils`, and `ResourceLockUtils` are
+planned (see `exerciser/README.md`'s Menu structure section for status). It
+picks a component and method, prompts for inputs, and prints the result, for
+fast, consistent manual verification against [TESTING.md](TESTING.md)'s
+documented cases.
 
 Build it on any host with the .NET 10 SDK; run it on Windows:
 
