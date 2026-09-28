@@ -868,6 +868,9 @@ examples straight from the documentation pages.
 
 ### ResourceLockUtils (Setup: for the Machine scope, a lock folder in which every robot account can list the folder, read its files, create files and write to the files it creates; Cleanup: release held locks and dispose the component)
 
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component; its
+Setup/Cleanup entry prints the Machine-scope folder-ACL prerequisite as a reminder (no fixture to create itself).
+
 - Follow `Documentation/QuickStart.md` in the `Process` scope: take `SAP-User-BATCH01` as `Robot 1`, verify a second attempt returns
   `acquired` False with `currentHolder` "Robot 1", release, and verify `released` True.
 - **Across threads (the reason for the component):** acquire in one event handler, store the token in a string variable, and release it from an

@@ -41,10 +41,9 @@ The top-level menu is `[0] Exit` plus one numbered entry per item below
 - **`Setup / Cleanup`** — one entry per component that needs a disposable
   fixture (a test service, a test event log source) or a reminder of a manual
   prerequisite (locking the workstation, an OCR fixture image's path).
-- One entry per component. Implemented today: `SessionUtils`, `OcrUtils`,
-  `TerminalUtils`, `ServiceUtils`, `EventLogUtils`. Planned in a follow-up PR:
-  `ResourceLockUtils` — see `TESTING.md`'s per-component sections for what's
-  covered where.
+- One entry per component: `SessionUtils`, `OcrUtils`, `TerminalUtils`,
+  `ServiceUtils`, `EventLogUtils`, `ResourceLockUtils` — see `TESTING.md`'s
+  per-component sections for what's covered where.
 - Each component's menu lists its methods with a short hint carrying
   TESTING.md's caveats ("needs a real Windows service", "DISRUPTIVE", and so
   on). Picking one prompts for its inputs via the shared `Prompt` helper, then
@@ -83,3 +82,11 @@ this doesn't remove that requirement, just saves hand-typing); its "remove"
 entry shells out to PowerShell's `Remove-EventLog`, since the component itself
 has no programmatic delete. **Never point `EventLogUtils` at the
 Application/System/Security logs directly.**
+
+`ResourceLockUtils`' `Process` scope needs no fixture at all. Its `Machine`
+scope needs a lock folder ACL'd for every robot account that will contend for
+locks — an account-provisioning step no single process can grant itself, so
+the Setup/Cleanup menu's "ResourceLockUtils reminder" entry only prints what's
+needed (see `src/resourcelockutils/Documentation/ServerBots.md`) rather than
+attempting it; use the `ResourceLockUtils` menu's own `ConfigureLockFolder`/
+`ValidateLockFolder` entries once the folder is granted.
