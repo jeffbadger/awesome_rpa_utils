@@ -923,9 +923,12 @@ nothing.
   periodic scan dismisses it.
 - Both `--delayed-button` and `--no-button` show a plain WinForms window, not a native
   `#32770` dialog — pass `className: "*"` on the rule for either case, or it will never
-  match. `--delayed-button` — a form whose button is created a moment after the window
-  appears is still dismissed once it exists; `--no-button` — a button-less window is closed
-  by a close rule.
+  match. `--delayed-button` (button appears after `--button-delay-ms`, default 500 —
+  deliberately short: `InterruptUtils` only retries a newly seen popup at
+  0/150/400/1000/2000 ms after first detecting it before giving up, so `--delay-ms`'s
+  3000 ms default would arrive too late to ever be caught) — a form whose button is
+  created a moment after the window appears is still dismissed once it exists;
+  `--no-button` — a button-less window is closed by a close rule.
 - `--repeat=N --interval-ms=...` — a popup that returns every time trips
   `maxDismissalsPerMinute`: `InterruptError` fires, the rule lists as `"stopped": true`, the
   next popup stays open, and `SetRuleEnabled(true)` resumes it.

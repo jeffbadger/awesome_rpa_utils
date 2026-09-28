@@ -65,7 +65,8 @@ as that second process:
 ```bash
 TestHarness.exe --delayed-popup [--title=T] [--message=M] [--delay-ms=N]
   [--button=OK|OKCancel|YesNo|YesNoCancel|AbortRetryIgnore|RetryCancel]
-  [--repeat=N] [--interval-ms=N] [--no-button] [--delayed-button]
+  [--repeat=N] [--interval-ms=N] [--no-button]
+  [--delayed-button] [--button-delay-ms=N]
 ```
 
 Sleeps `--delay-ms` (default 3000), then shows a real `MessageBox` from its
@@ -80,6 +81,10 @@ demand." Defaults: `--title="Test Harness Popup"`,
   so it still has a title bar and border) with no `Button`-classed child at
   all, for "a button-less window is closed by a close rule."
 - `--delayed-button`: shows the window immediately, then adds its `Button`
-  on a timer tick after `--delay-ms`, for "a form whose button is created a
-  moment after the window appears" (pass `className: "*"` on the
-  `InterruptUtils` side, since it's not a native `#32770` dialog).
+  on a timer tick after `--button-delay-ms` (default 500, **not**
+  `--delay-ms`), for "a form whose button is created a moment after the
+  window appears" (pass `className: "*"` on the `InterruptUtils` side, since
+  it's not a native `#32770` dialog). The default is deliberately short:
+  `InterruptUtils` only retries a newly seen popup at 0/150/400/1000/2000 ms
+  after first detecting it before giving up (`PopupDismissFailed`), so a
+  button delayed by `--delay-ms`'s 3000 ms default would never be caught.

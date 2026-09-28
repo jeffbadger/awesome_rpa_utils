@@ -31,7 +31,8 @@ namespace TestHarness
         ///
         /// Usage: TestHarness.exe --delayed-popup [--title=T] [--message=M]
         ///   [--delay-ms=N] [--button=OK|OKCancel|YesNo|YesNoCancel|AbortRetryIgnore|RetryCancel]
-        ///   [--repeat=N] [--interval-ms=N] [--no-button] [--delayed-button]
+        ///   [--repeat=N] [--interval-ms=N] [--no-button]
+        ///   [--delayed-button] [--button-delay-ms=N]
         /// </summary>
         private static void RunDelayedPopupMode(Dictionary<string, string> options)
         {
@@ -46,6 +47,13 @@ namespace TestHarness
             int intervalMs = GetInt(options, "interval-ms", delayMs);
             bool noButton = options.ContainsKey("no-button");
             bool delayedButton = options.ContainsKey("delayed-button");
+            // Deliberately NOT delayMs: InterruptUtils only retries a newly seen
+            // popup at PopupEngine.ScheduleMs = {0, 150, 400, 1000, 2000} ms after
+            // first detecting it, then gives up (PopupDismissFailed). delayMs
+            // defaults to 3000 ms, well past that window - a button that only
+            // appears then would never be caught. 500 ms lands safely inside the
+            // 1000/2000 ms retries instead.
+            int buttonDelayMs = GetInt(options, "button-delay-ms", 500);
             MessageBoxButtons buttons = ParseButtons(GetString(options, "button", "OK"));
 
             if (noButton && delayedButton)
@@ -57,9 +65,9 @@ namespace TestHarness
             // Thread.Sleep throws ArgumentOutOfRangeException for negative values
             // (other than the special Timeout.Infinite), which would otherwise
             // crash the harness before showing the requested popup at all.
-            if (delayMs < 0 || intervalMs < 0)
+            if (delayMs < 0 || intervalMs < 0 || buttonDelayMs < 0)
             {
-                Console.Error.WriteLine("--delay-ms and --interval-ms must not be negative.");
+                Console.Error.WriteLine("--delay-ms, --interval-ms, and --button-delay-ms must not be negative.");
                 return;
             }
             if (repeat < 1)
@@ -72,15 +80,16 @@ namespace TestHarness
             {
                 if (delayedButton)
                 {
-                    // ShowDelayedButtonPopup already waits delayMs after showing the
-                    // window before adding the button - sleeping delayMs here too
-                    // (as the other modes do) would double it. Skip the outer sleep
-                    // on the first iteration; still wait intervalMs between repeats.
+                    // ShowDelayedButtonPopup already waits buttonDelayMs after showing
+                    // the window before adding the button - sleeping delayMs here too
+                    // (as the other modes do) would needlessly delay the window
+                    // itself. Skip the outer sleep on the first iteration; still wait
+                    // intervalMs between repeats.
                     if (i > 0)
                     {
                         Thread.Sleep(intervalMs);
                     }
-                    ShowDelayedButtonPopup(title, message, delayMs);
+                    ShowDelayedButtonPopup(title, message, buttonDelayMs);
                     continue;
                 }
 
