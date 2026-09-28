@@ -8,7 +8,12 @@ In `ResourceLockUtils` a lock belongs to its **token**, not to a thread:
 
 - The acquire call returns `token`. Store it in a string variable or pass it on a data link.
 - `RenewLock` and `ReleaseLock` need the token and work from **any thread** and any component instance in the same Robot Runtime.
-- Without the token, nothing can release the lock except `ForceReleaseLock` (an operator's tool) or the lease ending.
+- Without the token, a lock is released only by:
+  - disposing the component instance that acquired it, which releases every lock and slot it still holds (for example when the Robot Runtime
+    shuts down);
+  - in the `Machine` scope, the holder's process ending (see [ServerBots](ServerBots.md));
+  - `ForceReleaseLock`, an operator's tool;
+  - the lease ending.
 
 ```text
 Event A (adapter thread):   TryAcquireLock(Process, "Workbook-Q3", "Robot 1", 120) → store token in a variable
