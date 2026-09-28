@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using EventLogAutomation;
 
 namespace Exerciser.Menus
 {
@@ -11,7 +12,7 @@ namespace Exerciser.Menus
     /// </summary>
     internal static class SetupMenu
     {
-        internal static MenuItem[] Build()
+        internal static MenuItem[] Build(EventLogUtils eventLog)
         {
             return new[]
             {
@@ -51,8 +52,36 @@ namespace Exerciser.Menus
                 {
                     RunScCommand("stop ZZTestSvc");
                     RunScCommand("delete ZZTestSvc");
+                }),
+                new MenuItem("EventLogUtils: create ZZTestEventLogUtils source", "Needs an elevated session. Never test EventLogUtils against Application/System/Security directly.", () =>
+                {
+                    string sourceName = Prompt.String("Source name", "ZZTestEventLogUtils");
+                    string logName = Prompt.String("Log name", "ZZTestLog");
+                    bool ok = eventLog.CreateEventSourceSimple(sourceName, logName, out string message);
+                    Report.Result(ok, message);
+                }),
+                new MenuItem("EventLogUtils: remove ZZTestEventLogUtils source", "Shells out to PowerShell's Remove-EventLog - the component itself has no programmatic delete.", () =>
+                {
+                    string sourceName = Prompt.String("Source name", "ZZTestEventLogUtils");
+                    RunPowerShellCommand($"Remove-EventLog -Source '{sourceName}'");
                 })
             };
+        }
+
+        private static void RunPowerShellCommand(string command)
+        {
+            Console.WriteLine($"> powershell.exe -Command \"{command}\"");
+            var startInfo = new ProcessStartInfo("powershell.exe", $"-NoProfile -Command \"{command}\"")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            using Process process = Process.Start(startInfo);
+            process.WaitForExit();
+            Console.WriteLine(process.StandardOutput.ReadToEnd());
+            Console.WriteLine(process.StandardError.ReadToEnd());
+            Console.WriteLine($"Exit code: {process.ExitCode}");
         }
 
         private static void RunScCommand(string arguments)

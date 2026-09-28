@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Exerciser.Menus;
+using EventLogAutomation;
 using OcrAutomation;
 using ServiceAutomation;
 using SessionAutomation;
@@ -20,14 +21,16 @@ namespace Exerciser
             using OcrUtils ocr = new OcrUtils();
             using TerminalUtils terminal = new TerminalUtils();
             using ServiceUtils service = new ServiceUtils();
+            using EventLogUtils eventLog = new EventLogUtils();
 
             var components = new List<(string Name, MenuItem[] Items)>
             {
-                ("Setup / Cleanup", SetupMenu.Build()),
+                ("Setup / Cleanup", SetupMenu.Build(eventLog)),
                 ("SessionUtils", SessionMenu.Build(session)),
                 ("OcrUtils", OcrMenu.Build(ocr)),
                 ("TerminalUtils", TerminalMenu.Build(terminal)),
-                ("ServiceUtils", ServiceMenu.Build(service))
+                ("ServiceUtils", ServiceMenu.Build(service)),
+                ("EventLogUtils", EventLogMenu.Build(eventLog))
             };
 
             while (true)

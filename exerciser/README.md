@@ -39,7 +39,7 @@ still catch compile errors in CI or on a Linux dev machine.
   fixture (a test service, a test event log source) or a reminder of a manual
   prerequisite (locking the workstation, an OCR fixture image's path).
 - One entry per component (`SessionUtils`, `OcrUtils`, `TerminalUtils`,
-  `ServiceUtils` today; `EventLogUtils`, `ResourceLockUtils` in follow-up PRs —
+  `ServiceUtils`, `EventLogUtils` today; `ResourceLockUtils` in a follow-up PR —
   see `TESTING.md`'s per-component sections for what's covered where).
 - Each component's menu lists its methods with a short hint carrying
   TESTING.md's caveats ("needs a real Windows service", "DISRUPTIVE", and so
@@ -72,3 +72,10 @@ out of `Exerciser.csproj`'s own compile glob via an explicit `Compile Remove`,
 the same way each component's `.Tests` subfolder is excluded from its own
 assembly. **Never point `ServiceUtils` at a real system service** — this
 disposable target is the only safe one, per TESTING.md's explicit warning.
+
+The Setup/Cleanup menu's "EventLogUtils: create ZZTestEventLogUtils source"
+entry calls `CreateEventSourceSimple` directly (needs an elevated session —
+this doesn't remove that requirement, just saves hand-typing); its "remove"
+entry shells out to PowerShell's `Remove-EventLog`, since the component itself
+has no programmatic delete. **Never point `EventLogUtils` at the
+Application/System/Security logs directly.**

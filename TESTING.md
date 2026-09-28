@@ -559,6 +559,10 @@ reference, so no WindowsDesktop runtime requirement flows into the test project)
 
 ### EventLogUtils (needs Setup: register a disposable test source/log, e.g. `ZZTestEventLogUtils`, via `CreateEventSourceSimple` from an elevated session — never test against Application/System/Security directly; Cleanup: remove the source via `eventvwr.msc`/PowerShell `Remove-EventLog`)
 
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component; its
+Setup/Cleanup entries call `CreateEventSourceSimple` directly and shell out to `Remove-EventLog` (still needs an
+elevated session for Setup — this doesn't remove that requirement, just saves hand-typing the PowerShell).
+
 - `ListLogNames`/`ListLogNamesDelimited`, `DoesLogExist`/`DoesLogExistSimple`, `DoesSourceExist`/`DoesSourceExistSimple`, `TryGetLogNameForSource` (against the real registry/log list — assert the test log/source appear; a made-up name returns false + message, never an exception)
 - `CreateEventSource`/`CreateEventSourceSimple` (happy path against the test log; idempotent case — calling again with the same source+log returns true + `alreadyExisted = true`; hard-failure case — calling again with a *different* log name for the same source returns false + a message explaining Windows doesn't allow reassignment. **Requires an elevated test session** — cannot run unattended in plain CI, same caveat as `ServiceUtils.SetStartType`)
 - `WriteEntry`/`WriteEntrySimple` (write a known message/level/event id via the test source, then verify it via `TryGetMostRecentEntry`/`QueryRecentEntriesJson`; a message longer than the practical write limit is truncated — assert the truncation note appears in `errorMessage` on an otherwise-successful write)
