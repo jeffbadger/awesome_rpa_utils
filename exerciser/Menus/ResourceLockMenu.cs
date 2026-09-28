@@ -101,9 +101,9 @@ namespace Exerciser.Menus
                     bool ok = resourceLock.ForceReleaseLock(scope, resource, confirmForceRelease: true, out int releasedCount, out string message);
                     Report.Result(ok, message, ("releasedCount", releasedCount));
                 }),
-                new MenuItem("ConfigureLockFolder", "Machine scope only - points this component at the lock folder (default C:\\ProgramData\\AwesomeRpaUtils\\Locks). See the Setup/Cleanup menu for the ACL prerequisite this doesn't grant itself.", () =>
+                new MenuItem("ConfigureLockFolder", "Machine scope only - points this component at the lock folder. Blank resets to the component's own default (ProgramData\\AwesomeRpaUtils\\Locks) instead of hard-coding that path here, so this can also undo a previously configured custom folder. See the Setup/Cleanup menu for the ACL prerequisite this doesn't grant itself.", () =>
                 {
-                    string folderPath = Prompt.String("Folder path", @"C:\ProgramData\AwesomeRpaUtils\Locks");
+                    string folderPath = Prompt.String("Folder path (blank = component default)", "");
                     bool ok = resourceLock.ConfigureLockFolder(folderPath, out string message);
                     Report.Result(ok, message);
                 }),
