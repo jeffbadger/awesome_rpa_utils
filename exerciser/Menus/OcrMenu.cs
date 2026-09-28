@@ -88,10 +88,10 @@ namespace Exerciser.Menus
                     bool ok = ocr.FindTextLocation(searchText, left, top, width, height, out int foundLeft, out int foundTop, out int foundWidth, out int foundHeight, out string message);
                     Report.Result(ok, message, ("foundLeft", foundLeft), ("foundTop", foundTop), ("foundWidth", foundWidth), ("foundHeight", foundHeight));
                 }),
-                new MenuItem("GetAvailableLanguages", "No input. Bare List<string> (vs TryGetAvailableLanguages below, which adds a success/message signal).", () =>
+                new MenuItem("GetAvailableLanguages", "No input. Deliberately returns an empty list both when no languages are installed and when the query fails - it cannot distinguish the two (use TryGetAvailableLanguages below for that). No bool/message exists to report, so this prints the raw list only.", () =>
                 {
                     List<string> tags = ocr.GetAvailableLanguages();
-                    Report.Result(true, null, ("tags", tags));
+                    Console.WriteLine($"  tags: [{string.Join(", ", tags)}]");
                 }),
                 new MenuItem("TryGetAvailableLanguages", "No input. Lists installed Windows OCR language packs - depends on the host, see the Setup/Cleanup menu.", () =>
                 {

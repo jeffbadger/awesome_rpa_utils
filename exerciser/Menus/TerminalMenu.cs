@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using TerminalAutomation;
@@ -14,8 +16,22 @@ namespace Exerciser.Menus
     /// </summary>
     internal static class TerminalMenu
     {
+        // Tracks PIDs from "Launch independent console target" so they can be
+        // cleaned up explicitly or on exit - CreateProcess closing its handles
+        // only releases this process's reference to them, it does not terminate
+        // the launched target, so without this every interactive session would
+        // leave orphaned console windows behind.
+        private static readonly List<int> _launchedProcessIds = new List<int>();
+        private static bool _cleanupRegistered;
+
         internal static MenuItem[] Build(TerminalUtils terminal)
         {
+            if (!_cleanupRegistered)
+            {
+                AppDomain.CurrentDomain.ProcessExit += (s, e) => CleanupLaunchedProcesses(quiet: true);
+                _cleanupRegistered = true;
+            }
+
             return new[]
             {
                 new MenuItem("IsConsoleAttachable", "Checks whether a process ID hosts an attachable console.", () =>
@@ -32,18 +48,23 @@ namespace Exerciser.Menus
                     bool ok = terminal.StartConsoleProcess(fileName, arguments, workingDirectory, out int processId, out string message);
                     Report.Result(ok, message, ("processId", processId));
                 }),
-                new MenuItem("Launch independent console target", "Starts cmd.exe (or another console app) with CREATE_NEW_CONSOLE, so it gets its own separate console window and input buffer instead of sharing this one - safe to use as the processId for every method below, matching what a non-console caller like Robot Studio gets from StartConsoleProcess itself.", () =>
+                new MenuItem("Launch independent console target", "Starts cmd.exe (or another console app) with CREATE_NEW_CONSOLE, so it gets its own separate console window and input buffer instead of sharing this one - safe to use as the processId for every method below, matching what a non-console caller like Robot Studio gets from StartConsoleProcess itself. Tracked for cleanup - see 'Close all independent console targets' below.", () =>
                 {
                     string fileName = Prompt.String("File name", "cmd.exe");
                     string arguments = Prompt.String("Arguments", null);
                     if (TryLaunchIndependentConsoleTarget(fileName, arguments ?? string.Empty, out int processId, out string error))
                     {
+                        _launchedProcessIds.Add(processId);
                         Report.Result(true, null, ("processId", processId));
                     }
                     else
                     {
                         Report.Result(false, error);
                     }
+                }),
+                new MenuItem("Close all independent console targets", "Terminates every process launched by 'Launch independent console target' above that's still running. Also runs automatically when the exerciser exits, so this is only needed to clean up mid-session.", () =>
+                {
+                    CleanupLaunchedProcesses(quiet: false);
                 }),
                 new MenuItem("GetCursorPosition", "Needs a process ID from 'Launch independent console target' above.", () =>
                 {
@@ -97,6 +118,45 @@ namespace Exerciser.Menus
                     Report.Result(ok, message);
                 })
             };
+        }
+
+        private static void CleanupLaunchedProcesses(bool quiet)
+        {
+            if (_launchedProcessIds.Count == 0)
+            {
+                if (!quiet)
+                {
+                    Console.WriteLine("  No tracked console targets to close.");
+                }
+                return;
+            }
+
+            foreach (int pid in _launchedProcessIds)
+            {
+                try
+                {
+                    using Process process = Process.GetProcessById(pid);
+                    if (!process.HasExited)
+                    {
+                        process.Kill();
+                        if (!quiet)
+                        {
+                            Console.WriteLine($"  Closed process {pid}.");
+                        }
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    // Already exited (e.g. the tester closed the window by hand) -
+                    // GetProcessById throws for a PID that no longer exists.
+                }
+                catch (InvalidOperationException)
+                {
+                    // Exited between HasExited and Kill.
+                }
+            }
+
+            _launchedProcessIds.Clear();
         }
 
         // Starts a process with its own genuinely separate console (CREATE_NEW_CONSOLE),
