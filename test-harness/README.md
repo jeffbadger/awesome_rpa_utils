@@ -41,3 +41,40 @@ standard WinForms controls, its UI Automation `AutomationId` — though per
 `UIAutomationUtils`' own README caveat, this mapping isn't guaranteed for
 every control type, so verify the actual `AutomationId` Robot Studio sees
 before writing a test case against it.
+
+## Second-process modes
+
+`ClipboardUtils` needs a real clipboard owned by a **different process**, and
+a window in another process that can take the focus. Instead of the normal
+harness window, `test-harness.exe` can run as that second process:
+
+```bash
+test-harness.exe --clipboard-owner [--text=T] [--html=H] [--rtf=R]
+  [--image=path] [--files=path1;path2] [--custom-format=name:payload]
+  [--hang] [--render-on-demand]
+test-harness.exe --focus-textbox
+```
+
+`--clipboard-owner` puts a rich clipboard on the system clipboard — one entry
+per format flag supplied (text, HTML, RTF, an image file, a file-drop list, a
+custom registered format) — then blocks (press Enter in its console to exit),
+keeping this process alive as the clipboard's owner for
+`SaveClipboard`/`RestoreClipboard` and similar cases to act on from another
+process. By default it uses the managed `Clipboard`/`DataObject` API, which
+renders every format eagerly and flushes it so the data survives this process
+exiting.
+
+- `--hang`: uses delayed (lazy) rendering instead, and never answers
+  `WM_RENDERFORMAT` for any requested format — for `ClipboardUtils`' "hung
+  owner" case, where `SaveClipboard` must fail fast with a reason rather than
+  hang.
+- `--render-on-demand`: also uses delayed rendering, but renders the real data
+  the moment `WM_RENDERFORMAT` asks for it — for the "another process owns
+  the clipboard [and] renders it on demand" case. (`--hang` and
+  `--render-on-demand` only support the `--text`/`--html`/`--rtf`/
+  `--custom-format` formats, not `--image`/`--files` — those need the default
+  managed, eager path.)
+
+`--focus-textbox` opens a small window with a single, immediately-focused
+`TextBox` (`txtClipboardTarget`) — the "small text-box window that can take
+the focus" `PasteText`'s real-focus test case needs.

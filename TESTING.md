@@ -916,17 +916,18 @@ The platform-independent xunit coverage drives the decision logic with a fake de
 `src/interruptutils/InterruptUtils.Tests`
 (`dotnet test src/interruptutils/InterruptUtils.Tests/InterruptUtils.Tests.csproj`).
 
-### ClipboardUtils (needs a desktop and a real clipboard; Setup: a second process that owns the clipboard and a small text-box window that can take the focus; Cleanup: save and restore your own clipboard around the run, close the windows)
+### ClipboardUtils (needs a desktop and a real clipboard; Setup: a second process that owns the clipboard and a small text-box window that can take the focus — `test-harness.exe --clipboard-owner`/`--focus-textbox` (see [`test-harness/README.md`](test-harness/README.md#second-process-modes)); Cleanup: save and restore your own clipboard around the run, close the windows)
 
 The unit tests never touch the real clipboard (they use an in-memory one), so everything below needs
 a real Windows clipboard and is run by hand. The run overwrites the clipboard; save it first with
 `SaveClipboard` and put it back at the end.
 
-- Put a **rich clipboard** on it from another application or a WinForms harness: text, HTML, RTF, an
-  image, a file list, and a custom registered format. `SaveClipboard`, then `SetClipboardText` (assert
-  only text formats remain), then `RestoreClipboard`. Assert every copied format is back **in the same
-  order and byte for byte** (hash each format with `GetClipboardData`; the OLE bookkeeping formats
-  `DataObject` and `Ole Private Data` are deliberately not restored).
+- Put a **rich clipboard** on it via `test-harness.exe --clipboard-owner --text=... --html=... --rtf=...
+  --image=... --files=... --custom-format=...`: text, HTML, RTF, an image, a file list, and a custom
+  registered format all at once. `SaveClipboard`, then `SetClipboardText` (assert only text formats
+  remain), then `RestoreClipboard`. Assert every copied format is back **in the same order and byte for
+  byte** (hash each format with `GetClipboardData`; the OLE bookkeeping formats `DataObject` and
+  `Ole Private Data` are deliberately not restored).
 - **Image fidelity needs a well-formed source.** A WinForms `Clipboard.SetImage` puts a malformed
   `CF_DIBV5` on the clipboard, so another process may read a different image than the one set, with or
   without this component. Test with a hand-built DIB + DIBV5 and compare what a separate process reads
@@ -938,15 +939,18 @@ a real Windows clipboard and is run by hand. The run overwrites the clipboard; s
   in about that time; with no change `WaitForClipboardChange` times out with `timedOut` true and no message;
   a change made *before* the wait is not missed by the `Since` variant; `WaitForClipboardFormat("CF_HDROP")`
   returns when a file list appears.
-- **Another process owns the clipboard**: a process that copies with an OLE data object it renders on
-  demand. `SaveClipboard` and `RestoreClipboard` work; its text and custom format are captured.
-- **A hung owner**: a process whose window never answers `WM_RENDERFORMAT` after `SetClipboardData(format, NULL)`.
-  `SaveClipboard` must return a failure with a reason and never hang (in practice it fails fast with
-  "another application is holding it", because Windows' own clipboard-history service is blocked on the
-  owner and holds the clipboard open). After the owner is killed the clipboard works again.
-- **`PasteText`** into a real text box in another process with the focus in it, over a rich clipboard: the
-  text box gets the pasted text, and afterwards every format is back byte for byte. Give the window the
-  focus without tapping Alt (an Alt tap puts it in menu mode, which swallows the next keystroke).
+- **Another process owns the clipboard**: `test-harness.exe --clipboard-owner --render-on-demand --text=...
+  --custom-format=...` copies with a delayed-rendering owner that renders on demand. `SaveClipboard` and
+  `RestoreClipboard` work; its text and custom format are captured.
+- **A hung owner**: `test-harness.exe --clipboard-owner --hang --text=...` — a window that never answers
+  `WM_RENDERFORMAT` after `SetClipboardData(format, NULL)`. `SaveClipboard` must return a failure with a
+  reason and never hang (in practice it fails fast with "another application is holding it", because
+  Windows' own clipboard-history service is blocked on the owner and holds the clipboard open). After the
+  owner process is killed the clipboard works again.
+- **`PasteText`** into `test-harness.exe --focus-textbox`'s `txtClipboardTarget`, focused in another
+  process, over a rich clipboard: the text box gets the pasted text, and afterwards every format is back
+  byte for byte. Give the window the focus without tapping Alt (an Alt tap puts it in menu mode, which
+  swallows the next keystroke).
 - `requireCompleteRestore` / `requireCompleteCopy` refuse, leaving the clipboard untouched, when a
   GDI-object format is on the clipboard.
 - **History** (needs the real clipboard; save yours first): `StartClipboardHistory(5, ...)`, then copy text from
