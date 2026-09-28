@@ -54,3 +54,37 @@ standard WinForms controls, its UI Automation `AutomationId` — though per
 `UIAutomationUtils`' own README caveat, this mapping isn't guaranteed for
 every control type, so verify the actual `AutomationId` Robot Studio sees
 before writing a test case against it.
+
+## Second-process modes
+
+`InterruptUtils` needs its popup to come from a *different process* than the
+automation dismissing it — a same-process dialog would not catch a real
+regression. Instead of the normal harness window, `TestHarness.exe` can run
+as that second process:
+
+```bash
+TestHarness.exe --delayed-popup [--title=T] [--message=M] [--delay-ms=N]
+  [--button=OK|OKCancel|YesNo|YesNoCancel|AbortRetryIgnore|RetryCancel]
+  [--repeat=N] [--interval-ms=N] [--no-button]
+  [--delayed-button] [--button-delay-ms=N]
+```
+
+Sleeps `--delay-ms` (default 3000), then shows a real `MessageBox` from its
+own process — satisfying TESTING.md's "a second process that shows popups on
+demand." Defaults: `--title="Test Harness Popup"`,
+`--message="This is a delayed popup."`, `--button=OK`.
+
+- `--repeat=N --interval-ms=N`: shows the popup `N` times, `--interval-ms`
+  apart, for `InterruptUtils`' `maxDismissalsPerMinute` case (a popup that
+  returns every time).
+- `--no-button`: shows a fixed-dialog window (`FormBorderStyle.FixedDialog`,
+  so it still has a title bar and border) with no `Button`-classed child at
+  all, for "a button-less window is closed by a close rule."
+- `--delayed-button`: shows the window immediately, then adds its `Button`
+  on a timer tick after `--button-delay-ms` (default 500, **not**
+  `--delay-ms`), for "a form whose button is created a moment after the
+  window appears" (pass `className: "*"` on the `InterruptUtils` side, since
+  it's not a native `#32770` dialog). The default is deliberately short:
+  `InterruptUtils` only retries a newly seen popup at 0/150/400/1000/2000 ms
+  after first detecting it before giving up (`PopupDismissFailed`), so a
+  button delayed by `--delay-ms`'s 3000 ms default would never be caught.
