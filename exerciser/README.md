@@ -35,12 +35,16 @@ still catch compile errors in CI or on a Linux dev machine.
 
 ## Menu structure
 
-- **`[0] Setup / Cleanup`** — one entry per component that needs a disposable
+The top-level menu is `[0] Exit` plus one numbered entry per item below
+(numbers shift as components are added, so they aren't repeated here):
+
+- **`Setup / Cleanup`** — one entry per component that needs a disposable
   fixture (a test service, a test event log source) or a reminder of a manual
   prerequisite (locking the workstation, an OCR fixture image's path).
-- One entry per component (`SessionUtils`, `OcrUtils`, `TerminalUtils`,
-  `ServiceUtils` today; `EventLogUtils`, `ResourceLockUtils` in follow-up PRs —
-  see `TESTING.md`'s per-component sections for what's covered where).
+- One entry per component. Implemented today: `SessionUtils`, `OcrUtils`,
+  `TerminalUtils`, `ServiceUtils`. Planned in follow-up PRs: `EventLogUtils`,
+  `ResourceLockUtils` — see `TESTING.md`'s per-component sections for what's
+  covered where.
 - Each component's menu lists its methods with a short hint carrying
   TESTING.md's caveats ("needs a real Windows service", "DISRUPTIVE", and so
   on). Picking one prompts for its inputs via the shared `Prompt` helper, then
