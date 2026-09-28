@@ -37,7 +37,12 @@ namespace TestHarness
             Name = "MainForm";
             Text = "Awesome RPA Utils - Test Harness";
             Width = 420;
-            Height = 700;
+            // Height is the OUTER window size (title bar + borders included), not the
+            // client area - the previous 700 left grpRadioOptions' bottom (695) past
+            // the actual client boundary, clipping radOptionC. 780 leaves real margin
+            // below the group box regardless of the title bar/border chrome a given
+            // Windows theme/DPI setting actually uses.
+            Height = 780;
 
             ClickButton = new Button
             {
