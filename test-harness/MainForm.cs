@@ -308,6 +308,12 @@ namespace TestHarness
             {
                 Name = "btnDuplicateOk",
                 Text = "OK",
+                // System (not the WinForms default) renders via real native BS_PUSHBUTTON
+                // painting rather than owner-drawing it, so DialogUtils' BM_CLICK-based
+                // ClickButton/ClickDialogButtonByText can actually target it - a default
+                // WinForms button is owner-drawn and DialogUtils' own README documents
+                // that as possibly unresponsive to BM_CLICK.
+                FlatStyle = FlatStyle.System,
                 Location = new Point(90, 70),
                 Width = 80
             };
@@ -336,6 +342,10 @@ namespace TestHarness
                 Name = "btnConfirm",
                 Text = "Confirm",
                 Enabled = false,
+                // Same reasoning as DuplicateDialogForm's OK button: real native
+                // BS_PUSHBUTTON painting, not WinForms' owner-drawn default, so
+                // DialogUtils can find and click it via BM_CLICK.
+                FlatStyle = FlatStyle.System,
                 Location = new Point(90, 80),
                 Width = 100
             };
