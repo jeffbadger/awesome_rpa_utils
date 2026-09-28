@@ -29,6 +29,11 @@ namespace TestHarness
         public Button ShowNonNativeDialogButton;
         public Button ShowDuplicateDialogsButton;
         public Button ShowDisabledButtonDialogButton;
+        public Panel CursorHandPanel;
+        public Panel CursorSizeAllPanel;
+        public Panel CursorNoPanel;
+        public Panel CursorCrossPanel;
+        public Panel CursorWaitPanel;
 
         public MainForm()
         {
@@ -220,13 +225,45 @@ namespace TestHarness
                 dialog.Show(this);
             };
 
+            // Five zones with distinct Cursor settings, for MouseUtils.GetCurrentCursorType:
+            // hover the pointer inside one and assert the matching CurrentCursorType.
+            // Note Cursors.Cross maps to CurrentCursorType.Crosshair, not "Cross".
+            CursorHandPanel = MakeCursorZonePanel("pnlCursorHand", "Hand", Cursors.Hand, new Point(20, 530), Color.MistyRose);
+            CursorSizeAllPanel = MakeCursorZonePanel("pnlCursorSizeAll", "SizeAll", Cursors.SizeAll, new Point(100, 530), Color.Honeydew);
+            CursorNoPanel = MakeCursorZonePanel("pnlCursorNo", "No", Cursors.No, new Point(180, 530), Color.LightYellow);
+            CursorCrossPanel = MakeCursorZonePanel("pnlCursorCross", "Cross", Cursors.Cross, new Point(260, 530), Color.Lavender);
+            CursorWaitPanel = MakeCursorZonePanel("pnlCursorWait", "Wait", Cursors.WaitCursor, new Point(340, 530), Color.PaleTurquoise);
+
             Controls.AddRange(new Control[]
             {
                 ClickButton, ClickCountLabel, ClickDetailLabel, InputTextBox,
                 OptionCheckBox, ItemsListBox, DragTargetPanel, SampleTreeView,
                 ShowMessageBoxButton, OpenChildWindowButton,
-                ShowNonNativeDialogButton, ShowDuplicateDialogsButton, ShowDisabledButtonDialogButton
+                ShowNonNativeDialogButton, ShowDuplicateDialogsButton, ShowDisabledButtonDialogButton,
+                CursorHandPanel, CursorSizeAllPanel, CursorNoPanel, CursorCrossPanel, CursorWaitPanel
             });
+        }
+
+        private static Panel MakeCursorZonePanel(string name, string label, Cursor cursor, Point location, Color backColor)
+        {
+            var panel = new Panel
+            {
+                Name = name,
+                Cursor = cursor,
+                Location = location,
+                Width = 70,
+                Height = 40,
+                BackColor = backColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            panel.Controls.Add(new Label
+            {
+                Text = label,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Cursor = cursor
+            });
+            return panel;
         }
     }
 
