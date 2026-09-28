@@ -693,7 +693,7 @@ reference, so it runs the same way on Linux as on Windows).
 
 ### TerminalUtils (needs a genuine Windows console session; most cases below launch their own target console process — Setup: none beyond that; Cleanup: kill any console process left running by a test)
 
-`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component. Note: `StartConsoleProcess`'s "own real, visible console window" assertion below can't be fully confirmed through the exerciser specifically — the exerciser is itself a console app, so a child console process it launches attaches to/shares its console (standard Windows behavior for a console-hosted parent) rather than getting a genuinely separate one; a non-console caller such as Robot Studio does get a separate window, which is what this case is really verifying.
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component. Note: exercise `StartConsoleProcess` itself via its own menu entry, but use the separate "Launch independent console target" entry (`CREATE_NEW_CONSOLE`) for the process ID every *other* method needs — since the exerciser is itself a console app, a process `StartConsoleProcess` launches attaches to/shares its console and input buffer (standard Windows behavior for a console-hosted parent), racing with the exerciser's own prompts, rather than getting the genuinely separate console a non-console caller such as Robot Studio would get.
 
 Unlike `FileWatchUtils`/`ArchiveUtils`, this component is fundamentally
 Win32 console-API/P/Invoke-heavy (`AttachConsole`, `GetConsoleScreenBufferInfo`,
