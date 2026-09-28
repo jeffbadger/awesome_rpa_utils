@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 
 namespace Exerciser.Menus
@@ -34,8 +35,40 @@ namespace Exerciser.Menus
                 new MenuItem("TerminalUtils reminder", "No separate Setup needed.", () =>
                 {
                     Console.WriteLine("TerminalUtils needs no separate Setup - StartConsoleProcess, in the TerminalUtils menu, launches its own target console process (e.g. cmd.exe).");
+                }),
+                new MenuItem("ServiceUtils: create ZZTestSvc", "Installs the disposable test service via 'sc create', pointed at NullService.exe. Never test ServiceUtils against a real system service.", () =>
+                {
+                    string defaultBinPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "NullService", "bin", "Debug", "net10.0-windows", "NullService.exe");
+                    string binPath = Prompt.String("Path to NullService.exe (build it first: dotnet build exerciser/NullService/NullService.csproj)", Path.GetFullPath(defaultBinPath));
+                    if (!File.Exists(binPath))
+                    {
+                        Console.WriteLine($"No file found at {binPath} - build NullService.csproj first, or supply the correct path.");
+                        return;
+                    }
+                    RunScCommand($"create ZZTestSvc binPath= \"{binPath}\" start= demand");
+                }),
+                new MenuItem("ServiceUtils: delete ZZTestSvc", "Stops and removes the disposable test service.", () =>
+                {
+                    RunScCommand("stop ZZTestSvc");
+                    RunScCommand("delete ZZTestSvc");
                 })
             };
+        }
+
+        private static void RunScCommand(string arguments)
+        {
+            Console.WriteLine($"> sc.exe {arguments}");
+            var startInfo = new ProcessStartInfo("sc.exe", arguments)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            using Process process = Process.Start(startInfo);
+            process.WaitForExit();
+            Console.WriteLine(process.StandardOutput.ReadToEnd());
+            Console.WriteLine(process.StandardError.ReadToEnd());
+            Console.WriteLine($"Exit code: {process.ExitCode}");
         }
     }
 }
