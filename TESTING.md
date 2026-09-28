@@ -51,17 +51,20 @@ where the method is documented to throw.
 
 - `FindDialog` (exact + substring match; not-found → returns `false`, `out`
   params zeroed; also assert `canDismiss` — `true` for the harness's native
-  `Button` dialog, `false` if you can simulate a WinUI-style one, or document
-  that case as manual-only. New: a null/empty `titlePattern` → `false`; hidden
-  windows never match (toggle the harness window's visibility and re-run);
+  `Button` dialog (`btnShowMessageBox`), `false` against `btnShowNonNativeDialog`'s
+  `NonNativeDialogForm`, whose only dismiss control is a `Label` styled as a
+  button rather than a real `Button`. New: a null/empty `titlePattern` → `false`;
+  hidden windows never match (toggle the harness window's visibility and re-run);
   `processId` scoping — pass the harness's real PID → found, a wrong PID →
-  not found; first-match behavior — open two matching windows and assert it
+  not found; first-match behavior — click `btnShowDuplicateDialogs`, which opens
+  two identically-titled `DuplicateDialogForm` windows at once, and assert it
   returns one of them)
 - `FindAllDialogs` (new: same matching as `FindDialog` but returns every match —
-  open two matching windows and assert both come back; null/empty pattern →
-  empty list; `processId` scoping)
-- `CanDismissDialog` (native `Button` dialog → true; simulate a WinUI-style
-  dialog if you can, or just document as manual-only)
+  click `btnShowDuplicateDialogs` and assert both `DuplicateDialogForm` windows
+  come back; null/empty pattern → empty list; `processId` scoping)
+- `CanDismissDialog` (native `Button` dialog (`btnShowMessageBox`) → true;
+  `btnShowNonNativeDialog`'s `NonNativeDialogForm` → false, since its dismiss
+  control is a `Label`, never a `Button`)
 - `FindButtonByText` (exact/substring; mnemonic-stripping case — button labeled
   `"&Yes"` should match input `"Yes"`; not-found → returns `false`, never throws)
 - `FindButtonById`, `ClickDialogButtonById` (happy path — assert `wasEnabled`;
@@ -74,8 +77,10 @@ where the method is documented to throw.
 - `GetDialogText`, `GetControlText`, `ListDialogControls` (assert count/text/
   class/enabled state against harness's known controls)
 - `ClickButton` (assert the `bool` return matches whether the target was
-  actually enabled when clicked — force the disabled case if the harness can
-  hold a button disabled briefly)
+  actually enabled when clicked — click `btnShowDisabledButtonDialog` to open
+  `DisabledButtonDialogForm`, whose `btnConfirm` starts `Enabled = false`, for
+  the deterministic `wasEnabled = false` case; flip its `chkConfirmEnabled`
+  checkbox mid-wait to also cover `wasEnabled = true`)
 - `HighlightControl` (assert the `bool` return — `true` for a valid handle;
   verify the actual flash manually/via screenshot, see Phase 3)
 - `WaitForDialog`, `WaitForDialogToClose` (timeout-not-met and found-in-time
