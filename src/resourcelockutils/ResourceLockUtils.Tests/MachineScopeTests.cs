@@ -699,6 +699,7 @@ namespace ResourceLockAutomation.Tests
                 try { host.Kill(true); } catch (InvalidOperationException) { }
                 Assert.Fail("a child process did not finish within " + limit.TotalSeconds + " s");
             }
+            Assert.True(host.ExitCode == 0, "a child process exited with code " + host.ExitCode);        // a crash fails the test
             return output.GetAwaiter().GetResult();
         }
 

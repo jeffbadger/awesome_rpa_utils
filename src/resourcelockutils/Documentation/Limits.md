@@ -37,7 +37,7 @@ NVMe disk, and NTFS (through FUSE, the nearest to a Windows server's disk availa
 | `Process` scope: acquire and release | 4.5 µs | 4.5 µs |
 | `Machine` scope: acquire and release (2,050 files in the folder by the end) | 2.5 ms | 2.9 ms |
 | `Machine` scope: acquire and release in a busy folder (800 files, 51 resources) | 3.1 ms | 3.3 ms |
-| `Machine` scope: 8 processes contending for one lock, 300 acquisitions each | 295 per second | 250 per second |
+| `Machine` scope: 8 processes contending for one lock, 300 acquisitions each (every child checked, 2,400 acquired) | 299 per second | 276 per second |
 | `Machine` scope: a waiting `AcquireLock` notices a release (after a long wait) | 0.4 s on average, 1 s at most | 0.5 s on average, 1 s at most |
 | `Process` scope: a waiting `AcquireLock` notices a release | 0.3 ms | 0.4 ms |
 | `ValidateLockFolder` (50 lease files) | 0.8 ms | 2.2 ms |

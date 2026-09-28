@@ -97,7 +97,7 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
-        public void Measure_MachineScope_EightProcessesContending()
+        public async System.Threading.Tasks.Task Measure_MachineScope_EightProcessesContending()
         {
             if (!Enabled) return;
             string markers = Path.Combine(folder, "markers");
@@ -109,13 +109,29 @@ namespace ResourceLockAutomation.Tests
                 foreach (string a in new[] { typeof(StressHost).Assembly.Location, "stress-host", "contend", folder, "contended", "300", markers }) info.ArgumentList.Add(a);
                 return Process.Start(info);
             }).ToList();
-            var outputs = hosts.Select(h => { string o = h.StandardOutput.ReadToEnd(); h.WaitForExit(); h.Dispose(); return o; }).ToList();
+            var outputs = new List<string>();
+            try
+            {
+                foreach (Process h in hosts)
+                {
+                    var read = h.StandardOutput.ReadToEndAsync();
+                    Assert.True(h.WaitForExit((int)TimeSpan.FromMinutes(10).TotalMilliseconds), "a child did not finish within 10 minutes");
+                    Assert.True(h.ExitCode == 0, "a child exited with code " + h.ExitCode);                // a crash is a failed measurement
+                    outputs.Add(await read);
+                }
+            }
+            finally
+            {
+                foreach (Process h in hosts) { try { if (!h.HasExited) h.Kill(true); } catch (InvalidOperationException) { } h.Dispose(); }
+            }
             clock.Stop();
             string all = string.Join("\n", outputs);
             Assert.DoesNotContain("VIOLATION", all);
             Assert.DoesNotContain("ERROR", all);
+            Assert.All(outputs, o => Assert.Contains("DONE 300", o));                                     // every child ran every iteration
             int waited = all.Split('\n').Count(l => l.Trim() == "WAITED");
-            Report($"machineContention: processes=8 acquisitionsEach=300 totalSeconds={clock.Elapsed.TotalSeconds:F1} acquisitionsPerSecond={2400 / clock.Elapsed.TotalSeconds:F0} waitsThatEnded={waited} (includes process start-up)");
+            int acquisitions = 8 * 300 - waited;                                                          // a wait that ended acquired nothing
+            Report($"machineContention: processes=8 attemptsEach=300 acquisitions={acquisitions} totalSeconds={clock.Elapsed.TotalSeconds:F1} acquisitionsPerSecond={acquisitions / clock.Elapsed.TotalSeconds:F0} waitsThatEnded={waited} (includes process start-up)");
         }
 
         [Fact]
