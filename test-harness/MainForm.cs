@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace TestHarness
@@ -26,6 +27,7 @@ namespace TestHarness
         public TreeView SampleTreeView;
         public Button ShowMessageBoxButton;
         public Button OpenChildWindowButton;
+        public Button OpenSecondChildWindowButton;
         public Button ShowNonNativeDialogButton;
         public Button ShowDuplicateDialogsButton;
         public Button ShowDisabledButtonDialogButton;
@@ -188,6 +190,28 @@ namespace TestHarness
                 child.Show(this);
             };
 
+            // A second, distinct top-level window type. These are owned windows
+            // (Show(this), not WS_CHILD descendants), and WinForms does NOT derive a
+            // distinct native window class per CLR Form subtype - every plain Form,
+            // including ChildForm, shares the same generic "WindowsForms10.Window..."
+            // class. SecondChildForm registers its own explicit class (see its
+            // CreateParams override and EnsureNativeClassRegistered below) specifically
+            // so it differs from ChildForm's. Covers TryFindWindowByRegex's
+            // classNamePattern (nothing to wrongly match before this existed) and
+            // GetTopLevelWindows/FindWindowByClass's duplicate-vs-distinct-class cases.
+            OpenSecondChildWindowButton = new Button
+            {
+                Name = "btnOpenSecondChildWindow",
+                Text = "Open 2nd Child Window",
+                Location = new Point(320, 440),
+                Width = 120
+            };
+            OpenSecondChildWindowButton.Click += (s, e) =>
+            {
+                var child = new SecondChildForm();
+                child.Show(this);
+            };
+
             // Dismiss control is a Label, never a real Button, so DialogUtils.CanDismissDialog
             // (which only ever looks for a native "Button"-classed child window) reliably
             // reports canDismiss = false, without depending on an actual WinUI3 dialog.
@@ -290,7 +314,7 @@ namespace TestHarness
             {
                 ClickButton, ClickCountLabel, ClickDetailLabel, InputTextBox,
                 OptionCheckBox, ItemsListBox, DragTargetPanel, SampleTreeView,
-                ShowMessageBoxButton, OpenChildWindowButton,
+                ShowMessageBoxButton, OpenChildWindowButton, OpenSecondChildWindowButton,
                 ShowNonNativeDialogButton, ShowDuplicateDialogsButton, ShowDisabledButtonDialogButton,
                 CursorHandPanel, CursorSizeAllPanel, CursorNoPanel, CursorCrossPanel, CursorWaitPanel,
                 OptionsComboBox, VolumeTrackBar, radioGroup
@@ -339,6 +363,130 @@ namespace TestHarness
             };
             Controls.Add(label);
         }
+    }
+
+    /// <summary>
+    /// A second, differently-classed top-level (owned, not WS_CHILD) window, for
+    /// WindowUtils scenarios that need more than one distinct window class on screen
+    /// at once (e.g. proving TryFindWindowByRegex's classNamePattern actually
+    /// excludes a non-matching class). A plain WinForms Form does not get its own
+    /// native window class per CLR subtype - every Form in this app, ChildForm
+    /// included, otherwise shares the same generic "WindowsForms10.Window..." class
+    /// - so this registers its own via Win32's <c>RegisterClassEx</c> (setting
+    /// <see cref="CreateParams.ClassName"/> alone does not register a class; an
+    /// unregistered class name makes <c>CreateWindowEx</c> fail outright).
+    /// </summary>
+    public class SecondChildForm : Form
+    {
+        private const string NativeClassName = "TestHarnessSecondChildForm";
+        private static bool _classRegistered;
+
+        public SecondChildForm()
+        {
+            EnsureNativeClassRegistered();
+
+            Name = "SecondChildForm";
+            Text = "Second Child Window";
+            Width = 300;
+            Height = 200;
+
+            var label = new Label
+            {
+                Name = "lblSecondChildContent",
+                Text = "This is a second, differently-classed child window.",
+                Location = new Point(20, 20),
+                AutoSize = true
+            };
+            Controls.Add(label);
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ClassName = NativeClassName;
+                return cp;
+            }
+        }
+
+        // Registers the class once, using the OS's own default window procedure
+        // (user32's DefWindowProcW) so CreateWindowEx can create a window of this
+        // class at all. WinForms then subclasses the window's WndProc after
+        // creation - the same way it does for its own built-in
+        // "WindowsForms10.Window..." class - so normal message handling and
+        // control hosting still work.
+        private static void EnsureNativeClassRegistered()
+        {
+            if (_classRegistered)
+            {
+                return;
+            }
+
+            IntPtr hUser32 = GetModuleHandle("user32.dll");
+            IntPtr defWindowProc = GetProcAddress(hUser32, "DefWindowProcW");
+
+            var wc = new WNDCLASSEX
+            {
+                cbSize = (uint)Marshal.SizeOf<WNDCLASSEX>(),
+                style = 0,
+                lpfnWndProc = defWindowProc,
+                cbClsExtra = 0,
+                cbWndExtra = 0,
+                hInstance = GetModuleHandle(null),
+                hIcon = IntPtr.Zero,
+                hCursor = LoadCursor(IntPtr.Zero, IDC_ARROW),
+                hbrBackground = (IntPtr)(COLOR_WINDOW + 1),
+                lpszMenuName = null,
+                lpszClassName = NativeClassName,
+                hIconSm = IntPtr.Zero
+            };
+
+            if (RegisterClassEx(ref wc) == 0)
+            {
+                int error = Marshal.GetLastWin32Error();
+                const int ERROR_CLASS_ALREADY_EXISTS = 1410;
+                if (error != ERROR_CLASS_ALREADY_EXISTS)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to register the '{NativeClassName}' window class (Win32 error {error}).");
+                }
+            }
+
+            _classRegistered = true;
+        }
+
+        private const int COLOR_WINDOW = 5;
+        private const int IDC_ARROW = 32512;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WNDCLASSEX
+        {
+            public uint cbSize;
+            public uint style;
+            public IntPtr lpfnWndProc;
+            public int cbClsExtra;
+            public int cbWndExtra;
+            public IntPtr hInstance;
+            public IntPtr hIcon;
+            public IntPtr hCursor;
+            public IntPtr hbrBackground;
+            public string lpszMenuName;
+            public string lpszClassName;
+            public IntPtr hIconSm;
+        }
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
     }
 
     /// <summary>

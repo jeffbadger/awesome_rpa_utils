@@ -274,6 +274,14 @@ condition.
 - `GetTopLevelWindows`, `FindWindowByTitle` (exact/substring/not-found; a
   null/empty title returns `IntPtr.Zero` rather than throwing),
   `FindWindowByClass`, `FindWindowsByProcessId`, `GetForegroundWindow`
+  (open one `ChildForm` and one `SecondChildForm` via
+  `btnOpenChildWindow`/`btnOpenSecondChildWindow` — both are owned top-level
+  windows, not `WS_CHILD` descendants of the harness window, so they show up
+  here, not under `GetChildWindows` below — and assert `GetTopLevelWindows`
+  includes both, `FindWindowByClass` matching `SecondChildForm`'s explicit
+  class finds only it, and matching `ChildForm`'s class finds it but not
+  `SecondChildForm`; opening two `ChildForm`s instead covers the same-class
+  duplicate case)
 - `GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow` (assert
   bounds before/after; invalid handle/negative dimensions → `false` + message)
 - `GetWindowTitle`, `GetWindowClassName`, `GetWindowProcessId`,
@@ -302,7 +310,11 @@ condition.
   and both patterns; a WinForms class name with a per-run suffix matched by its
   stable prefix; not found → `false` with a **null** `message`, versus no
   pattern / invalid pattern / stale parent handle → `false` with a non-null
-  `message`; `ignoreCase: false` misses a differently-cased title)
+  `message`; `ignoreCase: false` misses a differently-cased title; with both
+  `btnOpenChildWindow`'s `ChildForm` and `btnOpenSecondChildWindow`'s
+  `SecondChildForm` open, a `classNamePattern` matching one's class must not
+  also match the other's — proving the pattern actually excludes a real,
+  non-matching class rather than trivially matching everything on screen)
 - `EnumerateWindowsJson` (the harness window appears with the expected `Title`,
   `ClassName`, `ProcessId`, `IsEnabled`, `State`, and sane bounds; `processId`
   narrows to one process; an unknown process ID → `[]`; a negative one →
