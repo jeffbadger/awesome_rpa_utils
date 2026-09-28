@@ -44,6 +44,10 @@ can still catch compile errors in CI or on a Linux dev machine.
 | `pnlCursorNo` | Panel | `Cursor = Cursors.No` — expect `CurrentCursorType.No` |
 | `pnlCursorCross` | Panel | `Cursor = Cursors.Cross` — expect `CurrentCursorType.Crosshair` (name differs from the WinForms `Cursors.Cross` value) |
 | `pnlCursorWait` | Panel | `Cursor = Cursors.WaitCursor` — expect `CurrentCursorType.Wait` |
+| `cboOptions` | ComboBox (drop-down list) | A different UIA tree shape from `lstItems`, for `UIAutomationUtils.Select`/`IsSelected` — call `Expand` first, its items aren't in the UIA tree while collapsed |
+| `trkVolume` | TrackBar (0-100, starts at 50) | Only exposes `RangeValuePattern` — negative case for `SetValue`/`Toggle`/`Select` against a control supporting none of those patterns |
+| `grpRadioOptions` | GroupBox | Contains `radOptionA`/`radOptionB`/`radOptionC` |
+| `radOptionA`, `radOptionB`, `radOptionC` | RadioButton | Expose `SelectionItemPattern`, not `TogglePattern` — negative case for `UIAutomationUtils.Toggle`/`IsToggled`, complementing `chkOption` |
 
 Each control's `Name` doubles as its Win32 window text lookup key and, for
 standard WinForms controls, its UI Automation `AutomationId` — though per
