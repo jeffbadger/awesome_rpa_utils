@@ -173,7 +173,8 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
 13. **Measurements and three performance fixes** (WP6). The first measurements showed a `Machine`-scope acquire and release costing 10 ms on
     ext4 and over 200 ms on NTFS. Three causes, all fixed: every lease write was forced to disk (`Flush(true)`), which locks do not need (other
     processes read the OS cache, and after a power loss every holder's process is gone); each operation listed the folder up to five times
-    (cleanup and the holder count now reuse the operation's own listing); and cleanup examined every old generation on every operation (it now
+    (cleanup reuses the operation's own listing; the holder count is 1 for a lock and re-read after the create only for a slot pool, where other
+    robots may take other slots meanwhile); and cleanup examined every old generation on every operation (it now
     works up from the oldest, stops at the first successor still younger than 5 minutes, since generations are created in order and every later
     successor is younger still, and examines at most 32 per call). After the fixes: 2.5 ms (ext4) and 2.9 ms (NTFS) per pair with 2,050 files
     in the folder, 250 to 295 acquisitions per second with 8 processes contending, and a `Machine`-scope waiter notices a release within about a

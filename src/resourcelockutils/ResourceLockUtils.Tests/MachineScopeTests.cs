@@ -94,6 +94,29 @@ namespace ResourceLockAutomation.Tests
         }
 
         [Fact]
+        public void ASlotTakenElsewhereDuringTheAcquire_IsCountedInHolderCount()
+        {
+            // Two robots see an empty pool and take different slots at the same moment: each must report both holders, not its own reading.
+            using Process self = Process.GetCurrentProcess();
+            long start = MachineLocks.StartIdentity(self);
+            MachineLocks.BeforeCreateForTests = path =>
+            {
+                MachineLocks.BeforeCreateForTests = null;                                                   // once: another robot takes slot 1 now
+                var other = new LeaseRecord { Token = Guid.NewGuid().ToString("N"), Holder = "other robot", Kind = LockKind.Slot, Capacity = 3,
+                    AcquiredUtc = DateTime.UtcNow, ExpiresUtc = DateTime.UtcNow.AddMinutes(1), Machine = Environment.MachineName, SessionId = 1,
+                    ProcessId = self.Id, ProcessStart = start };
+                File.WriteAllText(Path.Combine(folder, "race-pool.1.1.lease"), other.ToJson());
+            };
+            try
+            {
+                using var c = New();
+                Assert.True(c.TryAcquireSlot(LockScope.Machine, "race-pool", 3, "me", 60, out bool acquired, out _, out int holderCount, out string m), m);
+                Assert.Equal((true, 2), (acquired, holderCount));
+            }
+            finally { MachineLocks.BeforeCreateForTests = null; }
+        }
+
+        [Fact]
         public void KindAndCapacityMismatches_AreRefused_WhileHeld()
         {
             using var c = New();

@@ -533,8 +533,14 @@ namespace ResourceLockAutomation
                     }
                     Remember(owner, folder, resource, token);
                     // The lease exists now: nothing after this may turn it into a failed acquire, so cleanup and the count are best effort.
-                    int holderCount = chains.Values.Count(c => c.Held) + 1;                  // from this operation's reading: no second listing
-                    try { DeleteOldGenerations(folder, resource, slot, generation, chain?.Files.Select(f => f.Generation) ?? Enumerable.Empty<long>()); }
+                    int holderCount = capacity == 1 ? 1 : chains.Values.Count(c => c.Held) + 1;
+                    try
+                    {
+                        DeleteOldGenerations(folder, resource, slot, generation, chain?.Files.Select(f => f.Generation) ?? Enumerable.Empty<long>());
+                        // A lock just acquired has exactly one holder. A pool is counted again after the create: other robots may have taken
+                        // other slots meanwhile, and holderCount is documented as how many slots are taken.
+                        if (capacity > 1) holderCount = ReadChains(folder, resource, UtcNow, capacity).Values.Count(c => c.Held);
+                    }
                     catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
                     return new AcquireResult(true, token, null, holderCount, null);
                 }
