@@ -87,32 +87,17 @@ namespace Exerciser.Menus
                     bool ok = session.EnumerateSessionsJson(filter, out string json, out string message);
                     Report.Result(ok, message, ("json", json));
                 }),
-                new MenuItem("IsWorkstationLockedSimple", "Lock with Win+L during the test and confirm true.", () =>
-                {
-                    bool ok = session.IsWorkstationLockedSimple(out string message);
-                    Report.Result(ok, message);
-                }),
                 new MenuItem("IsWorkstationLocked", "Lock with Win+L and confirm true; separately trigger a UAC prompt and confirm it stays false (per the component README's Notes & Caveats).", () =>
                 {
                     bool ok = session.IsWorkstationLocked(out bool querySucceeded, out string message);
                     Report.Result(ok, message, ("querySucceeded", querySucceeded));
                 }),
-                new MenuItem("IsSessionInteractiveSimple", "Needs a real Windows service (Session 0) to exercise the false path; console/RDP sessions only exercise true.", () =>
-                {
-                    bool ok = session.IsSessionInteractiveSimple(out string message);
-                    Report.Result(ok, message);
-                }),
-                new MenuItem("IsSessionInteractive", "Needs a real Windows service (Session 0) to exercise the false path.", () =>
+                new MenuItem("IsSessionInteractive", "Needs a real Windows service (Session 0) to exercise the false path; console/RDP sessions only exercise true.", () =>
                 {
                     bool ok = session.IsSessionInteractive(out bool querySucceeded, out string message);
                     Report.Result(ok, message, ("querySucceeded", querySucceeded));
                 }),
-                new MenuItem("IsInputDesktopAvailableSimple", "Needs both a lock and a UAC/Ctrl+Alt+Del trigger to exercise both 'unavailable' paths.", () =>
-                {
-                    bool ok = session.IsInputDesktopAvailableSimple(out string message);
-                    Report.Result(ok, message);
-                }),
-                new MenuItem("IsInputDesktopAvailable", "Needs both a lock and a UAC/Ctrl+Alt+Del trigger; a Session-0 service context exercises the 'no desktop at all' path.", () =>
+                new MenuItem("IsInputDesktopAvailable", "Needs both a lock and a UAC/Ctrl+Alt+Del trigger to exercise both 'unavailable' paths; a Session-0 service context exercises the 'no desktop at all' path.", () =>
                 {
                     bool ok = session.IsInputDesktopAvailable(out bool querySucceeded, out string message);
                     Report.Result(ok, message, ("querySucceeded", querySucceeded));
