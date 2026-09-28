@@ -533,6 +533,10 @@ events.
 
 ### ServiceUtils (needs Setup: install a small disposable test service — e.g. via `sc create ZZTestSvc binPath= ...` against a trivial do-nothing executable — never test against a real system service; Cleanup: stop and `sc delete` it)
 
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component; its
+Setup/Cleanup entries run `sc create`/`sc delete` against the checked-in `exerciser/NullService/` do-nothing
+executable (build it first: `dotnet build exerciser/NullService/NullService.csproj`).
+
 - `IsServiceInstalled` (true for the test service; false + message for a made-up name — never an exception)
 - `IsRunning` (true after `StartService`; false after `StopService`; false + message for a made-up name)
 - `TryGetStatus` (true + status against the test service's actual state after each Control method call below; false + message for a made-up name)

@@ -38,9 +38,9 @@ still catch compile errors in CI or on a Linux dev machine.
 - **`[0] Setup / Cleanup`** — one entry per component that needs a disposable
   fixture (a test service, a test event log source) or a reminder of a manual
   prerequisite (locking the workstation, an OCR fixture image's path).
-- One entry per component (`SessionUtils`, `OcrUtils`, `TerminalUtils` today;
-  `ServiceUtils`, `EventLogUtils`, `ResourceLockUtils` in follow-up PRs — see
-  `TESTING.md`'s per-component sections for what's covered where).
+- One entry per component (`SessionUtils`, `OcrUtils`, `TerminalUtils`,
+  `ServiceUtils` today; `EventLogUtils`, `ResourceLockUtils` in follow-up PRs —
+  see `TESTING.md`'s per-component sections for what's covered where).
 - Each component's menu lists its methods with a short hint carrying
   TESTING.md's caveats ("needs a real Windows service", "DISRUPTIVE", and so
   on). Picking one prompts for its inputs via the shared `Prompt` helper, then
@@ -60,3 +60,15 @@ underlying call.
 `Fixtures/ocr-sample.png` — a 400x120 image with the known text
 "Hello Exerciser", for `OcrUtils.GetTextFromImageFile`'s default input. Copied
 to the output directory on build.
+
+## Setup helpers
+
+`NullService/` (`NullService.csproj`) is a trivial do-nothing Windows service,
+built separately (`dotnet build exerciser/NullService/NullService.csproj`) and
+installed as the disposable `ZZTestSvc` by the Setup/Cleanup menu's "ServiceUtils:
+create ZZTestSvc" entry (`sc create`/`sc delete`, via a plain `ServiceBase`
+subclass that answers start/stop/pause/continue and does nothing else). Kept
+out of `Exerciser.csproj`'s own compile glob via an explicit `Compile Remove`,
+the same way each component's `.Tests` subfolder is excluded from its own
+assembly. **Never point `ServiceUtils` at a real system service** — this
+disposable target is the only safe one, per TESTING.md's explicit warning.
