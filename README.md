@@ -330,6 +330,22 @@ dotnet build test-harness/TestHarness.csproj
 dotnet run --project test-harness/TestHarness.csproj
 ```
 
+### Exerciser
+
+[Exerciser](exerciser/README.md) is a menu-driven console app for the
+host-dependent, non-UI-shaped components Test Harness's WinForms-target
+pattern doesn't fit: `SessionUtils`, `ServiceUtils`, `EventLogUtils`,
+`OcrUtils`, `TerminalUtils`, and `ResourceLockUtils`. It picks a component and
+method, prompts for inputs, and prints the result, for fast, consistent manual
+verification against [TESTING.md](TESTING.md)'s documented cases.
+
+Build it on any host with the .NET 10 SDK; run it on Windows:
+
+```bash
+dotnet build exerciser/Exerciser.csproj
+dotnet run --project exerciser/Exerciser.csproj
+```
+
 ## Testing
 
 See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
