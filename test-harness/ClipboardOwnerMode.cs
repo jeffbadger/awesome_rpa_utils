@@ -85,6 +85,17 @@ namespace TestHarness
         // flushes it immediately (copy: true) so it survives this process exiting.
         private static void RunManagedOwner(Dictionary<string, string> options)
         {
+            // Validate before touching the clipboard at all - claiming it and then
+            // silently skipping a requested format (e.g. a nonexistent --image path)
+            // would report a running owner while omitting data the command line
+            // explicitly asked for, making the documented rich-clipboard scenario
+            // pass with an incomplete clipboard.
+            if (options.TryGetValue("image", out var imagePathToCheck) && !File.Exists(imagePathToCheck))
+            {
+                Console.Error.WriteLine($"--image path does not exist: {imagePathToCheck}");
+                return;
+            }
+
             var data = new DataObject();
 
             if (options.TryGetValue("text", out var text))
@@ -99,7 +110,7 @@ namespace TestHarness
             {
                 data.SetData(DataFormats.Rtf, rtf);
             }
-            if (options.TryGetValue("image", out var imagePath) && File.Exists(imagePath))
+            if (options.TryGetValue("image", out var imagePath))
             {
                 using var image = Image.FromFile(imagePath);
                 data.SetImage(image);
