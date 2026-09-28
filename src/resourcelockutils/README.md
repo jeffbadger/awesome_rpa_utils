@@ -5,11 +5,10 @@ rate-limited portal) that **any thread can release** and that **Server Bots on o
 component: a `Lock` can only be released by the thread that took it, and it is in memory inside one Robot Runtime, so it cannot stop two Server
 Bots from using the same resource.
 
-> **Status: under construction.** Work packages 1 to 3 of the [design plan](../../project-docs/plans/2026-09-27-resourcelockutils-design.md)
-> are in: the public methods are fixed, every input is validated, and **both scopes work**: `Process` (every thread and automation in one Robot
-> Runtime) and `Machine` (every robot on the machine, including Server Bots under other Windows accounts). `ValidateLockFolder` reports that it
-> is not implemented yet. Do not use the component until a release says otherwise. It is registered in the solution so it builds and its
-> tests run in CI, but it is deliberately not in any release, the root README or `CrossReference.md` yet.
+> **Status: under construction.** Work packages 1 to 4 of the [design plan](../../project-docs/plans/2026-09-27-resourcelockutils-design.md)
+> are in: every method works, in both scopes: `Process` (every thread and automation in one Robot Runtime) and `Machine` (every robot on the
+> machine, including Server Bots under other Windows accounts), and `ValidateLockFolder` checks a lock folder. The documentation pages and the
+> registration (root README, `CrossReference.md`, releases) come next. Do not use the component until a release says otherwise.
 
 - Target framework: `net8.0-windows` / `net10.0-windows`
 - Namespace: `ResourceLockAutomation`
@@ -38,7 +37,7 @@ Bots from using the same resource.
   - A holder whose process has ended (or whose process ID now belongs to another process, told apart by its exact start time) frees its lock
     at once; a holder this machine cannot check (another user's process it may not inspect) is trusted until its lease ends.
   - A lease file this robot's account may not read is treated as held until it is 24 hours old (the longest lease), never taken over early.
-    Give every robot account read access to the folder (`ValidateLockFolder` will report it).
+    Give every robot account read access to the folder (`ValidateLockFolder` reports such files).
   - `RenewLock` and `ReleaseLock` work in the folder the lease was taken in, even after `ConfigureLockFolder` changed the folder.
   - Lease times are wall-clock UTC, since several processes must agree on them; do not move a server's clock while robots hold locks.
   - `AcquireLock`/`AcquireSlot` check the files with growing pauses (50 ms up to 1 s).
@@ -46,6 +45,12 @@ Bots from using the same resource.
     acquisition from the last 5 minutes in the folder (for example about 300 files for a lock taken every second).
   - Using one resource name both as a lock and as a slot pool, or with two capacities, is refused while it is held; if two robots start the two
     uses at the same instant this is not always caught, so give each use its own name.
+- **Checking a lock folder (`ValidateLockFolder`):** run it once under each robot account when setting up a server. It creates the folder if
+  needed and, on a probe file that locks ignore, tries every step the `Machine` scope needs: list the folder, create a file, read it back,
+  rewrite it in place, delete it. `usable` is True when locks can be taken (every step except the delete). `reportJson` has each step's
+  result, the number of lease files, how many this account cannot read and how many are damaged (not a valid lease and too old to be still
+  being written), whether this account can clean up other robots' old files (`yes`, `no` or `untested`), and a plain-language warning for each
+  problem. Damaged files are reported, never moved or deleted: they are superseded automatically, and an administrator may remove them.
 - Finding a lock taken, or learning that a lease was lost, is a normal outcome with a `bool` output (`acquired`, `renewed`, `released`), not a
   failure. `False` from a method means the call itself could not be done.
 

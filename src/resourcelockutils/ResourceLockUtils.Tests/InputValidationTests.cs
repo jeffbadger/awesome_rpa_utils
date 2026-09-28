@@ -151,12 +151,5 @@ namespace ResourceLockAutomation.Tests
             Assert.Contains("confirmForceRelease must be True", m);
         }
 
-        [Fact]
-        public void ValidateLockFolder_SaysItIsNotImplementedYet()
-        {
-            using var c = new ResourceLockUtils();
-            Assert.False(c.ValidateLockFolder(out _, out _, out string m));
-            Assert.Equal("ValidateLockFolder is not implemented yet.", m);
-        }
     }
 }
