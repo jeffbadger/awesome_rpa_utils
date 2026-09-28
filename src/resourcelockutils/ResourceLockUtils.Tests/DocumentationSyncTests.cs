@@ -124,13 +124,21 @@ namespace ResourceLockAutomation.Tests
         {
             var files = Directory.GetFiles(ComponentDirectory(), "*.md", SearchOption.AllDirectories)
                 .Concat(new[] { Path.Combine(RepositoryRoot(), "project-docs", "pega-usability-reviews", "ResourceLockUtils-pega-usability-review.md"),
-                                Path.Combine(RepositoryRoot(), "project-docs", "plans", "2026-09-27-resourcelockutils-design.md") });
+                                Path.Combine(RepositoryRoot(), "project-docs", "plans", "2026-09-27-resourcelockutils-design.md"),
+                                // the repository pages this component is registered in
+                                Path.Combine(RepositoryRoot(), "README.md"),
+                                Path.Combine(RepositoryRoot(), "CrossReference.md"),
+                                Path.Combine(RepositoryRoot(), "TESTING.md"),
+                                Path.Combine(RepositoryRoot(), "project-docs", "README.md"),
+                                Path.Combine(RepositoryRoot(), "project-docs", "pega-usability-reviews", "README.md") });
             foreach (string file in files)
                 foreach (Match link in Regex.Matches(File.ReadAllText(file), "\\]\\(([^)#\\s]*)(#[^)\\s]*)?\\)"))
                 {
                     string target = link.Groups[1].Value, fragment = link.Groups[2].Value;
                     if (target.StartsWith("http", StringComparison.OrdinalIgnoreCase)) continue;
                     string path = target.Length == 0 ? file : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file), target));
+                    // A link that leaves the repository (the root README's ../../releases) is a GitHub web route, not a file.
+                    if (!path.StartsWith(RepositoryRoot(), StringComparison.Ordinal)) continue;
                     Assert.True(File.Exists(path) || Directory.Exists(path), Path.GetFileName(file) + " links to " + target + ", which does not exist");
                     if (fragment.Length > 1) Assert.True(Anchors(File.ReadAllText(path)).Contains(fragment.Substring(1)), Path.GetFileName(file) + " links to a missing heading " + target + fragment);
                 }
