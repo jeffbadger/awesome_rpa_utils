@@ -161,4 +161,13 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
     this account, damaged, and whether this account can clean up another robot's old generation, tried only on one the protocol already allows
     deleting). `usable` means locks can be taken; each problem gets a plain-language warning. Damaged files are **reported, not quarantined**:
     moving or deleting another robot's top generation is what the protocol forbids, and an old unreadable top is superseded automatically.
+11. **Documentation and registration** (WP5): five pages (QuickStart, CrossThread, ServerBots with the folder setup and an `icacls` example,
+    Slots, Limits) whose examples and numbers are checked by `DocumentationExampleTests`; registered in the release script (26 DLLs), the root
+    README, `CrossReference.md`, `TESTING.md` (including the Server Bot checks still to run on a real server) and the Pega usability review.
+    The component README carries no status note.
+12. **Rights and crash recovery, stated precisely** (Copilot review of PR #169): every robot account needs to list the folder, read its files,
+    create files **and write to the files it creates** (renew and release rewrite them; `ValidateLockFolder` already required it for
+    `usable`). A holder whose process has ended frees its lock at once across Windows accounts, since whether a process ID exists can be
+    checked without inspecting the process; only when the ID has already been reused by a process this account may not inspect does the
+    takeover wait for the lease. Earlier decisions that said "list, read and create" are read with this addition.
 

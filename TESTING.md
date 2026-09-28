@@ -831,6 +831,35 @@ The platform-independent xunit coverage is in `src/textextractutils/TextExtractU
 (`dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj`), including `DocumentationExampleTests`, which runs the
 examples straight from the documentation pages.
 
+### ResourceLockUtils (Setup: for the Machine scope, a lock folder in which every robot account can list the folder, read its files, create files and write to the files it creates; Cleanup: release held locks and dispose the component)
+
+- Follow `Documentation/QuickStart.md` in the `Process` scope: take `SAP-User-BATCH01` as `Robot 1`, verify a second attempt returns
+  `acquired` False with `currentHolder` "Robot 1", release, and verify `released` True.
+- **Across threads (the reason for the component):** acquire in one event handler, store the token in a string variable, and release it from an
+  asynchronous link or another event; verify `released` True. Do the same with `RenewLock` from a `ParallelProcess` branch.
+- **Design surface:** confirm `LockScope` shows as a drop-down; wire `acquired` into a Decision and `ReleaseLock` on both the success path and
+  the Catch path of a Try/Catch; confirm every output binds as a scalar port.
+- Wait with `AcquireLock` (`waitMilliseconds` 60000) on an asynchronous link while another automation holds the lock; release it and verify
+  the waiter continues at once, and that the user interface stays responsive during the wait.
+- **Server Bots (Machine scope):** follow `Documentation/ServerBots.md` on a server with at least two Server Bots under different Windows
+  accounts: grant the folder, `ConfigureLockFolder` on both, and run `ValidateLockFolder` under each account (`usable` True, no warnings).
+  - Both robots contend for one resource; verify only one holds it at a time (`GetLocksJson` shows the holder's machine, session and process).
+  - Kill the holding robot's runtime (Task Manager); verify the other robot takes the lock at once, not after the lease (a process that no
+    longer exists is detected across accounts). Record whether each robot account may inspect the other's processes: if the killed robot's
+    process ID is reused before the other robot checks, by a process it may not inspect, the takeover waits for the lease instead.
+  - Suspend the holding robot (a debugger breakpoint) past its lease; verify the other robot takes the lock when the lease ends and the first
+    robot's next `RenewLock` returns `renewed` False.
+  - Log off a Server Bot session while it holds a lock; verify the lock is freed.
+- Run `ValidateLockFolder` against the default `C:\ProgramData\AwesomeRpaUtils\Locks` under a standard (non-administrator) robot account and
+  record what it reports (create rights; whether other robots' old files can be cleaned up).
+- Slots: follow `Documentation/Slots.md` with three robots on a capacity-3 pool and a fourth waiting; release one slot and verify the fourth
+  gets it.
+- Confirm no message contains a resource name, holder or token (use a recognizable marker in each).
+
+The platform-independent xunit coverage is in `src/resourcelockutils/ResourceLockUtils.Tests`
+(`dotnet test src/resourcelockutils/ResourceLockUtils.Tests/ResourceLockUtils.Tests.csproj`), including multi-process tests that run several
+robots' worth of processes against one lock folder, and `DocumentationExampleTests`, which runs the examples from the documentation pages.
+
 ### DataContractUtils (no external setup; configure properties before initialization)
 
 - Preload typed definitions from design-time JSON and a relative/absolute JSON

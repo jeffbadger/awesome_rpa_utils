@@ -69,7 +69,7 @@ namespace ResourceLockAutomation
             if (r.CanList) Survey(folder, r);
 
             if (!r.CanList) r.Warnings.Add("This account cannot list the lock folder, so it cannot see which locks are held. Give every robot account the right to list the folder.");
-            if (!r.CanCreate) r.Warnings.Add("This account cannot create files in the lock folder, so it cannot take Machine-scope locks. Give it the right to create files there, or choose another folder with ConfigureLockFolder.");
+            if (!r.CanCreate) r.Warnings.Add("This account cannot create files in the lock folder, so it cannot take Machine-scope locks. Give it the rights to create files there and write to the files it creates, or choose another folder with ConfigureLockFolder.");
             else if (!r.CanReadOwn || !r.CanRewriteOwn) r.Warnings.Add("This account cannot read or rewrite the files it creates in the lock folder, so it cannot renew or release locks. Check the folder's permissions.");
             if (r.CanCreate && !r.CanDeleteOwn) r.Warnings.Add("This account cannot delete the files it creates. Locks still work, but old lease files will accumulate in the folder.");
             if (r.UnreadableByThisAccount > 0)

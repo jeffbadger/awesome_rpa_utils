@@ -24,6 +24,7 @@ for checking whether something already exists before writing it yourself.
 | [mouseutils](src/mouseutils/README.md) | `MouseAutomation` | Moves, clicks, drags, and scrolls the mouse via `SendInput`/`SetCursorPos`; controls cursor appearance, visibility, and confinement. |
 | [ocrutils](src/ocrutils/README.md) | `OcrAutomation` | Recognizes text from the screen or an image file via `Windows.Media.Ocr`, with plain-text and positioned-result options. |
 | [reconciliationutils](src/reconciliationutils/README.md) | `ReconciliationAutomation` | Reconciles two JSON datasets or DataTables by business key and reports matches, differences, records missing on one side, duplicate keys and unusable rows, with exact decimal, text, Boolean, currency-gated money and explicit-format date and instant comparison and scalar results for routing. |
+| [resourcelockutils](src/resourcelockutils/README.md) | `ResourceLockAutomation` | Locks on named resources (a legacy login, a license seat, a shared workbook) that any thread can release and that every robot on a machine shares, including Server Bots under other Windows accounts: token-owned leases that end on their own if a holder crashes or hangs, single locks or pools with a capacity. |
 | [screencaptureutils](src/screencaptureutils/README.md) | `ScreenCaptureAutomation` | Captures the screen, a region, or a window to a file/clipboard; compares captures against a baseline; annotates or redacts saved screenshots. |
 | [serviceutils](src/serviceutils/README.md) | `ServiceAutomation` | Queries, starts, stops, restarts, and configures the startup type of Windows services. |
 | [sessionutils](src/sessionutils/README.md) | `SessionAutomation` | Reports on and acts on Windows session/workstation state: session identity/kind, enumeration, connect state, lock/desktop availability, idle time, and deliberate lock/disconnect actions. |
@@ -108,7 +109,7 @@ To build and create everything this repository produces, run from PowerShell:
 The command creates two self-contained archives — one per target framework,
 each holding the complete release:
 
-- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-five project DLLs built
+- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-six project DLLs built
   for `net8.0-windows` plus three bundled archives:
   `AwesomeRpaUtils-SupportLibraries.zip` (the three NuGet runtime DLLs needed
   by ServiceUtils, packaged in the flavor matching the enclosing archive's
@@ -116,7 +117,7 @@ each holding the complete release:
   [REST code generator](tools/README.md)), and
   `AwesomeRpaUtils-Documentation.zip` (the documentation bundle described
   below).
-- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-five DLLs built
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-six DLLs built
   for `net10.0-windows` with the same three bundled archives (the support
   DLLs in the newest flavor the packages ship, which the .NET 10 runtime
   loads; the .NET 8 runtime only loads the `net8.0` flavor).
@@ -261,6 +262,7 @@ public method stays selectable on the Pega Robot Studio designer surface.
 - [mouseutils/README.md](src/mouseutils/README.md) and [mouseutils/Documentation/](src/mouseutils/Documentation/README.md)
 - [ocrutils/README.md](src/ocrutils/README.md) and [ocrutils/Documentation/](src/ocrutils/Documentation/README.md)
 - [reconciliationutils/README.md](src/reconciliationutils/README.md) and [reconciliationutils/Documentation/](src/reconciliationutils/Documentation/README.md)
+- [resourcelockutils/README.md](src/resourcelockutils/README.md) and [resourcelockutils/Documentation/](src/resourcelockutils/Documentation/README.md)
 - [screencaptureutils/README.md](src/screencaptureutils/README.md) and [screencaptureutils/Documentation/](src/screencaptureutils/Documentation/README.md)
 - [serviceutils/README.md](src/serviceutils/README.md) and [serviceutils/Documentation/](src/serviceutils/Documentation/README.md)
 - [sessionutils/README.md](src/sessionutils/README.md) and [sessionutils/Documentation/](src/sessionutils/Documentation/README.md)
@@ -334,7 +336,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `WinEventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, `InterruptUtils`, `ClipboardUtils`, `StateMachineUtils`, `ReconciliationUtils`, and `TextExtractUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, `InterruptUtils`, `ClipboardUtils`, `StateMachineUtils`, `ReconciliationUtils`, `TextExtractUtils`, and `ResourceLockUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -363,7 +365,9 @@ and
 and
 `dotnet test src/reconciliationutils/ReconciliationUtils.Tests/ReconciliationUtils.Tests.csproj`,
 and
-`dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj` —
+`dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj`,
+and
+`dotnet test src/resourcelockutils/ResourceLockUtils.Tests/ResourceLockUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category

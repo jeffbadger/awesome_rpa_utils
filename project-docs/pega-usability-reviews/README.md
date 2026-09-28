@@ -60,6 +60,7 @@ enum is not rendered as a selectable constant.
 | ClipboardUtils | All ports are scalar: snapshots are named, collections come as JSON or newline text, and timeouts are a normal outcome rather than an error. |
 | StateMachineUtils | All ports are scalar: the machine is JSON in, a declined trigger is a normal outcome with a stable reason code, and every event payload is also readable by a method. |
 | ReconciliationUtils | All ports are scalar: two JSON texts (or two DataTables) in, counts and two scalar cursors out, so routing needs no collection proxy; `GetResultJson` carries the detail a scalar cannot. |
+| ResourceLockUtils | All ports are scalar or the `LockScope` drop-down: a lock is a token string that any thread can pass on, and a taken lock or a lost lease is a `bool` output to branch on, never an error to catch. |
 | TextExtractUtils | All ports are scalar or drop-downs: fields are described by label text, a position, a type and a decimal style, and every result is a value or a stable reason code, with no regular expression required; table rows are read with a row cursor, one scalar cell at a time. |
 
 ## Review order
@@ -81,6 +82,7 @@ enum is not rendered as a selectable constant.
 15. [StateMachineUtils](StateMachineUtils-pega-usability-review.md)
 16. [ReconciliationUtils](ReconciliationUtils-pega-usability-review.md)
 17. [TextExtractUtils](TextExtractUtils-pega-usability-review.md)
+18. [ResourceLockUtils](ResourceLockUtils-pega-usability-review.md)
 
 Each utility's detailed findings are in its own file in this folder.
 
