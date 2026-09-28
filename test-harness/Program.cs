@@ -54,6 +54,20 @@ namespace TestHarness
                 return;
             }
 
+            // Thread.Sleep throws ArgumentOutOfRangeException for negative values
+            // (other than the special Timeout.Infinite), which would otherwise
+            // crash the harness before showing the requested popup at all.
+            if (delayMs < 0 || intervalMs < 0)
+            {
+                Console.Error.WriteLine("--delay-ms and --interval-ms must not be negative.");
+                return;
+            }
+            if (repeat < 1)
+            {
+                Console.Error.WriteLine("--repeat must be at least 1.");
+                return;
+            }
+
             for (int i = 0; i < repeat; i++)
             {
                 if (delayedButton)
