@@ -42,7 +42,7 @@ The top-level menu is `[0] Exit` plus one numbered entry per item below
   fixture (a test service, a test event log source) or a reminder of a manual
   prerequisite (locking the workstation, an OCR fixture image's path).
 - One entry per component. Implemented today: `SessionUtils`, `OcrUtils`,
-  `TerminalUtils`. Planned in follow-up PRs: `ServiceUtils`, `EventLogUtils`,
+  `TerminalUtils`, `ServiceUtils`, `EventLogUtils`. Planned in a follow-up PR:
   `ResourceLockUtils` — see `TESTING.md`'s per-component sections for what's
   covered where.
 - Each component's menu lists its methods with a short hint carrying
@@ -64,3 +64,22 @@ underlying call.
 `Fixtures/ocr-sample.png` — a 400x120 image with the known text
 "Hello Exerciser", for `OcrUtils.GetTextFromImageFile`'s default input. Copied
 to the output directory on build.
+
+## Setup helpers
+
+`NullService/` (`NullService.csproj`) is a trivial do-nothing Windows service,
+built separately (`dotnet build exerciser/NullService/NullService.csproj`) and
+installed as the disposable `ZZTestSvc` by the Setup/Cleanup menu's "ServiceUtils:
+create ZZTestSvc" entry (`sc create`/`sc delete`, via a plain `ServiceBase`
+subclass that answers start/stop/pause/continue and does nothing else). Kept
+out of `Exerciser.csproj`'s own compile glob via an explicit `Compile Remove`,
+the same way each component's `.Tests` subfolder is excluded from its own
+assembly. **Never point `ServiceUtils` at a real system service** — this
+disposable target is the only safe one, per TESTING.md's explicit warning.
+
+The Setup/Cleanup menu's "EventLogUtils: create ZZTestEventLogUtils source"
+entry calls `CreateEventSourceSimple` directly (needs an elevated session —
+this doesn't remove that requirement, just saves hand-typing); its "remove"
+entry shells out to PowerShell's `Remove-EventLog`, since the component itself
+has no programmatic delete. **Never point `EventLogUtils` at the
+Application/System/Security logs directly.**

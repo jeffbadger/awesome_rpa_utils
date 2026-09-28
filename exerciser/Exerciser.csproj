@@ -17,12 +17,21 @@
     <ProjectReference Include="..\src\sessionutils\SessionUtils.csproj" />
     <ProjectReference Include="..\src\ocrutils\OcrUtils.csproj" />
     <ProjectReference Include="..\src\terminalutils\TerminalUtils.csproj" />
+    <ProjectReference Include="..\src\serviceutils\ServiceUtils.csproj" />
+    <ProjectReference Include="..\src\eventlogutils\EventLogUtils.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="Fixtures\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NullService is its own standalone project in a subfolder; keep its sources
+         (and generated obj/bin) out of the default SDK compile glob here. -->
+    <Compile Remove="NullService\**\*.cs" />
+    <Content Remove="NullService\**" />
   </ItemGroup>
 
 </Project>

@@ -552,6 +552,10 @@ events.
 
 ### ServiceUtils (needs Setup: install a small disposable test service — e.g. via `sc create ZZTestSvc binPath= ...` against a trivial do-nothing executable — never test against a real system service; Cleanup: stop and `sc delete` it)
 
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component; its
+Setup/Cleanup entries run `sc create`/`sc delete` against the checked-in `exerciser/NullService/` do-nothing
+executable (build it first: `dotnet build exerciser/NullService/NullService.csproj`).
+
 - `IsServiceInstalled` (true for the test service; false + message for a made-up name — never an exception)
 - `IsRunning` (true after `StartService`; false after `StopService`; false + message for a made-up name)
 - `TryGetStatus` (true + status against the test service's actual state after each Control method call below; false + message for a made-up name)
@@ -573,6 +577,10 @@ reference, so no WindowsDesktop runtime requirement flows into the test project)
 **Never point any of this component's tests at a real system service** (a database engine, a network service, anything another process depends on) — a disposable, purpose-built test service is the only safe target, unlike every other component in this repo, which only ever touches a throwaway test-harness app.
 
 ### EventLogUtils (needs Setup: register a disposable test source/log, e.g. `ZZTestEventLogUtils`, via `CreateEventSourceSimple` from an elevated session — never test against Application/System/Security directly; Cleanup: remove the source via `eventvwr.msc`/PowerShell `Remove-EventLog`)
+
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component; its
+Setup/Cleanup entries call `CreateEventSourceSimple` directly and shell out to `Remove-EventLog` (still needs an
+elevated session for Setup — this doesn't remove that requirement, just saves hand-typing the PowerShell).
 
 - `ListLogNames`/`ListLogNamesDelimited`, `DoesLogExist`/`DoesLogExistSimple`, `DoesSourceExist`/`DoesSourceExistSimple`, `TryGetLogNameForSource` (against the real registry/log list — assert the test log/source appear; a made-up name returns false + message, never an exception)
 - `CreateEventSource`/`CreateEventSourceSimple` (happy path against the test log; idempotent case — calling again with the same source+log returns true + `alreadyExisted = true`; hard-failure case — calling again with a *different* log name for the same source returns false + a message explaining Windows doesn't allow reassignment. **Requires an elevated test session** — cannot run unattended in plain CI, same caveat as `ServiceUtils.SetStartType`)
