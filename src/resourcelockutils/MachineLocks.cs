@@ -83,7 +83,7 @@ namespace ResourceLockAutomation
 
     /// <summary>
     /// The Machine scope: locks shared by every robot on the machine (Server Bots in other sessions, under other Windows accounts) through lease
-    /// files in one folder. Each robot needs the rights to list the folder, read its files and create files in it; no robot ever needs to delete or
+    /// files in one folder. Each robot needs the rights to list the folder, read its files, create files and write to its own; no robot ever needs to delete or
     /// rename another robot's file:
     /// <list type="bullet">
     /// <item>A lock is a chain of generation files <c>&lt;resource&gt;.&lt;slot&gt;.&lt;generation&gt;.lease</c> (a lock is slot 0; a pool of

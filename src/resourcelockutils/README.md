@@ -33,10 +33,11 @@ pools with a capacity ([Slots](Documentation/Slots.md)) and every [limit](Docume
   is held, so stale entries never accumulate.
 - **`Machine` scope details:** each lock or slot is a chain of small lease files, `<resource>.<slot>.<generation>.lease`, in the lock folder
   (created when missing). A file records the holder, the lease end, and the holder's machine, session, process and process start time. Every
-  robot account needs to **list the folder, read its files and create files** in it. None needs to delete or rename another robot's files:
+  robot account needs to **list the folder, read its files, create files and write to the files it creates** (renewing and releasing rewrite them). None needs to delete or rename another robot's files:
   nothing ever deletes or renames another robot's current lease (deleting old ones is optional cleanup).
-  - A holder whose process has ended (or whose process ID now belongs to another process, told apart by its exact start time) frees its lock
-    at once; a holder this machine cannot check (another user's process it may not inspect) is trusted until its lease ends.
+  - A holder whose process has ended frees its lock at once: whether a process ID exists can be checked across Windows accounts. If the ID
+    already belongs to another process, it is told apart by its exact start time, when this account may inspect that process; a process it may
+    not inspect (typically another account's) is trusted until the lease ends.
   - A lease file this robot's account may not read is treated as held until it is 24 hours old (the longest lease), never taken over early.
     Give every robot account read access to the folder (`ValidateLockFolder` reports such files).
   - `RenewLock` and `ReleaseLock` work in the folder the lease was taken in, even after `ConfigureLockFolder` changed the folder.

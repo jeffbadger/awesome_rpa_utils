@@ -165,4 +165,9 @@ AcquireLock(Machine, "SAP-User-BATCH01", RobotName, 300, 60000) → acquired?, t
     Slots, Limits) whose examples and numbers are checked by `DocumentationExampleTests`; registered in the release script (26 DLLs), the root
     README, `CrossReference.md`, `TESTING.md` (including the Server Bot checks still to run on a real server) and the Pega usability review.
     The component README carries no status note.
+12. **Rights and crash recovery, stated precisely** (Copilot review of PR #169): every robot account needs to list the folder, read its files,
+    create files **and write to the files it creates** (renew and release rewrite them; `ValidateLockFolder` already required it for
+    `usable`). A holder whose process has ended frees its lock at once across Windows accounts, since whether a process ID exists can be
+    checked without inspecting the process; only when the ID has already been reused by a process this account may not inspect does the
+    takeover wait for the lease. Earlier decisions that said "list, read and create" are read with this addition.
 

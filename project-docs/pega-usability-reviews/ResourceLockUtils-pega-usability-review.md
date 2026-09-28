@@ -25,7 +25,7 @@ variable like any other text.
 - **Taken and lost are outcomes, not errors.** `acquired`, `renewed` and `released` are `bool` outputs on calls that return `True`; `False` plus
   `message` is kept for calls that could not run. An automation branches with a Decision, not with Try/Catch.
 - **A lease that ends on its own** protects against the automation that never reaches its release step (a crash, a stuck adapter, a closed
-  session). For the Machine scope, a holder whose process has ended frees its lock at once.
+  session). For the Machine scope, a holder whose process has ended frees its lock at once, across Windows accounts too.
 - **One scope drop-down** chooses between one runtime (`Process`) and the whole machine (`Machine`); the rest of the calls are identical.
 - **Failure values are uniform**: null strings, 0 counts, `False` flags, so a data link never carries a stale token.
 - **No overloads or optional parameters**: the waiting forms have distinct names (`AcquireLock`, `AcquireSlot`).
@@ -35,6 +35,6 @@ variable like any other text.
 
 - Robot Studio has no `finally`: the release must be wired on both the success path and the Catch path. The documentation shows the pattern.
 - A wait (`AcquireLock`, `AcquireSlot`) blocks its thread; it belongs on an asynchronous link.
-- The Machine scope needs a one-time folder setup per server (rights to list, read and create files for every robot account);
+- The Machine scope needs a one-time folder setup per server (rights to list the folder, read its files, create files and write to the files it creates, for every robot account);
   `ValidateLockFolder` makes the check a single call.
 - There is no fairness between waiters; ordered processing belongs in `LocalQueueUtils`.

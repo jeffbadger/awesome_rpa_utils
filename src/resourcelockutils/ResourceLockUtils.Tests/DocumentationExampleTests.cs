@@ -121,6 +121,11 @@ namespace ResourceLockAutomation.Tests
             Assert.Contains("C:\\ProgramData\\AwesomeRpaUtils\\Locks", page);
             Assert.Contains(Path.Combine("AwesomeRpaUtils", "Locks"), LockInput.DefaultFolder);
             Assert.Contains("5 minutes", page);
+            // the rights the page asks for are the steps ValidateLockFolder requires for usable
+            Assert.Contains("list the folder, read its files, create files and write to the files it creates", page);
+            Assert.Contains("list the folder, read its files, create files and write to the files it creates", File.ReadAllText(Path.Combine(ComponentDirectory(), "README.md")));
+            string check = File.ReadAllText(Path.Combine(ComponentDirectory(), "FolderCheck.cs"));
+            Assert.Contains("internal bool Usable => CanOpen && CanList && CanCreate && CanReadOwn && CanRewriteOwn;", check);
             Assert.Equal(5, MachineLocks.SafeDeleteMinutes);
         }
 

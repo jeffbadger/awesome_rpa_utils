@@ -831,7 +831,7 @@ The platform-independent xunit coverage is in `src/textextractutils/TextExtractU
 (`dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj`), including `DocumentationExampleTests`, which runs the
 examples straight from the documentation pages.
 
-### ResourceLockUtils (Setup: for the Machine scope, a lock folder every robot account can list, read and create files in; Cleanup: release held locks and dispose the component)
+### ResourceLockUtils (Setup: for the Machine scope, a lock folder in which every robot account can list the folder, read its files, create files and write to the files it creates; Cleanup: release held locks and dispose the component)
 
 - Follow `Documentation/QuickStart.md` in the `Process` scope: take `SAP-User-BATCH01` as `Robot 1`, verify a second attempt returns
   `acquired` False with `currentHolder` "Robot 1", release, and verify `released` True.
@@ -844,7 +844,9 @@ examples straight from the documentation pages.
 - **Server Bots (Machine scope):** follow `Documentation/ServerBots.md` on a server with at least two Server Bots under different Windows
   accounts: grant the folder, `ConfigureLockFolder` on both, and run `ValidateLockFolder` under each account (`usable` True, no warnings).
   - Both robots contend for one resource; verify only one holds it at a time (`GetLocksJson` shows the holder's machine, session and process).
-  - Kill the holding robot's runtime (Task Manager); verify the other robot takes the lock at once, not after the lease.
+  - Kill the holding robot's runtime (Task Manager); verify the other robot takes the lock at once, not after the lease (a process that no
+    longer exists is detected across accounts). Record whether each robot account may inspect the other's processes: if the killed robot's
+    process ID is reused before the other robot checks, by a process it may not inspect, the takeover waits for the lease instead.
   - Suspend the holding robot (a debugger breakpoint) past its lease; verify the other robot takes the lock when the lease ends and the first
     robot's next `RenewLock` returns `renewed` False.
   - Log off a Server Bot session while it holds a lock; verify the lock is freed.

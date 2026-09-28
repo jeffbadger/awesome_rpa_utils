@@ -14,7 +14,7 @@ Windows accounts. Each lock is kept as small lease files in a **lock folder**.
    icacls D:\RobotLocks /grant "CONTOSO\RPA-Robots:(OI)(CI)M"
    ```
 
-   The minimum every robot account needs is to **list the folder, read its files and create files** in it. No robot ever needs to delete or
+   The minimum every robot account needs is to **list the folder, read its files, create files and write to the files it creates** (renewing and releasing a lock rewrite its file). No robot ever needs to delete or
    rename another robot's files; Modify only lets any robot clean up old ones.
 2. **Point every robot at it.** Call `ConfigureLockFolder("D:\RobotLocks")` when the automation starts. Every robot that shares a lock must use
    the same folder. Network paths are not supported.
@@ -33,12 +33,14 @@ Windows accounts. Each lock is kept as small lease files in a **lock folder**.
 
 ## What happens when a robot crashes or hangs
 
-- **The robot's process ends** (a crash, a killed runtime, a logged-off session): its locks are free **at once**, without waiting for the lease.
-  Each lease file records the holder's machine, process ID and exact process start time, so a later process that reuses the same ID is not
-  mistaken for the holder.
+- **The robot's process ends** (a crash, a killed runtime, a logged-off session): its locks are free **at once**, without waiting for the lease,
+  also for robots under other Windows accounts: whether a process ID still exists can be checked across accounts.
+  - Each lease file also records the holder's exact process start time, so a later process that reuses the same ID is not mistaken for the
+    holder. Telling them apart needs the right to inspect that process; if the ID has already been reused by a process this account may not
+    inspect (typically another account's), the lock is free when its lease ends instead.
 - **The robot hangs** but its process is still running: its locks are free when the lease ends. Keep leases short and renew them during long
   work (see [CrossThread](CrossThread.md)).
-- A holder this account cannot inspect (another account's process it may not look at) is trusted until its lease ends.
+- A running holder is never taken over early, whether or not this account may inspect its process.
 
 ## Good to know
 
