@@ -327,6 +327,9 @@ Win32 behavior those tests cannot reach.
 
 ### OcrUtils (needs Setup: a fixed test image file with known text, plus a screen region showing known text — e.g. the harness's own label)
 
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component,
+including a checked-in fixture image with known text (`Fixtures/ocr-sample.png`) for `GetTextFromImageFile`.
+
 All methods here except `GetAvailableLanguages` return `bool` with an
 `out string message` and never throw — for these, replace Phase 2's
 "exception condition on the invalid-input case" with an outcome condition
@@ -592,6 +595,9 @@ requirement flows into the test project).
 
 ### SessionUtils (needs an interactive Windows logon; several cases below additionally need a second concurrent session — fast user switching or a second RDP connection — or an actual Windows service; no Setup/Cleanup fixture is created or destroyed, unlike ServiceUtils/EventLogUtils, since this component only ever reads/acts on sessions that already exist)
 
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component;
+its Setup/Cleanup entry prints the manual prerequisites below as a reminder (no fixture to create/destroy).
+
 This component's Linux-testable guard/logic surface is much smaller than
 EventLogUtils' — most methods either take no input to guard, or reach a
 native call on their very first line with nothing to validate first. Nearly
@@ -686,6 +692,8 @@ The full guard-clause and real-functional-behavior xunit coverage is in
 reference, so it runs the same way on Linux as on Windows).
 
 ### TerminalUtils (needs a genuine Windows console session; most cases below launch their own target console process — Setup: none beyond that; Cleanup: kill any console process left running by a test)
+
+`exerciser/` (see [`exerciser/README.md`](exerciser/README.md)) has an interactive menu for this component. Note: exercise `StartConsoleProcess` itself via its own menu entry, but use the separate "Launch independent console target" entry (`CREATE_NEW_CONSOLE`) for the process ID every *other* method needs — since the exerciser is itself a console app, a process `StartConsoleProcess` launches attaches to/shares its console and input buffer (standard Windows behavior for a console-hosted parent), racing with the exerciser's own prompts, rather than getting the genuinely separate console a non-console caller such as Robot Studio would get.
 
 Unlike `FileWatchUtils`/`ArchiveUtils`, this component is fundamentally
 Win32 console-API/P/Invoke-heavy (`AttachConsole`, `GetConsoleScreenBufferInfo`,
