@@ -109,16 +109,21 @@ console, so the lifetime signal is a visible window, not console input.) By
 default it uses the managed `Clipboard`/`DataObject` API, which renders every
 format eagerly and flushes it so the data survives this process exiting.
 
-- `--hang`: uses delayed (lazy) rendering instead, and never answers
-  `WM_RENDERFORMAT` for any requested format — for `ClipboardUtils`' "hung
-  owner" case, where `SaveClipboard` must fail fast with a reason rather than
-  hang.
+- `--hang`: uses delayed (lazy) rendering, and blocks its own message loop
+  forever the moment `WM_RENDERFORMAT` for any requested format arrives —
+  for `ClipboardUtils`' "hung owner" case, where `SaveClipboard` must fail
+  fast with a reason rather than hang itself. `WM_RENDERFORMAT` is delivered
+  via a synchronous cross-process call, so once this fires the harness
+  process is genuinely unresponsive, including its own "Clipboard Owner"
+  window's Close button — **the only way out is to kill the process** (e.g.
+  Task Manager or `taskkill`), matching TESTING.md's documented recovery.
 - `--render-on-demand`: also uses delayed rendering, but renders the real data
   the moment `WM_RENDERFORMAT` asks for it — for the "another process owns
-  the clipboard [and] renders it on demand" case. (`--hang` and
-  `--render-on-demand` only support the `--text`/`--html`/`--rtf`/
-  `--custom-format` formats, not `--image`/`--files` — those need the default
-  managed, eager path.)
+  the clipboard [and] renders it on demand" case.
+- `--hang` and `--render-on-demand` are mutually exclusive, and only support
+  the `--text`/`--html`/`--rtf`/`--custom-format` formats — combining either
+  with `--image`/`--files`, or combining both together, is rejected with an
+  error rather than silently doing something other than what was asked for.
 
 `--focus-textbox` opens a small window with a single, immediately-focused
 `TextBox` (`txtClipboardTarget`) — the "small text-box window that can take

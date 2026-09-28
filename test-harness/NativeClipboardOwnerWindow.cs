@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace TestHarness
@@ -100,16 +101,29 @@ namespace TestHarness
         {
             if (m.Msg == WM_RENDERFORMAT)
             {
+                if (_hang)
+                {
+                    // WM_RENDERFORMAT is delivered via a synchronous SendMessage -
+                    // simply returning without calling SetClipboardData is NOT a
+                    // hang, it's an immediate empty response, and the requesting
+                    // GetClipboardData returns right away with no data. A genuine
+                    // hung owner means this window's message loop itself never
+                    // comes back, so the caller's SendMessage actually blocks -
+                    // matching TESTING.md's documented recovery ("after the owner
+                    // process is killed the clipboard works again"), since nothing
+                    // short of killing this process can un-stick it once hung.
+                    Thread.Sleep(Timeout.Infinite);
+                    return;
+                }
+
                 uint format = (uint)m.WParam.ToInt64();
-                if (!_hang && _renderers.TryGetValue(format, out var render))
+                if (_renderers.TryGetValue(format, out var render))
                 {
                     // Per the Win32 delayed-rendering contract, the clipboard is
                     // already open while handling WM_RENDERFORMAT - call
                     // SetClipboardData directly, no Open/CloseClipboard here.
                     SetClipboardData(format, render());
                 }
-                // --hang: deliberately do nothing - the requesting app's
-                // GetClipboardData call for this format is left unanswered.
                 return;
             }
 

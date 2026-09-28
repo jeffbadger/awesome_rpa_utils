@@ -31,6 +31,18 @@ namespace TestHarness
             bool hang = options.ContainsKey("hang");
             bool renderOnDemand = options.ContainsKey("render-on-demand");
 
+            if (hang && renderOnDemand)
+            {
+                Console.Error.WriteLine("--hang and --render-on-demand describe different owner behaviors and cannot be combined.");
+                return;
+            }
+
+            if ((hang || renderOnDemand) && (options.ContainsKey("image") || options.ContainsKey("files")))
+            {
+                Console.Error.WriteLine("--hang/--render-on-demand only support --text/--html/--rtf/--custom-format - --image and --files need the default managed (eager) path, without --hang or --render-on-demand.");
+                return;
+            }
+
             if (hang || renderOnDemand)
             {
                 RunNativeOwner(options, hang);
