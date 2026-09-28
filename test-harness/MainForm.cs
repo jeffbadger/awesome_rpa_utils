@@ -171,11 +171,15 @@ namespace TestHarness
                 child.Show(this);
             };
 
-            // A second, distinct child window type: WinForms auto-generates one Win32
-            // window class per Form subtype, so ChildForm and SecondChildForm are
-            // guaranteed to have different class names at runtime. Covers
-            // TryFindWindowByRegex's classNamePattern (nothing to wrongly match before
-            // this existed) and GetChildWindows' duplicate-vs-distinct-class cases.
+            // A second, distinct top-level window type. These are owned windows
+            // (Show(this), not WS_CHILD descendants), and WinForms does NOT derive a
+            // distinct native window class per CLR Form subtype - every plain Form,
+            // including ChildForm, shares the same generic "WindowsForms10.Window..."
+            // class. SecondChildForm registers its own explicit class (see its
+            // CreateParams override below) specifically so it differs from
+            // ChildForm's. Covers TryFindWindowByRegex's classNamePattern (nothing to
+            // wrongly match before this existed) and GetTopLevelWindows/
+            // FindWindowByClass's duplicate-vs-distinct-class cases.
             OpenSecondChildWindowButton = new Button
             {
                 Name = "btnOpenSecondChildWindow",
@@ -220,9 +224,13 @@ namespace TestHarness
     }
 
     /// <summary>
-    /// A second, differently-classed child window, for WindowUtils scenarios that need
-    /// more than one distinct child window type on screen at once (e.g. proving
-    /// TryFindWindowByRegex's classNamePattern actually excludes a non-matching class).
+    /// A second, differently-classed top-level (owned, not WS_CHILD) window, for
+    /// WindowUtils scenarios that need more than one distinct window class on screen
+    /// at once (e.g. proving TryFindWindowByRegex's classNamePattern actually
+    /// excludes a non-matching class). A plain WinForms Form does not get its own
+    /// native window class per CLR subtype - every Form in this app, ChildForm
+    /// included, otherwise shares the same generic "WindowsForms10.Window..." class
+    /// - so this registers an explicit one via <see cref="CreateParams"/>.
     /// </summary>
     public class SecondChildForm : Form
     {
@@ -241,6 +249,16 @@ namespace TestHarness
                 AutoSize = true
             };
             Controls.Add(label);
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ClassName = "TestHarnessSecondChildForm";
+                return cp;
+            }
         }
     }
 }

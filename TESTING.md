@@ -267,6 +267,14 @@ condition.
 - `GetTopLevelWindows`, `FindWindowByTitle` (exact/substring/not-found; a
   null/empty title returns `IntPtr.Zero` rather than throwing),
   `FindWindowByClass`, `FindWindowsByProcessId`, `GetForegroundWindow`
+  (open one `ChildForm` and one `SecondChildForm` via
+  `btnOpenChildWindow`/`btnOpenSecondChildWindow` — both are owned top-level
+  windows, not `WS_CHILD` descendants of the harness window, so they show up
+  here, not under `GetChildWindows` below — and assert `GetTopLevelWindows`
+  includes both, `FindWindowByClass` matching `SecondChildForm`'s explicit
+  class finds only it, and matching `ChildForm`'s class finds it but not
+  `SecondChildForm`; opening two `ChildForm`s instead covers the same-class
+  duplicate case)
 - `GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow` (assert
   bounds before/after; invalid handle/negative dimensions → `false` + message)
 - `GetWindowTitle`, `GetWindowClassName`, `GetWindowProcessId`,
@@ -283,10 +291,7 @@ condition.
 - `WaitForWindow`, `WaitForWindowToClose`, `WaitForWindowActive` (both a
   within-timeout and a timeout-exceeded case)
 - `GetChildWindows`, `FindChildWindow` (both exact and `exactMatch: false`
-  substring matching; null/empty filters skip that axis; open one `ChildForm`
-  and one `SecondChildForm` via `btnOpenChildWindow`/`btnOpenSecondChildWindow`
-  and assert `GetChildWindows` returns both distinct-class windows, versus
-  opening two `ChildForm`s for the same-class duplicate case)
+  substring matching; null/empty filters skip that axis)
 - `TryGetWindowState`, `IsWindowMinimized`, `IsWindowMaximized` (drive the
   harness window through `SetWindowState` Minimized/Maximized/Restore and assert
   each; minimize it *from* maximized and assert it reports `Minimized` only;

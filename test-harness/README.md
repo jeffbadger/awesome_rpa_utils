@@ -35,7 +35,7 @@ can still catch compile errors in CI or on a Linux dev machine.
 | `treeSample` | TreeView | "Documents" node with two children, for `UIAutomationUtils.Expand`/`Collapse`/`Select` |
 | `btnShowMessageBox` | Button | Opens a Yes/No `MessageBox` for `DialogUtils` |
 | `btnOpenChildWindow` | Button | Opens `ChildForm` for `WindowUtils` child-window tests |
-| `btnOpenSecondChildWindow` | Button | Opens `SecondChildForm`, a distinct Win32 window class from `ChildForm` — for `WindowUtils.TryFindWindowByRegex`'s `classNamePattern` and `GetChildWindows`' duplicate-vs-distinct-class cases |
+| `btnOpenSecondChildWindow` | Button | Opens `SecondChildForm`, an owned top-level window (not `WS_CHILD`) with an explicit, distinct Win32 window class from `ChildForm`'s (registered via `CreateParams` — plain WinForms `Form`s don't get one per CLR subtype) — for `WindowUtils.TryFindWindowByRegex`'s `classNamePattern` and `GetTopLevelWindows`/`FindWindowByClass`'s duplicate-vs-distinct-class cases |
 
 Each control's `Name` doubles as its Win32 window text lookup key and, for
 standard WinForms controls, its UI Automation `AutomationId` — though per
