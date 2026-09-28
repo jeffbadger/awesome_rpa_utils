@@ -4,6 +4,16 @@ using System.Linq;
 
 namespace Exerciser
 {
+    /// <summary>
+    /// Thrown by a <see cref="Prompt"/> helper when console input has hit EOF
+    /// (e.g. redirected/closed stdin) and there is no sensible default to fall
+    /// back on - callers should treat this as "the user cancelled" and return
+    /// to the menu rather than a never-throws-component bug.
+    /// </summary>
+    internal sealed class PromptCancelledException : Exception
+    {
+    }
+
     /// <summary>Console input helpers, one per parameter shape used across the component menus.</summary>
     internal static class Prompt
     {
@@ -66,11 +76,23 @@ namespace Exerciser
             {
                 Console.Write("> ");
                 string input = Console.ReadLine();
+                // Unlike String/Int/Bool/Json/StringList, there is no sensible
+                // default to fall back on for an arbitrary enum selection - at
+                // EOF (redirected/closed stdin), Console.ReadLine keeps returning
+                // null immediately, so looping forever here would hang the
+                // process instead of exiting like every other prompt does.
+                if (input == null)
+                {
+                    throw new PromptCancelledException();
+                }
                 if (int.TryParse(input, out int index) && index >= 0 && index < names.Length)
                 {
                     return (T)System.Enum.Parse(typeof(T), names[index]);
                 }
-                if (System.Enum.TryParse(input, true, out T parsed))
+                // Enum.TryParse accepts any numeric string as the underlying value,
+                // even one no member defines (e.g. "99") - IsDefined rejects that,
+                // so an out-of-range number reprompts instead of returning garbage.
+                if (System.Enum.TryParse(input, true, out T parsed) && System.Enum.IsDefined(typeof(T), parsed))
                 {
                     return parsed;
                 }

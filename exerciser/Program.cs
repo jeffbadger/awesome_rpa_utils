@@ -87,6 +87,14 @@ namespace Exerciser
                 {
                     items[index - 1].Invoke();
                 }
+                catch (PromptCancelledException)
+                {
+                    // Console input hit EOF (redirected/closed stdin) mid-prompt.
+                    // Return to the component list, whose own "> " prompt already
+                    // treats a null read the same way (string.IsNullOrWhiteSpace)
+                    // and exits cleanly, instead of looping forever here.
+                    return;
+                }
                 catch (Exception ex)
                 {
                     // These components are documented never-throws, so an actual
