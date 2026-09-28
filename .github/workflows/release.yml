@@ -29,6 +29,13 @@ jobs:
         # Also lives outside src/AwesomeRpaUtils.sln. A plain build already produces a
         # runnable ComponentBrowser.exe apphost here since this runs on windows-latest.
         run: dotnet build component-browser/ComponentBrowser.csproj --configuration Release
+      - name: Build Test Harness
+        # Also lives outside src/AwesomeRpaUtils.sln (it's test tooling, not a shipped
+        # component) - build it here so a release never ships with it silently broken.
+        run: dotnet build test-harness/TestHarness.csproj --configuration Release
+      - name: Build Exerciser
+        # Also lives outside src/AwesomeRpaUtils.sln - same reasoning as Test Harness.
+        run: dotnet build exerciser/Exerciser.csproj --configuration Release
       - name: Package project DLLs
         shell: pwsh
         env:

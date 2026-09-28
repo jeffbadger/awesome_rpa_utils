@@ -277,9 +277,11 @@ public method stays selectable on the Pega Robot Studio designer surface.
 
 ## Developer tools
 
-This repository also includes three standalone tools for developing, inspecting,
+This repository also includes four standalone tools for developing, inspecting,
 and testing the components. They are kept outside `src/` and
-`AwesomeRpaUtils.sln` because they are not shipped as Robot Studio components.
+`AwesomeRpaUtils.sln` because they are not shipped as Robot Studio components,
+but the release workflow still builds each of them so a release never ships
+with one silently broken.
 
 ### Component Browser
 
@@ -334,8 +336,8 @@ dotnet run --project test-harness/TestHarness.csproj
 
 [Exerciser](exerciser/README.md) is a menu-driven console app for the
 host-dependent, non-UI-shaped components Test Harness's WinForms-target
-pattern doesn't fit. Today it covers `SessionUtils`, `OcrUtils`, and
-`TerminalUtils`; `ServiceUtils`, `EventLogUtils`, and `ResourceLockUtils` are
+pattern doesn't fit. Today it covers `SessionUtils`, `OcrUtils`,
+`TerminalUtils`, `ServiceUtils`, and `EventLogUtils`; `ResourceLockUtils` is
 planned (see `exerciser/README.md`'s Menu structure section for status). It
 picks a component and method, prompts for inputs, and prints the result, for
 fast, consistent manual verification against [TESTING.md](TESTING.md)'s
