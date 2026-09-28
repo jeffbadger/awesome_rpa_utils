@@ -884,14 +884,14 @@ The platform-independent xunit coverage is in
 `src/datacontractutils/DataContractUtils.Tests`
 (`dotnet test src/datacontractutils/DataContractUtils.Tests/DataContractUtils.Tests.csproj`).
 
-### InterruptUtils (needs a desktop; Setup: a second process that shows popups on demand — `test-harness.exe --delayed-popup` (see [`test-harness/README.md`](test-harness/README.md#second-process-modes)), which calls `MessageBox.Show` after a delay; Cleanup: close any popup left open and dispose the component)
+### InterruptUtils (needs a desktop; Setup: a second process that shows popups on demand — `TestHarness.exe --delayed-popup` (see [`test-harness/README.md`](test-harness/README.md#second-process-modes)), which calls `MessageBox.Show` after a delay; Cleanup: close any popup left open and dispose the component)
 
 The popup must come from a **different process** than the automation: a popup owned by the
 automation's own process is deliberately never touched, so a same-process dialog proves
 nothing.
 
 - Add a dismiss rule for the popup, `Start`, then block the automation's thread in a long
-  wait (`Thread.Sleep`/a wait step) while `test-harness.exe --delayed-popup --delay-ms=3000`
+  wait (`Thread.Sleep`/a wait step) while `TestHarness.exe --delayed-popup --delay-ms=3000`
   shows the popup after a few seconds. Verify the child's `MessageBox` returned the rule's
   button, `PopupDismissed` fired once with the expected rule, title, message, button and
   process, `GetDismissalCount` is 1 and `GetLogJson` has the entry. Try it with

@@ -46,11 +46,11 @@ before writing a test case against it.
 
 `InterruptUtils` needs its popup to come from a *different process* than the
 automation dismissing it — a same-process dialog would not catch a real
-regression. Instead of the normal harness window, `test-harness.exe` can run
+regression. Instead of the normal harness window, `TestHarness.exe` can run
 as that second process:
 
 ```bash
-test-harness.exe --delayed-popup [--title=T] [--message=M] [--delay-ms=N]
+TestHarness.exe --delayed-popup [--title=T] [--message=M] [--delay-ms=N]
   [--button=OK|OKCancel|YesNo|YesNoCancel|AbortRetryIgnore|RetryCancel]
   [--repeat=N] [--interval-ms=N] [--no-button] [--delayed-button]
 ```
@@ -63,7 +63,8 @@ demand." Defaults: `--title="Test Harness Popup"`,
 - `--repeat=N --interval-ms=N`: shows the popup `N` times, `--interval-ms`
   apart, for `InterruptUtils`' `maxDismissalsPerMinute` case (a popup that
   returns every time).
-- `--no-button`: shows a borderless window with no `Button`-classed child at
+- `--no-button`: shows a fixed-dialog window (`FormBorderStyle.FixedDialog`,
+  so it still has a title bar and border) with no `Button`-classed child at
   all, for "a button-less window is closed by a close rule."
 - `--delayed-button`: shows the window immediately, then adds its `Button`
   on a timer tick after `--delay-ms`, for "a form whose button is created a

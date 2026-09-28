@@ -29,7 +29,7 @@ namespace TestHarness
         /// section). This mode never calls InterruptUtils itself - it only creates
         /// the popup conditions a real InterruptUtils-driven automation reacts to.
         ///
-        /// Usage: test-harness.exe --delayed-popup [--title=T] [--message=M]
+        /// Usage: TestHarness.exe --delayed-popup [--title=T] [--message=M]
         ///   [--delay-ms=N] [--button=OK|OKCancel|YesNo|YesNoCancel|AbortRetryIgnore|RetryCancel]
         ///   [--repeat=N] [--interval-ms=N] [--no-button] [--delayed-button]
         /// </summary>
@@ -50,15 +50,25 @@ namespace TestHarness
 
             for (int i = 0; i < repeat; i++)
             {
+                if (delayedButton)
+                {
+                    // ShowDelayedButtonPopup already waits delayMs after showing the
+                    // window before adding the button - sleeping delayMs here too
+                    // (as the other modes do) would double it. Skip the outer sleep
+                    // on the first iteration; still wait intervalMs between repeats.
+                    if (i > 0)
+                    {
+                        Thread.Sleep(intervalMs);
+                    }
+                    ShowDelayedButtonPopup(title, message, delayMs);
+                    continue;
+                }
+
                 Thread.Sleep(i == 0 ? delayMs : intervalMs);
 
                 if (noButton)
                 {
                     ShowButtonlessPopup(title, message);
-                }
-                else if (delayedButton)
-                {
-                    ShowDelayedButtonPopup(title, message, delayMs);
                 }
                 else
                 {
