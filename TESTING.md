@@ -51,17 +51,20 @@ where the method is documented to throw.
 
 - `FindDialog` (exact + substring match; not-found → returns `false`, `out`
   params zeroed; also assert `canDismiss` — `true` for the harness's native
-  `Button` dialog, `false` if you can simulate a WinUI-style one, or document
-  that case as manual-only. New: a null/empty `titlePattern` → `false`; hidden
-  windows never match (toggle the harness window's visibility and re-run);
+  `Button` dialog (`btnShowMessageBox`), `false` against `btnShowNonNativeDialog`'s
+  `NonNativeDialogForm`, whose only dismiss control is a `Label` styled as a
+  button rather than a real `Button`. New: a null/empty `titlePattern` → `false`;
+  hidden windows never match (toggle the harness window's visibility and re-run);
   `processId` scoping — pass the harness's real PID → found, a wrong PID →
-  not found; first-match behavior — open two matching windows and assert it
+  not found; first-match behavior — click `btnShowDuplicateDialogs`, which opens
+  two identically-titled `DuplicateDialogForm` windows at once, and assert it
   returns one of them)
 - `FindAllDialogs` (new: same matching as `FindDialog` but returns every match —
-  open two matching windows and assert both come back; null/empty pattern →
-  empty list; `processId` scoping)
-- `CanDismissDialog` (native `Button` dialog → true; simulate a WinUI-style
-  dialog if you can, or just document as manual-only)
+  click `btnShowDuplicateDialogs` and assert both `DuplicateDialogForm` windows
+  come back; null/empty pattern → empty list; `processId` scoping)
+- `CanDismissDialog` (native `Button` dialog (`btnShowMessageBox`) → true;
+  `btnShowNonNativeDialog`'s `NonNativeDialogForm` → false, since its dismiss
+  control is a `Label`, never a `Button`)
 - `FindButtonByText` (exact/substring; mnemonic-stripping case — button labeled
   `"&Yes"` should match input `"Yes"`; not-found → returns `false`, never throws)
 - `FindButtonById`, `ClickDialogButtonById` (happy path — assert `wasEnabled`;
@@ -74,8 +77,10 @@ where the method is documented to throw.
 - `GetDialogText`, `GetControlText`, `ListDialogControls` (assert count/text/
   class/enabled state against harness's known controls)
 - `ClickButton` (assert the `bool` return matches whether the target was
-  actually enabled when clicked — force the disabled case if the harness can
-  hold a button disabled briefly)
+  actually enabled when clicked — click `btnShowDisabledButtonDialog` to open
+  `DisabledButtonDialogForm`, whose `btnConfirm` starts `Enabled = false`, for
+  the deterministic `wasEnabled = false` case; flip its `chkConfirmEnabled`
+  checkbox mid-wait to also cover `wasEnabled = true`)
 - `HighlightControl` (assert the `bool` return — `true` for a valid handle;
   verify the actual flash manually/via screenshot, see Phase 3)
 - `WaitForDialog`, `WaitForDialogToClose` (timeout-not-met and found-in-time
@@ -222,9 +227,11 @@ genuine timeout case (`false` with `message == null`).
   `timeoutMs`, or one exceeding the 30-minute cap, → `false` + message
   instead of an immediate/unbounded poll)
 - `GetCurrentCursorType` (hover the pointer over harness controls with known
-  `Cursor` settings - default arrow, a `TextBox` I-beam, and panels set to
-  Hand, SizeAll, No, Cross, WaitCursor, and so on - and assert the matching
-  `CurrentCursorType` after the pointer settles; `Cursors.Help` and a
+  `Cursor` settings - default arrow, `txtInput`'s `TextBox` I-beam, and the
+  `pnlCursorHand`/`pnlCursorSizeAll`/`pnlCursorNo`/`pnlCursorCross`/`pnlCursorWait`
+  panels - and assert the matching `CurrentCursorType` after the pointer
+  settles (note `pnlCursorCross` expects `Crosshair`, not `Cross`);
+  `Cursors.Help` and a
   bitmap-drawn cursor → `Unknown`; a panel whose cursor the harness hides from
   its own UI thread → `Hidden`; a slot replaced via `ReplaceSystemCursor`
   still reports its own name. The slot-classification logic itself is covered
@@ -267,6 +274,14 @@ condition.
 - `GetTopLevelWindows`, `FindWindowByTitle` (exact/substring/not-found; a
   null/empty title returns `IntPtr.Zero` rather than throwing),
   `FindWindowByClass`, `FindWindowsByProcessId`, `GetForegroundWindow`
+  (open one `ChildForm` and one `SecondChildForm` via
+  `btnOpenChildWindow`/`btnOpenSecondChildWindow` — both are owned top-level
+  windows, not `WS_CHILD` descendants of the harness window, so they show up
+  here, not under `GetChildWindows` below — and assert `GetTopLevelWindows`
+  includes both, `FindWindowByClass` matching `SecondChildForm`'s explicit
+  class finds only it, and matching `ChildForm`'s class finds it but not
+  `SecondChildForm`; opening two `ChildForm`s instead covers the same-class
+  duplicate case)
 - `GetWindowBounds`, `SetWindowBounds`, `MoveWindow`, `ResizeWindow` (assert
   bounds before/after; invalid handle/negative dimensions → `false` + message)
 - `GetWindowTitle`, `GetWindowClassName`, `GetWindowProcessId`,
@@ -295,7 +310,11 @@ condition.
   and both patterns; a WinForms class name with a per-run suffix matched by its
   stable prefix; not found → `false` with a **null** `message`, versus no
   pattern / invalid pattern / stale parent handle → `false` with a non-null
-  `message`; `ignoreCase: false` misses a differently-cased title)
+  `message`; `ignoreCase: false` misses a differently-cased title; with both
+  `btnOpenChildWindow`'s `ChildForm` and `btnOpenSecondChildWindow`'s
+  `SecondChildForm` open, a `classNamePattern` matching one's class must not
+  also match the other's — proving the pattern actually excludes a real,
+  non-matching class rather than trivially matching everything on screen)
 - `EnumerateWindowsJson` (the harness window appears with the expected `Title`,
   `ClassName`, `ProcessId`, `IsEnabled`, `State`, and sane bounds; `processId`
   narrows to one process; an unknown process ID → `[]`; a negative one →
@@ -385,7 +404,7 @@ failure (`message` set) from a normal not-changed/exceeds-tolerance result
   against a pre-rendered "expected annotated" fixture; missing image file →
   `false` + message)
 
-### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, and tree; Cleanup: close it)
+### UIAutomationUtils (needs Setup: harness app with known AutomationIds/Names on a button, checkbox, text field, tree, combo box, track bar, and radio buttons; Cleanup: close it)
 
 All methods here except `GetRootElement`, `FromWindowHandle`, `FromPoint`, and
 `IsElementAvailable` return `bool` with an `out string message` and never
@@ -401,7 +420,7 @@ argument error (`false` + non-null `message`) from a normal not-found result
 - `FindByAutomationId`, `FindByName`, `FindByClassName`, `FindByControlType`, `FindAllByControlType`, `GetChildren` (found and not-found cases against harness controls; `descendantsOnly` true/false cases; null parent → `false` + non-null message)
 - `GetName`, `GetAutomationId`, `GetClassName`, `GetControlTypeName`, `GetBoundingRectangle`, `IsEnabled`, `IsOffscreen` (assert against known harness control properties; null element → `false` + message)
 - `IsElementAvailable` (true for a live control; false after closing the harness window and re-checking a cached reference)
-- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, → `false` + message instead of an exception)
+- `Invoke`, `SetValue`/`GetValue`, `Toggle`/`IsToggled`, `Expand`/`Collapse`, `Select`/`IsSelected` (exercise against harness button/text field/checkbox/tree/list; also `Select`/`IsSelected` against `cboOptions`' items, a different UIA tree shape than `lstItems` — **call `Expand` on `cboOptions` first**: like most UIA `ComboBox` providers, its item elements are not present in the tree while collapsed, so `FindByControlType`/`Select` against them only work after expanding, and `Collapse` afterward to restore the harness's default state; wrong-pattern case calling the wrong action on the wrong control type, e.g. `Toggle` on a button, or on `radOptionA`/`B`/`C` (`SelectionItemPattern`, not `TogglePattern`), or `SetValue`/`Toggle`/`Select` on `trkVolume` (only `RangeValuePattern`) → `false` + message instead of an exception)
 
 The platform-independent input guards, `UiControlType` mapping, and Wait
 abort-on-argument-error paths have xunit coverage in
@@ -892,28 +911,35 @@ The platform-independent xunit coverage is in
 `src/datacontractutils/DataContractUtils.Tests`
 (`dotnet test src/datacontractutils/DataContractUtils.Tests/DataContractUtils.Tests.csproj`).
 
-### InterruptUtils (needs a desktop; Setup: a second process that shows popups on demand - a small WinForms harness whose child process calls `MessageBox.Show` after a delay; Cleanup: close any popup left open and dispose the component)
+### InterruptUtils (needs a desktop; Setup: a second process that shows popups on demand — `TestHarness.exe --delayed-popup` (see [`test-harness/README.md`](test-harness/README.md#second-process-modes)), which calls `MessageBox.Show` after a delay; Cleanup: close any popup left open and dispose the component)
 
 The popup must come from a **different process** than the automation: a popup owned by the
 automation's own process is deliberately never touched, so a same-process dialog proves
 nothing.
 
 - Add a dismiss rule for the popup, `Start`, then block the automation's thread in a long
-  wait (`Thread.Sleep`/a wait step) while the child shows the popup after a few seconds.
-  Verify the child's `MessageBox` returned the rule's button, `PopupDismissed` fired once
-  with the expected rule, title, message, button and process, `GetDismissalCount` is 1 and
-  `GetLogJson` has the entry. Try it with `sweepIntervalMs: 0` (window events alone) and
-  with the default.
-- A popup whose title does not match, or whose process does not match, stays open. A
-  watch-only rule raises `PopupDetected` once and leaves the popup open.
+  wait (`Thread.Sleep`/a wait step) while `TestHarness.exe --delayed-popup --delay-ms=3000`
+  shows the popup after a few seconds. Verify the child's `MessageBox` returned the rule's
+  button, `PopupDismissed` fired once with the expected rule, title, message, button and
+  process, `GetDismissalCount` is 1 and `GetLogJson` has the entry. Try it with
+  `sweepIntervalMs: 0` (window events alone) and with the default.
+- A popup whose title does not match (`--title=...`), or whose process does not match, stays
+  open. A watch-only rule raises `PopupDetected` once and leaves the popup open.
 - `Pause` leaves a matching popup open; `Resume` then dismisses it. `SetRuleEnabled(false)`
   does the same for one rule.
-- Open a popup *before* calling `Start` and verify the periodic scan dismisses it.
-- A form whose button is created a moment after the window appears (not a `#32770`, so pass
-  `className: "*"`) is still dismissed; a button-less window is closed by a close rule.
-- A popup that returns every time trips `maxDismissalsPerMinute`: `InterruptError` fires,
-  the rule lists as `"stopped": true`, the next popup stays open, and `SetRuleEnabled(true)`
-  resumes it.
+- Open a popup *before* calling `Start` (run `--delayed-popup --delay-ms=0`) and verify the
+  periodic scan dismisses it.
+- Both `--delayed-button` and `--no-button` show a plain WinForms window, not a native
+  `#32770` dialog — pass `className: "*"` on the rule for either case, or it will never
+  match. `--delayed-button` (button appears after `--button-delay-ms`, default 500 —
+  deliberately short: `InterruptUtils` only retries a newly seen popup at
+  0/150/400/1000/2000 ms after first detecting it before giving up, so `--delay-ms`'s
+  3000 ms default would arrive too late to ever be caught) — a form whose button is
+  created a moment after the window appears is still dismissed once it exists;
+  `--no-button` — a button-less window is closed by a close rule.
+- `--repeat=N --interval-ms=...` — a popup that returns every time trips
+  `maxDismissalsPerMinute`: `InterruptError` fires, the rule lists as `"stopped": true`, the
+  next popup stays open, and `SetRuleEnabled(true)` resumes it.
 - A popup with no button matching the rule, or whose button never closes it, ends in
   `PopupDismissFailed` with a `Detail` naming the reason, and `HasUnresolvedPopup` is true.
 - Cycle `Start`/`Stop` many times and dispose while running: the thread count must not grow.
@@ -924,17 +950,18 @@ The platform-independent xunit coverage drives the decision logic with a fake de
 `src/interruptutils/InterruptUtils.Tests`
 (`dotnet test src/interruptutils/InterruptUtils.Tests/InterruptUtils.Tests.csproj`).
 
-### ClipboardUtils (needs a desktop and a real clipboard; Setup: a second process that owns the clipboard and a small text-box window that can take the focus; Cleanup: save and restore your own clipboard around the run, close the windows)
+### ClipboardUtils (needs a desktop and a real clipboard; Setup: a second process that owns the clipboard and a small text-box window that can take the focus — `TestHarness.exe --clipboard-owner`/`--focus-textbox` (see [`test-harness/README.md`](test-harness/README.md#second-process-modes)); Cleanup: save and restore your own clipboard around the run, close the windows)
 
 The unit tests never touch the real clipboard (they use an in-memory one), so everything below needs
 a real Windows clipboard and is run by hand. The run overwrites the clipboard; save it first with
 `SaveClipboard` and put it back at the end.
 
-- Put a **rich clipboard** on it from another application or a WinForms harness: text, HTML, RTF, an
-  image, a file list, and a custom registered format. `SaveClipboard`, then `SetClipboardText` (assert
-  only text formats remain), then `RestoreClipboard`. Assert every copied format is back **in the same
-  order and byte for byte** (hash each format with `GetClipboardData`; the OLE bookkeeping formats
-  `DataObject` and `Ole Private Data` are deliberately not restored).
+- Put a **rich clipboard** on it via `TestHarness.exe --clipboard-owner --text=... --html=... --rtf=...
+  --image=... --files=... --custom-format=...`: text, HTML, RTF, an image, a file list, and a custom
+  registered format all at once. `SaveClipboard`, then `SetClipboardText` (assert only text formats
+  remain), then `RestoreClipboard`. Assert every copied format is back **in the same order and byte for
+  byte** (hash each format with `GetClipboardData`; the OLE bookkeeping formats `DataObject` and
+  `Ole Private Data` are deliberately not restored).
 - **Image fidelity needs a well-formed source.** A WinForms `Clipboard.SetImage` puts a malformed
   `CF_DIBV5` on the clipboard, so another process may read a different image than the one set, with or
   without this component. Test with a hand-built DIB + DIBV5 and compare what a separate process reads
@@ -946,15 +973,18 @@ a real Windows clipboard and is run by hand. The run overwrites the clipboard; s
   in about that time; with no change `WaitForClipboardChange` times out with `timedOut` true and no message;
   a change made *before* the wait is not missed by the `Since` variant; `WaitForClipboardFormat("CF_HDROP")`
   returns when a file list appears.
-- **Another process owns the clipboard**: a process that copies with an OLE data object it renders on
-  demand. `SaveClipboard` and `RestoreClipboard` work; its text and custom format are captured.
-- **A hung owner**: a process whose window never answers `WM_RENDERFORMAT` after `SetClipboardData(format, NULL)`.
-  `SaveClipboard` must return a failure with a reason and never hang (in practice it fails fast with
-  "another application is holding it", because Windows' own clipboard-history service is blocked on the
-  owner and holds the clipboard open). After the owner is killed the clipboard works again.
-- **`PasteText`** into a real text box in another process with the focus in it, over a rich clipboard: the
-  text box gets the pasted text, and afterwards every format is back byte for byte. Give the window the
-  focus without tapping Alt (an Alt tap puts it in menu mode, which swallows the next keystroke).
+- **Another process owns the clipboard**: `TestHarness.exe --clipboard-owner --render-on-demand --text=...
+  --custom-format=...` copies with a delayed-rendering owner that renders on demand. `SaveClipboard` and
+  `RestoreClipboard` work; its text and custom format are captured.
+- **A hung owner**: `TestHarness.exe --clipboard-owner --hang --text=...` — a window that never answers
+  `WM_RENDERFORMAT` after `SetClipboardData(format, NULL)`. `SaveClipboard` must return a failure with a
+  reason and never hang (in practice it fails fast with "another application is holding it", because
+  Windows' own clipboard-history service is blocked on the owner and holds the clipboard open). After the
+  owner process is killed the clipboard works again.
+- **`PasteText`** into `TestHarness.exe --focus-textbox`'s `txtClipboardTarget`, focused in another
+  process, over a rich clipboard: the text box gets the pasted text, and afterwards every format is back
+  byte for byte. Give the window the focus without tapping Alt (an Alt tap puts it in menu mode, which
+  swallows the next keystroke).
 - `requireCompleteRestore` / `requireCompleteCopy` refuse, leaving the clipboard untouched, when a
   GDI-object format is on the clipboard.
 - **History** (needs the real clipboard; save yours first): `StartClipboardHistory(5, ...)`, then copy text from

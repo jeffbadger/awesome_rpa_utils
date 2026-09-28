@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace TestHarness
@@ -26,13 +27,35 @@ namespace TestHarness
         public TreeView SampleTreeView;
         public Button ShowMessageBoxButton;
         public Button OpenChildWindowButton;
+        public Button OpenSecondChildWindowButton;
+        public Button ShowNonNativeDialogButton;
+        public Button ShowDuplicateDialogsButton;
+        public Button ShowDisabledButtonDialogButton;
+        public Panel CursorHandPanel;
+        public Panel CursorSizeAllPanel;
+        public Panel CursorNoPanel;
+        public Panel CursorCrossPanel;
+        public Panel CursorWaitPanel;
+        public ComboBox OptionsComboBox;
+        public TrackBar VolumeTrackBar;
+        public RadioButton RadioOptionA;
+        public RadioButton RadioOptionB;
+        public RadioButton RadioOptionC;
 
         public MainForm()
         {
             Name = "MainForm";
             Text = "Awesome RPA Utils - Test Harness";
-            Width = 420;
-            Height = 560;
+            Width = 460;
+            // Stacking every feature row (dialog buttons, cursor zones,
+            // combo/trackbar/radio group) needs content down to y=805
+            // (grpRadioOptions' bottom) plus margin - taller than fits on a common
+            // 768px-high display once the title bar/border chrome and high-DPI
+            // scaling are accounted for. Keep the window itself modest and let
+            // AutoScroll reveal whatever doesn't fit, rather than growing Height
+            // to match the content and risking controls no display can show at all.
+            Height = 650;
+            AutoScroll = true;
 
             ClickButton = new Button
             {
@@ -170,12 +193,157 @@ namespace TestHarness
                 child.Show(this);
             };
 
+            // A second, distinct top-level window type. These are owned windows
+            // (Show(this), not WS_CHILD descendants), and WinForms does NOT derive a
+            // distinct native window class per CLR Form subtype - every plain Form,
+            // including ChildForm, shares the same generic "WindowsForms10.Window..."
+            // class. SecondChildForm registers its own explicit class (see its
+            // CreateParams override and EnsureNativeClassRegistered below) specifically
+            // so it differs from ChildForm's. Covers TryFindWindowByRegex's
+            // classNamePattern (nothing to wrongly match before this existed) and
+            // GetTopLevelWindows/FindWindowByClass's duplicate-vs-distinct-class cases.
+            OpenSecondChildWindowButton = new Button
+            {
+                Name = "btnOpenSecondChildWindow",
+                Text = "Open 2nd Child Window",
+                Location = new Point(320, 440),
+                Width = 120
+            };
+            OpenSecondChildWindowButton.Click += (s, e) =>
+            {
+                var child = new SecondChildForm();
+                child.Show(this);
+            };
+
+            // Dismiss control is a Label, never a real Button, so DialogUtils.CanDismissDialog
+            // (which only ever looks for a native "Button"-classed child window) reliably
+            // reports canDismiss = false, without depending on an actual WinUI3 dialog.
+            ShowNonNativeDialogButton = new Button
+            {
+                Name = "btnShowNonNativeDialog",
+                Text = "Show Non-Native Dialog",
+                Location = new Point(20, 480),
+                Width = 130
+            };
+            ShowNonNativeDialogButton.Click += (s, e) =>
+            {
+                var dialog = new NonNativeDialogForm();
+                dialog.Show(this);
+            };
+
+            // Opens two windows with identical Text at once, for FindDialog's first-match
+            // and FindAllDialogs' multi-match (returns both) behavior.
+            ShowDuplicateDialogsButton = new Button
+            {
+                Name = "btnShowDuplicateDialogs",
+                Text = "Show Duplicate Dialogs",
+                Location = new Point(160, 480),
+                Width = 130
+            };
+            ShowDuplicateDialogsButton.Click += (s, e) =>
+            {
+                new DuplicateDialogForm("Instance A").Show(this);
+                new DuplicateDialogForm("Instance B").Show(this);
+            };
+
+            // btnConfirm starts disabled, so ClickDialogButtonByText/ById's wasEnabled
+            // output can be asserted false; chkConfirmEnabled lets a tester enable it
+            // mid-wait to also cover the true case.
+            ShowDisabledButtonDialogButton = new Button
+            {
+                Name = "btnShowDisabledButtonDialog",
+                Text = "Show Disabled Button Dialog",
+                Location = new Point(300, 480),
+                Width = 140
+            };
+            ShowDisabledButtonDialogButton.Click += (s, e) =>
+            {
+                var dialog = new DisabledButtonDialogForm();
+                dialog.Show(this);
+            };
+
+            // Five zones with distinct Cursor settings, for MouseUtils.GetCurrentCursorType:
+            // hover the pointer inside one and assert the matching CurrentCursorType.
+            // Note Cursors.Cross maps to CurrentCursorType.Crosshair, not "Cross".
+            CursorHandPanel = MakeCursorZonePanel("pnlCursorHand", "Hand", Cursors.Hand, new Point(20, 530), Color.MistyRose);
+            CursorSizeAllPanel = MakeCursorZonePanel("pnlCursorSizeAll", "SizeAll", Cursors.SizeAll, new Point(100, 530), Color.Honeydew);
+            CursorNoPanel = MakeCursorZonePanel("pnlCursorNo", "No", Cursors.No, new Point(180, 530), Color.LightYellow);
+            CursorCrossPanel = MakeCursorZonePanel("pnlCursorCross", "Cross", Cursors.Cross, new Point(260, 530), Color.Lavender);
+            CursorWaitPanel = MakeCursorZonePanel("pnlCursorWait", "Wait", Cursors.WaitCursor, new Point(340, 530), Color.PaleTurquoise);
+
+            // A real dropdown selection list, for UIAutomationUtils.Select/IsSelected
+            // against a genuinely different UIA tree shape than lstItems (a ComboBox's
+            // items are reached differently, and collapsed by default).
+            OptionsComboBox = new ComboBox
+            {
+                Name = "cboOptions",
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(20, 585),
+                Width = 200
+            };
+            OptionsComboBox.Items.AddRange(new object[] { "Option 1", "Option 2", "Option 3" });
+
+            // Its only native pattern is RangeValuePattern, which UIAutomationUtils has
+            // no dedicated method for at all - useful as the negative case for calling
+            // SetValue/Toggle/Select (ValuePattern/TogglePattern/SelectionItemPattern)
+            // against a control that supports none of them.
+            VolumeTrackBar = new TrackBar
+            {
+                Name = "trkVolume",
+                Location = new Point(20, 630),
+                Width = 200,
+                Minimum = 0,
+                Maximum = 100,
+                Value = 50
+            };
+
+            // RadioButtons expose SelectionItemPattern, not TogglePattern - calling
+            // Toggle/IsToggled against one is the documented "wrong pattern on wrong
+            // control type" negative case, complementing chkOption (TogglePattern-shaped).
+            var radioGroup = new GroupBox
+            {
+                Name = "grpRadioOptions",
+                Text = "Radio Group",
+                Location = new Point(20, 695),
+                Width = 200,
+                Height = 110
+            };
+            RadioOptionA = new RadioButton { Name = "radOptionA", Text = "Option A", Location = new Point(10, 20), AutoSize = true, Checked = true };
+            RadioOptionB = new RadioButton { Name = "radOptionB", Text = "Option B", Location = new Point(10, 45), AutoSize = true };
+            RadioOptionC = new RadioButton { Name = "radOptionC", Text = "Option C", Location = new Point(10, 70), AutoSize = true };
+            radioGroup.Controls.AddRange(new Control[] { RadioOptionA, RadioOptionB, RadioOptionC });
+
             Controls.AddRange(new Control[]
             {
                 ClickButton, ClickCountLabel, ClickDetailLabel, InputTextBox,
                 OptionCheckBox, ItemsListBox, DragTargetPanel, SampleTreeView,
-                ShowMessageBoxButton, OpenChildWindowButton
+                ShowMessageBoxButton, OpenChildWindowButton, OpenSecondChildWindowButton,
+                ShowNonNativeDialogButton, ShowDuplicateDialogsButton, ShowDisabledButtonDialogButton,
+                CursorHandPanel, CursorSizeAllPanel, CursorNoPanel, CursorCrossPanel, CursorWaitPanel,
+                OptionsComboBox, VolumeTrackBar, radioGroup
             });
+        }
+
+        private static Panel MakeCursorZonePanel(string name, string label, Cursor cursor, Point location, Color backColor)
+        {
+            var panel = new Panel
+            {
+                Name = name,
+                Cursor = cursor,
+                Location = location,
+                Width = 70,
+                Height = 40,
+                BackColor = backColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            panel.Controls.Add(new Label
+            {
+                Text = label,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Cursor = cursor
+            });
+            return panel;
         }
     }
 
@@ -197,6 +365,241 @@ namespace TestHarness
                 AutoSize = true
             };
             Controls.Add(label);
+        }
+    }
+
+    /// <summary>
+    /// A second, differently-classed top-level (owned, not WS_CHILD) window, for
+    /// WindowUtils scenarios that need more than one distinct window class on screen
+    /// at once (e.g. proving TryFindWindowByRegex's classNamePattern actually
+    /// excludes a non-matching class). A plain WinForms Form does not get its own
+    /// native window class per CLR subtype - every Form in this app, ChildForm
+    /// included, otherwise shares the same generic "WindowsForms10.Window..." class
+    /// - so this registers its own via Win32's <c>RegisterClassEx</c> (setting
+    /// <see cref="CreateParams.ClassName"/> alone does not register a class; an
+    /// unregistered class name makes <c>CreateWindowEx</c> fail outright).
+    /// </summary>
+    public class SecondChildForm : Form
+    {
+        private const string NativeClassName = "TestHarnessSecondChildForm";
+        private static bool _classRegistered;
+
+        public SecondChildForm()
+        {
+            EnsureNativeClassRegistered();
+
+            Name = "SecondChildForm";
+            Text = "Second Child Window";
+            Width = 300;
+            Height = 200;
+
+            var label = new Label
+            {
+                Name = "lblSecondChildContent",
+                Text = "This is a second, differently-classed child window.",
+                Location = new Point(20, 20),
+                AutoSize = true
+            };
+            Controls.Add(label);
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ClassName = NativeClassName;
+                return cp;
+            }
+        }
+
+        // Registers the class once, using the OS's own default window procedure
+        // (user32's DefWindowProcW) so CreateWindowEx can create a window of this
+        // class at all. WinForms then subclasses the window's WndProc after
+        // creation - the same way it does for its own built-in
+        // "WindowsForms10.Window..." class - so normal message handling and
+        // control hosting still work.
+        private static void EnsureNativeClassRegistered()
+        {
+            if (_classRegistered)
+            {
+                return;
+            }
+
+            IntPtr hUser32 = GetModuleHandle("user32.dll");
+            IntPtr defWindowProc = GetProcAddress(hUser32, "DefWindowProcW");
+
+            var wc = new WNDCLASSEX
+            {
+                cbSize = (uint)Marshal.SizeOf<WNDCLASSEX>(),
+                style = 0,
+                lpfnWndProc = defWindowProc,
+                cbClsExtra = 0,
+                cbWndExtra = 0,
+                hInstance = GetModuleHandle(null),
+                hIcon = IntPtr.Zero,
+                hCursor = LoadCursor(IntPtr.Zero, IDC_ARROW),
+                hbrBackground = (IntPtr)(COLOR_WINDOW + 1),
+                lpszMenuName = null,
+                lpszClassName = NativeClassName,
+                hIconSm = IntPtr.Zero
+            };
+
+            if (RegisterClassEx(ref wc) == 0)
+            {
+                int error = Marshal.GetLastWin32Error();
+                const int ERROR_CLASS_ALREADY_EXISTS = 1410;
+                if (error != ERROR_CLASS_ALREADY_EXISTS)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to register the '{NativeClassName}' window class (Win32 error {error}).");
+                }
+            }
+
+            _classRegistered = true;
+        }
+
+        private const int COLOR_WINDOW = 5;
+        private const int IDC_ARROW = 32512;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WNDCLASSEX
+        {
+            public uint cbSize;
+            public uint style;
+            public IntPtr lpfnWndProc;
+            public int cbClsExtra;
+            public int cbWndExtra;
+            public IntPtr hInstance;
+            public IntPtr hIcon;
+            public IntPtr hCursor;
+            public IntPtr hbrBackground;
+            public string lpszMenuName;
+            public string lpszClassName;
+            public IntPtr hIconSm;
+        }
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+    }
+
+    /// <summary>
+    /// A dialog whose only dismiss control is a Label styled as a button, never a real
+    /// Button. DialogUtils.CanDismissDialog only ever reports true for a native "Button"-
+    /// classed child window, so this form deterministically drives canDismiss = false,
+    /// covering the "non-native dialog" case without an actual WinUI3 dependency.
+    /// </summary>
+    public class NonNativeDialogForm : Form
+    {
+        public NonNativeDialogForm()
+        {
+            Name = "NonNativeDialogForm";
+            Text = "Non-Native Dialog";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            Width = 320;
+            Height = 160;
+
+            var pseudoButton = new Label
+            {
+                Name = "lblPseudoOkButton",
+                Text = "OK",
+                BorderStyle = BorderStyle.FixedSingle,
+                Cursor = Cursors.Hand,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Location = new Point(110, 90),
+                Width = 80,
+                Height = 30
+            };
+            pseudoButton.Click += (s, e) => Close();
+            Controls.Add(pseudoButton);
+        }
+    }
+
+    /// <summary>
+    /// A dialog with identical Text on every instance and a real Button to close it.
+    /// Opening two at once (see MainForm.ShowDuplicateDialogsButton) exercises
+    /// FindDialog's first-match and FindAllDialogs' multi-match (returns both) behavior.
+    /// </summary>
+    public class DuplicateDialogForm : Form
+    {
+        public DuplicateDialogForm(string instanceLabel)
+        {
+            Name = "DuplicateDialogForm";
+            Text = "Duplicate Dialog";
+            Width = 280;
+            Height = 140;
+
+            var instanceLabelControl = new Label
+            {
+                Name = "lblInstance",
+                Text = instanceLabel,
+                AutoSize = true,
+                Location = new Point(20, 20)
+            };
+            var ok = new Button
+            {
+                Name = "btnDuplicateOk",
+                Text = "OK",
+                // System (not the WinForms default) renders via real native BS_PUSHBUTTON
+                // painting rather than owner-drawing it, so DialogUtils' BM_CLICK-based
+                // ClickButton/ClickDialogButtonByText can actually target it - a default
+                // WinForms button is owner-drawn and DialogUtils' own README documents
+                // that as possibly unresponsive to BM_CLICK.
+                FlatStyle = FlatStyle.System,
+                Location = new Point(90, 70),
+                Width = 80
+            };
+            ok.Click += (s, e) => Close();
+            Controls.Add(instanceLabelControl);
+            Controls.Add(ok);
+        }
+    }
+
+    /// <summary>
+    /// A dialog whose Confirm button starts disabled, so ClickDialogButtonByText/ById's
+    /// wasEnabled output can be asserted false; the checkbox lets a tester enable it
+    /// mid-wait to also cover the true case.
+    /// </summary>
+    public class DisabledButtonDialogForm : Form
+    {
+        public DisabledButtonDialogForm()
+        {
+            Name = "DisabledButtonDialogForm";
+            Text = "Disabled Button Dialog";
+            Width = 300;
+            Height = 160;
+
+            var confirm = new Button
+            {
+                Name = "btnConfirm",
+                Text = "Confirm",
+                Enabled = false,
+                // Same reasoning as DuplicateDialogForm's OK button: real native
+                // BS_PUSHBUTTON painting, not WinForms' owner-drawn default, so
+                // DialogUtils can find and click it via BM_CLICK.
+                FlatStyle = FlatStyle.System,
+                Location = new Point(90, 80),
+                Width = 100
+            };
+            var enableToggle = new CheckBox
+            {
+                Name = "chkConfirmEnabled",
+                Text = "Enable Confirm",
+                Location = new Point(20, 20),
+                AutoSize = true
+            };
+            enableToggle.CheckedChanged += (s, e) => confirm.Enabled = enableToggle.Checked;
+            Controls.Add(enableToggle);
+            Controls.Add(confirm);
         }
     }
 }
