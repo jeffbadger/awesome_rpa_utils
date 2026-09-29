@@ -1602,5 +1602,152 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(2, h.Of(BrowserPopupRecordKind.Dismissed).Count());
             Assert.Single(h.Of(BrowserPopupRecordKind.Error));
         }
+
+        // ------------------------------------------------------------------ pinning (Retain/Release)
+
+        private static int TrackedTotal(Harness h) =>
+            h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.NativeDialog)
+            + h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay);
+
+        /// <summary>Every tracked candidate is pinned exactly once and nothing else is: no leaks, no unbalanced releases.</summary>
+        private static void AssertPinsMatchTrackedCandidates(Harness h)
+        {
+            Assert.Equal(TrackedTotal(h), h.Probe.Retained.Count);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void Pins_AreBalanced_AcrossASuccessfulDismissal()
+        {
+            var h = new Harness();
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, role: "dialog", action: BrowserPopupAction.InvokeByName, targetName: "OK");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Banner", role: "dialog");
+            h.Probe.AddChild(overlay, "OK");
+
+            h.AppearOverlay(window);
+            Assert.Contains(overlay.Ref, h.Probe.Retained); // pinned while the dismissal is pending
+            AssertPinsMatchTrackedCandidates(h);
+
+            h.PastVerifyDelay();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.DoesNotContain(overlay.Ref, h.Probe.Retained);
+            AssertPinsMatchTrackedCandidates(h);
+        }
+
+        [Fact]
+        public void Pins_AreBalanced_AcrossAFailedDismissal()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, role: "dialog", action: BrowserPopupAction.InvokeByName, targetName: "OK");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Banner", role: "dialog");
+            h.Probe.AddChild(overlay, "OK").IgnoreInvoke = true;
+
+            h.AppearOverlay(window);
+            h.Settle();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Contains(overlay.Ref, h.Probe.Retained); // parked, still tracked, still pinned
+            AssertPinsMatchTrackedCandidates(h);
+
+            h.Probe.Destroy(window);
+            h.Pump(h.Now + 2000);
+
+            Assert.Empty(h.Probe.Retained);
+            AssertPinsMatchTrackedCandidates(h);
+        }
+
+        [Fact]
+        public void Pins_AreBalanced_WhenARuleIsRemovedOrRulesAreCleared()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("a", BrowserPopupScope.PageOverlay, nameContains: "Alpha");
+            h.AddRule("b", BrowserPopupScope.PageOverlay, nameContains: "Beta");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var alpha = h.Probe.AddOverlay(window, "Alpha", role: "dialog");
+            var beta = h.Probe.AddOverlay(window, "Beta", role: "dialog");
+            h.AppearOverlay(window);
+            AssertPinsMatchTrackedCandidates(h);
+
+            Assert.True(h.Engine.RemoveRule("a"));
+            h.Pump(h.Now + 100);
+            AssertPinsMatchTrackedCandidates(h);
+
+            h.Engine.ClearRules();
+            h.Pump(h.Now + 100);
+            AssertPinsMatchTrackedCandidates(h);
+
+            // The unmatched overlays are released when their window goes away.
+            h.Probe.Destroy(window);
+            h.Pump(h.Now + 2000);
+            Assert.Empty(h.Probe.Retained);
+            AssertPinsMatchTrackedCandidates(h);
+            Assert.DoesNotContain(alpha.Ref, h.Probe.Retained);
+            Assert.DoesNotContain(beta.Ref, h.Probe.Retained);
+        }
+
+        [Fact]
+        public void Pins_AreAllReleased_ByResetRuntime()
+        {
+            var h = new Harness();
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, role: "dialog");
+            h.AddRule("native", BrowserPopupScope.NativeDialog, nameContains: "Alert");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            h.Probe.AddOverlay(window, "Banner", role: "dialog");
+            h.AppearOverlay(window);
+            h.AppearWindow(h.Probe.AddWindow("Alert", processName: "chrome"));
+            Assert.True(h.Probe.Retained.Count >= 3);
+
+            h.Engine.ResetRuntime();
+
+            Assert.Empty(h.Probe.Retained);
+            Assert.Equal(h.Probe.RetainCalls, h.Probe.ReleaseCalls);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void CapRefusedAdmission_IsNeverRetained()
+        {
+            var h = new Harness();
+            h.AddRule("any", BrowserPopupScope.PageOverlay, role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            for (int i = 0; i < BrowserPopupEngine.MaxTrackedCandidates + 10; i++)
+                h.Probe.AddOverlay(window, "d" + i, role: "dialog");
+            h.Engine.MaxOverlayNodes = 100000;
+
+            h.AppearOverlay(window);
+
+            Assert.Equal(BrowserPopupEngine.MaxTrackedCandidates, TrackedTotal(h));
+            Assert.Equal(BrowserPopupEngine.MaxTrackedCandidates, h.Probe.RetainCalls);
+            AssertPinsMatchTrackedCandidates(h);
+        }
+
+        [Fact]
+        public void Pins_AreReleased_WhenTheOwnerWindowDies()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Banner", role: "dialog");
+            h.AppearOverlay(window);
+            AssertPinsMatchTrackedCandidates(h);
+            Assert.Contains(overlay.Ref, h.Probe.Retained);
+
+            h.Probe.Destroy(window);
+            h.Pump(h.Now + 2000);
+
+            Assert.Empty(h.Probe.Retained);
+            Assert.Equal(0, TrackedTotal(h));
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
     }
 }

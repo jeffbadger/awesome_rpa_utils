@@ -138,8 +138,27 @@ namespace BrowserInterruptAutomation
         /// </summary>
         IReadOnlyList<BrowserElementInfo> FindOverlayCandidates(BrowserElementRef browserWindowRoot, int maxNodes, int maxDepth);
 
-        /// <summary>Whether a previously seen element still exists (mirrors a window handle's liveness check, <c>Win32PopupProbe.IsWindow</c>).</summary>
+        /// <summary>
+        /// Whether a previously seen element still exists (mirrors a window handle's liveness check,
+        /// <c>Win32PopupProbe.IsWindow</c>). Tri-state in spirit: <c>false</c> is only ever a
+        /// DEFINITIVE "gone". An element the probe can no longer say anything about (a window-less
+        /// page-overlay reference that was never <see cref="Retain">retained</see> and has fallen
+        /// out of the probe's cache) reports <c>true</c>: unknown is not dead, so the engine bounds
+        /// such an element by its attempt limit, its owner window's death and the periodic reap,
+        /// rather than silently dropping a live popup or falsely confirming a dismissal.
+        /// </summary>
         bool IsAlive(BrowserElementRef element);
+
+        /// <summary>
+        /// Pins the element so the probe keeps a strong reference to it, and therefore keeps
+        /// answering <see cref="IsAlive"/> definitively for it, until <see cref="Release"/>. The
+        /// engine calls it when it starts tracking a candidate. Idempotent; a no-op when the probe
+        /// cannot resolve the element at that moment.
+        /// </summary>
+        void Retain(BrowserElementRef element);
+
+        /// <summary>Drops the pin taken by <see cref="Retain"/>. Safe to call for an element that was never retained.</summary>
+        void Release(BrowserElementRef element);
 
         /// <summary>The element's first non-empty text descendant, or <c>null</c> if none is found.</summary>
         string TryGetMessageText(BrowserElementRef element);

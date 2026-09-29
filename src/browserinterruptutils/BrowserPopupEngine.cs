@@ -631,7 +631,8 @@ namespace BrowserInterruptAutomation
             _watchedWindows.Clear();
             _skippedWindows.Clear();
             _skippedOrder.Clear();
-            _candidates.Clear();
+            foreach (var key in new List<BrowserElementRef>(_candidates.Keys))
+                DropCandidate(key);
             _hwndIndex.Clear();
             _processNameCache.Clear();
             _nativeSwept = false;
@@ -962,7 +963,7 @@ namespace BrowserInterruptAutomation
                 // A window tracked only so its page can be watched for overlays has nothing to evaluate.
                 NextDue = nativeInteresting ? now : long.MaxValue
             };
-            _candidates[state.Ref] = state;
+            AdmitCandidate(state);
             _hwndIndex[win.Hwnd] = state.Ref;
             MaybeWatchForOverlay(win.Hwnd, win.ProcessName, info.Ref);
         }
@@ -1102,8 +1103,28 @@ namespace BrowserInterruptAutomation
                     FirstSeen = now,
                     NextDue = now
                 };
-                _candidates[state.Ref] = state;
+                AdmitCandidate(state);
             }
+        }
+
+        /// <summary>
+        /// The one place a candidate starts being tracked: adds it and pins its element in the probe
+        /// (<see cref="IBrowserPopupProbe.Retain"/>) so its liveness stays definitive however much
+        /// the probe's cache churns. Paired with <see cref="DropCandidate"/>, which releases the pin.
+        /// </summary>
+        private void AdmitCandidate(CandidateState state)
+        {
+            bool replacing = _candidates.ContainsKey(state.Ref); // already pinned: Retain is idempotent, and Release must stay 1:1
+            _candidates[state.Ref] = state;
+            if (!replacing)
+                _probe.Retain(state.Ref);
+        }
+
+        /// <summary>The one place a candidate stops being tracked (every removal path): removes it and releases its pin.</summary>
+        private void DropCandidate(BrowserElementRef key)
+        {
+            if (_candidates.Remove(key))
+                _probe.Release(key);
         }
 
         private void RemoveCandidate(CandidateState state)
@@ -1111,7 +1132,7 @@ namespace BrowserInterruptAutomation
             // A candidate that disappears while a dismissal awaits verification is that
             // dismissal's confirmation (every caller removes only what is gone or orphaned).
             ConfirmDismissal(state);
-            _candidates.Remove(state.Ref);
+            DropCandidate(state.Ref);
             if (state.Scope != BrowserPopupScope.NativeDialog)
                 return;
 
@@ -1133,7 +1154,7 @@ namespace BrowserInterruptAutomation
                 foreach (var key in orphaned)
                 {
                     ConfirmDismissal(_candidates[key]);
-                    _candidates.Remove(key);
+                    DropCandidate(key);
                 }
             }
 

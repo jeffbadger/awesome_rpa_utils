@@ -180,6 +180,31 @@ namespace BrowserInterruptAutomation.Tests
 
         public bool IsAlive(BrowserElementRef element) => _elements.TryGetValue(element, out var el) && el.Alive;
 
+        /// <summary>The refs currently pinned through <see cref="Retain"/>; must be empty when the engine tracks nothing.</summary>
+        public readonly HashSet<BrowserElementRef> Retained = new HashSet<BrowserElementRef>();
+
+        /// <summary>Every <see cref="Retain"/> call, including repeats.</summary>
+        public int RetainCalls { get; private set; }
+
+        /// <summary>Every <see cref="Release"/> call, including ones for refs that were not retained.</summary>
+        public int ReleaseCalls { get; private set; }
+
+        /// <summary>Release calls for a ref that was not retained (an unbalanced release).</summary>
+        public int UnbalancedReleases { get; private set; }
+
+        public void Retain(BrowserElementRef element)
+        {
+            RetainCalls++;
+            Retained.Add(element);
+        }
+
+        public void Release(BrowserElementRef element)
+        {
+            ReleaseCalls++;
+            if (!Retained.Remove(element))
+                UnbalancedReleases++;
+        }
+
         public string TryGetMessageText(BrowserElementRef element)
         {
             MessageTextCalls++;

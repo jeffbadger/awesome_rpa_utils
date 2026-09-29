@@ -41,7 +41,12 @@ namespace BrowserInterruptAutomation
     /// ever set for a native dialog's own top-level window) plus a bounded runtime-id-matching
     /// subtree search if the ref names a descendant rather than the window itself; a ref with no
     /// <c>Hwnd</c> (a page-overlay element, which has none) that misses the cache is simply
-    /// unreachable and reported as such - there is no other way to relocate it. The cache
+    /// unreachable - there is no other way to relocate it - and <see cref="IsAlive"/> reports it as
+    /// UNKNOWN (<c>true</c>), never as closed. To keep the elements the engine still cares about
+    /// out of that state, the engine <see cref="Retain">pins</see> every candidate it tracks: a
+    /// pinned element sits in a separate dictionary of strong references that cache rotation never
+    /// evicts (until <see cref="Release"/>), so <see cref="IsAlive"/> is definitive for it even after
+    /// a pass that walked more distinct elements than the cache holds. The cache
     /// holds STRONG references: the wrappers a subtree walk discovers are otherwise unreferenced,
     /// so weak ones could be collected by a GC between discovery and the engine's later
     /// re-check (0.15-2 s later), which would make a live overlay look dead. Growth is bounded
@@ -99,6 +104,14 @@ namespace BrowserInterruptAutomation
         /// <summary>Holds every element this probe has discovered/described. See the type remarks.</summary>
         private readonly GenerationalCache<BrowserElementRef, AutomationElement> _cache =
             new GenerationalCache<BrowserElementRef, AutomationElement>(CacheMaxEntriesPerGeneration, CacheRotateAfterMs);
+
+        /// <summary>
+        /// Elements the engine has <see cref="Retain">pinned</see> (strong references, keyed like the
+        /// cache) that <see cref="GenerationalCache{TKey,TValue}"/> rotation never evicts. Bounded by
+        /// the engine's tracked-candidate cap; entries live until <see cref="Release"/>.
+        /// </summary>
+        private readonly Dictionary<BrowserElementRef, AutomationElement> _pinned = new Dictionary<BrowserElementRef, AutomationElement>();
+        private readonly object _pinLock = new object();
 
         /// <summary>Bounds the fallback runtime-id search used to relocate a cache-missed descendant of a still-resolvable window.</summary>
         private const int ResolveFallbackMaxNodes = 5000;
@@ -251,7 +264,14 @@ namespace BrowserInterruptAutomation
         {
             try
             {
-                return TryResolve(element, out AutomationElement resolved) && IsElementAvailable(resolved);
+                // Tri-state: only a definitive "gone" reports false. A window-less reference that is
+                // neither pinned nor cached (evicted by cache rotation) is unknown, not dead: the
+                // engine bounds it by MaxAttempts, its owner window's death and the periodic reap
+                // (which only trusts refs it pinned), instead of dropping a possibly live popup.
+                Liveness liveness = Resolve(element, out AutomationElement resolved);
+                if (liveness == Liveness.Unknown)
+                    return true;
+                return liveness == Liveness.Alive && IsElementAvailable(resolved);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
@@ -370,7 +390,29 @@ namespace BrowserInterruptAutomation
         /// <c>Hwnd</c> that misses the cache cannot be relocated (see the type remarks) and this
         /// returns <c>false</c>.
         /// </summary>
-        private bool TryResolve(BrowserElementRef target, out AutomationElement element)
+        private bool TryResolve(BrowserElementRef target, out AutomationElement element) =>
+            Resolve(target, out element) == Liveness.Alive;
+
+        /// <summary>What <see cref="Resolve"/> could establish about a reference.</summary>
+        private enum Liveness
+        {
+            /// <summary>Resolved to a live element.</summary>
+            Alive,
+
+            /// <summary>Definitively gone: its window is destroyed, or a pinned/cached element is unavailable.</summary>
+            Dead,
+
+            /// <summary>A window-less reference that is neither pinned nor cached: nothing can be said about it.</summary>
+            Unknown
+        }
+
+        /// <summary>
+        /// The tri-state core of <see cref="TryResolve"/>/<see cref="IsAlive"/>. A pinned element (see
+        /// <see cref="Retain"/>) is consulted before the cache and is never evicted by rotation, so for
+        /// a pinned reference the answer is always definitive. Only a window-less reference that is
+        /// neither pinned nor cached is <see cref="Liveness.Unknown"/>.
+        /// </summary>
+        private Liveness Resolve(BrowserElementRef target, out AutomationElement element)
         {
             element = null;
 
@@ -382,7 +424,23 @@ namespace BrowserInterruptAutomation
             if (target.Hwnd != IntPtr.Zero && !NativeMethods.IsWindow(target.Hwnd))
             {
                 _cache.Remove(target);
-                return false;
+                return Liveness.Dead;
+            }
+
+            bool pinnedButDead = false;
+            AutomationElement pinned;
+            lock (_pinLock)
+                _pinned.TryGetValue(target, out pinned);
+            if (pinned != null)
+            {
+                if (IsElementAvailable(pinned))
+                {
+                    element = pinned;
+                    return Liveness.Alive;
+                }
+                // The pin stays until Release (the engine owns its lifetime) so this stays a
+                // definitive "dead" on every later call instead of decaying into "unknown".
+                pinnedButDead = true;
             }
 
             if (_cache.TryGet(target, out AutomationElement cached))
@@ -390,17 +448,19 @@ namespace BrowserInterruptAutomation
                 if (IsElementAvailable(cached))
                 {
                     element = cached;
-                    return true;
+                    return Liveness.Alive;
                 }
                 _cache.Remove(target); // dead: drop it now rather than wait for rotation
+                if (target.Hwnd == IntPtr.Zero)
+                    return Liveness.Dead;
             }
 
             if (target.Hwnd == IntPtr.Zero)
-                return false; // a page-overlay element with no live cache entry is unreachable
+                return pinnedButDead ? Liveness.Dead : Liveness.Unknown; // no cache entry, no window to re-resolve from
 
             AutomationElement windowElement = ResolveFromHandle(target.Hwnd);
             if (windowElement == null)
-                return false;
+                return Liveness.Dead;
 
             int[] runtimeId = target.RuntimeId;
             if (runtimeId == null || runtimeId.Length == 0
@@ -408,16 +468,52 @@ namespace BrowserInterruptAutomation
             {
                 CacheElement(target, windowElement);
                 element = windowElement;
-                return true;
+                return Liveness.Alive;
             }
 
             AutomationElement found = FindByRuntimeId(windowElement, runtimeId);
             if (found == null)
-                return false;
+                return Liveness.Dead;
 
             CacheElement(target, found);
             element = found;
-            return true;
+            return Liveness.Alive;
+        }
+
+        // ------------------------------------------------------------------ pinning
+
+        /// <inheritdoc/>
+        public void Retain(BrowserElementRef element)
+        {
+            try
+            {
+                lock (_pinLock)
+                {
+                    if (_pinned.ContainsKey(element))
+                        return;
+                }
+                if (Resolve(element, out AutomationElement resolved) != Liveness.Alive || resolved == null)
+                    return; // cannot be resolved now: nothing to pin, IsAlive keeps reporting unknown
+                lock (_pinLock)
+                    _pinned[element] = resolved;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                // Never throws; an unpinned element is merely bounded by the engine's other limits.
+            }
+        }
+
+        /// <inheritdoc/>
+        public void Release(BrowserElementRef element)
+        {
+            try
+            {
+                lock (_pinLock)
+                    _pinned.Remove(element);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+            }
         }
 
         private static AutomationElement FindByRuntimeId(AutomationElement root, int[] runtimeId)
