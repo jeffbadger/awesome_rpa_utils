@@ -174,16 +174,17 @@ namespace BrowserInterruptAutomation
         internal const int VerifyDelayMs = 400;
 
         /// <summary>
-        /// How often (milliseconds, on the pump's clock) the engine checks whether parked overlay
-        /// candidates - watch-only matches, failed dismissals, unmatched elements whose retry schedule
+        /// How often (milliseconds, on the pump's clock) the engine checks whether parked
+        /// candidates, overlay or native - watch-only matches, failed dismissals, unmatched elements whose retry schedule
         /// ran out - are still alive, dropping the dead ones. A sweep only ever processes the
-        /// elements it finds, so without this a banner that comes and goes on its own would sit in the
-        /// candidate table until <see cref="MaxTrackedCandidates"/> blocked every new popup.
-        /// Independent of <see cref="OverlaySweepIntervalMs"/> (it also runs when that is 0).
+        /// elements it finds, so without this a banner that comes and goes on its own (or a browser window
+        /// tracked only as a watch owner) would sit in the candidate table until
+        /// <see cref="MaxTrackedCandidates"/> blocked every new popup. Independent of
+        /// <see cref="OverlaySweepIntervalMs"/> and <see cref="SweepIntervalMs"/> (it also runs when they are 0).
         /// </summary>
         internal const int ReapIntervalMs = 2000;
 
-        /// <summary>The most <see cref="IBrowserPopupProbe.IsAlive"/> checks one reap pass makes (a UIA property read each); a cursor carries the rest to the next pass.</summary>
+        /// <summary>The most <see cref="IBrowserPopupProbe.IsAlive"/> checks one reap pass makes in total, both kinds (a UIA property read each); a cursor carries the rest to the next pass.</summary>
         internal const int ReapMaxChecksPerPass = 256;
 
         /// <summary>The floor enforced on <see cref="OverlaySweepIntervalMs"/> when it is set above zero.</summary>
@@ -715,7 +716,7 @@ namespace BrowserInterruptAutomation
                 OverlaySweepAll(now);
             }
 
-            ReapDeadOverlays(now);
+            ReapDeadCandidates(now);
 
             _due.Clear();
             foreach (var state in _candidates.Values)
@@ -728,15 +729,15 @@ namespace BrowserInterruptAutomation
 
             long next = long.MaxValue;
             int unresolved = 0;
-            bool anyParkedOverlay = false;
+            bool anyParked = false;
             foreach (var state in _candidates.Values)
             {
                 if (state.NextDue < next)
                     next = state.NextDue;
                 if (state.Unresolved)
                     unresolved++;
-                if (IsParkedOverlay(state))
-                    anyParkedOverlay = true;
+                if (IsParked(state))
+                    anyParked = true;
             }
             Volatile.Write(ref _unresolved, unresolved);
             if (_capReported && _candidates.Count < MaxTrackedCandidates)
@@ -746,26 +747,31 @@ namespace BrowserInterruptAutomation
                 next = Math.Min(next, _lastNativeSweep + SweepIntervalMs);
             if (OverlaySweepIntervalMs > 0)
                 next = Math.Min(next, _lastOverlaySweep + OverlaySweepIntervalMs);
-            if (anyParkedOverlay)
+            if (anyParked)
                 next = Math.Min(next, _lastReap + ReapIntervalMs); // wake up to reap even if nothing else is due
             return next;
         }
 
-        /// <summary>An overlay candidate waiting on nothing but a rule change or a sweep re-finding it (NextDue is never).</summary>
-        private static bool IsParkedOverlay(CandidateState state) =>
-            state.Scope == BrowserPopupScope.PageOverlay && state.NextDue == long.MaxValue && state.Pending == null;
+        /// <summary>A candidate (either scope) waiting on nothing but a rule change or a sweep re-finding it (NextDue is never) and with no dismissal awaiting verification.</summary>
+        private static bool IsParked(CandidateState state) =>
+            state.NextDue == long.MaxValue && state.Pending == null;
 
         /// <summary>
-        /// Drops parked overlay candidates whose element is definitively gone. Rate-limited to one
+        /// Drops parked candidates - overlay elements and native windows, including a browser window
+        /// tracked only so its page can be watched for overlays - whose element is definitively gone.
+        /// Runs whatever <see cref="SweepIntervalMs"/> and <see cref="OverlaySweepIntervalMs"/> are
+        /// (0 turns discovery off, never this cleanup). Rate-limited to one
         /// pass per <see cref="ReapIntervalMs"/> and at most <see cref="ReapMaxChecksPerPass"/>
         /// liveness checks per pass (a cursor rotates through the rest). Absence from a bounded
         /// subtree walk is deliberately NOT taken as closure - a walk can stop at its node budget
         /// and miss a live element - so this only asks <see cref="IBrowserPopupProbe.IsAlive"/>, which
         /// is definitive for the pinned refs the engine admits (an unknown ref reports alive and is
         /// simply left alone). A watch-only popup that vanishes just stops being tracked: no
-        /// <c>Dismissed</c> record (only a verified action produces one).
+        /// <c>Dismissed</c> record (only a verified action produces one). A reaped native window goes
+        /// through <see cref="RemoveCandidate"/> like any other removal: pin released, watch dropped,
+        /// its overlays orphaned, its slot and process-name cache entry freed.
         /// </summary>
-        private void ReapDeadOverlays(long now)
+        private void ReapDeadCandidates(long now)
         {
             if (_reapStarted && now - _lastReap < ReapIntervalMs)
                 return;
@@ -775,7 +781,7 @@ namespace BrowserInterruptAutomation
             List<BrowserElementRef> parked = null;
             foreach (var pair in _candidates)
             {
-                if (IsParkedOverlay(pair.Value))
+                if (IsParked(pair.Value))
                     (parked ??= new List<BrowserElementRef>()).Add(pair.Key);
             }
             if (parked == null)
@@ -796,7 +802,8 @@ namespace BrowserInterruptAutomation
                 return;
             foreach (var key in dead)
             {
-                if (_candidates.TryGetValue(key, out var state) && IsParkedOverlay(state))
+                // An earlier removal in this loop may have orphaned this one (an owner window's overlays).
+                if (_candidates.TryGetValue(key, out var state) && IsParked(state))
                     RemoveCandidate(state);
             }
         }

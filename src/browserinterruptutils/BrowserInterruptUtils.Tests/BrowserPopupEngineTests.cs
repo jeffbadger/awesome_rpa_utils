@@ -2047,10 +2047,160 @@ namespace BrowserInterruptAutomation.Tests
                 h.Probe.Destroy(banner);
 
             h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
-            Assert.Equal(44, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            // The (live, parked) owner window shares the pass budget, so it may use one of the checks.
+            Assert.InRange(h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay), 44, 45);
 
             h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
             Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
+
+        // ------------------------------------------------------------------ reaping parked native windows
+
+        [Fact]
+        public void Reap_DropsAParkedWatchOnlyNativeWindowThatCloses_WithSweepsOff()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            h.AddRule("note", BrowserPopupScope.NativeDialog, nameContains: "Notice");
+            var dialog = h.Probe.AddWindow("Notice");
+            h.AppearWindow(dialog);
+            h.Settle();
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(1, TrackedTotal(h));
+            Assert.Contains(dialog.Ref, h.Probe.Retained);
+
+            h.Probe.Destroy(dialog); // the page closes it; no native sweep will ever look
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+
+            Assert.Equal(0, TrackedTotal(h));
+            Assert.Empty(h.Probe.Retained);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+            Assert.Equal(0, h.Engine.UnresolvedCount);
+        }
+
+        [Fact]
+        public void Reap_DropsAnOverlayOnlyWatchOwnerWindowThatCloses_AndUnwatchesIt()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, role: "dialog");
+            var window = h.Probe.AddWindow("tab"); // tracked only so it can be watched
+            h.AppearWindow(window);
+            Assert.Contains(window.Ref, h.Hook.CurrentlyWatched);
+            Assert.Contains(window.Ref, h.Probe.Retained);
+
+            h.Probe.Destroy(window);
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+
+            Assert.Equal(0, TrackedTotal(h));
+            Assert.Contains(window.Ref, h.Hook.UnwatchCalls);
+            Assert.DoesNotContain(window.Ref, h.Hook.CurrentlyWatched);
+            Assert.Empty(h.Probe.Retained);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void Reap_OfAnOwnerWindow_AlsoDropsItsOverlays()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            h.Probe.AddOverlay(window, "Banner", role: "dialog");
+            h.AppearOverlay(window);
+            Assert.Equal(2, TrackedTotal(h));
+
+            h.Probe.Destroy(window);
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+
+            Assert.Equal(0, TrackedTotal(h));
+            Assert.Empty(h.Probe.Retained);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void Reap_KeepsALiveParkedNativeWindow_AndOneWhoseLivenessIsUnknown()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            h.AddRule("note", BrowserPopupScope.NativeDialog, nameContains: "Notice");
+            var live = h.Probe.AddWindow("Notice");
+            var unknown = h.Probe.AddWindow("Notice two");
+            h.AppearWindow(live);
+            h.AppearWindow(unknown);
+            h.Settle();
+            unknown.LivenessUnknown = true;
+            h.Probe.Destroy(unknown);
+
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+
+            Assert.Equal(2, TrackedTotal(h));
+            Assert.Contains(live.Ref, h.Probe.Retained);
+        }
+
+        [Fact]
+        public void Reap_KeepsTheCandidateTableFromFillingUpWithTransientNativeWindows()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            h.AddRule("note", BrowserPopupScope.NativeDialog, nameContains: "Notice");
+
+            const int count = 3000; // more than MaxTrackedCandidates
+            for (int i = 0; i < count; i++)
+            {
+                var dialog = h.Probe.AddWindow("Notice " + i);
+                h.AppearWindow(dialog);
+                h.Probe.Destroy(dialog); // the page closes its own dialog
+                h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            }
+            var later = h.Probe.AddWindow("Notice later");
+            h.AppearWindow(later);
+
+            Assert.Equal(count + 1, h.Of(BrowserPopupRecordKind.Detected).Count());
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error)); // never blocked by the cap
+            Assert.Equal(1, TrackedTotal(h));
+            Assert.Single(h.Probe.Retained);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void Reap_CoversBothKindsWithinOnePassBudget_AndCarriesTheRest()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            h.AddRule("note", BrowserPopupScope.NativeDialog, nameContains: "Notice");
+            var windows = new List<FakeElement>();
+            int total = BrowserPopupEngine.ReapMaxChecksPerPass + 44;
+            for (int i = 0; i < total; i++)
+            {
+                var w = h.Probe.AddWindow("Notice " + i);
+                windows.Add(w);
+                h.Hook.FireWindowOpened(w);
+            }
+            h.Pump(h.Now);
+            h.Settle();
+            Assert.Equal(total, TrackedTotal(h));
+            foreach (var w in windows)
+                h.Probe.Destroy(w);
+
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            Assert.Equal(44, TrackedTotal(h));
+
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            Assert.Equal(0, TrackedTotal(h));
+            Assert.Empty(h.Probe.Retained);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void Reap_OfParkedNativeWindows_WakesAWorkerWithSweepsOff()
+        {
+            var h = new Harness(sweepIntervalMs: 0);
+            h.AddRule("note", BrowserPopupScope.NativeDialog, nameContains: "Notice");
+            var dialog = h.Probe.AddWindow("Notice");
+            h.AppearWindow(dialog);
+            h.Settle();
+
+            long next = h.Pump(h.Now + 1);
+
+            Assert.NotEqual(long.MaxValue, next);
         }
 
         // ------------------------------------------------------------------ main-window refusal
