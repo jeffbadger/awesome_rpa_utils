@@ -1011,6 +1011,24 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
 - **Verify-before-count.** A dismissal is recorded only 400 ms (`VerifyDelayMs`) after the invoke, once
   the popup is gone: confirm `PopupDismissed` fires about 0.4 s after the popup closes and that a control
   whose invoke does nothing ends in `PopupDismissFailed` after `maxAttempts` with no `PopupDismissed`.
+- **Main-window refusal.** With `AddNativeDialogCloseRule` whose `nameContains` matches a tab title, open
+  a normal Chrome, Edge and Firefox window with that title: the rule must raise one `PopupDismissFailed`
+  ("refused to close a window that looks like a main application window...") and the window must stay
+  open. Then raise a JS `alert`/`confirm`/`prompt` (and a `beforeunload` prompt) that is a top-level
+  window and confirm a close rule DOES close it, i.e. that each browser's dialogs really lack
+  `WS_MINIMIZEBOX`/`WS_MAXIMIZEBOX` (read the style with Spy++/Inspect if not). Record per browser.
+- **Overlay in a renderer-owned process.** Inspect a page overlay's UI Automation `ProcessId` in each
+  browser: if it differs from the browser window's, confirm a `processName`-scoped `PageOverlay` rule
+  still matches and dismisses it, and that `PopupDismissed`'s `ProcessName`/`ProcessId` are the window's.
+- **Pin lifetime and memory under long runs.** Every tracked candidate is pinned (`Retain`/`Release`)
+  outside the generational cache. Run for hours with banners appearing and disappearing on a busy
+  page: memory and the number of live UI Automation wrappers must stay flat (pins released when a
+  popup is dismissed, reaped, or its window closes), and a live overlay must keep being dismissed after
+  a pass that walks more than 16,384 distinct elements (several large windows).
+- **Reap with transient banners.** A cookie/toast banner that disappears on its own under a watch-only
+  rule (and one whose dismissal failed) is dropped within about `ReapIntervalMs` (2 s): the tracked
+  count falls back, no `PopupDismissed` is raised, and thousands of such banners never reach the
+  2000-candidate limit.
 - **Element cache under GC.** With a page overlay open for a long time and `GC.Collect()` forced in the
   host between sweeps, the overlay is still dismissed (strong-reference cache), and memory stays flat
   over many sweeps (generation rotation).

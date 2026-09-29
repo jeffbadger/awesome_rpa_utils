@@ -174,7 +174,23 @@ invoking one of its own elements.
   set `processName` on an overlay rule **and** a `roleContains`, `nameContains` or
   `automationIdContains` (a process name alone is refused). Only elements that pass at
   least one overlay rule's non-message criteria are tracked, and the engine tracks at most
-  2000 candidates at once (it records one error if that limit is reached).
+  2000 candidates at once (it records one error if that limit is reached). A tracked
+  overlay that is parked (a watch-only match, or a failed dismissal) and whose element has
+  gone is dropped by a liveness check every 2000 ms (`ReapIntervalMs`), so banners that
+  come and go on their own do not fill the limit; a popup that vanished that way raises no
+  `PopupDismissed`.
+- **An overlay belongs to its window's process.** A page element's own UI Automation process
+  ID can be a browser renderer's rather than the window's, so an overlay takes its process
+  (ID and name) from the browser window it was found in. `processName` on an overlay rule,
+  the "never touch the automation's own popups" check, and the `ProcessName`/`ProcessId` of
+  its events all use that window.
+- **A close rule never closes a main-window-like window.** A native window with a minimize or
+  maximize box looks like a normal application window (for example a browser window whose tab
+  title contains the rule's text), and closing it would close the whole browser. For such a
+  window an `AddNativeDialogCloseRule` rule raises one `PopupDismissFailed` ("refused to close
+  a window that looks like a main application window; use a dismiss-by-button rule or a more
+  specific rule") and never calls close; dismiss-by-button rules are unaffected. That JS
+  dialogs really lack those boxes in each browser is a pending live check.
 - **Structure-changed notifications are throttled.** A page change wakes an overlay look
   at most once per 250 ms per browser window; changes inside that interval are dropped
   and caught by the periodic overlay sweep (`overlaySweepIntervalMs`, default 2 s,
@@ -200,7 +216,9 @@ invoking one of its own elements.
   eight UI Automation properties, each a cross-process call, and the component does not use
   a `CacheRequest`. On a very large page a sweep can be slow; lower `maxOverlayNodes` (default
   5000) if so. Elements the probe has found are held (strongly) in a bounded cache that drops
-  entries not used for two generations (8192 entries or 60 s per generation).
+  entries not used for two generations (8192 entries or 60 s per generation). Every popup the
+  engine is tracking is also pinned (kept outside that cache) until it is no longer tracked, so
+  a page with more elements than the cache holds cannot make a live popup look closed.
 - **Popups owned by the automation's own process are never touched.** For a popup from
   another process that a step is deliberately driving, use `Pause`/`Resume` or
   `SetRuleEnabled`.

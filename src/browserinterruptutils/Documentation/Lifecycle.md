@@ -108,6 +108,17 @@ is spent, and the handler tries again (`Pause` during that wait holds the retry 
 still open. Stopping the component within those 400 ms drops the confirmation, so a popup closed just
 before `Stop` may not be counted.
 
+## A popup that goes away on its own is forgotten
+
+A popup matched by a watch-only rule, or one whose dismissal failed, is left open and is only looked
+at again when a sweep finds it again. So that a banner that comes and goes by itself does not sit in
+the handler's tracking table until it is full (2000 popups), the worker checks every 2000 ms
+(`ReapIntervalMs`) whether each such page overlay still exists and stops tracking the ones that do not
+(at most 256 checks per pass; the rest wait for the next). Only a definite "gone" counts: not being
+found by a bounded page walk is never taken as the popup having closed. A popup dropped this way raises
+no event (`PopupDismissed` is only for a dismissal the handler performed and saw take effect), and it no
+longer counts toward `HasUnresolvedPopup`.
+
 ## A popup that keeps coming back
 
 If a rule's popup reappears every time it is dismissed - the page is complaining about something the

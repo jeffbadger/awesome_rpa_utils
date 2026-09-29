@@ -98,7 +98,13 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Contains("raised to " + BrowserPopupEngine.MinOverlaySweepIntervalMs + " ms", lifecycle);
             Assert.Contains(BrowserPopupEngine.VerifyDelayMs + " ms (`VerifyDelayMs`)", lifecycle.Replace("\n", " "));
 
+            Assert.Contains("every " + BrowserPopupEngine.ReapIntervalMs + " ms (`ReapIntervalMs`)", lifecycle.Replace("\n", " "));
+            Assert.Contains("at most " + BrowserPopupEngine.ReapMaxChecksPerPass + " checks per pass", lifecycle.Replace("\n", " "));
+
             string readme = Readme().Replace("\n", " ");
+            Assert.Contains("every " + BrowserPopupEngine.ReapIntervalMs + " ms (`ReapIntervalMs`)", Regex.Replace(readme, " {2,}", " "));
+            Assert.Contains(BrowserPopupEngine.MainWindowRefusal, Regex.Replace(readme, " {2,}", " ").Replace("(\"", "").Replace("\")", ""));
+            Assert.Contains(BrowserPopupEngine.MainWindowRefusal, File.ReadAllText(Path.Combine(ComponentDirectory(), "Documentation", "Rules.md")).Replace("\r\n", "\n").Replace("\n", " ").Replace("\"", ""));
             Assert.Contains("the log keeps the last " + BrowserPopupEngine.LogCapacity, readme);
             Assert.Contains("waits " + BrowserPopupEngine.VerifyDelayMs + " ms (`VerifyDelayMs`)", Regex.Replace(readme, " {2,}", " "));
             Assert.Contains("about " + string.Join(", ", BrowserPopupEngine.ScheduleMs.Take(BrowserPopupEngine.ScheduleMs.Length - 1)) + " and "

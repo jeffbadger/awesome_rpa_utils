@@ -9,7 +9,7 @@ to them (they are unproven in Robot Studio), and they arrive on a different thre
 | Event | Raised when |
 |---|---|
 | `PopupDismissed` | A popup was dismissed by a rule: the invoke or close succeeded and, 400 ms later, the popup was gone. |
-| `PopupDismissFailed` | A popup matched a rule but could not be dismissed. `Detail` says why (for example the element to invoke was not found, or supports neither invoke nor toggle, or the attempts ran out, including when the action succeeded but the popup stayed open). |
+| `PopupDismissFailed` | A popup matched a rule but could not be dismissed. `Detail` says why (for example the element to invoke was not found, or supports neither invoke nor toggle, or the attempts ran out, including when the action succeeded but the popup stayed open, or a close rule matched a window that looks like a main application window and was refused). |
 | `PopupDetected` | A popup matching a *watch-only* rule appeared. It is not touched. |
 | `InterruptError` | The handler has a problem, such as a rule that stopped itself for dismissing too many popups. |
 
@@ -29,6 +29,13 @@ The first three carry a `BrowserPopupEventArgs`:
 | `Detail` | Why a dismissal failed; otherwise empty. |
 
 `InterruptError` carries a `BrowserInterruptErrorEventArgs` (`RuleName`, `Message`, `TimestampUtc`).
+
+## Events arrive once the handler's state is up to date
+
+An event is raised after the handler has finished updating everything it reports: by the time
+`PopupDismissed` reaches a subscriber, `GetDismissalCount`, `GetLogJson` and `HasUnresolvedPopup`
+already reflect it. For a popup on a web page, `ProcessName` and `ProcessId` are those of the browser
+window it was found in.
 
 ## Events arrive on a worker thread
 

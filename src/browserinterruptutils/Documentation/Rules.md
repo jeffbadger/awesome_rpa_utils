@@ -49,6 +49,24 @@ or `null`) to not check it. **A process name alone is never enough**, so a too-b
   a native close rule needs `nameContains` or `messageContains`.
 - A page overlay rule needs at least one of `roleContains`, `nameContains` and `automationIdContains`.
 
+### Close rules refuse main-window-like windows
+
+A close rule ends the window it matched. Because a `nameContains` can match the browser's own main
+window (a tab title containing the text), the handler checks before closing: a native window that has a
+minimize or maximize box is a normal application window, not a JS or system dialog, and is **never
+closed**. Instead the rule raises one `PopupDismissFailed` (no retries) whose `Detail` is "refused to
+close a window that looks like a main application window; use a dismiss-by-button rule or a more
+specific rule". A style that cannot be read is treated the same way. Prefer a dismiss-by-button rule
+(`AddNativeDialogDismissRuleByName`), which is never refused: it presses a button inside the popup. The
+live checks confirm that each browser's JS dialogs really lack the minimize/maximize boxes.
+
+### A page overlay belongs to its window's process
+
+`processName` on a page overlay rule is compared with the process of the browser window the overlay was
+found in, not the process a page element reports for itself (UI Automation can report a renderer
+process there). The same window's identity is used for the check that never touches the automation's
+own popups.
+
 ### Always set enough to be specific
 
 - A **native dialog** rule is checked against every window of the process it names, not only
@@ -85,7 +103,7 @@ or `null`) to not check it. **A process name alone is never enough**, so a too-b
 |---|---|---|
 | `AddNativeDialogDismissRuleByName` | `NativeDialog` | Invokes the descendant element with this name (usually a button such as `OK`). `exactTargetElementName: false` accepts the first descendant whose name *contains* the text. |
 | `AddNativeDialogDismissRuleByAutomationId` | `NativeDialog` | Invokes the descendant with this automation ID. |
-| `AddNativeDialogCloseRule` | `NativeDialog` | Closes the dialog's window through its window pattern, for a dialog with nothing worth clicking. |
+| `AddNativeDialogCloseRule` | `NativeDialog` | Closes the dialog's window through its window pattern, for a dialog with nothing worth clicking. Refuses a window that looks like a main application window (see below). |
 | `AddNativeDialogWatchOnlyRule` | `NativeDialog` | Reports the dialog (event and log); never touches it. |
 | `AddPageOverlayDismissRuleByName` | `PageOverlay` | Invokes the descendant element with this name (a button such as `Accept all` or a close control). |
 | `AddPageOverlayDismissRuleByAutomationId` | `PageOverlay` | Invokes the descendant with this automation ID. |
