@@ -883,6 +883,7 @@ namespace BrowserInterruptAutomation
                     state.Failed = false;
                     state.Reported = false;
                     state.Attempts = 0;
+                    RestartSchedule(state, now);
                     state.NextDue = now;
                 }
                 else if (state.Rule != null && !state.Rule.Enabled && state.Pending == null)
@@ -907,11 +908,16 @@ namespace BrowserInterruptAutomation
                     {
                         state.Failed = false;
                         state.Attempts = 0;
+                        RestartSchedule(state, now);
                         state.NextDue = now;
                     }
                 }
                 else if (state.NextDue == long.MaxValue)
                 {
+                    // Parked (unmatched with its schedule spent, watch-only, tripped): a rule change may
+                    // give it a new rule, which deserves the full retry cascade for a target that has not
+                    // rendered yet, not an immediate failure on the first look.
+                    RestartSchedule(state, now);
                     state.NextDue = now;
                 }
             }
@@ -926,7 +932,19 @@ namespace BrowserInterruptAutomation
             state.Failed = false;
             state.Reported = false;
             state.Attempts = 0;
+            RestartSchedule(state, now);
             state.NextDue = now;
+        }
+
+        /// <summary>
+        /// Starts the <see cref="ScheduleMs"/> retry schedule over, as if the candidate had just been
+        /// seen: a candidate whose schedule ran out while nothing matched must get the whole cascade
+        /// again when a rule change hands it to a rule, or that rule fails it on the first look.
+        /// </summary>
+        private static void RestartSchedule(CandidateState state, long now)
+        {
+            state.Step = 0;
+            state.FirstSeen = now;
         }
 
         private void RecomputeOverlayInterest()

@@ -2848,5 +2848,50 @@ namespace BrowserInterruptAutomation.Tests
 
             Assert.False(w.Alive);
         }
+
+        [Fact]
+        public void PopupWhoseScheduleRanOut_GetsTheFullRetryCascade_WhenARuleIsAddedLater()
+        {
+            var h = new Harness();
+            h.AddRule("other", BrowserPopupScope.NativeDialog, nameContains: "zzz", process: "chrome"); // keeps the window evaluated
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            h.Settle(100, 2600); // unmatched for over 2 s: the retry schedule is spent
+            Assert.True(w.Alive);
+
+            h.AddRule("close", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            h.Pump(2700);
+            h.Pump(2800);
+            var yes = h.Probe.AddChild(w, "Yes"); // the button renders 300 ms after the rule appears
+            for (long t = 2900; t <= 4000; t += 100)
+                h.Pump(t);
+
+            Assert.Equal(1, yes.Invokes);
+            Assert.False(w.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void PopupFreedByADisabledRule_GetsTheFullRetryCascadeForTheNextRule()
+        {
+            var h = new Harness();
+            h.AddRule("first", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Nope"); // never finds its target: spends the schedule, fails
+            h.AddRule("second", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            h.Settle(100, 2600);
+
+            h.Engine.SetRuleEnabled("first", false);
+            h.Pump(2700);
+            h.Pump(2800);
+            var yes = h.Probe.AddChild(w, "Yes");
+            for (long t = 2900; t <= 4000; t += 100)
+                h.Pump(t);
+
+            Assert.Equal(1, yes.Invokes);
+            Assert.Equal("first", Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed)).RuleName);
+            Assert.Equal("second", Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)).RuleName);
+        }
     }
 }
