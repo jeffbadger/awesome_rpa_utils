@@ -34,8 +34,8 @@ namespace BrowserInterruptAutomation
     /// thread regardless of what the registering thread is doing. Keeping a live, stable
     /// STA apartment/thread around for as long as the registrations exist is nonetheless the
     /// safer, established pattern for a managed UIA client, and the <see cref="Dispatcher"/> also
-    /// gives a simple, cross-thread-safe shutdown primitive
-    /// (<see cref="Dispatcher.InvokeShutdown"/>) to pair with a bounded <see cref="Thread.Join(int)"/>,
+    /// gives a simple, cross-thread-safe, non-blocking shutdown primitive
+    /// (<see cref="Dispatcher.BeginInvokeShutdown"/>) to pair with a bounded <see cref="Thread.Join(int)"/>,
     /// mirroring <c>PopupHookThread</c>'s own WM_QUIT-based bounded shutdown.
     /// </item>
     /// <item>
@@ -207,7 +207,11 @@ namespace BrowserInterruptAutomation
                 if (startup.RegistrationFailure != null)
                 {
                     message = startup.RegistrationFailure;
-                    TryShutdownDispatcher(startup.Dispatcher);
+                    // The thread returned without entering Dispatcher.Run() (PumpExpected is false),
+                    // so nothing pumps its dispatcher: a shutdown request here could never be served
+                    // (a synchronous InvokeShutdown would hang Start forever, under _lifecycleLock).
+                    // It is already exiting on its own; just bound the wait.
+                    RequestDispatcherShutdown(startup.Dispatcher, startup.PumpExpected);
                     thread.Join(StopTimeoutMs);
                     return false;
                 }
@@ -240,6 +244,14 @@ namespace BrowserInterruptAutomation
             public Exception SetupFailure;
             public string RegistrationFailure;
             public AutomationEventHandler WindowOpenedHandler;
+
+            /// <summary>
+            /// Set by the hook thread, before it signals <see cref="Ready"/>, only when setup and
+            /// registration succeeded and it is about to enter <c>Dispatcher.Run()</c>. False means
+            /// the thread is returning without ever pumping, so its dispatcher must never be asked
+            /// to shut down (see <see cref="HookDispatcherShutdownPolicy"/>).
+            /// </summary>
+            public volatile bool PumpExpected;
         }
 
         private void RunHookThread(StartupState startup)
@@ -287,6 +299,8 @@ namespace BrowserInterruptAutomation
                 return;
             }
 
+            startup.PumpExpected = !failed;
+
             try { startup.Ready.Set(); }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
 
@@ -332,9 +346,10 @@ namespace BrowserInterruptAutomation
                     catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
                 }
 
-                TryShutdownDispatcher(_dispatcher);
-                // Bounded: never hang forever on a stuck thread (mirrors Task 3's own fix for its
-                // test harness's dispatcher shutdown).
+                // _dispatcher/_thread are only ever set by a successful Start, so the pump is expected.
+                // The request is asynchronous and the join bounded: even a wedged pump cannot hang
+                // Stop (the background thread is then abandoned, not waited for).
+                RequestDispatcherShutdown(_dispatcher, true);
                 _thread?.Join(StopTimeoutMs);
 
                 _dispatcher = null;
@@ -343,15 +358,24 @@ namespace BrowserInterruptAutomation
             }
         }
 
-        private static void TryShutdownDispatcher(Dispatcher dispatcher)
+        /// <summary>
+        /// Asks a pumping hook thread's dispatcher to shut down, WITHOUT waiting for it:
+        /// <see cref="Dispatcher.BeginInvokeShutdown"/> is a fire-and-forget post (safe from any
+        /// thread, and safe even if the thread has not reached <c>Dispatcher.Run()</c> yet: the
+        /// request is queued and served when the pump starts), unlike <c>InvokeShutdown</c>, which
+        /// blocks until the dispatcher's thread serves it. Callers pair it with a bounded
+        /// <see cref="Thread.Join(int)"/>. Does nothing (see <see cref="HookDispatcherShutdownPolicy"/>)
+        /// for a thread that never pumps. Never throws. (The InvokeShutdown-blocks and
+        /// BeginInvokeShutdown-is-async claims are WPF platform knowledge, not verified here.)
+        /// </summary>
+        private static void RequestDispatcherShutdown(Dispatcher dispatcher, bool pumpExpected)
         {
             if (dispatcher == null)
                 return;
             try
             {
-                // Safe to call from any thread; unblocks that thread's Dispatcher.Run().
-                if (!dispatcher.HasShutdownStarted && !dispatcher.HasShutdownFinished)
-                    dispatcher.InvokeShutdown();
+                if (HookDispatcherShutdownPolicy.ShouldRequestShutdown(pumpExpected, dispatcher.HasShutdownStarted, dispatcher.HasShutdownFinished))
+                    dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
         }
