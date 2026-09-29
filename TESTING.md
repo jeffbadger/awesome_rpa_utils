@@ -1029,6 +1029,10 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   rule (and one whose dismissal failed) is dropped within about `ReapIntervalMs` (2 s): the tracked
   count falls back, no `PopupDismissed` is raised, and thousands of such banners never reach the
   2000-candidate limit.
+- **Closed browser windows and transient dialogs with `sweepIntervalMs = 0`.** With native sweeps off,
+  open and close many browser windows (and transient native dialogs matched by a watch-only rule):
+  the engine's tracked-candidate count must not grow, closed windows must stop being watched for page
+  overlays, and discovery keeps working afterwards (no "tracking 2000 candidate popups" error).
 - **Element cache under GC.** With a page overlay open for a long time and `GC.Collect()` forced in the
   host between sweeps, the overlay is still dismissed (strong-reference cache), and memory stays flat
   over many sweeps (generation rotation).

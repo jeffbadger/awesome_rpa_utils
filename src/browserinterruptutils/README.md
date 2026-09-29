@@ -175,9 +175,11 @@ invoking one of its own elements.
   `automationIdContains` (a process name alone is refused). Only elements that pass at
   least one overlay rule's non-message criteria are tracked, and the engine tracks at most
   2000 candidates at once (it records one error if that limit is reached). A tracked
-  overlay that is parked (a watch-only match, or a failed dismissal) and whose element has
-  gone is dropped by a liveness check every 2000 ms (`ReapIntervalMs`), so banners that
-  come and go on their own do not fill the limit; a popup that vanished that way raises no
+  candidate that is parked (a watch-only match, a failed dismissal, or a browser window tracked
+  only so its page can be watched) and whose element or window has gone is dropped by a
+  liveness check every 2000 ms (`ReapIntervalMs`), for native windows as well as page
+  overlays and whether or not `sweepIntervalMs` is 0, so banners and windows that come and
+  go on their own do not fill the limit; a popup that vanished that way raises no
   `PopupDismissed`.
 - **An overlay belongs to its window's process.** A page element's own UI Automation process
   ID can be a browser renderer's rather than the window's, so an overlay takes its process

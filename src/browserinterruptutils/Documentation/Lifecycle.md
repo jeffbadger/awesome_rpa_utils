@@ -126,8 +126,10 @@ before `Stop` may not be counted.
 A popup matched by a watch-only rule, or one whose dismissal failed, is left open and is only looked
 at again when a sweep finds it again. So that a banner that comes and goes by itself does not sit in
 the handler's tracking table until it is full (2000 popups), the worker checks every 2000 ms
-(`ReapIntervalMs`) whether each such page overlay still exists and stops tracking the ones that do not
-(at most 256 checks per pass; the rest wait for the next). Only a definite "gone" counts: not being
+(`ReapIntervalMs`) whether each such page overlay - or parked native window, including a browser window
+tracked only so its page can be watched - still exists and stops tracking the ones that do not (this
+runs even when `sweepIntervalMs` is 0, which only turns native discovery off; a closed window is also un-watched;
+at most 256 checks per pass; the rest wait for the next). Only a definite "gone" counts: not being
 found by a bounded page walk is never taken as the popup having closed. A popup dropped this way raises
 no event (`PopupDismissed` is only for a dismissal the handler performed and saw take effect), and it no
 longer counts toward `HasUnresolvedPopup`.
