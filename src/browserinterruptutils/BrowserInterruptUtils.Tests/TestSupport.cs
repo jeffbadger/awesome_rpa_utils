@@ -25,6 +25,9 @@ namespace BrowserInterruptAutomation.Tests
         public string ProcessName = "";
         public string Message = "";
         public bool Alive = true;
+
+        /// <summary>The probe reports this element alive even when it is not (an unpinned, evicted ref: unknown is not dead).</summary>
+        public bool LivenessUnknown;
         public bool Visible = true;
         public bool IsWindow;
         public readonly List<FakeElement> Children = new List<FakeElement>();
@@ -178,7 +181,7 @@ namespace BrowserInterruptAutomation.Tests
             return result;
         }
 
-        public bool IsAlive(BrowserElementRef element) => _elements.TryGetValue(element, out var el) && el.Alive;
+        public bool IsAlive(BrowserElementRef element) => _elements.TryGetValue(element, out var el) && (el.Alive || el.LivenessUnknown);
 
         /// <summary>The refs currently pinned through <see cref="Retain"/>; must be empty when the engine tracks nothing.</summary>
         public readonly HashSet<BrowserElementRef> Retained = new HashSet<BrowserElementRef>();

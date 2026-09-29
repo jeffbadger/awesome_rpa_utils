@@ -1749,5 +1749,146 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(0, TrackedTotal(h));
             Assert.Equal(0, h.Probe.UnbalancedReleases);
         }
+
+        // ------------------------------------------------------------------ reaping parked overlays
+
+        /// <summary>A watched window with one watch-only overlay that has been detected and parked.</summary>
+        private static FakeElement ParkedWatchOnlyOverlay(Harness h, out FakeElement window)
+        {
+            h.AddRule("w", BrowserPopupScope.PageOverlay, role: "dialog");
+            window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Banner", role: "dialog");
+            h.AppearOverlay(window);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(1, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            return overlay;
+        }
+
+        [Fact]
+        public void Reap_DropsAParkedWatchOnlyOverlayThatDisappears_WithoutADismissedRecord()
+        {
+            var h = new Harness();
+            var overlay = ParkedWatchOnlyOverlay(h, out _);
+
+            h.Probe.Destroy(overlay);
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.DoesNotContain(overlay.Ref, h.Probe.Retained);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void Reap_DropsAParkedFailedDismissalThatDisappears_AndUnresolvedDrops()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, role: "dialog", action: BrowserPopupAction.InvokeByName, targetName: "OK");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Banner", role: "dialog");
+            h.Probe.AddChild(overlay, "OK").IgnoreInvoke = true;
+            h.AppearOverlay(window);
+            h.Settle();
+            Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(1, h.Engine.UnresolvedCount);
+
+            h.Probe.Destroy(overlay);
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+
+            Assert.Equal(0, h.Engine.UnresolvedCount);
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void Reap_KeepsAParkedOverlayThatIsStillAlive()
+        {
+            var h = new Harness();
+            var overlay = ParkedWatchOnlyOverlay(h, out _);
+
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+
+            Assert.Equal(1, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            Assert.Contains(overlay.Ref, h.Probe.Retained);
+        }
+
+        [Fact]
+        public void Reap_DoesNotDropAnOverlayWhoseLivenessIsUnknown()
+        {
+            var h = new Harness();
+            var overlay = ParkedWatchOnlyOverlay(h, out _);
+            overlay.LivenessUnknown = true; // the probe cannot say (unpinned, evicted): IsAlive reports true
+            h.Probe.Destroy(overlay);
+
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+
+            Assert.Equal(1, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
+
+        [Fact]
+        public void Reap_IsRateLimited_AndTheNextDueTimeAccountsForIt()
+        {
+            var h = new Harness();
+            var overlay = ParkedWatchOnlyOverlay(h, out _);
+
+            h.Probe.Destroy(overlay);
+            long next = h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs - 1); // too soon
+            Assert.Equal(1, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            Assert.NotEqual(long.MaxValue, next); // a parked overlay keeps the worker waking to reap
+
+            h.Pump(next);
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
+
+        [Fact]
+        public void Reap_KeepsTheCandidateTableFromFillingUpWithTransientOverlays()
+        {
+            var h = new Harness();
+            h.AddRule("w", BrowserPopupScope.PageOverlay, role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+
+            const int count = 3000; // more than MaxTrackedCandidates
+            for (int i = 0; i < count; i++)
+            {
+                var banner = h.Probe.AddOverlay(window, "Banner " + i, role: "dialog");
+                h.AppearOverlay(window);
+                h.Probe.Destroy(banner); // the page dismisses its own banner
+                h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            }
+
+            Assert.Equal(count, h.Of(BrowserPopupRecordKind.Detected).Count());
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error)); // never blocked by the cap
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            Assert.Single(h.Probe.Retained); // just the browser window
+        }
+
+        [Fact]
+        public void Reap_CarriesAcrossPasses_WhenMoreCandidatesAreParkedThanOnePassChecks()
+        {
+            var h = new Harness();
+            h.AddRule("w", BrowserPopupScope.PageOverlay, role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var banners = new List<FakeElement>();
+            int total = BrowserPopupEngine.ReapMaxChecksPerPass + 44;
+            for (int i = 0; i < total; i++)
+                banners.Add(h.Probe.AddOverlay(window, "Banner " + i, role: "dialog"));
+            h.AppearOverlay(window);
+            Assert.Equal(total, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            foreach (var banner in banners)
+                h.Probe.Destroy(banner);
+
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            Assert.Equal(44, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+
+            h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
     }
 }
