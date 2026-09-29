@@ -269,11 +269,23 @@ namespace BrowserInterruptAutomation
                 try
                 {
                     startup.WindowOpenedHandler = OnWindowOpenedRaw;
-                    Automation.AddAutomationEventHandler(
-                        WindowPattern.WindowOpenedEvent,
-                        AutomationElement.RootElement,
-                        TreeScope.Children,
-                        startup.WindowOpenedHandler);
+
+                    // Have UIA deliver each event's source element with NativeWindowHandle already
+                    // cached, so OnWindowOpenedRaw needs no cross-process read on UIA's serialized
+                    // event thread (a slow provider would otherwise stall ALL event delivery, and
+                    // every top-level window on the desktop reaches this callback). The cache
+                    // request in effect at registration time is the one applied to the delivered
+                    // elements (platform knowledge of the managed Automation client, not verified).
+                    var cacheRequest = new CacheRequest();
+                    cacheRequest.Add(AutomationElement.NativeWindowHandleProperty);
+                    using (cacheRequest.Activate())
+                    {
+                        Automation.AddAutomationEventHandler(
+                            WindowPattern.WindowOpenedEvent,
+                            AutomationElement.RootElement,
+                            TreeScope.Children,
+                            startup.WindowOpenedHandler);
+                    }
                 }
                 catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
                 {
@@ -485,11 +497,13 @@ namespace BrowserInterruptAutomation
         // ------------------------------------------------------------------ callbacks (minimal work only)
 
         /// <summary>
-        /// The desktop-wide <c>WindowOpened</c> callback. Does the one necessary UIA property read
-        /// (<see cref="AutomationElement.Current"/>'s <c>NativeWindowHandle</c>) to bridge to
-        /// Win32-land, then only cheap Win32 P/Invoke calls - no further UIA work. The engine calls
-        /// back into the real <see cref="IBrowserPopupProbe"/> for any enrichment later, on its own
-        /// worker thread.
+        /// The desktop-wide <c>WindowOpened</c> callback. Bridges to Win32-land through the
+        /// <c>NativeWindowHandle</c> the registration's <see cref="CacheRequest"/> delivered with the
+        /// event's element (<see cref="AutomationElement.Cached"/>, no cross-process call); only if
+        /// that is unexpectedly not cached does it fall back to one guarded live
+        /// <see cref="AutomationElement.Current"/> read. After that only Win32/.NET calls, no
+        /// further UIA work. The engine calls back into the real <see cref="IBrowserPopupProbe"/>
+        /// for any enrichment later, on its own worker thread.
         /// </summary>
         private void OnWindowOpenedRaw(object sender, AutomationEventArgs e)
         {
@@ -498,19 +512,8 @@ namespace BrowserInterruptAutomation
                 if (!(sender is AutomationElement element))
                     return;
 
-                int nativeHandle;
-                try
-                {
-                    nativeHandle = element.Current.NativeWindowHandle;
-                }
-                catch (ElementNotAvailableException)
-                {
-                    return; // gone before this callback got to read it
-                }
-                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-                {
-                    return;
-                }
+                if (!TryReadNativeWindowHandle(element, out int nativeHandle))
+                    return; // gone, or unreadable: dropped quietly
 
                 if (nativeHandle == 0)
                     return;
@@ -520,6 +523,10 @@ namespace BrowserInterruptAutomation
                 if (NativeMethods.GetAncestor(hwnd, NativeMethods.GA_ROOT) != hwnd)
                     return; // not genuinely top-level
 
+                // The calls below are in-process Win32/.NET calls (IsWindow, GetAncestor, GetClassName,
+                // GetWindowThreadProcessId, Process.GetProcessById), not UIA cross-process reads, so
+                // they are left inline. ProcessNameOf is the costliest; a process-name cache is a
+                // later improvement.
                 NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid);
                 var info = new BrowserWindowInfo
                 {
@@ -535,6 +542,44 @@ namespace BrowserInterruptAutomation
             {
                 // Never throws into the COM event sink.
                 Debug.WriteLine("BrowserInterruptUtils: WindowOpened callback failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Reads the event element's native window handle: the cached value first (no cross-process
+        /// call), then, only if the property was not cached (<see cref="InvalidOperationException"/>),
+        /// one live <see cref="AutomationElement.Current"/> read. False when the element is gone or
+        /// both reads fail. Never throws.
+        /// </summary>
+        private static bool TryReadNativeWindowHandle(AutomationElement element, out int nativeHandle)
+        {
+            nativeHandle = 0;
+            try
+            {
+                nativeHandle = element.Cached.NativeWindowHandle;
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                // Not cached (the registration's cache request did not apply): fall through once.
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                return false;
+            }
+
+            try
+            {
+                nativeHandle = element.Current.NativeWindowHandle;
+                return true;
+            }
+            catch (ElementNotAvailableException)
+            {
+                return false; // gone before this callback got to read it
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                return false;
             }
         }
 
