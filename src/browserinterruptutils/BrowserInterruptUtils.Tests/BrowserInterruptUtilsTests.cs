@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using Xunit;
@@ -612,6 +613,74 @@ namespace BrowserInterruptAutomation.Tests
 
             Assert.True(WaitFor(() => Volatile.Read(ref secondSeen) == 2));
             Assert.True(rig.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void Pause_WaitsForAnInvokeAlreadyInFlight_ThenNothingFurtherLands()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            rig.StartOk();
+            var entered = new ManualResetEventSlim(false);
+            var gate = new ManualResetEventSlim(false);
+            rig.Probe.ActionEntered = () => entered.Set();
+            rig.Probe.ActionGate = gate;
+            var first = rig.Probe.AddWindow("Alert");
+            var firstYes = rig.Probe.AddChild(first, "Yes");
+            rig.Hook.FireWindowOpened(first);
+            Assert.True(entered.Wait(5000), "the invoke never started");
+
+            bool result = false;
+            var pausing = new Thread(() => result = rig.Utils.Pause(out _)) { IsBackground = true };
+            pausing.Start();
+            Assert.False(pausing.Join(400), "Pause returned while an invoke was still in flight");
+            gate.Set();
+            Assert.True(pausing.Join(5000), "Pause did not return once the invoke finished");
+            Assert.True(result);
+            Assert.False(first.Alive);
+
+            var second = rig.Probe.AddWindow("Alert");
+            var secondYes = rig.Probe.AddChild(second, "Yes");
+            rig.Hook.FireWindowOpened(second);
+            Thread.Sleep(600);
+            Assert.True(second.Alive);
+            Assert.Equal(0, secondYes.Invokes);
+            Assert.Equal(1, firstYes.Invokes);
+        }
+
+        [Fact]
+        public void Events_AreRaisedOnTheWorkerThread_NotTheCallersThread()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            int raisedOn = -1;
+            string raisedName = null;
+            var done = new ManualResetEventSlim(false);
+            rig.Utils.PopupDismissed += (s, e) =>
+            {
+                raisedOn = Environment.CurrentManagedThreadId;
+                raisedName = Thread.CurrentThread.Name;
+                done.Set();
+            };
+            rig.StartOk();
+            var w = rig.Probe.AddWindow("Alert");
+            rig.Probe.AddChild(w, "Yes");
+            rig.Hook.FireWindowOpened(w);
+
+            Assert.True(done.Wait(5000), "PopupDismissed was not raised");
+            Assert.NotEqual(Environment.CurrentManagedThreadId, raisedOn);
+            Assert.Equal("BrowserInterruptUtils.Worker", raisedName);
+        }
+
+        [Fact]
+        public void PublicSurface_HasNoPageOverlayCloseMethod()
+        {
+            // Page overlays have no WindowPattern, so PageOverlay + CloseWindowPattern must stay unrepresentable.
+            var offenders = typeof(BrowserInterruptUtils).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static)
+                .Where(m => m.Name.Contains("PageOverlay") && m.Name.Contains("Close"))
+                .Select(m => m.Name)
+                .ToList();
+            Assert.Empty(offenders);
         }
 
         [Fact]

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Xunit;
 
 namespace BrowserInterruptAutomation.Tests
@@ -132,6 +133,90 @@ namespace BrowserInterruptAutomation.Tests
             var w = h.Probe.AddWindow("Alert");
             h.AppearWindow(w);
             Assert.True(w.Alive);
+        }
+
+        // ------------------------------------------------------------------ Paused / rule changes vs an action in flight
+
+        [Fact]
+        public void WaitForIdle_BlocksUntilAnActionAlreadyInFlightFinishes_ThenNothingLandsAfterPause()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var first = h.Probe.AddWindow("Alert");
+            h.Probe.AddChild(first, "Yes");
+            var entered = new ManualResetEventSlim(false);
+            var gate = new ManualResetEventSlim(false);
+            h.Probe.ActionEntered = () => entered.Set();
+            h.Probe.ActionGate = gate;
+            h.Hook.FireWindowOpened(first);
+
+            var pump = new Thread(() => h.Engine.Pump(0)) { IsBackground = true };
+            pump.Start();
+            Assert.True(entered.Wait(5000), "the action never started");
+
+            bool paused = false;
+            var pausing = new Thread(() =>
+            {
+                h.Engine.Paused = true;
+                h.Engine.WaitForIdle();
+                paused = true;
+            }) { IsBackground = true };
+            pausing.Start();
+            Assert.False(pausing.Join(400), "Pause returned while an action was still in flight");
+            Assert.False(paused);
+
+            gate.Set();
+            Assert.True(pausing.Join(5000), "Pause did not return once the action finished");
+            Assert.True(pump.Join(5000));
+            Assert.False(first.Alive); // the action already under way completed
+            Assert.Equal(1, h.Probe.TotalInvokes);
+
+            var second = h.Probe.AddWindow("Alert");
+            h.Probe.AddChild(second, "Yes");
+            h.Probe.ActionGate = null;
+            h.Hook.FireWindowOpened(second);
+            h.Engine.Pump(1000);
+            Assert.True(second.Alive);
+            Assert.Equal(1, h.Probe.TotalInvokes); // nothing further landed after Pause returned
+        }
+
+        [Fact]
+        public void PauseLandingDuringDiscovery_PreventsTheAction_BecauseItIsRecheckedUnderTheLock()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+            // Pause arrives after Evaluate's own Paused check but before the action: during the target walk.
+            h.Probe.OnFindOverlayCandidates = () => h.Engine.Paused = true;
+
+            h.AppearWindow(w);
+
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.True(w.Alive);
+            Assert.Equal(0, yes.Invokes);
+
+            h.Probe.OnFindOverlayCandidates = null;
+            h.Engine.Paused = false;
+            h.Settle(500, 1500);
+            Assert.Equal(1, yes.Invokes); // and it is dealt with once resumed
+        }
+
+        [Fact]
+        public void RuleDisabledOrRemovedDuringDiscovery_PreventsTheAction()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+            h.Probe.OnFindOverlayCandidates = () => h.Engine.SetRuleEnabled("r", false);
+            h.AppearWindow(w);
+            Assert.Equal(0, yes.Invokes);
+
+            h.Engine.SetRuleEnabled("r", true);
+            h.Probe.OnFindOverlayCandidates = () => h.Engine.RemoveRule("r");
+            h.Settle(500, 1500);
+            Assert.Equal(0, yes.Invokes);
         }
 
         [Fact]

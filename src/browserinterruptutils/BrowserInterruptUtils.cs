@@ -697,10 +697,11 @@ namespace BrowserInterruptAutomation
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the component is disposed. Never throws.</returns>
         /// <remarks>
-        /// Unlike <c>InterruptUtils.Pause</c>, this does not wait for an in-flight dismissal to
-        /// finish: <see cref="BrowserPopupEngine"/> has no poll-and-verify action loop (a click or
-        /// close either succeeds or fails synchronously within a single <c>Pump</c> pass), so
-        /// there is no multi-step action window for this call to wait out.
+        /// Like <c>InterruptUtils.Pause</c>, this is a hard synchronous stop: it sets the flag and
+        /// then waits for any invoke or close the worker has already begun to finish, and the worker
+        /// re-checks the flag under the same lock right before it acts. Once this returns
+        /// <c>true</c>, nothing the handler does can land, so a step can safely drive a popup itself.
+        /// The wait is bounded by one probe call, since the lock is never held during discovery.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
         [Description("Stops the handler touching popups until Resume, without stopping the watch. Returns True on success; never throws.")]
@@ -712,6 +713,7 @@ namespace BrowserInterruptAutomation
                 if (IsDisposed(out message))
                     return false;
                 _engine.Paused = true;
+                _engine.WaitForIdle(); // a dismissal already under way finishes before this returns
                 message = null;
                 return true;
             }

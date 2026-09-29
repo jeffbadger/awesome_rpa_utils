@@ -20,15 +20,19 @@ namespace BrowserInterruptAutomation
     /// and <see cref="BrowserPopupRule"/>), each worth Task 5 knowing about:
     /// <list type="bullet">
     /// <item>
-    /// <b>No poll-and-verify action loop.</b> The reference's <c>Dismiss</c> clicks a button and
-    /// then polls <c>IsWindow</c> for up to ~300ms to confirm the window actually closed, because
-    /// a Win32 click is fire-and-forget. <see cref="IBrowserPopupProbe.TryInvoke"/> and
-    /// <see cref="IBrowserPopupProbe.TryClose"/> instead report success/failure synchronously, so
-    /// there is no multi-step action window here for <see cref="SetRuleEnabled"/>/
-    /// <see cref="RemoveRule"/>/<see cref="Paused"/> to race against, and the reference's
-    /// <c>_actionLock</c>/<c>WaitForIdle</c> machinery has no equivalent - a rule change simply
-    /// takes effect on the next <see cref="Pump"/>, via the same rules-version bump the reference
-    /// uses. No constructor <c>sleep</c> delegate is needed for the same reason.
+    /// <b>No poll-and-verify action loop, but the same in-flight gate.</b> The reference's
+    /// <c>Dismiss</c> clicks a button and then polls <c>IsWindow</c> for up to ~300ms to confirm
+    /// the window actually closed, because a Win32 click is fire-and-forget.
+    /// <see cref="IBrowserPopupProbe.TryInvoke"/> and <see cref="IBrowserPopupProbe.TryClose"/>
+    /// instead report success/failure synchronously, so no sleep delegate is needed. The action
+    /// still has a window to race against, though: a pass reads <see cref="Paused"/>, then does
+    /// slow UIA discovery, then acts. So, like the reference, the worker holds an action lock
+    /// around the final <see cref="Paused"/>/rule-enabled/rule-registered re-check, the probe
+    /// call and the recording of its result (never during discovery), and
+    /// <see cref="WaitForIdle"/> takes that lock. <see cref="SetRuleEnabled"/> (disabling),
+    /// <see cref="RemoveRule"/> and <see cref="ClearRules"/> call it, and the public Pause calls it
+    /// after setting <see cref="Paused"/>, so once they return nothing switched off beforehand
+    /// can still land.
     /// </item>
     /// <item>
     /// <b>Per-rule runaway/trip/retry state lives in the engine, not on the rule.</b> The
@@ -287,7 +291,17 @@ namespace BrowserInterruptAutomation
         /// </summary>
         internal int MaxOverlayDepth { get; set; } = 25;
 
-        /// <summary>While set, popups are noticed but not touched; they are dealt with after it is cleared.</summary>
+        // Held by the worker only around the final Paused/rule re-check and the probe's
+        // TryInvoke/TryClose plus recording its result (never during the slow discovery walks), so
+        // Pause, SetRuleEnabled(false), RemoveRule and ClearRules can wait for an action already
+        // under way instead of returning while it is still about to land.
+        private readonly object _actionLock = new object();
+
+        /// <summary>
+        /// While set, popups are noticed but not touched; they are dealt with after it is cleared.
+        /// Setting it does not by itself wait for an action already under way; call
+        /// <see cref="WaitForIdle"/> afterwards for that.
+        /// </summary>
         internal volatile bool Paused;
 
         internal BrowserPopupEngine(IBrowserPopupProbe probe, IBrowserPopupHookSource hookSource, Action<BrowserPopupRecord> sink)
@@ -366,6 +380,7 @@ namespace BrowserInterruptAutomation
                 _ruleSnapshot = _rules.ToArray();
                 Interlocked.Increment(ref _rulesVersion);
             }
+            WaitForIdle();
             Wake();
             return true;
         }
@@ -380,6 +395,7 @@ namespace BrowserInterruptAutomation
                 _ruleSnapshot = Array.Empty<BrowserPopupRule>();
                 Interlocked.Increment(ref _rulesVersion);
             }
+            WaitForIdle();
             Wake();
         }
 
@@ -400,9 +416,27 @@ namespace BrowserInterruptAutomation
                 }
                 Interlocked.Increment(ref _rulesVersion);
             }
+            if (!enabled)
+                WaitForIdle();
             Wake();
             return true;
         }
+
+        /// <summary>
+        /// Returns once any invoke or close the worker is in the middle of has finished. The worker
+        /// re-checks <see cref="Paused"/> and the rule's state under the same lock before it starts
+        /// one, so after this returns nothing that was switched off beforehand can still land.
+        /// Safe to call from the worker thread (for example from an event subscriber): the lock is
+        /// re-entrant and the worker never holds it while it raises an event.
+        /// </summary>
+        internal void WaitForIdle()
+        {
+            lock (_actionLock)
+            {
+            }
+        }
+
+        private bool IsRegistered(BrowserPopupRule rule) => Array.IndexOf(SnapshotRules(), rule) >= 0;
 
         internal BrowserPopupRule[] SnapshotRules()
         {
@@ -1024,33 +1058,50 @@ namespace BrowserInterruptAutomation
                 target = found.Value;
             }
 
-            state.Attempts++;
             bool ok;
             string failureReason;
-            // CloseWindowPattern is only ever paired with NativeDialog (enforced by
-            // BrowserPopupRule.ValidateCommon); the defense-in-depth check below still refuses to
-            // call TryClose against a PageOverlay candidate if it somehow ends up here regardless.
-            if (rule.Action == BrowserPopupAction.CloseWindowPattern)
+            lock (_actionLock)
             {
-                ok = state.Scope == BrowserPopupScope.NativeDialog
-                    ? _probe.TryClose(target, out failureReason)
-                    : SetUnreachableFailure(out failureReason);
-            }
-            else
-            {
-                ok = _probe.TryInvoke(target, out failureReason);
+                // Pause, SetRuleEnabled(false), RemoveRule and ClearRules wait on this lock, so what
+                // was switched off before they returned cannot start here, and what is under way
+                // has finished by the time they return. Checked again here because it can have
+                // changed since Evaluate chose the rule (the discovery above is slow).
+                if (Paused || !rule.Enabled || !IsRegistered(rule))
+                {
+                    state.NextDue = now + PausedRecheckMs;
+                    return;
+                }
+
+                state.Attempts++;
+                // CloseWindowPattern is only ever paired with NativeDialog (enforced by
+                // BrowserPopupRule.ValidateCommon); the defense-in-depth check below still refuses to
+                // call TryClose against a PageOverlay candidate if it somehow ends up here regardless.
+                if (rule.Action == BrowserPopupAction.CloseWindowPattern)
+                {
+                    ok = state.Scope == BrowserPopupScope.NativeDialog
+                        ? _probe.TryClose(target, out failureReason)
+                        : SetUnreachableFailure(out failureReason);
+                }
+                else
+                {
+                    ok = _probe.TryInvoke(target, out failureReason);
+                }
+
+                if (ok)
+                {
+                    lock (_lock)
+                    {
+                        if (_ruleRuntime.TryGetValue(rule.RuleName, out var runtime))
+                            runtime.RecentDismissals.Enqueue(now);
+                        if (_rules.Exists(r => string.Equals(r.RuleName, rule.RuleName, StringComparison.OrdinalIgnoreCase)))
+                            _counts[rule.RuleName] = (_counts.TryGetValue(rule.RuleName, out int c) ? c : 0) + 1;
+                        _total++;
+                    }
+                }
             }
 
             if (ok)
             {
-                lock (_lock)
-                {
-                    if (_ruleRuntime.TryGetValue(rule.RuleName, out var runtime))
-                        runtime.RecentDismissals.Enqueue(now);
-                    if (_rules.Exists(r => string.Equals(r.RuleName, rule.RuleName, StringComparison.OrdinalIgnoreCase)))
-                        _counts[rule.RuleName] = (_counts.TryGetValue(rule.RuleName, out int c) ? c : 0) + 1;
-                    _total++;
-                }
                 RemoveCandidate(state);
                 RecordCore(BrowserPopupRecordKind.Dismissed, rule.RuleName, state.Scope.ToString(), info.Name,
                     info.LocalizedControlType, text, processName, info.ProcessId, label, state.Attempts, string.Empty);

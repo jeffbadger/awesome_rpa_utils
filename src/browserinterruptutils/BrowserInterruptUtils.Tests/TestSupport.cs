@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace BrowserInterruptAutomation.Tests
 {
@@ -143,6 +144,7 @@ namespace BrowserInterruptAutomation.Tests
 
         public IReadOnlyList<BrowserElementInfo> FindOverlayCandidates(BrowserElementRef browserWindowRoot, int maxNodes, int maxDepth)
         {
+            OnFindOverlayCandidates?.Invoke();
             OverlaySearchCalls++;
             OverlaySearchRoots.Add(browserWindowRoot);
             if (!_elements.TryGetValue(browserWindowRoot, out var root) || !root.Alive)
@@ -170,8 +172,24 @@ namespace BrowserInterruptAutomation.Tests
 
         public string TryGetMessageText(BrowserElementRef element) => _elements.TryGetValue(element, out var el) ? el.Message : null;
 
+        /// <summary>Called when an invoke/close begins, before it lands (on the calling thread).</summary>
+        public Action ActionEntered;
+
+        /// <summary>When set, an invoke/close blocks on it (up to 15s) before it lands, so a test can hold one mid-action.</summary>
+        public ManualResetEventSlim ActionGate;
+
+        /// <summary>Called at the start of every <see cref="FindOverlayCandidates"/>, so a test can act during the slow discovery.</summary>
+        public Action OnFindOverlayCandidates;
+
+        private void EnterAction()
+        {
+            ActionEntered?.Invoke();
+            ActionGate?.Wait(15000);
+        }
+
         public bool TryInvoke(BrowserElementRef target, out string failureReason)
         {
+            EnterAction();
             failureReason = null;
             if (!_elements.TryGetValue(target, out var el) || !el.Alive)
             {
@@ -193,6 +211,7 @@ namespace BrowserInterruptAutomation.Tests
 
         public bool TryClose(BrowserElementRef target, out string failureReason)
         {
+            EnterAction();
             failureReason = null;
             if (!_elements.TryGetValue(target, out var el) || !el.Alive)
             {
