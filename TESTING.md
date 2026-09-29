@@ -997,6 +997,15 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   all for page content (Chromium is not expected to pass `id` through reliably).
 - **Cookie-banner style overlay.** A banner with no dialog role is found using `nameContains`/
   `messageContains` alone, and the overlay rule does not match the button itself instead of the banner.
+- **Hook start/stop robustness.** Force the desktop-wide `WindowOpened` registration to fail (for example
+  by starting under a restricted session) and confirm `Start` returns false promptly with a message instead
+  of hanging; `Stop` returns within about 2 s even if the hook thread is busy.
+- **Slow structure watch does not stall other events.** With a large Chromium page just opened (so the
+  Subtree registration is slow), other windows' `PopupDetected` and the `WindowOpened` of a new dialog are
+  still delivered without a visible gap.
+- **`WindowOpened` uses the cached handle on a busy desktop.** With many windows opening (and one hung
+  application), native dialogs are still detected promptly; confirm the cached `NativeWindowHandle` is
+  non-zero for real events (no fallback to the live read).
 - **Structure-changed latency.** Time from an overlay appearing to `PopupDismissed`, with
   `overlaySweepIntervalMs: 0` (page-change events alone) and with the default; check the 250 ms
   per-window throttle (`StructureChangedCoalesceMs`) is short enough that no overlay is missed or
