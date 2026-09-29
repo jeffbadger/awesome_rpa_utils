@@ -82,7 +82,10 @@ throws.
 
 ### Rules
 
-Every rule must say enough to be specific, and a process name alone never is. A **native
+Every rule must name the process it applies to in `processName` (`chrome`, `msedge` or
+`firefox`, with or without `.exe`; an empty one is refused): nothing here can tell a browser from
+any other application, so a rule without a process would apply to every window on the desktop.
+Beyond that, every rule must say enough to be specific, and a process name alone never is. A **native
 dialog** rule needs at least one of `nameContains`, `messageContains` and `roleContains`
 (a process-only rule would match every window of the browser, including the main window);
 a native **close** rule needs `nameContains` or `messageContains`. A **page overlay** rule
@@ -158,8 +161,8 @@ invoking one of its own elements.
   attended session or an unattended one with an active desktop.
 - **UI Automation must see the browser.** Chrome, Edge and Firefox expose UI Automation;
   a browser or embedded web view that does not is out of reach and no rule will ever
-  match it. There is no per-browser special-casing beyond `processName` (for example
-  `chrome`, `msedge`, `firefox`).
+  match it. There is no per-browser special-casing beyond the required `processName` (for
+  example `chrome`, `msedge`, `firefox`).
 - **Chromium builds its accessibility tree lazily.** The first UI Automation query against
   a fresh tab, or after the browser has not been asked for a while, can be slow, so the
   first sweep may find a popup later than later ones do.
@@ -170,9 +173,8 @@ invoking one of its own elements.
   window's UI Automation tree breadth-first, visiting at most `maxOverlayNodes` elements
   and descending at most `maxOverlayDepth` levels (a very large page can hide an overlay
   beyond that budget). It runs only for browser windows whose process a `PageOverlay` rule
-  names; a rule that names no process makes every top-level window a candidate, so
-  set `processName` on an overlay rule **and** a `roleContains`, `nameContains` or
-  `automationIdContains` (a process name alone is refused). Only elements that pass at
+  names, since every rule must name its process; give an overlay rule a `roleContains`,
+  `nameContains` or `automationIdContains` as well (a process name alone is refused). Only elements that pass at
   least one overlay rule's non-message criteria are tracked, and the engine tracks at most
   2000 candidates at once (it records one error if that limit is reached). A tracked
   candidate that is parked (a watch-only match, a failed dismissal, or a browser window tracked

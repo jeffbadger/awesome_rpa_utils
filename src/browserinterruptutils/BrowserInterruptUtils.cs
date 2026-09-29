@@ -16,8 +16,8 @@ namespace BrowserInterruptAutomation
     /// (<c>UiaBrowserPopupProbe</c>) and the real UIA hook (<c>BrowserPopupHookThread</c>) built
     /// in earlier phases.
     /// <para>
-    /// Describe each popup once with an <c>Add...Rule</c> method (by name, message text, process
-    /// and/or role, plus what to do about it), call <see cref="Start"/>, and carry on. It notices
+    /// Describe each popup once with an <c>Add...Rule</c> method (the browser process it applies to,
+    /// plus name, message text and/or role, and what to do about it), call <see cref="Start"/>, and carry on. It notices
     /// new windows and page-structure changes through UI Automation events (and periodic sweeps
     /// as a safety net), acts on a worker thread, and records the outcome in a log you can query
     /// and in events.
@@ -123,7 +123,7 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning process's name, with or without <c>.exe</c>; empty to not check the process.</param>
+        /// <param name="processName">The owning process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="targetElementName">The name of the element to invoke (for example a button's text).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="exactTargetElementName"><c>true</c> to need the element's whole name; <c>false</c> to accept the first descendant whose name contains it.</param>
@@ -163,7 +163,7 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning process's name, with or without <c>.exe</c>; empty to not check the process.</param>
+        /// <param name="processName">The owning process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="targetAutomationId">The automation ID of the element to invoke, matched exactly (ignoring case).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
@@ -202,7 +202,7 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning process's name, with or without <c>.exe</c>; empty to not check the process.</param>
+        /// <param name="processName">The owning process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
@@ -231,7 +231,7 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning process's name, with or without <c>.exe</c>; empty to not check the process.</param>
+        /// <param name="processName">The owning process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
@@ -261,14 +261,14 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the overlay's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the overlay's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>; empty to watch every browser process.</param>
+        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="targetElementName">The name of the element to invoke (for example a button's text).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="exactTargetElementName"><c>true</c> to need the element's whole name; <c>false</c> to accept the first descendant whose name contains it.</param>
         /// <param name="roleContains">Text the overlay's UIA localized control type must contain; empty to not check it.</param>
         /// <param name="automationIdContains">Text the overlay's own automation ID must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
-        /// <remarks>A rule that does not name a process watches every browser process; overlay discovery only ever costs anything for a process at least one such rule is interested in.</remarks>
+        /// <remarks>Every rule must name its process; overlay discovery only ever costs anything for a process at least one overlay rule names.</remarks>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching in-page overlay by invoking the named descendant element. Returns True if added; never throws.")]
         public bool AddPageOverlayDismissRuleByName(string ruleName, string nameContains, string messageContains, string processName,
@@ -302,7 +302,7 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the overlay's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the overlay's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>; empty to watch every browser process.</param>
+        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="targetAutomationId">The automation ID of the element to invoke, matched exactly (ignoring case).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the overlay's UIA localized control type must contain; empty to not check it.</param>
@@ -340,7 +340,7 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the overlay's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the overlay's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>; empty to watch every browser process.</param>
+        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the overlay's UIA localized control type must contain; empty to not check it.</param>
         /// <param name="automationIdContains">Text the overlay's own automation ID must contain; empty to not check it.</param>

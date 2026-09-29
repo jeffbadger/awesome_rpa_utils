@@ -982,7 +982,7 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   elements of the browser window (then use a `PageOverlay` rule with `roleContains: dialog`). Everything
   in the `alert`/`confirm`/`prompt` check below depends on the answer; record it per browser.
 - **Discovery first.** With watch-only rules for the browser (`AddNativeDialogWatchOnlyRule` with
-  `roleContains: "dialog"` (a process name alone is refused); `AddPageOverlayWatchOnlyRule` with `roleContains: "dialog"`), raise each popup and read
+  `roleContains: "dialog"` (a process name alone is refused; `processName` is required for every rule, so name each browser under test); `AddPageOverlayWatchOnlyRule` with `roleContains: "dialog"`), raise each popup and read
   `GetLogJson`. Record the `name`, `role` and `message` the browser really exposes, and the names of the
   buttons, for every popup type. The dismiss checks below depend on these.
 - **`alert`/`confirm`/`prompt`.** A `NativeDialog` dismiss rule by button name (`OK`; `Cancel` for a

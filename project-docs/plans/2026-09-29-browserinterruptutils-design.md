@@ -64,7 +64,7 @@ bool AddPageOverlayWatchOnlyRule(string ruleName, string nameContains, string me
 - `automationIdContains` → `AutomationElement.AutomationId` — **documented as best-effort for page content**: Chromium does not guarantee DOM `id`/`data-*` passthrough; reliable mainly for native-dialog buttons.
 - `roleContains` → `AutomationElement.LocalizedControlTypeProperty` — the ARIA-role bridge (Chromium maps `role="dialog"`/`"alertdialog"` into this property); the primary way to target "any ARIA dialog" generically.
 - `messageContains` → first non-empty descendant `Text`-control-type element's `Name`, found via a small bounded walk, computed lazily only when needed.
-- `processName` → same `TrimExe`/`OrdinalIgnoreCase` match as `PopupRule.ProcessNamesMatch` (typical values: `chrome`, `msedge`, `firefox`).
+- `processName` → same `TrimExe`/`OrdinalIgnoreCase` match as `PopupRule.ProcessNamesMatch` (typical values: `chrome`, `msedge`, `firefox`). **Required for every rule** (see "Post-merge review fixes"): the component cannot identify browsers, so a rule with no process would apply to the whole desktop.
 
 **Actions:** `InvokeByName`/`InvokeByAutomationId` (try `InvokePattern.Invoke()`, fall back to `TogglePattern.Toggle()` for controls that only expose Toggle), `CloseWindowPattern` (native-dialog only), `WatchOnly`.
 
@@ -182,6 +182,7 @@ bool Resume(out string message)
 
 ## Post-merge review fixes (PR 1)
 
+- **`processName` is required for every rule (both scopes).** An empty process meant "watch every browser process", but nothing identifies browsers: overlay rules made every visible top-level window of every application described, watched and swept each interval, and native rules with no process could act on non-browser dialogs. `BrowserPopupRule.ValidateCommon` now rejects an empty (or whitespace/`.exe`-only) `ProcessName` ("processName is required: ..."), and the engine's "no process = any process" machinery (`_overlayWatchesAnyProcess`, `_nativeWatchesAnyProcess`, the name-less branches of the interest checks) and `MatchesCheap`'s empty-process branch were removed. Rule matching, overlay watching/sweeping and native describing are all keyed to the named processes only.
 - **Native invoke rules refuse main-window-like windows.** The main-window guard covered only `CloseWindowPattern`; an invoke rule on a browser main window (tab title matching the rule) walked the whole page and pressed the first control with the target's name. `Act` now refuses every acting native rule on such a window (one `DismissFailed`, attempts 0, no probe call); watch-only is unaffected.
 
 ## Deferred

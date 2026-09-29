@@ -15,8 +15,8 @@ dismissed in different ways, so the API keeps them apart rather than taking a fl
 | `PageOverlay` | An element inside the page: an ARIA `role="dialog"`/`"alertdialog"` overlay, a cookie banner, a permission bar. | It has no window, so the component walks the browser window's UI Automation tree (bounded by `maxOverlayNodes` and `maxOverlayDepth`), woken by page-structure changes and by a periodic sweep (`overlaySweepIntervalMs`). | Invoke a control inside it by name or automation ID. There is no close rule: an overlay has no window to close. |
 
 A page overlay costs more to find than a native dialog, so overlay discovery runs only for
-browser processes that an overlay rule names (or every process, if an overlay rule names none:
-always name the browser).
+browser processes that an overlay rule names. Every rule must name its process (see below), so the
+component never looks at, or acts on, an application no rule names.
 
 ## Match a popup
 
@@ -31,7 +31,8 @@ browserInterrupt.AddNativeDialogDismissRuleByName(
     out string message);
 ```
 
-Five things can identify a popup, and **every one you set must match**:
+Five things can identify a popup, and **every one you set must match**; only `processName` is
+required:
 
 | Field | Compared against | Notes |
 |---|---|---|
@@ -39,11 +40,15 @@ Five things can identify a popup, and **every one you set must match**:
 | `automationIdContains` | The popup's `AutomationId`. Page overlay rules only. | **Best-effort for page content**: see below. |
 | `roleContains` | The popup's `LocalizedControlType`, which is how UI Automation reports an ARIA role (for example `dialog`). | The most reliable way to say "any dialog", combined with a name. The text is localized, so it follows the Windows display language. |
 | `messageContains` | The first non-empty text element inside the popup. | Read only when a rule needs it. See below. |
-| `processName` | The owning process, with or without `.exe`. | Typical values: `chrome`, `msedge`, `firefox`. |
+| `processName` | The owning process, with or without `.exe`. **Required for every rule.** | Typical values: `chrome`, `msedge`, `firefox`. An empty value (or `.exe` or spaces alone) is refused: "processName is required: name the browser process the rule applies to, for example chrome, msedge or firefox." |
 
 All of them compare ignoring case and by substring, except the `processName` (whole name)
-and the `targetAutomationId` (a whole-string, case-insensitive match). Leave one empty (`""`
-or `null`) to not check it. **A process name alone is never enough**, so a too-broad rule is refused:
+and the `targetAutomationId` (a whole-string, case-insensitive match). Leave any other field
+empty (`""` or `null`) to not check it. The process is required because nothing in the component
+can tell a browser from any other application: a rule that named none would be checked against
+(and could act on) every window on the desktop, and a page overlay rule would sweep them all.
+Name every browser you want covered with its own rule. **A process name alone is never enough**,
+so a too-broad rule is refused:
 
 - A native dialog rule needs at least one of `nameContains`, `messageContains` and `roleContains`;
   a native close rule needs `nameContains` or `messageContains`.
@@ -69,8 +74,10 @@ found in, not the process a page element reports for itself (UI Automation can r
 process there). The same window's identity is used for the check that never touches the automation's
 own popups.
 
-### Always set enough to be specific
+### Always name the process and set enough to be specific
 
+- **Always set `processName`.** It is required (see above), and it is the only thing that keeps a rule
+  away from the rest of the desktop. Use one rule per browser you want covered.
 - A **native dialog** rule is checked against every window of the process it names, not only
   dialogs, so a rule that names only `chrome` could match the browser's main window (which
   an acting rule then refuses, see above). That is why a process-only rule is refused: add a

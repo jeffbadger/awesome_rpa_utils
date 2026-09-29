@@ -153,7 +153,7 @@ namespace BrowserInterruptAutomation.Tests
         public void AddPageOverlayDismissRuleByAutomationId_ForwardsAutomationIdContains_AndAcceptsItAsTheOnlyOverlayCriterion()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r", "", "", "", "accept-btn", out string message,
+            Assert.True(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r", "", "", "chrome", "accept-btn", out string message,
                 automationIdContains: "consent"));
             Assert.Null(message);
 
@@ -164,7 +164,7 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal("accept-btn", rule.GetProperty("target").GetString());
             Assert.Equal("consent", rule.GetProperty("automationIdContains").GetString());
 
-            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r2", "", "", "", "accept-btn", out string refused));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r2", "", "", "chrome", "accept-btn", out string refused));
             Assert.Contains("at least one", refused);
         }
 
@@ -213,19 +213,19 @@ namespace BrowserInterruptAutomation.Tests
         {
             using var rig = new Rig();
 
-            Assert.False(rig.Utils.AddNativeDialogDismissRuleByName("r", "", "", "", "Yes", out string m1));
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByName("r", "", "", "chrome", "Yes", out string m1));
             Assert.Contains("at least one", m1);
-            Assert.False(rig.Utils.AddNativeDialogDismissRuleByAutomationId("r", " ", null, "", "id", out string m2));
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByAutomationId("r", " ", null, "chrome", "id", out string m2));
             Assert.Contains("at least one", m2);
             Assert.False(rig.Utils.AddNativeDialogCloseRule("r", null, null, null, out string m3));
             Assert.Contains("at least one", m3);
-            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule("r", "", "", "", out string m4));
+            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule("r", "", "", "chrome", out string m4));
             Assert.Contains("at least one", m4);
-            Assert.False(rig.Utils.AddPageOverlayDismissRuleByName("r", "", "", "", "Yes", out string m5));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByName("r", "", "", "chrome", "Yes", out string m5));
             Assert.Contains("at least one", m5);
-            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r", "", "", "", "id", out string m6));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r", "", "", "chrome", "id", out string m6));
             Assert.Contains("at least one", m6);
-            Assert.False(rig.Utils.AddPageOverlayWatchOnlyRule("r", "", "", "", out string m7));
+            Assert.False(rig.Utils.AddPageOverlayWatchOnlyRule("r", "", "", "chrome", out string m7));
             Assert.Contains("at least one", m7);
         }
 
@@ -234,17 +234,41 @@ namespace BrowserInterruptAutomation.Tests
         {
             using var rig = new Rig();
 
-            Assert.False(rig.Utils.AddNativeDialogDismissRuleByName("r", "t", "", "", "   ", out string m1));
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByName("r", "t", "", "chrome", "   ", out string m1));
             Assert.Contains("targetElementName", m1);
-            Assert.False(rig.Utils.AddNativeDialogDismissRuleByAutomationId("r", "t", "", "", "", out string m2));
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByAutomationId("r", "t", "", "chrome", "", out string m2));
             Assert.Contains("targetAutomationId", m2);
-            Assert.False(rig.Utils.AddPageOverlayDismissRuleByName("r", "t", "", "", null, out string m3));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByName("r", "t", "", "chrome", null, out string m3));
             Assert.Contains("targetElementName", m3);
-            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r", "t", "", "", " ", out string m4));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r", "t", "", "chrome", " ", out string m4));
             Assert.Contains("targetAutomationId", m4);
 
             // No rule was actually added for any of the above.
             Assert.True(rig.Utils.ListRulesJson(out string json, out _));
+            Assert.Equal("[]", json);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        [InlineData(".exe")]
+        public void EveryAddRuleMethod_RequiresAProcessName(string process)
+        {
+            using var rig = new Rig();
+            const string expected = "processName is required: name the browser process the rule applies to, for example chrome, msedge or firefox.";
+
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByName("a", "Alert", "", process, "OK", out string m1));
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByAutomationId("b", "Alert", "", process, "ok", out string m2));
+            Assert.False(rig.Utils.AddNativeDialogCloseRule("c", "Alert", "", process, out string m3));
+            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule("d", "Alert", "", process, out string m4));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByName("e", "Cookie", "", process, "Accept", out string m5));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("f", "Cookie", "", process, "accept", out string m6));
+            Assert.False(rig.Utils.AddPageOverlayWatchOnlyRule("g", "Cookie", "", process, out string m7));
+
+            foreach (string m in new[] { m1, m2, m3, m4, m5, m6, m7 })
+                Assert.Equal(expected, m);
+            rig.Utils.ListRulesJson(out string json, out _);
             Assert.Equal("[]", json);
         }
 
@@ -260,9 +284,9 @@ namespace BrowserInterruptAutomation.Tests
         public void DuplicateRuleName_IsRefused_IgnoringCase()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("Alpha", "t", "", "", out _));
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("Alpha", "t", "", "chrome", out _));
 
-            Assert.False(rig.Utils.AddNativeDialogCloseRule("ALPHA", "u", "", "", out string message));
+            Assert.False(rig.Utils.AddNativeDialogCloseRule("ALPHA", "u", "", "chrome", out string message));
             Assert.Contains("already exists", message);
         }
 
@@ -270,9 +294,9 @@ namespace BrowserInterruptAutomation.Tests
         public void RuleNameValidation_IsEnforced()
         {
             using var rig = new Rig();
-            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule("", "t", "", "", out string noName));
+            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule("", "t", "", "chrome", out string noName));
             Assert.Contains("ruleName", noName);
-            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule(new string('x', 65), "t", "", "", out string tooLong));
+            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule(new string('x', 65), "t", "", "chrome", out string tooLong));
             Assert.Contains("ruleName", tooLong);
         }
 
@@ -288,10 +312,10 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(0, count);
             Assert.Contains("nope", m3);
 
-            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("a", "t", "", "", out _));
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("a", "t", "", "chrome", out _));
             Assert.True(rig.Utils.SetRuleEnabled("a", false, out _));
             Assert.True(rig.Utils.RemoveRule("a", out _));
-            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("b", "t", "", "", out _));
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("b", "t", "", "chrome", out _));
             Assert.True(rig.Utils.ClearRules(out _));
             Assert.True(rig.Utils.ListRulesJson(out string json, out _));
             Assert.Equal("[]", json);
@@ -365,7 +389,7 @@ namespace BrowserInterruptAutomation.Tests
         public void StopThenStart_KeepsRulesAndCounts()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             rig.StartOk();
             var w = rig.Probe.AddWindow("Alert");
             rig.Probe.AddChild(w, "Yes");
@@ -392,7 +416,7 @@ namespace BrowserInterruptAutomation.Tests
         public void EveryMethod_AfterDispose_ReportsFailure_WithoutThrowing()
         {
             var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("r", "t", "", "", out _));
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("r", "t", "", "chrome", out _));
             rig.StartOk();
             rig.Utils.Dispose();
 
@@ -403,14 +427,14 @@ namespace BrowserInterruptAutomation.Tests
             Assert.False(rig.Utils.Pause(out string pause));
             Assert.Contains("disposed", pause);
             Assert.False(rig.Utils.Resume(out _));
-            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule("x", "t", "", "", out string add));
+            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule("x", "t", "", "chrome", out string add));
             Assert.Contains("disposed", add);
-            Assert.False(rig.Utils.AddNativeDialogCloseRule("x", "t", "", "", out _));
-            Assert.False(rig.Utils.AddNativeDialogDismissRuleByAutomationId("x", "t", "", "", "id", out _));
-            Assert.False(rig.Utils.AddNativeDialogDismissRuleByName("x", "t", "", "", "Yes", out _));
-            Assert.False(rig.Utils.AddPageOverlayDismissRuleByName("x", "t", "", "", "Yes", out _));
-            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("x", "t", "", "", "id", out _));
-            Assert.False(rig.Utils.AddPageOverlayWatchOnlyRule("x", "t", "", "", out _));
+            Assert.False(rig.Utils.AddNativeDialogCloseRule("x", "t", "", "chrome", out _));
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByAutomationId("x", "t", "", "chrome", "id", out _));
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByName("x", "t", "", "chrome", "Yes", out _));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByName("x", "t", "", "chrome", "Yes", out _));
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("x", "t", "", "chrome", "id", out _));
+            Assert.False(rig.Utils.AddPageOverlayWatchOnlyRule("x", "t", "", "chrome", out _));
             Assert.False(rig.Utils.RemoveRule("r", out _));
             Assert.False(rig.Utils.ClearRules(out _));
             Assert.False(rig.Utils.SetRuleEnabled("r", true, out _));
@@ -542,7 +566,7 @@ namespace BrowserInterruptAutomation.Tests
         {
             // The event runs on the worker thread; state read from inside the handler must already be final.
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             var done = new ManualResetEventSlim(false);
             int count = -1, total = -1;
             bool unresolved = true;
@@ -599,7 +623,7 @@ namespace BrowserInterruptAutomation.Tests
         public void WatchOnlyPopup_RaisesPopupDetected_AndIsLeftOpen()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("w", "Alert", "", "", out _));
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("w", "Alert", "", "chrome", out _));
             var detected = new ManualResetEventSlim(false);
             BrowserPopupEventArgs args = null;
             rig.Utils.PopupDetected += (s, e) => { args = e; detected.Set(); };
@@ -625,7 +649,7 @@ namespace BrowserInterruptAutomation.Tests
         public void PopupThatCannotBeDismissed_RaisesPopupDismissFailed_AndIsUnresolved()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             var failed = new ManualResetEventSlim(false);
             BrowserPopupEventArgs args = null;
             rig.Utils.PopupDismissFailed += (s, e) => { args = e; failed.Set(); };
@@ -653,7 +677,7 @@ namespace BrowserInterruptAutomation.Tests
         public void RunawayRule_RaisesInterruptError()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("nag", "Nag", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("nag", "Nag", "", "chrome", "Yes", out _));
             var error = new ManualResetEventSlim(false);
             BrowserInterruptErrorEventArgs args = null;
             rig.Utils.InterruptError += (s, e) => { args = e; error.Set(); };
@@ -682,7 +706,7 @@ namespace BrowserInterruptAutomation.Tests
         public void ASubscriberThatThrows_DoesNotStopOtherSubscribersOrTheWatch()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             int secondSeen = 0;
             rig.Utils.PopupDismissed += (s, e) => throw new InvalidOperationException("boom");
             rig.Utils.PopupDismissed += (s, e) => Interlocked.Increment(ref secondSeen);
@@ -704,7 +728,7 @@ namespace BrowserInterruptAutomation.Tests
         public void Pause_WaitsForAnInvokeAlreadyInFlight_ThenNothingFurtherLands()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             rig.StartOk();
             var entered = new ManualResetEventSlim(false);
             var gate = new ManualResetEventSlim(false);
@@ -741,7 +765,7 @@ namespace BrowserInterruptAutomation.Tests
         public void HardStopCalledFromAnEventSubscriber_OnTheWorkerThread_DoesNotDeadlock(string how)
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             var done = new ManualResetEventSlim(false);
             bool result = false;
             rig.Utils.PopupDismissed += (s, e) =>
@@ -770,7 +794,7 @@ namespace BrowserInterruptAutomation.Tests
         public void StopCalledFromAnEventSubscriber_OnTheWorkerThread_ReturnsPromptlyWithoutASelfJoinStall()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             var done = new ManualResetEventSlim(false);
             bool stopped = false;
             TimeSpan elapsed = TimeSpan.Zero;
@@ -800,7 +824,7 @@ namespace BrowserInterruptAutomation.Tests
         public void Events_AreRaisedOnTheWorkerThread_NotTheCallersThread()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             int raisedOn = -1;
             string raisedName = null;
             var done = new ManualResetEventSlim(false);
@@ -835,7 +859,7 @@ namespace BrowserInterruptAutomation.Tests
         public void PauseAndResume_ControlWhetherPopupsAreTouched()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             rig.StartOk();
 
             Assert.True(rig.Utils.Pause(out _));
@@ -854,7 +878,7 @@ namespace BrowserInterruptAutomation.Tests
         public void DisabledRule_LeavesThePopupAlone_UntilItIsEnabledAgain()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
             Assert.True(rig.Utils.SetRuleEnabled("r", false, out _));
             rig.StartOk();
 
@@ -900,7 +924,7 @@ namespace BrowserInterruptAutomation.Tests
         public void SuccessfulCalls_LeaveMessageNull()
         {
             using var rig = new Rig();
-            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("r", "t", "", "", out string m1));
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("r", "t", "", "chrome", out string m1));
             Assert.Null(m1);
             Assert.True(rig.Utils.SetRuleEnabled("r", false, out string m2));
             Assert.Null(m2);

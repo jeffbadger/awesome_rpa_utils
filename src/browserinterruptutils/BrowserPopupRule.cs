@@ -96,9 +96,7 @@ namespace BrowserInterruptAutomation
                 return false;
             if (!string.IsNullOrEmpty(RoleContains) && !Contains(candidate.LocalizedControlType, RoleContains))
                 return false;
-            if (!string.IsNullOrEmpty(ProcessName) && !ProcessNamesMatch(ProcessName, processName))
-                return false;
-            return true;
+            return ProcessNamesMatch(ProcessName, processName);
         }
 
         /// <summary>The message phase: true when the rule sets no message criterion, or the text contains it.</summary>
@@ -135,7 +133,10 @@ namespace BrowserInterruptAutomation
         /// Checks the arguments common to every kind of rule. A rule must be named, must not pair
         /// <see cref="BrowserPopupAction.CloseWindowPattern"/> with <see cref="BrowserPopupScope.PageOverlay"/>
         /// (closing a window makes no sense for an element that has none), and must say enough to be
-        /// specific to its scope; a process name alone is never enough:
+        /// specific to its scope; a process name alone is never enough. Every rule must also name the
+        /// process it applies to (<c>chrome</c>, <c>msedge</c>, <c>firefox</c>, with or without
+        /// <c>.exe</c>): nothing in the engine identifies browsers, so a rule without one would apply to
+        /// every application on the desktop:
         /// <list type="bullet">
         /// <item><see cref="BrowserPopupScope.NativeDialog"/>: at least one of name, message or role. A
         /// process-only rule matches every top-level window of that process, including the user's
@@ -170,17 +171,27 @@ namespace BrowserInterruptAutomation
                     return "A PageOverlay rule needs at least one of roleContains, nameContains or automationIdContains "
                         + "(a process name or message alone is not enough): every element on the page belongs to the browser "
                         + "process, so such a rule would match every element on the page.";
-                return null;
+            }
+            else
+            {
+                if (!hasName && !hasMessage && !hasRole)
+                    return "A NativeDialog rule needs at least one of nameContains, messageContains or roleContains "
+                        + "(a process name alone is not enough): a process-only rule would match every window of that process, "
+                        + "including the browser's main window.";
+                if (action == BrowserPopupAction.CloseWindowPattern && !hasName && !hasMessage)
+                    return "A NativeDialog close rule needs nameContains or messageContains: closing a window on a role or "
+                        + "process match alone could close the browser's main window.";
             }
 
-            if (!hasName && !hasMessage && !hasRole)
-                return "A NativeDialog rule needs at least one of nameContains, messageContains or roleContains "
-                    + "(a process name alone is not enough): a process-only rule would match every window of that process, "
-                    + "including the browser's main window.";
-            if (action == BrowserPopupAction.CloseWindowPattern && !hasName && !hasMessage)
-                return "A NativeDialog close rule needs nameContains or messageContains: closing a window on a role or "
-                    + "process match alone could close the browser's main window.";
+            // Nothing in the engine can tell a browser from any other application, so a rule that
+            // named no process would describe, watch and act on every window on the desktop.
+            if (TrimExe(processName).Length == 0)
+                return ProcessRequiredMessage;
             return null;
         }
+
+        /// <summary>The validation message for a rule that names no process.</summary>
+        internal const string ProcessRequiredMessage = "processName is required: name the browser process the rule applies to, "
+            + "for example chrome, msedge or firefox.";
     }
 }

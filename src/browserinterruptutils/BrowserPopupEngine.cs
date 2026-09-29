@@ -78,10 +78,10 @@ namespace BrowserInterruptAutomation
     /// <b>Overlay discovery is opt-in per process, driven by which rules are registered.</b> The
     /// engine tracks, from each rules-version bump, which process names at least one registered
     /// <see cref="BrowserPopupScope.PageOverlay"/> rule names (case-insensitive, trailing
-    /// <c>.exe</c> ignored). A rule with no <see cref="BrowserPopupRule.ProcessName"/> set can't
-    /// be scoped to specific processes, so it is treated as "watch every browser process" - there
-    /// is no way to satisfy "opt-in per process" for a rule that opts in to everything by not
-    /// naming one. Only for a window whose process is in that interest set does the engine ever
+    /// <c>.exe</c> ignored). Every rule must name its process (<see cref="BrowserPopupRule.ValidateCommon"/>
+    /// rejects one that does not): nothing in the engine can tell a browser from any other
+    /// application, so a rule that opted in to "every process" would describe, watch and sweep the
+    /// whole desktop. Only for a window whose process is in that interest set does the engine ever
     /// call <see cref="IBrowserPopupHookSource.WatchWindow"/> (enabling
     /// <see cref="IBrowserPopupHookSource.WindowStructureChanged"/> for it) or call
     /// <see cref="IBrowserPopupProbe.FindOverlayCandidates"/> against it during a sweep; a window
@@ -265,12 +265,10 @@ namespace BrowserInterruptAutomation
         // Process names of interest to at least one registered PageOverlay rule (trimmed, no
         // ".exe"), recomputed whenever the rule list changes. See the type remarks.
         private HashSet<string> _overlayProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private bool _overlayWatchesAnyProcess;
 
         // Same, for enabled NativeDialog rules: a top-level window is only tracked/described when
-        // its process is named by one of them (or one names no process). See TrackNativeWindow.
+        // its process is named by one of them. See TrackNativeWindow.
         private HashSet<string> _nativeProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private bool _nativeWatchesAnyProcess;
 
         private readonly ConcurrentQueue<BrowserWindowInfo> _nativeQueue = new ConcurrentQueue<BrowserWindowInfo>();
         private int _nativeQueued;
@@ -893,40 +891,26 @@ namespace BrowserInterruptAutomation
         private void RecomputeOverlayInterest()
         {
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            bool any = false;
-            foreach (var rule in SnapshotRules())
-            {
-                // A disabled rule never acts, so it must not keep a process in the watch set (the
-                // native interest below already skips it). Turning it back on bumps the rules
-                // version, which recomputes this and re-watches.
-                if (rule.Scope != BrowserPopupScope.PageOverlay || !rule.Enabled)
-                    continue;
-                if (string.IsNullOrWhiteSpace(rule.ProcessName))
-                    any = true;
-                else
-                    names.Add(BrowserPopupRule.TrimExe(rule.ProcessName));
-            }
-            _overlayProcessNames = names;
-            _overlayWatchesAnyProcess = any;
-
             var nativeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            bool nativeAny = false;
             foreach (var rule in SnapshotRules())
             {
-                if (rule.Scope != BrowserPopupScope.NativeDialog || !rule.Enabled)
+                // A disabled rule never acts, so it must not keep a process in the watch set.
+                // Turning it back on bumps the rules version, which recomputes this and re-watches.
+                if (!rule.Enabled)
                     continue;
-                if (string.IsNullOrWhiteSpace(rule.ProcessName))
-                    nativeAny = true;
+                // Every rule names its process (ValidateCommon), so there is always a name to add.
+                if (rule.Scope == BrowserPopupScope.PageOverlay)
+                    names.Add(BrowserPopupRule.TrimExe(rule.ProcessName));
                 else
                     nativeNames.Add(BrowserPopupRule.TrimExe(rule.ProcessName));
             }
+            _overlayProcessNames = names;
             _nativeProcessNames = nativeNames;
-            _nativeWatchesAnyProcess = nativeAny;
         }
 
         /// <summary>Whether some enabled NativeDialog rule could match a window of this process (the cheap pre-filter before describing it).</summary>
         private bool IsNativeInterestingProcess(string processName) =>
-            _nativeWatchesAnyProcess || (!string.IsNullOrEmpty(processName) && _nativeProcessNames.Contains(BrowserPopupRule.TrimExe(processName)));
+            !string.IsNullOrEmpty(processName) && _nativeProcessNames.Contains(BrowserPopupRule.TrimExe(processName));
 
         /// <summary>Whether a top-level window of this process is worth tracking at all: a native rule or an overlay rule wants it.</summary>
         private bool IsTrackableProcess(string processName) =>
@@ -944,7 +928,7 @@ namespace BrowserInterruptAutomation
         }
 
         private bool IsOverlayInterestingProcess(string processName) =>
-            _overlayWatchesAnyProcess || (!string.IsNullOrEmpty(processName) && _overlayProcessNames.Contains(BrowserPopupRule.TrimExe(processName)));
+            !string.IsNullOrEmpty(processName) && _overlayProcessNames.Contains(BrowserPopupRule.TrimExe(processName));
 
         /// <summary>
         /// Un-watches a currently watched window whose process no longer interests any

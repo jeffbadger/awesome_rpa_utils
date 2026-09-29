@@ -26,7 +26,7 @@ namespace BrowserInterruptAutomation.Tests
             }
 
             public BrowserPopupRule AddRule(string name, BrowserPopupScope scope,
-                string nameContains = null, string automationId = null, string process = null, string role = null, string message = null,
+                string nameContains = null, string automationId = null, string process = "chrome", string role = null, string message = null,
                 BrowserPopupAction action = BrowserPopupAction.WatchOnly, string targetName = null, string targetAutomationId = null,
                 bool exactTarget = false)
             {
@@ -103,6 +103,16 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void AddRule_RejectsARuleWithNoProcessName()
+        {
+            var h = new Harness();
+            var rule = new BrowserPopupRule { RuleName = "noProcess", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert" };
+
+            Assert.False(h.Engine.AddRule(rule, out string message));
+            Assert.Equal(BrowserPopupRule.ProcessRequiredMessage, message);
+        }
+
+        [Fact]
         public void AddRule_RejectsNull()
         {
             var h = new Harness();
@@ -115,12 +125,12 @@ namespace BrowserInterruptAutomation.Tests
         {
             var h = new Harness();
             h.AddRule("Alpha", BrowserPopupScope.NativeDialog, nameContains: "x");
-            Assert.False(h.Engine.AddRule(new BrowserPopupRule { RuleName = "ALPHA", Scope = BrowserPopupScope.NativeDialog, NameContains = "y" }, out string dup));
+            Assert.False(h.Engine.AddRule(new BrowserPopupRule { RuleName = "ALPHA", Scope = BrowserPopupScope.NativeDialog, NameContains = "y", ProcessName = "chrome" }, out string dup));
             Assert.Contains("already exists", dup);
 
             for (int i = 1; i < BrowserPopupRule.MaxRules; i++)
                 h.AddRule("rule" + i, BrowserPopupScope.NativeDialog, nameContains: "x");
-            Assert.False(h.Engine.AddRule(new BrowserPopupRule { RuleName = "one too many", Scope = BrowserPopupScope.NativeDialog, NameContains = "y" }, out string full));
+            Assert.False(h.Engine.AddRule(new BrowserPopupRule { RuleName = "one too many", Scope = BrowserPopupScope.NativeDialog, NameContains = "y", ProcessName = "chrome" }, out string full));
             Assert.Contains("At most", full);
         }
 
@@ -593,7 +603,7 @@ namespace BrowserInterruptAutomation.Tests
             var engine = EngineCapturingStateAtDelivery(probe, hook, seen);
             Assert.True(engine.AddRule(new BrowserPopupRule
             {
-                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert",
+                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert", ProcessName = "chrome",
                 Action = BrowserPopupAction.InvokeByName, TargetElementName = "Yes"
             }, out string m), m);
             var w = probe.AddWindow("Alert");
@@ -620,7 +630,7 @@ namespace BrowserInterruptAutomation.Tests
             engine.MaxAttempts = 1;
             Assert.True(engine.AddRule(new BrowserPopupRule
             {
-                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert",
+                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert", ProcessName = "chrome",
                 Action = BrowserPopupAction.InvokeByName, TargetElementName = "Missing"
             }, out string m), m);
             var w = probe.AddWindow("Alert");
@@ -829,18 +839,68 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
-        public void PageOverlayRuleWithNoProcessName_WatchesEveryDiscoveredWindow()
+        public void PageOverlayRule_OnlyWatchesAndSweepsWindowsOfItsNamedProcess()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 100);
+            h.AddRule("chromeOnly", BrowserPopupScope.PageOverlay, nameContains: "Accept", process: "chrome");
+            var chromeWindow = h.Probe.AddWindow("tab", pid: 101, processName: "chrome");
+            var firefoxWindow = h.Probe.AddWindow("tab2", pid: 102, processName: "firefox");
+            var notepadWindow = h.Probe.AddWindow("Untitled", pid: 103, processName: "notepad");
+            h.Probe.AddOverlay(firefoxWindow, "Accept cookies");
+            h.Probe.AddOverlay(notepadWindow, "Accept");
+
+            h.AppearWindow(chromeWindow);
+            h.AppearWindow(firefoxWindow);
+            h.AppearWindow(notepadWindow);
+            h.AppearOverlay(firefoxWindow);
+            h.AppearOverlay(notepadWindow);
+            h.Settle();
+
+            Assert.Equal(new[] { chromeWindow.Ref }, h.Hook.WatchCalls);
+            Assert.DoesNotContain(firefoxWindow.Ref, h.Probe.OverlaySearchRoots);
+            Assert.DoesNotContain(notepadWindow.Ref, h.Probe.OverlaySearchRoots);
+            Assert.Contains(chromeWindow.Ref, h.Probe.OverlaySearchRoots);
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
+
+        [Fact]
+        public void NativeRuleForChrome_NeverDescribesWatchesOrActsOnAnotherProcessesWindow()
         {
             var h = new Harness();
-            h.AddRule("anyProcess", BrowserPopupScope.PageOverlay, nameContains: "Accept");
-            var a = h.Probe.AddWindow("tab", pid: 1, processName: "chrome");
-            var b = h.Probe.AddWindow("tab2", pid: 2, processName: "notepad");
+            h.AddRule("confirmClose", BrowserPopupScope.NativeDialog, nameContains: "Confirm", process: "chrome", action: BrowserPopupAction.CloseWindowPattern);
+            var firefoxDialog = h.Probe.AddWindow("Confirm", pid: 102, processName: "firefox");
+            var notepadDialog = h.Probe.AddWindow("Confirm", pid: 103, processName: "notepad");
 
-            h.AppearWindow(a);
-            h.AppearWindow(b);
+            h.AppearWindow(firefoxDialog);
+            h.AppearWindow(notepadDialog);
+            h.Settle();
 
-            Assert.Contains(a.Ref, h.Hook.WatchCalls);
-            Assert.Contains(b.Ref, h.Hook.WatchCalls);
+            Assert.Equal(0, h.Probe.DescribeWindowCalls);
+            Assert.Empty(h.Hook.WatchCalls);
+            Assert.Equal(0, h.Probe.OverlaySearchCalls);
+            Assert.Equal(0, h.Probe.MessageTextCalls);
+            Assert.Equal(0, h.Probe.TotalCloses);
+            Assert.True(firefoxDialog.Alive);
+            Assert.True(notepadDialog.Alive);
+            Assert.Empty(h.Records);
+        }
+
+        [Fact]
+        public void ProcessNamesWithAndWithoutExe_AreEquivalentForRulesAndWindows()
+        {
+            var h = new Harness();
+            h.AddRule("withExe", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "Chrome.EXE", action: BrowserPopupAction.CloseWindowPattern);
+            h.AddRule("overlayNoExe", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "msedge");
+            var dialog = h.Probe.AddWindow("Alert", pid: 100, processName: "chrome");
+            var edge = h.Probe.AddWindow("edge tab", pid: 200, processName: "msedge.exe");
+
+            h.AppearWindow(dialog);
+            h.AppearWindow(edge);
+            h.PastVerifyDelay();
+
+            Assert.False(dialog.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Contains(edge.Ref, h.Hook.WatchCalls);
         }
 
         // ------------------------------------------------------------------ runaway breaker
@@ -987,8 +1047,8 @@ namespace BrowserInterruptAutomation.Tests
         {
             var h = new Harness();
             h.AddRule("chromeOnly", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
-            // Names no process, so every browser window is watched (the firefox one is walked too).
-            h.AddRule("watchAny", BrowserPopupScope.PageOverlay, nameContains: "zzz-never-matches-xyz");
+            // A second rule that names firefox, so the firefox window is watched and walked too.
+            h.AddRule("watchFirefox", BrowserPopupScope.PageOverlay, nameContains: "zzz-never-matches-xyz", process: "firefox");
             var chromeWindow = h.Probe.AddWindow("chrome tab", pid: 100, processName: "chrome");
             var firefoxWindow = h.Probe.AddWindow("firefox tab", pid: 200, processName: "firefox");
             h.AppearWindow(chromeWindow);
