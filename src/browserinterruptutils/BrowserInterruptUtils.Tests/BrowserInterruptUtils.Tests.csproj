@@ -10,7 +10,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>BrowserInterruptUtils.Tests</AssemblyName>
     <RootNamespace>BrowserInterruptAutomation.Tests</RootNamespace>
-    <!-- Needed for UiaTests.cs's real System.Windows.Automation/WPF Window smoke coverage. -->
+    <!-- Needed for UiaTests.cs's and HookThreadUiaTests.cs's real System.Windows.Automation/WPF Window smoke coverage. -->
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
@@ -28,6 +28,7 @@
     <!-- See BrowserInterruptUtils.csproj's matching note: excluded only when the local
          -p:UseWPF=false test-running convenience is in play. -->
     <Compile Remove="UiaTests.cs" Condition="'$(UseWPF)' != 'true'" />
+    <Compile Remove="HookThreadUiaTests.cs" Condition="'$(UseWPF)' != 'true'" />
   </ItemGroup>
 
 </Project>
