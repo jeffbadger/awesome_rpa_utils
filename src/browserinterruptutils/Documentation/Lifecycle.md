@@ -89,13 +89,26 @@ To exclude one kind of popup for a longer stretch instead, switch just that rule
 
 ### Pause can block on a hung browser
 
-`Pause` is a hard stop: it returns only once a click the worker has already begun has finished, so
-nothing the handler does can land after it returns. `RemoveRule`, `ClearRules` and
-`SetRuleEnabled(rule, false)` wait the same way. The UI Automation call being waited for has **no
+`Pause` is a hard stop for *starting* clicks: it returns only once a click call the worker has
+already begun has finished, and no further click call starts after it returns. `RemoveRule`,
+`ClearRules` and `SetRuleEnabled(rule, false)` wait the same way. The UI Automation call being waited for has **no
 timeout**. If the browser (or the popup's process) is frozen, a call into it can hang, and these
 methods block for as long as it does; there is no way to abandon the wait. Normally the wait is as
 long as one click, which is short. Do not call them from a step that must never stall while a browser
 that may be hung is the target.
+
+### An already-issued dismissal may still take effect
+
+`Pause` cannot recall a click that was already delivered. UI Automation returns before the browser
+acts, and the handler confirms the result 400 ms (`VerifyDelayMs`) later. So a click issued just
+before `Pause` may still close the popup you are about to drive, and its `PopupDismissed` or
+`PopupDismissFailed` event may be raised after `Pause` returns. The confirmation only reads state, so
+it keeps running while paused; if the popup is still open it schedules a retry, and that retry is
+held back until `Resume`.
+
+To be certain a popup is untouched, pause before it appears. Otherwise, after `Pause` check
+`HasUnresolvedPopup`, or wait about 400 ms, and re-check that the popup is still there before driving
+it.
 
 ## A dismissal is confirmed before it is counted
 

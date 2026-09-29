@@ -205,7 +205,9 @@ browserInterrupt.SetRuleEnabled("cookie-banner", false, out _);   // leave this 
 browserInterrupt.SetRuleEnabled("cookie-banner", true, out _);
 ```
 
-Turning a rule off returns once any click already under way has finished, which can take a
+Turning a rule off returns once any click call already under way has finished (a click already
+delivered may still take effect; see
+[Lifecycle](Lifecycle.md#an-already-issued-dismissal-may-still-take-effect)), which can take a
 long time if the browser is hung (see [Lifecycle](Lifecycle.md#pause-can-block-on-a-hung-browser)).
 Turning a rule on also clears a stop caused by it dismissing too many popups (see
 [Lifecycle](Lifecycle.md#a-popup-that-keeps-coming-back)).
