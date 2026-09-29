@@ -39,7 +39,7 @@ bool AddNativeDialogDismissRuleByName(string ruleName, string nameContains, stri
     string processName, string targetElementName, out string message,
     bool exactTargetElementName = true, string roleContains = null)
 bool AddNativeDialogDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains,
-    string processName, string targetAutomationId, out string message, string roleContains = null)
+    string processName, string targetAutomationId, out string message, string roleContains = null, string automationIdContains = null)
 bool AddNativeDialogCloseRule(string ruleName, string nameContains, string messageContains,
     string processName, out string message, string roleContains = null)   // WindowPattern.Close
 bool AddNativeDialogWatchOnlyRule(string ruleName, string nameContains, string messageContains,
@@ -52,7 +52,7 @@ bool AddPageOverlayDismissRuleByName(string ruleName, string nameContains, strin
     string processName, string targetElementName, out string message,
     bool exactTargetElementName = true, string roleContains = null, string automationIdContains = null)
 bool AddPageOverlayDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains,
-    string processName, string targetAutomationId, out string message, string roleContains = null)
+    string processName, string targetAutomationId, out string message, string roleContains = null, string automationIdContains = null)
 bool AddPageOverlayWatchOnlyRule(string ruleName, string nameContains, string messageContains,
     string processName, out string message, string roleContains = null, string automationIdContains = null)
 ```

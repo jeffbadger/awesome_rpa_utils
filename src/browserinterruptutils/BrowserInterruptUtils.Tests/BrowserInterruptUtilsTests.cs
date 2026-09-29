@@ -150,6 +150,50 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void AddPageOverlayDismissRuleByAutomationId_ForwardsAutomationIdContains_AndAcceptsItAsTheOnlyOverlayCriterion()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r", "", "", "", "accept-btn", out string message,
+                automationIdContains: "consent"));
+            Assert.Null(message);
+
+            Assert.True(rig.Utils.ListRulesJson(out string json, out _));
+            using var doc = JsonDocument.Parse(json);
+            var rule = doc.RootElement[0];
+            Assert.Equal("InvokeByAutomationId", rule.GetProperty("action").GetString());
+            Assert.Equal("accept-btn", rule.GetProperty("target").GetString());
+            Assert.Equal("consent", rule.GetProperty("automationIdContains").GetString());
+
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("r2", "", "", "", "accept-btn", out string refused));
+            Assert.Contains("at least one", refused);
+        }
+
+        [Fact]
+        public void PageOverlay_DismissByAutomationIdRule_MatchesTheOverlayByItsOwnAutomationId_NotItsName()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddPageOverlayDismissRuleByAutomationId("cookies", "", "", "chrome", "accept-btn", out _,
+                automationIdContains: "consent-banner"));
+            var done = new ManualResetEventSlim(false);
+            rig.Utils.PopupDismissed += (s, e) => done.Set();
+            rig.StartOk();
+
+            var browserWindow = rig.Probe.AddWindow("Google Chrome", pid: 300, processName: "chrome");
+            rig.Hook.FireWindowOpened(browserWindow);
+            Assert.True(WaitFor(() => rig.Hook.CurrentlyWatched.Contains(browserWindow.Ref)));
+
+            var other = rig.Probe.AddOverlay(browserWindow, "Cookie consent", "We use cookies", pid: 300, automationId: "newsletter");
+            rig.Probe.AddChild(other, "Accept", automationId: "accept-btn");
+            var overlay = rig.Probe.AddOverlay(browserWindow, "Something unrelated", "", pid: 300, automationId: "my-consent-banner-1");
+            rig.Probe.AddChild(overlay, "Accept", automationId: "accept-btn");
+            rig.Hook.FireStructureChanged(browserWindow.Ref);
+
+            Assert.True(done.Wait(5000), "PopupDismissed was not raised");
+            Assert.False(overlay.Alive);
+            Assert.True(other.Alive, "an overlay whose own automation id does not match must be left alone");
+        }
+
+        [Fact]
         public void AddPageOverlayWatchOnlyRule_TranslatesToTheRightRuleShape_IncludingAutomationIdContains()
         {
             using var rig = new Rig();

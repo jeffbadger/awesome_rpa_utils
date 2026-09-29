@@ -102,12 +102,13 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         /// <summary>Adds a page-overlay element, either free-standing or as a child of another element (typically a watched browser window).</summary>
-        public FakeElement AddOverlay(FakeElement parent, string name, string message = "", int? pid = null, string role = "dialog")
+        public FakeElement AddOverlay(FakeElement parent, string name, string message = "", int? pid = null, string role = "dialog", string automationId = "")
         {
             var el = new FakeElement
             {
                 Ref = new BrowserElementRef(new[] { _nextRuntimeId++ }),
                 Name = name,
+                AutomationId = automationId ?? "",
                 Message = message,
                 Pid = pid ?? parent?.Pid ?? 0,
                 ControlType = "Group",

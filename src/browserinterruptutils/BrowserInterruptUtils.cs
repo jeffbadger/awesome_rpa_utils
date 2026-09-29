@@ -170,7 +170,7 @@ namespace BrowserInterruptAutomation
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching native dialog by invoking the descendant element with the given automation ID. Returns True if added; never throws.")]
         public bool AddNativeDialogDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains, string processName,
-            string targetAutomationId, out string message, string roleContains = null)
+            string targetAutomationId, out string message, string roleContains = null, string automationIdContains = null)
         {
             message = default;
             try
@@ -303,11 +303,12 @@ namespace BrowserInterruptAutomation
         /// <param name="targetAutomationId">The automation ID of the element to invoke, matched exactly (ignoring case).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the overlay's UIA localized control type must contain; empty to not check it.</param>
+        /// <param name="automationIdContains">Text the overlay's own automation ID must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching in-page overlay by invoking the descendant element with the given automation ID. Returns True if added; never throws.")]
         public bool AddPageOverlayDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains, string processName,
-            string targetAutomationId, out string message, string roleContains = null)
+            string targetAutomationId, out string message, string roleContains = null, string automationIdContains = null)
         {
             message = default;
             try
@@ -323,7 +324,7 @@ namespace BrowserInterruptAutomation
                     Scope = BrowserPopupScope.PageOverlay,
                     Action = BrowserPopupAction.InvokeByAutomationId,
                     TargetAutomationId = target
-                }, ruleName, nameContains, messageContains, processName, roleContains, automationIdContains: null, out message);
+                }, ruleName, nameContains, messageContains, processName, roleContains, automationIdContains, out message);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {

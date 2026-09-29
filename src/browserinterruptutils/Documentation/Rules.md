@@ -139,7 +139,8 @@ browserInterrupt.AddPageOverlayDismissRuleByName(
 
 If the banner is not marked up as a dialog, drop `roleContains` but keep a specific
 `nameContains` or `messageContains`. If the button has a stable `id` that shows up in UI
-Automation, `AddPageOverlayDismissRuleByAutomationId` is less fragile than matching text,
+Automation, `AddPageOverlayDismissRuleByAutomationId` is less fragile than matching text
+(pass `automationIdContains` to select the overlay by its own stable ID as well),
 but see the caveat below.
 
 ### Watch-only: find out what a real page shows
