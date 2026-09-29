@@ -184,7 +184,7 @@ namespace BrowserInterruptAutomation
                     return results;
 
                 var queue = new Queue<(AutomationElement Element, int Depth)>();
-                EnqueueUpToBudget(GetChildrenSafe(root), 1, 0, maxNodes, queue);
+                EnqueueChildrenUpToBudget(root, 1, 0, maxNodes, queue);
 
                 // `visited` is a true visited-node bound: it increments once per dequeue,
                 // unconditionally, whether or not DescribeElement below succeeds. Gating the
@@ -205,7 +205,7 @@ namespace BrowserInterruptAutomation
 
                     results.Add(info);
                     if (depth < maxDepth)
-                        EnqueueUpToBudget(GetChildrenSafe(element), depth + 1, visited, maxNodes, queue);
+                        EnqueueChildrenUpToBudget(element, depth + 1, visited, maxNodes, queue);
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -215,14 +215,33 @@ namespace BrowserInterruptAutomation
             return results;
         }
 
-        private static void EnqueueUpToBudget(List<AutomationElement> candidates, int depth, int alreadyVisited, int maxNodes,
-            Queue<(AutomationElement, int)> queue)
+        /// <summary>
+        /// Enqueues <paramref name="parent"/>'s children lazily (<see cref="_childWalker"/>'s
+        /// first-child/next-sibling), stopping the moment <paramref name="alreadyVisited"/> plus
+        /// the queue's length reaches <paramref name="maxNodes"/> - the walk can never dequeue
+        /// more than that, so an enormous sibling list (a huge page) is never enumerated past the
+        /// budget, and never materialized as a list. Best-effort: an enumeration failure keeps
+        /// whatever was enqueued so far and never throws.
+        /// </summary>
+        private static void EnqueueChildrenUpToBudget(AutomationElement parent, int depth, int alreadyVisited, int maxNodes,
+            Queue<(AutomationElement Element, int Depth)> queue)
         {
-            foreach (var candidate in candidates)
+            try
             {
                 if (alreadyVisited + queue.Count >= maxNodes)
                     return;
-                queue.Enqueue((candidate, depth));
+                AutomationElement child = _childWalker.GetFirstChild(parent);
+                while (child != null)
+                {
+                    queue.Enqueue((child, depth));
+                    if (alreadyVisited + queue.Count >= maxNodes)
+                        return;
+                    child = _childWalker.GetNextSibling(child);
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                // Best-effort: whatever was gathered before the failure is used.
             }
         }
 
@@ -248,8 +267,7 @@ namespace BrowserInterruptAutomation
                     return null;
 
                 var queue = new Queue<(AutomationElement Element, int Depth)>();
-                foreach (var child in GetChildrenSafe(root))
-                    queue.Enqueue((child, 1));
+                EnqueueChildrenUpToBudget(root, 1, 0, MessageTextMaxNodes, queue);
 
                 int visited = 0;
                 while (queue.Count > 0 && visited < MessageTextMaxNodes)
@@ -267,8 +285,7 @@ namespace BrowserInterruptAutomation
 
                     if (depth < MessageTextMaxDepth)
                     {
-                        foreach (var grandchild in GetChildrenSafe(candidate))
-                            queue.Enqueue((grandchild, depth + 1));
+                        EnqueueChildrenUpToBudget(candidate, depth + 1, visited, MessageTextMaxNodes, queue);
                     }
                 }
                 return null;
@@ -406,8 +423,7 @@ namespace BrowserInterruptAutomation
         private static AutomationElement FindByRuntimeId(AutomationElement root, int[] runtimeId)
         {
             var queue = new Queue<(AutomationElement Element, int Depth)>();
-            foreach (var child in GetChildrenSafe(root))
-                queue.Enqueue((child, 1));
+            EnqueueChildrenUpToBudget(root, 1, 0, ResolveFallbackMaxNodes, queue);
 
             int visited = 0;
             while (queue.Count > 0 && visited < ResolveFallbackMaxNodes)
@@ -420,8 +436,7 @@ namespace BrowserInterruptAutomation
 
                 if (depth < ResolveFallbackMaxDepth)
                 {
-                    foreach (var grandchild in GetChildrenSafe(element))
-                        queue.Enqueue((grandchild, depth + 1));
+                    EnqueueChildrenUpToBudget(element, depth + 1, visited, ResolveFallbackMaxNodes, queue);
                 }
             }
             return null;
@@ -579,26 +594,6 @@ namespace BrowserInterruptAutomation
             {
                 return fallback;
             }
-        }
-
-        /// <summary>Every immediate child via <see cref="_childWalker"/>, best-effort (an enumeration failure yields whatever was gathered so far, never throws).</summary>
-        private static List<AutomationElement> GetChildrenSafe(AutomationElement parent)
-        {
-            var children = new List<AutomationElement>();
-            try
-            {
-                AutomationElement child = _childWalker.GetFirstChild(parent);
-                while (child != null)
-                {
-                    children.Add(child);
-                    child = _childWalker.GetNextSibling(child);
-                }
-            }
-            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-            {
-                // Best-effort: whatever was gathered before the failure is used.
-            }
-            return children;
         }
 
         /// <summary>Strips the <c>"ControlType."</c> prefix from the control type's <c>ProgrammaticName</c>, matching <c>UIAutomationUtils.GetControlTypeName</c>'s convention.</summary>
