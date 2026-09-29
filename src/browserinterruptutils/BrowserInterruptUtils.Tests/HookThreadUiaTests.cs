@@ -129,6 +129,9 @@ namespace BrowserInterruptAutomation.Tests
                 }
             });
             thread.SetApartmentState(ApartmentState.STA);
+            // Background: if a UIA call hangs past the Join timeout below, the abandoned thread must
+            // not keep the test host process alive after the run.
+            thread.IsBackground = true;
             thread.Start();
             if (!thread.Join(TimeSpan.FromSeconds(30)))
                 throw new TimeoutException("RunOnStaThread: the STA thread did not complete within 30 seconds (possible COM deadlock or unbounded walk).");
