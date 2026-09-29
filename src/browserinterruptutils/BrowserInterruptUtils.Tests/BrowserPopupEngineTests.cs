@@ -2775,5 +2775,78 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(0, h.Probe.UnbalancedReleases);
             Assert.DoesNotContain(overlay.Ref, h.Probe.Retained);
         }
+
+        [Fact]
+        public void ReportedWatchOnlyNativePopup_HasItsMessageTextReadOnce_AcrossManySweeps()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("w", BrowserPopupScope.NativeDialog, nameContains: "Alert", message: "sure", process: "chrome");
+            var w = h.Probe.AddWindow("Alert", message: "Are you sure?");
+
+            h.AppearWindow(w);
+            for (long t = 100; t <= 8000; t += 100)
+                h.Pump(t);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(1, h.Probe.MessageTextCalls);
+        }
+
+        [Fact]
+        public void ReportedWatchOnlyOverlay_HasItsMessageTextReadOnce_AcrossManySweeps()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 500);
+            h.AddRule("w", BrowserPopupScope.PageOverlay, nameContains: "Cookie", message: "accept", process: "chrome");
+            var window = h.Probe.AddWindow("tab", pid: 5, processName: "chrome");
+            h.AppearWindow(window);
+            h.Probe.AddOverlay(window, "Cookie banner", "Please accept");
+            h.AppearOverlay(window);
+            for (long t = 100; t <= 8000; t += 100)
+                h.Pump(t);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(1, h.Probe.MessageTextCalls);
+        }
+
+        [Fact]
+        public void PopupHeldByATrippedRule_HasItsMessageTextReadOnce_AcrossManySweeps()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.Engine.MaxDismissalsPerMinute = 1;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", message: "again", action: BrowserPopupAction.CloseWindowPattern);
+            h.Now = 1000;
+            h.AppearWindow(h.Probe.AddWindow("Nag", message: "again?"));
+            h.PastVerifyDelay(); // confirmed: the one dismissal the limit allows
+            var second = h.Probe.AddWindow("Nag", message: "again?");
+            h.Now += 1000;
+            h.AppearWindow(second);
+            Assert.True(h.Engine.IsRuleTripped("nag"));
+            int readsAtTrip = h.Probe.MessageTextCalls;
+
+            long from = h.Now;
+            for (long t = from + 100; t <= from + 8000; t += 100)
+                h.Pump(t);
+
+            Assert.Equal(readsAtTrip, h.Probe.MessageTextCalls);
+            Assert.True(second.Alive);
+        }
+
+        [Fact]
+        public void ReportedWatchOnlyPopup_IsStillRedecidedWhenItsRuleIsDisabled()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("w", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "chrome");
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            h.Settle(100, 2000);
+            Assert.True(w.Alive);
+
+            h.AddRule("close", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            Assert.True(w.Alive); // the watch-only rule is earlier, so it still wins
+
+            h.Engine.SetRuleEnabled("w", false);
+            h.Settle(2100, 3000);
+
+            Assert.False(w.Alive);
+        }
     }
 }

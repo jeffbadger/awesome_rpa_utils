@@ -231,6 +231,9 @@ namespace BrowserInterruptAutomation
             public BrowserPopupRule Rule;
             public int RetryToken;
 
+            /// <summary>The rules version (<c>_seenRulesVersion</c>) <see cref="Rule"/> was selected under; a settled candidate is only re-decided once the rules change.</summary>
+            public int SelectedVersion;
+
             /// <summary>Set between a successful action and its verification (<see cref="VerifyDelayMs"/> later); the candidate stays counted as unresolved meanwhile.</summary>
             public PendingDismissal Pending;
 
@@ -1390,6 +1393,20 @@ namespace BrowserInterruptAutomation
             }
 
             string processName = ProcessNameOf(info.ProcessId);
+
+            // Settled and waiting on nothing but a rule change: a watch-only match already reported, or
+            // one whose rule has tripped. Every native (1 s) and overlay (2 s) sweep re-arms a parked
+            // candidate, and re-selecting would re-walk its message text each time for no decision.
+            // Selected under the current rules and still passing the cheap criteria (a renamed popup
+            // is looked at again), it stays parked; a rule change bumps the version and re-decides.
+            if (state.Rule != null && state.SelectedVersion == _seenRulesVersion && state.Rule.Enabled
+                && (IsTripped(state.Rule) || (state.Reported && state.Rule.Action == BrowserPopupAction.WatchOnly))
+                && state.Rule.MatchesCheap(info, processName))
+            {
+                state.NextDue = long.MaxValue;
+                return;
+            }
+
             BrowserPopupRule rule = null;
             string text = null;
             foreach (var candidate in SnapshotRules())
@@ -1420,6 +1437,7 @@ namespace BrowserInterruptAutomation
             }
 
             state.Rule = rule;
+            state.SelectedVersion = _seenRulesVersion;
             if (IsTripped(rule))
             {
                 state.NextDue = long.MaxValue;
