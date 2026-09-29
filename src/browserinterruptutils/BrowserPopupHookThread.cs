@@ -147,52 +147,9 @@ namespace BrowserInterruptAutomation
 
                 _onFault = onFault;
 
-                var ready = new ManualResetEventSlim(false);
-                Dispatcher dispatcher = null;
-                Exception setupFailure = null;
-                string registrationFailure = null;
-                AutomationEventHandler windowOpenedHandler = null;
+                var startup = new StartupState();
 
-                var thread = new Thread(() =>
-                {
-                    try
-                    {
-                        dispatcher = Dispatcher.CurrentDispatcher;
-                        try
-                        {
-                            windowOpenedHandler = OnWindowOpenedRaw;
-                            Automation.AddAutomationEventHandler(
-                                WindowPattern.WindowOpenedEvent,
-                                AutomationElement.RootElement,
-                                TreeScope.Children,
-                                windowOpenedHandler);
-                        }
-                        catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-                        {
-                            registrationFailure = NeverThrowsGuard.Failure("Registering the desktop-wide WindowOpened handler", ex);
-                        }
-                    }
-                    catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-                    {
-                        setupFailure = ex;
-                    }
-                    finally
-                    {
-                        ready.Set();
-                    }
-
-                    if (setupFailure == null && registrationFailure == null)
-                    {
-                        try
-                        {
-                            Dispatcher.Run();
-                        }
-                        catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-                        {
-                            ReportFault(NeverThrowsGuard.Failure("The UIA hook thread's message pump", ex));
-                        }
-                    }
-                })
+                var thread = new Thread(() => RunHookThread(startup))
                 {
                     IsBackground = true,
                     Name = "BrowserInterruptUtils.UiaHook"
@@ -206,42 +163,127 @@ namespace BrowserInterruptAutomation
                 catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
                 {
                     message = NeverThrowsGuard.Failure("Starting the UIA hook thread", ex);
-                    ready.Dispose();
                     return false;
                 }
 
-                if (!ready.Wait(StartTimeoutMs))
+                if (!startup.Ready.Wait(StartTimeoutMs))
                 {
-                    message = "The UIA hook thread did not start in time.";
-                    // It may still come up and start pumping; ask it to shut down anyway. It has
-                    // not (as far as we know) installed anything that needs unregistering.
-                    TryShutdownDispatcher(dispatcher);
-                    thread.Join(StopTimeoutMs);
-                    ready.Dispose();
-                    return false;
+                    // Decide the race atomically: either this call abandons the start (the hook
+                    // thread then unregisters whatever it registered and exits without pumping), or
+                    // the thread already completed in the instant since the wait timed out.
+                    if (Interlocked.CompareExchange(ref startup.Phase, StartupState.Abandoned, StartupState.Pending) == StartupState.Pending)
+                    {
+                        message = "The UIA hook thread did not start in time.";
+                        // Nothing else to clean up here: the thread owns the signal and the
+                        // registration, and undoes both itself when (if) it gets that far.
+                        return false;
+                    }
+                    startup.Ready.Wait(StopTimeoutMs); // Completed: the signal is being set right now
                 }
-                ready.Dispose();
 
-                if (setupFailure != null)
+                if (startup.SetupFailure != null)
                 {
-                    message = NeverThrowsGuard.Failure("The UIA hook thread's setup", setupFailure);
+                    message = NeverThrowsGuard.Failure("The UIA hook thread's setup", startup.SetupFailure);
                     thread.Join(StopTimeoutMs); // it is already on its way out (no Dispatcher.Run was entered)
                     return false;
                 }
 
-                if (registrationFailure != null)
+                if (startup.RegistrationFailure != null)
                 {
-                    message = registrationFailure;
-                    TryShutdownDispatcher(dispatcher);
+                    message = startup.RegistrationFailure;
+                    TryShutdownDispatcher(startup.Dispatcher);
                     thread.Join(StopTimeoutMs);
                     return false;
                 }
 
                 _thread = thread;
-                _dispatcher = dispatcher;
-                _windowOpenedHandler = windowOpenedHandler;
+                _dispatcher = startup.Dispatcher;
+                _windowOpenedHandler = startup.WindowOpenedHandler;
                 _started = true;
                 return true;
+            }
+        }
+
+        /// <summary>
+        /// State shared between <see cref="Start"/> and the hook thread for one start attempt. The
+        /// hook thread owns the <see cref="Ready"/> signal for its whole life (it is never disposed:
+        /// a <see cref="ManualResetEventSlim"/> that nobody takes a wait handle from holds no
+        /// kernel resource), so a thread that finishes after <see cref="Start"/> gave up can still
+        /// set it safely. <see cref="Phase"/> settles, atomically, who won the race between the
+        /// thread finishing its setup and <see cref="Start"/>'s timeout.
+        /// </summary>
+        private sealed class StartupState
+        {
+            public const int Pending = 0;
+            public const int Completed = 1;
+            public const int Abandoned = 2;
+
+            public readonly ManualResetEventSlim Ready = new ManualResetEventSlim(false);
+            public int Phase = Pending;
+            public Dispatcher Dispatcher;
+            public Exception SetupFailure;
+            public string RegistrationFailure;
+            public AutomationEventHandler WindowOpenedHandler;
+        }
+
+        private void RunHookThread(StartupState startup)
+        {
+            bool failed = false;
+            try
+            {
+                startup.Dispatcher = Dispatcher.CurrentDispatcher;
+                try
+                {
+                    startup.WindowOpenedHandler = OnWindowOpenedRaw;
+                    Automation.AddAutomationEventHandler(
+                        WindowPattern.WindowOpenedEvent,
+                        AutomationElement.RootElement,
+                        TreeScope.Children,
+                        startup.WindowOpenedHandler);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    startup.RegistrationFailure = NeverThrowsGuard.Failure("Registering the desktop-wide WindowOpened handler", ex);
+                    failed = true;
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                startup.SetupFailure = ex;
+                failed = true;
+            }
+
+            // Publish the outcome. Losing the race means Start already gave up (timed out): it
+            // reported failure and will never call Stop for this thread, so a handler this thread
+            // just registered would stay alive desktop-wide. Undo it and exit without pumping.
+            bool abandoned = Interlocked.CompareExchange(ref startup.Phase, StartupState.Completed, StartupState.Pending)
+                == StartupState.Abandoned;
+            if (abandoned)
+            {
+                if (!failed && startup.WindowOpenedHandler != null)
+                {
+                    try
+                    {
+                        Automation.RemoveAutomationEventHandler(WindowPattern.WindowOpenedEvent, AutomationElement.RootElement, startup.WindowOpenedHandler);
+                    }
+                    catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
+                }
+                return;
+            }
+
+            try { startup.Ready.Set(); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
+
+            if (failed)
+                return;
+
+            try
+            {
+                Dispatcher.Run();
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                ReportFault(NeverThrowsGuard.Failure("The UIA hook thread's message pump", ex));
             }
         }
 
