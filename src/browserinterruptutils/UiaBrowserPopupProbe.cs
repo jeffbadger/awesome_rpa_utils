@@ -357,6 +357,17 @@ namespace BrowserInterruptAutomation
         {
             element = null;
 
+            // A ref with a window handle is only as alive as that window. IsWindow is a cheap,
+            // deterministic answer; the UIA "Current" read in IsElementAvailable is not (a
+            // just-destroyed window's element can keep answering from a stale provider while
+            // teardown is still in progress), so it must never be the only liveness test. A dead
+            // handle also evicts the cache entry so a strong element reference is not kept for it.
+            if (target.Hwnd != IntPtr.Zero && !NativeMethods.IsWindow(target.Hwnd))
+            {
+                _cache.Remove(target);
+                return false;
+            }
+
             if (_cache.TryGet(target, out AutomationElement cached))
             {
                 if (IsElementAvailable(cached))

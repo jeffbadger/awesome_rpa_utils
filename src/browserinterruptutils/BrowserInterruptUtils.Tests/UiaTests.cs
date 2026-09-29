@@ -88,14 +88,22 @@ namespace BrowserInterruptAutomation.Tests
             {
                 var probe = new UiaBrowserPopupProbe();
                 BrowserElementRef windowRef;
+                IntPtr hwnd;
                 using (var host = new WpfButtonHost())
                 {
-                    BrowserElementInfo windowInfo = probe.DescribeWindow(host.Hwnd);
+                    hwnd = host.Hwnd;
+                    BrowserElementInfo windowInfo = probe.DescribeWindow(hwnd);
                     Assert.NotNull(windowInfo);
                     windowRef = windowInfo.Ref;
                     Assert.True(probe.IsAlive(windowRef));
                 }
-                // The window has since been closed; the same ref must no longer resolve as alive.
+                // Dispose returns once the host's dispatcher has shut down, but the OS may finish
+                // destroying the HWND a moment later; wait (bounded) for that, so the assertion
+                // below tests the probe rather than the teardown timing.
+                Assert.True(SpinWait.SpinUntil(() => !NativeMethods.IsWindow(hwnd), TimeSpan.FromSeconds(5)),
+                    "the host window was never destroyed");
+                // The window has since been closed; the same ref must no longer resolve as alive
+                // (IsAlive checks IsWindow first, and evicts the cached element).
                 Assert.False(probe.IsAlive(windowRef));
             });
         }
@@ -122,6 +130,9 @@ namespace BrowserInterruptAutomation.Tests
                 }
             });
             thread.SetApartmentState(ApartmentState.STA);
+            // Background: if a UIA call hangs past the Join timeout below, the abandoned thread must
+            // not keep the test host process alive after the run.
+            thread.IsBackground = true;
             thread.Start();
             // A generous bound for a whole STA-thread-hosted probe call (as opposed to the
             // 5-second bounds elsewhere in this file for a single UI action/dispatcher
