@@ -2,7 +2,7 @@
 
 A single searchable index of every **PME** — Property, Method, and Event —
 exposed by every component in this repository. Use it to answer "does
-anything in this library already do X" without opening 26 different
+anything in this library already do X" without opening 27 different
 READMEs: `Ctrl+F` for a method name, a keyword from what you're trying to
 do, or a parameter/return type, or jump straight to a component from the
 quick-reference table below.
@@ -19,6 +19,7 @@ failure reason) — noted per-method below only where it isn't the case.
 | Component | Assembly | Methods | Props | Events | What it does |
 |---|---|---|---|---|---|
 | [ArchiveUtils](#archiveutils) | `ArchiveAutomation` | 18 | 0 | 0 | Creates, extracts, inspects, and validates ZIP archives, with zip-slip/zip-bomb protection and CRC-32 verification. |
+| [BrowserInterruptUtils](#browserinterruptutils) | `BrowserInterruptAutomation` | 22 | 0 | 4 | Watches for known popups inside a web browser (JavaScript `alert`/`confirm`/`prompt` dialogs and in-page overlays such as cookie banners) and dismisses them via UI Automation while the automation is busy. |
 | [ClipboardUtils](#clipboardutils) | `ClipboardAutomation` | 32 | 1 | 0 | Saves and restores everything on the clipboard (all formats), pastes text without destroying what was there, waits for the clipboard to change, reads or sets a file list, and keeps a searchable history of the last N copies. |
 | [CommandLineUtils](#commandlineutils) | `CommandLineAutomation` | 7 | 0 | 0 | Runs external commands/processes and captures exit code, stdout, and stderr — including elevated and fire-and-forget launches. |
 | [DataContractUtils](#datacontractutils) | `DataContractAutomation` | 36 | 6 | 0 | A typed named-value contract defined at initialization, then sealed, with strict scalar getters/setters at runtime. |
@@ -78,6 +79,48 @@ Pega Robot Studio-ready component for handling ZIP archives: creating/extracting
 | `TryGetArchiveMetadata` | `bool TryGetArchiveMetadata(string archivePath, out int entryCount, out long totalUncompressedBytes, out long totalCompressedBytes, out bool hasEncryptedEntries, out string message)` | Gets summary metadata for a ZIP archive: entry count, total declared sizes, and whether any entry is encrypted. Never throws. |
 | `ValidateArchiveCrc` | `bool ValidateArchiveCrc(string archivePath, out bool allEntriesValid, out string message)` | Verifies every non-encrypted entry's actual decompressed content against its declared CRC-32 checksum. Never throws. |
 | `ValidateArchiveCrcJson` | `bool ValidateArchiveCrcJson(string archivePath, out string json, out string message)` | Same as `ValidateArchiveCrc`, but reports a JSON array with each entry's declared/computed CRC-32 and status. Never throws. |
+
+## BrowserInterruptUtils
+
+Watches for known popups inside a web browser on its own background threads and dismisses them while the automation is busy: JavaScript `alert`/`confirm`/`prompt`/`beforeunload` dialogs (scope `NativeDialog`) and in-page overlays such as cookie banners (scope `PageOverlay`), which `InterruptUtils` cannot see. Describe each popup with a rule (name, message text, role, owning process, plus the element to click), `Start`, and carry on; outcomes are reported through events and a queryable log. Uses UI Automation; headless browsers are unsupported, and real-browser behavior is not yet verified.
+
+**Namespace:** `BrowserInterruptAutomation` | **Assembly:** `BrowserInterruptAutomation`
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `AddNativeDialogCloseRule` | `bool AddNativeDialogCloseRule(string ruleName, string nameContains, string messageContains, string processName, out string message, string roleContains = null)` | Adds a rule that dismisses a matching native dialog by closing its window. Returns True if added; never throws. |
+| `AddNativeDialogDismissRuleByAutomationId` | `bool AddNativeDialogDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains, string processName, string targetAutomationId, out string message, string roleContains = null)` | Adds a rule that dismisses a matching native dialog by invoking the descendant element with the given automation ID. Returns True if added; never throws. |
+| `AddNativeDialogDismissRuleByName` | `bool AddNativeDialogDismissRuleByName(string ruleName, string nameContains, string messageContains, string processName, string targetElementName, out string message, bool exactTargetElementName = true, string roleContains = null)` | Adds a rule that dismisses a matching native dialog by invoking the named descendant element. Returns True if added; never throws. |
+| `AddNativeDialogWatchOnlyRule` | `bool AddNativeDialogWatchOnlyRule(string ruleName, string nameContains, string messageContains, string processName, out string message, string roleContains = null)` | Adds a rule that only reports a matching native dialog and never touches it. Returns True if added; never throws. |
+| `AddPageOverlayDismissRuleByAutomationId` | `bool AddPageOverlayDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains, string processName, string targetAutomationId, out string message, string roleContains = null, string automationIdContains = null)` | Adds a rule that dismisses a matching in-page overlay by invoking the descendant element with the given automation ID. Returns True if added; never throws. |
+| `AddPageOverlayDismissRuleByName` | `bool AddPageOverlayDismissRuleByName(string ruleName, string nameContains, string messageContains, string processName, string targetElementName, out string message, bool exactTargetElementName = true, string roleContains = null, string automationIdContains = null)` | Adds a rule that dismisses a matching in-page overlay by invoking the named descendant element. Returns True if added; never throws. |
+| `AddPageOverlayWatchOnlyRule` | `bool AddPageOverlayWatchOnlyRule(string ruleName, string nameContains, string messageContains, string processName, out string message, string roleContains = null, string automationIdContains = null)` | Adds a rule that only reports a matching in-page overlay and never touches it. Returns True if added; never throws. |
+| `ClearLog` | `bool ClearLog(out string message)` | Empties the log. Counts are kept. Returns True on success; never throws. |
+| `ClearRules` | `bool ClearRules(out string message)` | Removes every rule. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True on success; never throws. |
+| `GetDismissalCount` | `bool GetDismissalCount(string ruleName, out int count, out string message)` | How many popups a rule has dismissed. Returns True on success; never throws. |
+| `GetLastEventJson` | `bool GetLastEventJson(out string eventJson, out string message)` | The most recent log entry as JSON ({} if none). Returns True on success; never throws. |
+| `GetLogJson` | `bool GetLogJson(int maxEntries, out string logJson, out string message)` | The most recent log entries as a JSON array, oldest first (the log keeps the last 500). Returns True on success; never throws. |
+| `GetTotalDismissals` | `bool GetTotalDismissals(out int total, out string message)` | How many popups all rules have dismissed together. Returns True on success; never throws. |
+| `HasUnresolvedPopup` | `bool HasUnresolvedPopup(out bool hasUnresolvedPopup, out string message)` | Whether a popup matched by a dismiss rule is still open (being retried, or given up on). Returns True on success; never throws. |
+| `IsRunning` | `bool IsRunning()` | Returns True while watching for browser popups is running. Never throws. |
+| `ListRulesJson` | `bool ListRulesJson(out string rulesJson, out string message)` | Lists the rules with their state and dismissal counts as JSON. Returns True on success; never throws. |
+| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until Resume, without stopping the watch. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True on success; never throws. |
+| `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True if it existed; never throws. |
+| `Resume` | `bool Resume(out string message)` | Lets the handler dismiss popups again after Pause. Returns True on success; never throws. |
+| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on. Turning off starts no new dismissal, but one already issued may still take effect; it waits for a call under way, so a hung browser can delay it. Turning on also clears a runaway stop. Returns True on success; never throws. |
+| `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int overlaySweepIntervalMs = 2000, int maxAttempts = 3, int maxDismissalsPerMinute = 20, int maxOverlayNodes = 5000, int maxOverlayDepth = 50)` | Starts watching for browser popups in the background and dismissing those that match a rule. Stops any other instance still watching (one that has this guard), in this process or another, and waits a few seconds for it. Returns True on success; never throws. |
+| `Stop` | `bool Stop(out string message)` | Stops watching for browser popups. No new UI Automation invoke or close call starts once it returns; it waits for a call under way, so a hung browser can delay it. An action already issued may still take effect, and a dismissal result or discovery pass may raise events after it returns. Rules and the log are kept. Returns True on success, including when not running; never throws. |
+
+### Events
+
+| Event | Type | Description |
+|---|---|---|
+| `InterruptError` | `EventHandler<BrowserInterruptErrorEventArgs>` | Raised on a worker thread when the handler has a problem, such as a rule that stopped for dismissing too many popups. |
+| `PopupDetected` | `EventHandler<BrowserPopupEventArgs>` | Raised on a worker thread when a popup that matches a watch-only rule appears. |
+| `PopupDismissed` | `EventHandler<BrowserPopupEventArgs>` | Raised on a worker thread after a popup was dismissed. |
+| `PopupDismissFailed` | `EventHandler<BrowserPopupEventArgs>` | Raised on a worker thread when a popup matched a rule but could not be dismissed. |
 
 ## ClipboardUtils
 
@@ -339,10 +382,10 @@ Watches for known popups on its own background threads and dismisses them while 
 | `HasUnresolvedPopup` | `bool HasUnresolvedPopup(out bool hasUnresolvedPopup, out string message)` | Whether a popup a dismiss rule matched is still open (being retried, or given up on). |
 | `IsRunning` | `bool IsRunning()` | Whether watching is running. |
 | `ListRulesJson` | `bool ListRulesJson(out string rulesJson, out string message)` | Lists the rules with their state, whether each has stopped itself, and its dismissal count, as JSON. |
-| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch; returns once any dismissal already under way has finished. |
+| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until `Resume`, without stopping the watch; starts no new dismissal after it returns and waits for a call under way (one already issued may still take effect). |
 | `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule and its dismissal count. |
 | `Resume` | `bool Resume(out string message)` | Lets the handler dismiss popups again after `Pause`. |
-| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on; turning it on also clears a runaway stop, re-checks popups already open and retries ones it had given up on, and turning it off returns once any dismissal already under way has finished. |
+| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on; turning it on also clears a runaway stop, re-checks popups already open and retries ones it had given up on, and turning it off starts no new dismissal after it returns and waits for a call under way (one already issued may still take effect). |
 | `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int maxAttempts = 3, int maxDismissalsPerMinute = 20)` | Starts watching on background threads; returns once the window-event hooks are installed (milliseconds, at most 5 s). |
 | `Stop` | `bool Stop(out string message)` | Stops watching. Rules, counts and the log are kept. |
 

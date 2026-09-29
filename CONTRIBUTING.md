@@ -62,9 +62,12 @@ dotnet test src/stackutils/StackUtils.Tests/StackUtils.Tests.csproj
 dotnet test src/AwesomeRpaUtils.sln
 ```
 
-`UIAutomationUtils` pulls in the Windows desktop runtime, so its tests run only on
-Windows and abort a solution-wide `dotnet test` on Linux/macOS; run the other test
-projects individually there.
+`UIAutomationUtils` and `BrowserInterruptUtils` pull in the Windows desktop runtime, so
+their tests run only on Windows and abort a solution-wide `dotnet test` on Linux/macOS;
+run the other test projects individually there. To re-run `BrowserInterruptUtils`'s
+fake-driven tests on a non-Windows host anyway, pass `-p:UseWPF=false` (this drops the
+real UI Automation code and its Windows-only smoke tests from the build; it is a local
+convenience, not a supported build configuration).
 
 **Continuous integration runs the tests** on Windows after building: every test
 project in `src/AwesomeRpaUtils.sln` (one project at a time, so timing-sensitive

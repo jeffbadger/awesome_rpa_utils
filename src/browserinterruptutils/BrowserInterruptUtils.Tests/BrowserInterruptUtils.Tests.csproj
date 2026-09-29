@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Lets `dotnet build` (not `dotnet test`) work on non-Windows CI machines. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>BrowserInterruptUtils.Tests</AssemblyName>
+    <RootNamespace>BrowserInterruptAutomation.Tests</RootNamespace>
+    <!-- Needed for UiaTests.cs's and HookThreadUiaTests.cs's real System.Windows.Automation/WPF Window smoke coverage. -->
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BrowserInterruptUtils.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- See BrowserInterruptUtils.csproj's matching note: excluded only when the local
+         -p:UseWPF=false test-running convenience is in play. -->
+    <Compile Remove="UiaTests.cs" Condition="'$(UseWPF)' != 'true'" />
+    <Compile Remove="HookThreadUiaTests.cs" Condition="'$(UseWPF)' != 'true'" />
+  </ItemGroup>
+
+</Project>

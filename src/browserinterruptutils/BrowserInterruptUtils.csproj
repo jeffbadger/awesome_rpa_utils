@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>BrowserInterruptAutomation</AssemblyName>
+    <RootNamespace>BrowserInterruptAutomation</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <!-- Needed for System.Windows.Automation (AutomationElement and friends) -->
+    <UseWPF>true</UseWPF>
+    <!-- Allows building this Windows-targeted, WPF-referencing project from a non-Windows SDK host -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Emit BrowserInterruptAutomation.xml next to the DLL so the XML doc comments are consumable -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    BrowserInterruptUtils.cs (Task 5) constructs the real UIA-backed UiaBrowserPopupProbe/
+    BrowserPopupHookThread in its production (parameterless) constructor path, but is otherwise
+    UIA-free (its internal DI constructor takes IBrowserPopupProbe/IBrowserPopupHookSource, so
+    BrowserInterruptUtils.Tests can drive it entirely through fakes). Rather than excluding the
+    whole file when UseWPF=false (as UiaBrowserPopupProbe.cs/BrowserPopupHookThread.cs are),
+    BROWSERINTERRUPT_UIA gates only the two `new` calls that reference those real types, behind
+    an #if in BrowserInterruptUtils.cs. That keeps the file - and therefore its test file -
+    includable in the local -p:UseWPF=false test-running convenience described above.
+  -->
+  <PropertyGroup Condition="'$(UseWPF)' == 'true'">
+    <DefineConstants>$(DefineConstants);BROWSERINTERRUPT_UIA</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets BrowserInterruptUtils.Tests drive the popup engine with fake probes -->
+    <InternalsVisibleTo Include="BrowserInterruptUtils.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="BrowserInterruptUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      UiaBrowserPopupProbe.cs (Task 3) was the first file in this component to genuinely
+      reference System.Windows.Automation; BrowserPopupHookThread.cs (Task 4) is the second.
+      Those types are only available when UseWPF (or UseWindowsForms) is true, which is what
+      actually adds the Microsoft.WindowsDesktop.App framework reference. Task 2 found that
+      overriding -p:UseWPF=false lets `dotnet test` actually *run* (not just build) on a Linux
+      dev host, because it drops this project's runtime dependency on the Windows-only
+      Microsoft.WindowsDesktop.App shared framework, which such a host cannot have installed.
+      That override is a local convenience for re-running the engine's fake-driven tests, not a
+      supported build configuration, so every UIA-dependent file (and the real smoke tests that
+      exercise them) is excluded only when it is in play - the default build (UseWPF=true)
+      always includes them all.
+
+      Kept as one explicit entry per file rather than switching to a folder/naming-convention
+      glob (e.g. a "Uia*.cs" pattern, or moving these into their own subfolder): at two files
+      total, an explicit list is still easier to audit at a glance than a glob whose match set
+      isn't visible without running the build, and nothing here suggests a third file is coming.
+      Revisit this choice (per the prior reviewer's own suggestion) if a Task 6+ addition makes
+      it three or more.
+    -->
+    <Compile Remove="UiaBrowserPopupProbe.cs" Condition="'$(UseWPF)' != 'true'" />
+    <Compile Remove="BrowserPopupHookThread.cs" Condition="'$(UseWPF)' != 'true'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- README shown on the NuGet package page (PackageReadmeFile is set in Directory.Build.targets) -->
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

@@ -110,7 +110,9 @@ always empty because `ListDialogControls` never reads it, and `ToString()` print
   dialogs (some modern WPF/Electron/browser-rendered "dialogs" that are really just styled
   windows) may not respond to `BM_CLICK` at all — for those, use
   [KeyboardUtils](../keyboardutils/README.md) or
-  [MouseUtils](../mouseutils/MouseUtils.cs)'s window-relative click methods instead.
+  [MouseUtils](../mouseutils/MouseUtils.cs)'s window-relative click methods instead. For
+  popups inside a browser (JavaScript `alert`/`confirm`/`prompt` dialogs, in-page overlays)
+  see [BrowserInterruptUtils](../browserinterruptutils/README.md).
 - **WinUI3/UWP app dialogs (e.g. the Windows 11 Notepad "Do you want to save changes?"
   prompt) have no `DialogUtils`-visible controls at all** — confirmed by enumerating a live
   instance: the prompt is a XAML `ContentDialog` composited inside the app's existing

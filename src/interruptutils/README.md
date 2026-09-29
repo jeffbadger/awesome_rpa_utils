@@ -155,6 +155,9 @@ popups) it is also read for the events and the log, and again each time the popu
   [KeyboardUtils](../keyboardutils/README.md) / [UIAutomationUtils](../uiautomationutils/README.md).
   Message text is read from the popup's static text controls, so a popup that draws its
   message itself can match on title or process but not on `messageContains`.
+- **Browser popups.** A JavaScript `alert`/`confirm`/`prompt` dialog or an in-page overlay
+  (such as a cookie banner) inside a browser cannot be clicked from window handles; use
+  [BrowserInterruptUtils](../browserinterruptutils/README.md), which reaches them through UI Automation.
 - **Attended sessions only.** Window events are not delivered while the screen is locked
   or on a secure desktop (a UAC prompt, the lock screen), so this suits an attended
   session or an unattended one with an active desktop. Electron and Java applications
