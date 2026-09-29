@@ -144,6 +144,12 @@ invoking one of its own elements.
   browser-specific claim below as the design intent until the live checks in
   [TESTING.md](../../TESTING.md#browserinterruptutils-needs-a-desktop-and-a-real-browser-live-checks-pending)
   are done.
+- **JS `alert`/`confirm`/`prompt` may not be top-level windows.** The design assumes Chrome and
+  Edge show them as top-level windows (the `NativeDialog` scope). Current builds may instead render
+  them as in-page widgets inside the browser window, reachable only through the page's UI
+  Automation tree; if a `NativeDialog` rule never matches, use a `PageOverlay` rule with
+  `roleContains: "dialog"` instead. Which one each browser does is the first pending live check in
+  [TESTING.md](../../TESTING.md#browserinterruptutils-needs-a-desktop-and-a-real-browser-live-checks-pending).
 - **Headless browsers are not supported.** A headless browser has no window and no UI
   Automation tree, so there is nothing to watch. This is the most likely answer to "why
   does nothing happen".
@@ -180,12 +186,21 @@ invoking one of its own elements.
 - **A popup announces itself before its contents exist.** So a popup is looked at again at
   about 0, 150, 400, 1000 and 2000 ms after it is first seen, until a rule matches, it is
   dismissed, or it goes away.
-- **A dismissal is counted when the invoke succeeds, not when the popup is seen to
-  close.** Unlike `InterruptUtils`, the component does not re-check afterwards that the
-  popup went away (UI Automation reports success or failure of the invoke itself). If the
-  invoke fails the worker retries up to `maxAttempts` times and then raises
-  `PopupDismissFailed`. A popup that survives a successful invoke is found again by a later
-  sweep and handled again, and the `maxDismissalsPerMinute` limit stops a loop.
+- **A dismissal is counted only once the popup is seen to close.** UI Automation's invoke
+  and close return before the browser has acted, so after a successful call the worker
+  waits 400 ms (`VerifyDelayMs`) and checks that the popup is gone. If it is,
+  `PopupDismissed` is raised and the dismissal is counted. If it is still open, the call did
+  nothing: that spends one of the `maxAttempts` attempts (no `PopupDismissed`), the worker
+  tries again, and after `maxAttempts` it raises `PopupDismissFailed` with a detail saying the
+  action succeeded but the popup is still open. Until then `HasUnresolvedPopup` stays true.
+  Only confirmed dismissals count toward `maxDismissalsPerMinute`; a popup that ignores the
+  click is bounded by `maxAttempts` instead. Stopping the component inside that 400 ms window
+  drops the pending confirmation (the popup was closed but is not counted).
+- **A walk over a big page costs cross-process reads.** Each element visited reads about
+  eight UI Automation properties, each a cross-process call, and the component does not use
+  a `CacheRequest`. On a very large page a sweep can be slow; lower `maxOverlayNodes` (default
+  5000) if so. Elements the probe has found are held (strongly) in a bounded cache that drops
+  entries not used for two generations (8192 entries or 60 s per generation).
 - **Popups owned by the automation's own process are never touched.** For a popup from
   another process that a step is deliberately driving, use `Pause`/`Resume` or
   `SetRuleEnabled`.

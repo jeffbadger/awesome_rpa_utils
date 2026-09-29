@@ -96,9 +96,11 @@ namespace BrowserInterruptAutomation.Tests
 
             string lifecycle = File.ReadAllText(Path.Combine(ComponentDirectory(), "Documentation", "Lifecycle.md")).Replace("\r\n", "\n");
             Assert.Contains("raised to " + BrowserPopupEngine.MinOverlaySweepIntervalMs + " ms", lifecycle);
+            Assert.Contains(BrowserPopupEngine.VerifyDelayMs + " ms (`VerifyDelayMs`)", lifecycle.Replace("\n", " "));
 
             string readme = Readme().Replace("\n", " ");
             Assert.Contains("the log keeps the last " + BrowserPopupEngine.LogCapacity, readme);
+            Assert.Contains("waits " + BrowserPopupEngine.VerifyDelayMs + " ms (`VerifyDelayMs`)", Regex.Replace(readme, " {2,}", " "));
             Assert.Contains("about " + string.Join(", ", BrowserPopupEngine.ScheduleMs.Take(BrowserPopupEngine.ScheduleMs.Length - 1)) + " and "
                 + BrowserPopupEngine.ScheduleMs.Last() + " ms", Regex.Replace(readme, " {2,}", " "));
         }

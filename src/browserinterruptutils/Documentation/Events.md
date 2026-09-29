@@ -8,8 +8,8 @@ to them (they are unproven in Robot Studio), and they arrive on a different thre
 
 | Event | Raised when |
 |---|---|
-| `PopupDismissed` | A popup was dismissed by a rule. |
-| `PopupDismissFailed` | A popup matched a rule but could not be dismissed. `Detail` says why (for example the element to invoke was not found, or supports neither invoke nor toggle, or the attempts ran out). |
+| `PopupDismissed` | A popup was dismissed by a rule: the invoke or close succeeded and, 400 ms later, the popup was gone. |
+| `PopupDismissFailed` | A popup matched a rule but could not be dismissed. `Detail` says why (for example the element to invoke was not found, or supports neither invoke nor toggle, or the attempts ran out, including when the action succeeded but the popup stayed open). |
 | `PopupDetected` | A popup matching a *watch-only* rule appeared. It is not touched. |
 | `InterruptError` | The handler has a problem, such as a rule that stopped itself for dismissing too many popups. |
 

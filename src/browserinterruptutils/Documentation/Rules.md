@@ -162,6 +162,9 @@ before writing it.
 - **Names and roles are localized text.** `roleContains: "dialog"` and a button named
   `OK` follow the browser's and Windows' display language; a machine in another language
   needs the local text (or an automation ID).
+- **A JS `alert`/`confirm`/`prompt` may not be a top-level window at all.** Chrome and Edge may
+  draw it as an in-page widget instead, in which case a `NativeDialog` rule never sees it and
+  a `PageOverlay` rule with `roleContains: "dialog"` is the way to reach it.
 - **The real names and structure of a native JS dialog are unverified.** Design assumes the
   dialog is a top-level window whose descendants are real buttons with an invoke pattern.
   The live checks will confirm the names Chrome, Edge and Firefox actually use.

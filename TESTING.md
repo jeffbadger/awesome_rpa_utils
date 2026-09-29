@@ -977,6 +977,10 @@ automation, so its popups are eligible.
 
 Pending live checks (run each in Chrome, Edge and Firefox unless noted):
 
+- **Are JS dialogs top-level windows? (do this first).** Verify whether Chrome/Edge JS
+  `alert`/`confirm`/`prompt` appear as top-level windows (the `NativeDialog` scope) or only as in-page/child
+  elements of the browser window (then use a `PageOverlay` rule with `roleContains: dialog`). Everything
+  in the `alert`/`confirm`/`prompt` check below depends on the answer; record it per browser.
 - **Discovery first.** With watch-only rules for the browser (`AddNativeDialogWatchOnlyRule` with
   `roleContains: "dialog"` (a process name alone is refused); `AddPageOverlayWatchOnlyRule` with `roleContains: "dialog"`), raise each popup and read
   `GetLogJson`. Record the `name`, `role` and `message` the browser really exposes, and the names of the
@@ -1001,6 +1005,15 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   that Chromium builds its accessibility tree lazily.
 - **Iframe content.** An overlay or dialog-shaped element inside an iframe (same-origin and
   cross-origin) is reached by the bounded walk, or not; record which.
+- **Walk cost on a large page.** Time one overlay sweep on a page with thousands of elements (about 8
+  cross-process property reads per element, no `CacheRequest`); if slow, consider `CacheRequest` and a
+  lower default `maxOverlayNodes`.
+- **Verify-before-count.** A dismissal is recorded only 400 ms (`VerifyDelayMs`) after the invoke, once
+  the popup is gone: confirm `PopupDismissed` fires about 0.4 s after the popup closes and that a control
+  whose invoke does nothing ends in `PopupDismissFailed` after `maxAttempts` with no `PopupDismissed`.
+- **Element cache under GC.** With a page overlay open for a long time and `GC.Collect()` forced in the
+  host between sweeps, the overlay is still dismissed (strong-reference cache), and memory stays flat
+  over many sweeps (generation rotation).
 - **Large pages.** A page with more than `maxOverlayNodes` elements before the overlay: confirm the
   overlay is found after raising `maxOverlayNodes`, and see whether the engine's candidate cap makes
   a bounded walk miss a late overlay.

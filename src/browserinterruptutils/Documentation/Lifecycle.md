@@ -97,11 +97,22 @@ methods block for as long as it does; there is no way to abandon the wait. Norma
 long as one click, which is short. Do not call them from a step that must never stall while a browser
 that may be hung is the target.
 
+## A dismissal is confirmed before it is counted
+
+A successful invoke or close only means UI Automation delivered the call; the browser may not have
+acted on it. So the handler keeps the popup, still counted by `HasUnresolvedPopup`, and looks at it
+again after 400 ms (`VerifyDelayMs`). If it has closed, `PopupDismissed` is raised and the dismissal is
+counted. If it is still open, the call did nothing: no `PopupDismissed` is raised, one of `maxAttempts`
+is spent, and the handler tries again (`Pause` during that wait holds the retry back). After
+`maxAttempts` it raises `PopupDismissFailed` with a detail saying the action succeeded but the popup is
+still open. Stopping the component within those 400 ms drops the confirmation, so a popup closed just
+before `Stop` may not be counted.
+
 ## A popup that keeps coming back
 
 If a rule's popup reappears every time it is dismissed - the page is complaining about something the
 click does not fix - the handler would click it forever. Instead a rule that has dismissed
-`maxDismissalsPerMinute` popups within a minute **stops itself**: it raises `InterruptError` and is
+`maxDismissalsPerMinute` popups (confirmed closed, see above) within a minute **stops itself**: it raises `InterruptError` and is
 listed as `"stopped": true` by `ListRulesJson`. Its popup is then left open, so the problem is visible
 instead of hidden.
 
