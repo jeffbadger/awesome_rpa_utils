@@ -51,13 +51,17 @@ namespace BrowserInterruptAutomation
     /// <c>StructureChanged</c> callback for a given window only results in a raised notification
     /// if at least <see cref="StructureChangedCoalesceMs"/> milliseconds have passed since the
     /// last one raised for that same window; callbacks arriving inside that window are dropped.
-    /// This is a leading-edge throttle, not a trailing-edge debounce (no timer is scheduled to
-    /// flush a final raise once the cooldown expires) - deliberately, so as not to need a second
-    /// housekeeping thread/timer per watched window. Anything a dropped-during-cooldown burst
-    /// would have reported is still caught by <c>BrowserPopupEngine.OverlaySweepIntervalMs</c>'s
-    /// own periodic sweep, exactly the same fallback relationship the engine's own
-    /// <c>OnWindowStructureChanged</c>/<c>OnWindowOpened</c> comments describe for their queue-full
-    /// case ("the periodic sweep is the fallback").
+    /// This is a leading edge plus ONE trailing notification per burst: the first signal raises
+    /// immediately; signals suppressed inside the cooldown are remembered as a single pending
+    /// trailing notification (however many arrive), which a lazily-created, per-watched-window,
+    /// single-shot <see cref="Timer"/> delivers when the cooldown expires (re-arming for the
+    /// remaining time if a newer raise restarted the cooldown, and never raising for a window
+    /// that was unwatched or after <see cref="Stop"/>). With
+    /// <c>BrowserPopupEngine.OverlaySweepIntervalMs = 0</c> (periodic sweep off) this guarantees a
+    /// final walk after a burst of structure changes, so an overlay that appears just after the
+    /// leading walk is still discovered. The decision logic is the pure, unit-tested
+    /// <see cref="StructureChangedThrottle"/>; the timer only supplies the delay. The timer is a
+    /// pool-thread timer, so it never keeps the process alive.
     /// </item>
     /// <item>
     /// <b>Watch registry.</b> A single <see cref="Dictionary{TKey,TValue}"/> keyed by the
@@ -120,6 +124,18 @@ namespace BrowserInterruptAutomation
             /// <see cref="Interlocked"/> (see <see cref="StructureChangedThrottle.ShouldRaise"/>).
             /// </summary>
             public long LastRaisedTicks;
+
+            /// <summary>1 while a trailing notification is pending (see <see cref="StructureChangedThrottle.Decide"/>); Interlocked only.</summary>
+            public int TrailingPending;
+
+            /// <summary>Guards <see cref="TrailingTimer"/> and <see cref="TimerDisposed"/>; never held while calling out or while taking <c>_watchLock</c>.</summary>
+            public readonly object TimerLock = new object();
+
+            /// <summary>The lazily-created single-shot trailing timer; null until the first suppressed signal.</summary>
+            public Timer TrailingTimer;
+
+            /// <summary>Set (under <see cref="TimerLock"/>) once the entry is unwatched/stopped so a late arm cannot resurrect a timer.</summary>
+            public bool TimerDisposed;
         }
 
         private readonly object _lifecycleLock = new object();
@@ -311,6 +327,7 @@ namespace BrowserInterruptAutomation
                 }
                 foreach (var entry in watchedEntries)
                 {
+                    DisposeTrailingTimer(entry);
                     try { Automation.RemoveStructureChangedEventHandler(entry.Element, entry.Handler); }
                     catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
                 }
@@ -400,6 +417,7 @@ namespace BrowserInterruptAutomation
                         return; // not watched: safe no-op
                     _watched.Remove(windowRoot);
                 }
+                DisposeTrailingTimer(entry);
                 Automation.RemoveStructureChangedEventHandler(entry.Element, entry.Handler);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -466,8 +484,8 @@ namespace BrowserInterruptAutomation
 
         /// <summary>
         /// One watched window's <c>StructureChanged</c> callback. Applies the coalescing throttle
-        /// (see the type remarks) and, if it passes, only raises the notification - no further UIA
-        /// work happens here.
+        /// (see the type remarks): raises on the leading edge, or arms the one trailing
+        /// notification - no further UIA work happens here.
         /// </summary>
         private void OnStructureChangedRaw(BrowserElementRef windowRoot, StructureChangedEventArgs args)
         {
@@ -484,15 +502,103 @@ namespace BrowserInterruptAutomation
                 }
 
                 long now = Environment.TickCount64;
-                if (!StructureChangedThrottle.ShouldRaise(ref entry.LastRaisedTicks, now, StructureChangedCoalesceMs))
-                    return; // coalesced: too soon since the last raise for this window, or lost a concurrent race
-
-                RaiseWindowStructureChanged(windowRoot);
+                switch (StructureChangedThrottle.Decide(ref entry.LastRaisedTicks, ref entry.TrailingPending, now, StructureChangedCoalesceMs))
+                {
+                    case StructureChangedThrottle.Decision.Raise:
+                        RaiseWindowStructureChanged(windowRoot);
+                        break;
+                    case StructureChangedThrottle.Decision.SuppressedArmTrailing:
+                        // First suppressed signal of this cooldown: one trailing delivery when it ends.
+                        ArmTrailingTimer(windowRoot, entry,
+                            StructureChangedThrottle.DelayUntilCooldownEndsMs(Interlocked.Read(ref entry.LastRaisedTicks), now, StructureChangedCoalesceMs));
+                        break;
+                    default:
+                        break; // a trailing is already pending: this signal coalesces into it
+                }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
                 // Never throws into the COM event sink.
                 Debug.WriteLine("BrowserInterruptUtils: WindowStructureChanged callback failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>Arms (creating lazily, else rescheduling) the entry's single-shot trailing timer. Never throws.</summary>
+        private void ArmTrailingTimer(BrowserElementRef windowRoot, WatchEntry entry, int delayMs)
+        {
+            try
+            {
+                lock (entry.TimerLock)
+                {
+                    if (entry.TimerDisposed)
+                        return; // unwatched/stopped: a late arm must not resurrect the timer
+                    if (delayMs < 0)
+                        delayMs = 0;
+                    if (entry.TrailingTimer == null)
+                        entry.TrailingTimer = new Timer(_ => OnTrailingTimer(windowRoot, entry), null, delayMs, Timeout.Infinite);
+                    else
+                        entry.TrailingTimer.Change(delayMs, Timeout.Infinite);
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                Debug.WriteLine("BrowserInterruptUtils: arming the trailing timer failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>Cancels and disposes the entry's trailing timer and forbids re-creating it. Never throws.</summary>
+        private static void DisposeTrailingTimer(WatchEntry entry)
+        {
+            try
+            {
+                lock (entry.TimerLock)
+                {
+                    entry.TimerDisposed = true;
+                    entry.TrailingTimer?.Dispose();
+                    entry.TrailingTimer = null;
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                Debug.WriteLine("BrowserInterruptUtils: disposing the trailing timer failed: " + ex.Message);
+            }
+        }
+
+        private bool IsStillWatched(BrowserElementRef windowRoot, WatchEntry entry)
+        {
+            lock (_watchLock)
+                return _started && _watched.TryGetValue(windowRoot, out var current) && ReferenceEquals(current, entry);
+        }
+
+        /// <summary>
+        /// The trailing timer's callback (a thread-pool thread). Delivers the one pending trailing
+        /// notification through the same guarded raise path as a leading raise, or re-arms once if a
+        /// newer raise restarted the cooldown. Harmless when racing <see cref="UnwatchWindow"/>/
+        /// <see cref="Stop"/>: the entry must still be registered and the hook started, checked under
+        /// <c>_watchLock</c> (which is not held while subscribers run). Never throws.
+        /// </summary>
+        private void OnTrailingTimer(BrowserElementRef windowRoot, WatchEntry entry)
+        {
+            try
+            {
+                if (!IsStillWatched(windowRoot, entry))
+                    return;
+
+                switch (StructureChangedThrottle.TryConsumeTrailing(
+                    ref entry.LastRaisedTicks, ref entry.TrailingPending, Environment.TickCount64, StructureChangedCoalesceMs, out int rearmDelayMs))
+                {
+                    case StructureChangedThrottle.TrailingResult.Raise:
+                        if (IsStillWatched(windowRoot, entry))
+                            RaiseWindowStructureChanged(windowRoot);
+                        break;
+                    case StructureChangedThrottle.TrailingResult.Rearm:
+                        ArmTrailingTimer(windowRoot, entry, rearmDelayMs);
+                        break;
+                }
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                Debug.WriteLine("BrowserInterruptUtils: trailing StructureChanged timer failed: " + ex.Message);
             }
         }
 

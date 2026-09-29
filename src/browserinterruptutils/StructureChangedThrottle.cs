@@ -38,15 +38,15 @@ namespace BrowserInterruptAutomation
         public static long InitialSeed(long nowTicks, int coalesceMs) => nowTicks - coalesceMs;
 
         /// <summary>
-        /// Applies the leading-edge coalescing throttle for one callback: returns <c>true</c>
+        /// Applies the plain leading-edge coalescing throttle for one callback: returns <c>true</c>
         /// (and atomically advances <paramref name="lastRaisedTicks"/> to <paramref name="nowTicks"/>)
         /// if at least <paramref name="coalesceMs"/> milliseconds have passed since the last raise,
-        /// or <c>false</c> if the callback should be coalesced away (either because it arrived too
-        /// soon, or because a concurrent callback just won the race to raise instead).
-        /// <paramref name="lastRaisedTicks"/> must have been seeded via <see cref="InitialSeed"/>
-        /// (not <see cref="long.MinValue"/>) when the window started being watched, and must only
-        /// ever be read/written through <see cref="Interlocked"/> (here and by every other caller),
-        /// since this method may be invoked concurrently for the same window.
+        /// or <c>false</c> if the callback should be coalesced away. This is the leading-edge
+        /// primitive only: it has no memory of a dropped callback, so on its own it can leave a
+        /// late change undiscovered. <c>BrowserPopupHookThread</c> therefore uses
+        /// <see cref="Decide"/>/<see cref="TryConsumeTrailing"/> (leading edge plus one trailing
+        /// notification per burst) instead; this method is retained, with its tests, as the
+        /// documented regression guard for the <see cref="long.MinValue"/> seed overflow.
         /// </summary>
         public static bool ShouldRaise(ref long lastRaisedTicks, long nowTicks, int coalesceMs)
         {
@@ -56,6 +56,100 @@ namespace BrowserInterruptAutomation
 
             // A losing CAS means another callback just won the race and will raise instead.
             return Interlocked.CompareExchange(ref lastRaisedTicks, nowTicks, last) == last;
+        }
+
+        /// <summary>What <see cref="Decide"/> tells the caller to do with one raw signal.</summary>
+        public enum Decision
+        {
+            /// <summary>Leading edge: raise now (already counted as a raise for the next cooldown).</summary>
+            Raise,
+            /// <summary>Suppressed; this is the first suppressed signal of the cooldown, so the caller must arrange exactly one trailing delivery after <see cref="DelayUntilCooldownEndsMs"/>.</summary>
+            SuppressedArmTrailing,
+            /// <summary>Suppressed; a trailing delivery is already pending. Nothing more to do.</summary>
+            SuppressedAlreadyArmed
+        }
+
+        /// <summary>What <see cref="TryConsumeTrailing"/> tells the timer callback to do.</summary>
+        public enum TrailingResult
+        {
+            /// <summary>No trailing is pending (already delivered, or superseded by a leading raise). Do nothing.</summary>
+            Nothing,
+            /// <summary>The pending trailing was claimed exactly once and counted as a raise: raise now.</summary>
+            Raise,
+            /// <summary>The cooldown was restarted by a newer raise: re-arm the timer for the returned delay; the trailing stays pending.</summary>
+            Rearm
+        }
+
+        /// <summary>
+        /// Milliseconds from <paramref name="nowTicks"/> until the cooldown that started at
+        /// <paramref name="lastRaisedTicks"/> ends: 0 when it has already ended, otherwise in
+        /// <c>(0, coalesceMs]</c>. Overflow-safe for any tick values (a backwards clock counts as
+        /// a full cooldown remaining).
+        /// </summary>
+        public static int DelayUntilCooldownEndsMs(long lastRaisedTicks, long nowTicks, int coalesceMs)
+        {
+            if (nowTicks < lastRaisedTicks)
+                return coalesceMs;
+            long elapsed = unchecked(nowTicks - lastRaisedTicks);
+            if (elapsed < 0 || elapsed >= coalesceMs)
+                return 0; // negative here means the subtraction overflowed: an enormous elapsed time
+            return coalesceMs - (int)elapsed;
+        }
+
+        /// <summary>
+        /// Decides what to do with one raw signal at <paramref name="nowTicks"/>. Leading edge: if
+        /// the cooldown has ended, wins a CAS on <paramref name="lastRaisedTicks"/> and returns
+        /// <see cref="Decision.Raise"/> (clearing any pending trailing, since this raise covers
+        /// everything signalled so far). Otherwise (too soon, or lost the CAS to a concurrent raise)
+        /// the signal is suppressed: the first one flips <paramref name="trailingPending"/> 0 to 1
+        /// and returns <see cref="Decision.SuppressedArmTrailing"/>; the rest coalesce into it
+        /// (<see cref="Decision.SuppressedAlreadyArmed"/>). Pure and allocation-free; both fields
+        /// are owned by one watch entry and only touched through <see cref="Interlocked"/>.
+        /// </summary>
+        public static Decision Decide(ref long lastRaisedTicks, ref int trailingPending, long nowTicks, int coalesceMs)
+        {
+            long last = Interlocked.Read(ref lastRaisedTicks);
+            if (DelayUntilCooldownEndsMs(last, nowTicks, coalesceMs) == 0
+                && Interlocked.CompareExchange(ref lastRaisedTicks, nowTicks, last) == last)
+            {
+                Interlocked.Exchange(ref trailingPending, 0);
+                return Decision.Raise;
+            }
+
+            return Interlocked.CompareExchange(ref trailingPending, 1, 0) == 0
+                ? Decision.SuppressedArmTrailing
+                : Decision.SuppressedAlreadyArmed;
+        }
+
+        /// <summary>
+        /// The timer callback's operation. (a) With nothing pending, returns
+        /// <see cref="TrailingResult.Nothing"/>. (b) If the cooldown has not ended (a newer raise
+        /// restarted it), returns <see cref="TrailingResult.Rearm"/> with the remaining delay and
+        /// leaves the trailing pending, so it never raises early. (c) Otherwise claims the pending
+        /// trailing with a CAS 1 to 0 (so concurrent consumers raise exactly once), then advances
+        /// <paramref name="lastRaisedTicks"/> to <paramref name="nowTicks"/> so the trailing raise
+        /// starts the next cooldown. If a leading raise slips in between, that raise already covers
+        /// the trailing, so the result is <see cref="TrailingResult.Nothing"/>.
+        /// </summary>
+        public static TrailingResult TryConsumeTrailing(ref long lastRaisedTicks, ref int trailingPending, long nowTicks, int coalesceMs, out int rearmDelayMs)
+        {
+            rearmDelayMs = 0;
+            if (Interlocked.CompareExchange(ref trailingPending, 1, 1) != 1)
+                return TrailingResult.Nothing;
+
+            long last = Interlocked.Read(ref lastRaisedTicks);
+            int remaining = DelayUntilCooldownEndsMs(last, nowTicks, coalesceMs);
+            if (remaining > 0)
+            {
+                rearmDelayMs = remaining;
+                return TrailingResult.Rearm;
+            }
+
+            if (Interlocked.CompareExchange(ref trailingPending, 0, 1) != 1)
+                return TrailingResult.Nothing; // another consumer (or a leading raise) claimed it
+            return Interlocked.CompareExchange(ref lastRaisedTicks, nowTicks, last) == last
+                ? TrailingResult.Raise
+                : TrailingResult.Nothing; // a leading raise won the race and covers this trailing
         }
     }
 }
