@@ -961,6 +961,80 @@ The platform-independent xunit coverage drives the decision logic with a fake de
 `src/interruptutils/InterruptUtils.Tests`
 (`dotnet test src/interruptutils/InterruptUtils.Tests/InterruptUtils.Tests.csproj`).
 
+### BrowserInterruptUtils (needs a desktop and a real browser; live checks pending)
+
+**Status: every live check below is PENDING.** The component has been written and its decision logic
+is covered by xunit tests against a fake browser, but it has never been run on a Windows host with a
+real Chrome, Edge or Firefox. Do not treat any of the browser-specific behaviour as confirmed until
+these have been done and their results recorded here.
+
+Setup: an attended Windows session with an active (unlocked) desktop; Chrome, Edge and Firefox
+installed; a small local HTML page you control that can raise each kind of popup on demand (a button
+each for `alert()`, `confirm()`, `prompt()`, a `beforeunload` handler, an ARIA `role="dialog"`
+overlay with an OK/Accept button, and a cookie-style banner). Cleanup: close any popup left open and
+dispose the component. As with `InterruptUtils`, the browser is a **different process** from the
+automation, so its popups are eligible.
+
+Pending live checks (run each in Chrome, Edge and Firefox unless noted):
+
+- **Discovery first.** With watch-only rules for the browser (`AddNativeDialogWatchOnlyRule` with just a
+  process name; `AddPageOverlayWatchOnlyRule` with `roleContains: "dialog"`), raise each popup and read
+  `GetLogJson`. Record the `name`, `role` and `message` the browser really exposes, and the names of the
+  buttons, for every popup type. The dismiss checks below depend on these.
+- **`alert`/`confirm`/`prompt`.** A `NativeDialog` dismiss rule by button name (`OK`; `Cancel` for a
+  confirm) closes the dialog with no mouse movement; `PopupDismissed` fires once with the rule, scope,
+  name, message and process; the page's script sees the expected return value (`true`/`false`/prompt
+  value); `GetDismissalCount` is 1. Also try `AddNativeDialogDismissRuleByAutomationId` and
+  `AddNativeDialogCloseRule` (and which of them each browser supports).
+- **`beforeunload`.** Navigating away from a page with a `beforeunload` handler is dismissed by a rule
+  naming the real button (likely `Leave`, not `OK`).
+- **ARIA overlay.** A page element with `role="dialog"` (and `role="alertdialog"`) is found and its
+  button invoked by `AddPageOverlayDismissRuleByName`; record whether `AutomationId`-based rules work at
+  all for page content (Chromium is not expected to pass `id` through reliably).
+- **Cookie-banner style overlay.** A banner with no dialog role is found using `nameContains`/
+  `messageContains` alone, and the overlay rule does not match the button itself instead of the banner.
+- **Structure-changed latency.** Time from an overlay appearing to `PopupDismissed`, with
+  `overlaySweepIntervalMs: 0` (page-change events alone) and with the default; check the 250 ms
+  per-window throttle (`StructureChangedCoalesceMs`) is short enough that no overlay is missed or
+  noticeably late, and tune it if not.
+- **First-query latency.** The delay before the first popup on a freshly opened tab is found, given
+  that Chromium builds its accessibility tree lazily.
+- **Iframe content.** An overlay or dialog-shaped element inside an iframe (same-origin and
+  cross-origin) is reached by the bounded walk, or not; record which.
+- **Large pages.** A page with more than `maxOverlayNodes` elements before the overlay: confirm the
+  overlay is found after raising `maxOverlayNodes`, and see whether the engine's candidate cap makes
+  a bounded walk miss a late overlay.
+- **`Pause` while a popup is being driven.** With a rule for a `confirm()` active, `Pause`, raise the
+  `confirm()` and answer it yourself from a step, then `Resume`: the handler must not touch it while
+  paused, and must deal with a popup that is still open on `Resume`.
+- **`Pause`/`RemoveRule` on a hung browser.** With a popup's browser process suspended (Process
+  Explorer), confirm how long `Pause`, `RemoveRule` and `SetRuleEnabled(false)` block (the UI
+  Automation call has no timeout), and that they return once the browser resumes.
+- **Headless.** Chrome/Edge with `--headless`: expect nothing to be found and no error. Record it.
+- **Locked screen / secure desktop.** Expect no UI Automation events while locked; record the behaviour.
+- **Two instances.** Starting a second `BrowserInterruptUtils` stops the first (and does not disturb a
+  running `InterruptUtils`).
+- **Runaway breaker.** A popup that re-appears every time it is dismissed trips
+  `maxDismissalsPerMinute`: `InterruptError` fires, the rule lists as `"stopped": true`, and
+  `SetRuleEnabled(true)` resumes it.
+- **Thread hygiene.** Cycle `Start`/`Stop` many times and dispose while running: the thread count
+  must not grow, and no UI Automation handler remains registered.
+- **Windows-only xunit classes.** Run `UiaTests` and `HookThreadUiaTests` (they drive the real
+  UI Automation probe and hook against a WPF window, and are compiled but have **not yet been executed**
+  anywhere) on a Windows host with the Windows desktop runtime: `dotnet test
+  src/browserinterruptutils/BrowserInterruptUtils.Tests/BrowserInterruptUtils.Tests.csproj`.
+- **Robot Studio.** Confirm the component drops onto a design surface, the `Add...Rule` methods appear
+  with their descriptions, and whether events can be subscribed (they are unproven; prefer reading
+  `GetDismissalCount`/`GetLogJson` from a later step).
+
+The platform-independent xunit coverage drives the decision logic with a fake browser and is in
+`src/browserinterruptutils/BrowserInterruptUtils.Tests`. Like `UIAutomation.Tests`, that project references the
+Windows desktop runtime (`UseWPF`), so it runs only on Windows
+(`dotnet test src/browserinterruptutils/BrowserInterruptUtils.Tests/BrowserInterruptUtils.Tests.csproj`);
+on a Linux or macOS development host, add `-p:UseWPF=false` to run everything except the real UI
+Automation classes. One test, `Start_StopsAnotherRunningInstanceThatSharesTheGuard`, relies on Windows
+named-mutex behaviour and is expected to fail on Linux (as its `InterruptUtils` counterpart does).
+
 ### ClipboardUtils (needs a desktop and a real clipboard; Setup: a second process that owns the clipboard and a small text-box window that can take the focus — `TestHarness.exe --clipboard-owner`/`--focus-textbox` (see [`test-harness/README.md`](test-harness/README.md#second-process-modes)); Cleanup: save and restore your own clipboard around the run, close the windows)
 
 The unit tests never touch the real clipboard (they use an in-memory one), so everything below needs

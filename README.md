@@ -11,6 +11,7 @@ for checking whether something already exists before writing it yourself.
 | Component | Assembly | Description |
 |---|---|---|
 | [archiveutils](src/archiveutils/README.md) | `ArchiveAutomation` | Creates, extracts, inspects, and validates ZIP archives, with zip-slip and zip-bomb protection and independent CRC-32 verification built in. |
+| [browserinterruptutils](src/browserinterruptutils/README.md) | `BrowserInterruptAutomation` | Watches for known popups inside a web browser on background threads and dismisses them while the automation is busy: JavaScript `alert`/`confirm`/`prompt`/`beforeunload` dialogs and in-page overlays such as cookie banners, via UI Automation (headless browsers unsupported; not yet verified on a real browser). |
 | [clipboardutils](src/clipboardutils/README.md) | `ClipboardAutomation` | Saves and restores everything on the clipboard (every format, not just text), pastes text without destroying what was there, waits for the clipboard to change, reads or sets a list of files, and keeps a searchable history of the last N copies. |
 | [commandlineutils](src/commandlineutils/README.md) | `CommandLineAutomation` | Runs external commands/processes and captures their exit code, stdout, and stderr, including elevated and fire-and-forget launches. |
 | [datacontractutils](src/datacontractutils/README.md) | `DataContractAutomation` | Defines a typed named-value contract during initialization, then provides strict scalar getters/setters and atomic JSON/DataTable updates at runtime. |
@@ -109,7 +110,7 @@ To build and create everything this repository produces, run from PowerShell:
 The command creates two self-contained archives — one per target framework,
 each holding the complete release:
 
-- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-six project DLLs built
+- `artifacts/AwesomeRpaUtils-net8.0.zip` contains the twenty-seven project DLLs built
   for `net8.0-windows` plus three bundled archives:
   `AwesomeRpaUtils-SupportLibraries.zip` (the three NuGet runtime DLLs needed
   by ServiceUtils, packaged in the flavor matching the enclosing archive's
@@ -117,7 +118,7 @@ each holding the complete release:
   [REST code generator](tools/README.md)), and
   `AwesomeRpaUtils-Documentation.zip` (the documentation bundle described
   below).
-- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-six DLLs built
+- `artifacts/AwesomeRpaUtils-net10.0.zip` contains the same twenty-seven DLLs built
   for `net10.0-windows` with the same three bundled archives (the support
   DLLs in the newest flavor the packages ship, which the .NET 10 runtime
   loads; the .NET 8 runtime only loads the `net8.0` flavor).
@@ -249,6 +250,7 @@ signatures must also satisfy the
 public method stays selectable on the Pega Robot Studio designer surface.
 
 - [archiveutils/README.md](src/archiveutils/README.md) and [archiveutils/Documentation/](src/archiveutils/Documentation/README.md)
+- [browserinterruptutils/README.md](src/browserinterruptutils/README.md) and [browserinterruptutils/Documentation/](src/browserinterruptutils/Documentation/README.md)
 - [clipboardutils/README.md](src/clipboardutils/README.md) and [clipboardutils/Documentation/](src/clipboardutils/Documentation/README.md)
 - [commandlineutils/README.md](src/commandlineutils/README.md) and [commandlineutils/Documentation/](src/commandlineutils/Documentation/README.md)
 - [datacontractutils/README.md](src/datacontractutils/README.md) and [datacontractutils/Documentation/](src/datacontractutils/Documentation/README.md)
@@ -355,7 +357,7 @@ See [TESTING.md](TESTING.md) for a step-by-step plan to test every component
 using Pega Robot Studio's Unit Testing framework. `DialogUtils`,
 `CommandLineUtils`, `KeyboardUtils`, `WinEventUtils`, `ServiceUtils`,
 `EventLogUtils`, `SessionUtils`, `FileWatchUtils`, `ArchiveUtils`,
-`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, `InterruptUtils`, `ClipboardUtils`, `StateMachineUtils`, `ReconciliationUtils`, `TextExtractUtils`, and `ResourceLockUtils` additionally have plain xunit projects —
+`TerminalUtils`, `LocalQueueUtils`, `StackUtils`, `DataContractUtils`, `JsonUtils`, `InterruptUtils`, `ClipboardUtils`, `StateMachineUtils`, `ReconciliationUtils`, `TextExtractUtils`, `ResourceLockUtils`, and `BrowserInterruptUtils` additionally have plain xunit projects —
 `dotnet test src/dialogutils/DialogUtils.Tests/DialogUtils.Tests.csproj`,
 `dotnet test src/commandlineutils/CommandLineUtils.Tests/CommandLineUtils.Tests.csproj`,
 `dotnet test src/keyboardutils/KeyboardUtils.Tests/KeyboardUtils.Tests.csproj`,
@@ -386,7 +388,9 @@ and
 and
 `dotnet test src/textextractutils/TextExtractUtils.Tests/TextExtractUtils.Tests.csproj`,
 and
-`dotnet test src/resourcelockutils/ResourceLockUtils.Tests/ResourceLockUtils.Tests.csproj` —
+`dotnet test src/resourcelockutils/ResourceLockUtils.Tests/ResourceLockUtils.Tests.csproj`,
+and
+`dotnet test src/browserinterruptutils/BrowserInterruptUtils.Tests/BrowserInterruptUtils.Tests.csproj` —
 covering their pure logic (mnemonic stripping, the `DialogButton` Win32 IDs,
 the shell-command allowlist tokenizer, the `VirtualKey`/`ModifierKeys` values,
 key-down/release batch ordering, the event filter/JSON parsing, category
