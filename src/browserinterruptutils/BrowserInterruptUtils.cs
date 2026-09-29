@@ -749,6 +749,11 @@ namespace BrowserInterruptAutomation
         /// must be certain the popup is untouched, pause before the popup appears, or after
         /// <c>Pause</c> check <see cref="HasUnresolvedPopup"/> or wait about 400 ms and re-check
         /// the popup before driving it.
+        /// A popup that opens while paused is still noticed: a dismiss rule that matches it is
+        /// selected, so <see cref="HasUnresolvedPopup"/> is <c>true</c> for it (it is waiting for
+        /// <see cref="Resume"/>), and only the rule's invoke or close is held back; a watch-only
+        /// rule still raises <c>PopupDetected</c>, since reporting is not touching the popup.
+        /// <see cref="Resume"/> then deals with a held popup that is still open promptly.
         /// The lock is never held during discovery, so the wait lasts only as long as the one
         /// invoke or close already under way. That call has no timeout of its own, though: if the
         /// browser or dialog it targets is frozen, a cross-process UI Automation call can hang, and
@@ -788,8 +793,7 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                _engine.Paused = false;
-                _engine.Wake();
+                _engine.Resume();
                 message = null;
                 return true;
             }
@@ -866,7 +870,7 @@ namespace BrowserInterruptAutomation
         /// <param name="hasUnresolvedPopup"><c>true</c> if such a popup is open; <c>false</c> if none is, or if this method returns <c>false</c>.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the component is disposed. Never throws.</returns>
-        /// <remarks>Reflects the handler's most recent pass, so it can lag a popup's arrival by a moment.</remarks>
+        /// <remarks>Reflects the handler's most recent pass, so it can lag a popup's arrival by a moment. A popup that a dismiss rule matched while the handler is paused counts too: it is held until <see cref="Resume"/>.</remarks>
         [Category("Interrupt - Results")]
         [Description("Whether a popup matched by a dismiss rule is still open (being retried, or given up on). Returns True on success; never throws.")]
         public bool HasUnresolvedPopup(out bool hasUnresolvedPopup, out string message)

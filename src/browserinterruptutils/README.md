@@ -237,7 +237,9 @@ invoking one of its own elements.
   Automation returns; the handler confirms 400 ms later), and its `PopupDismissed` or
   `PopupDismissFailed` event may still be raised. To be certain a popup is untouched, pause
   before it appears, or after `Pause` check `HasUnresolvedPopup` or wait about 400 ms and
-  re-check the popup before driving it. The UI Automation call it is waiting on has no
+  re-check the popup before driving it. A popup that opens while paused is noticed too:
+  `HasUnresolvedPopup` is `true` for one a dismiss rule matches, and its click or close waits
+  for `Resume` (a watch-only rule still raises `PopupDetected`). The UI Automation call it is waiting on has no
   timeout: if the browser is frozen, these methods block for as long as it stays frozen, and
   there is no way to abandon the wait.
 - **A popup that keeps coming back cannot loop forever.** A rule that has dismissed

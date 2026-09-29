@@ -869,6 +869,12 @@ namespace BrowserInterruptAutomation.Tests
             Thread.Sleep(600);
             Assert.True(w.Alive);
             Assert.Equal(0, w.Invokes);
+            // A popup that opened during the pause is visible to the caller's "is anything open?" check.
+            Assert.True(WaitFor(() =>
+            {
+                rig.Utils.HasUnresolvedPopup(out bool unresolved, out _);
+                return unresolved;
+            }));
 
             Assert.True(rig.Utils.Resume(out _));
             Assert.True(WaitFor(() => !w.Alive));

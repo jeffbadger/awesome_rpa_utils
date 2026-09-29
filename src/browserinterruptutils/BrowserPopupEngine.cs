@@ -381,9 +381,11 @@ namespace BrowserInterruptAutomation
         // already under way instead of returning while it is still about to land.
         private readonly object _actionLock = new object();
         private bool _actionsStopped;
+        private int _resumed;
 
         /// <summary>
-        /// While set, popups are noticed but not touched; they are dealt with after it is cleared.
+        /// While set, popups are noticed (a matching one is selected, and counts as unresolved) but
+        /// not touched; a rule's action on them is taken after it is cleared with <see cref="Resume"/>.
         /// Setting it does not by itself wait for a call already under way; call
         /// <see cref="WaitForIdle"/> afterwards for that.
         /// </summary>
@@ -520,6 +522,30 @@ namespace BrowserInterruptAutomation
         {
             lock (_actionLock)
             {
+            }
+        }
+
+        /// <summary>
+        /// Clears <see cref="Paused"/> and wakes the worker. Candidates a rule matched while paused
+        /// are held with a recheck due up to <see cref="PausedRecheckMs"/> later; the next pass
+        /// makes them due at once, so they are handled promptly rather than after that hold-back.
+        /// </summary>
+        internal void Resume()
+        {
+            Paused = false;
+            Volatile.Write(ref _resumed, 1);
+            Wake();
+        }
+
+        /// <summary>Makes the candidates held for <see cref="Resume"/> due now (once per resume).</summary>
+        private void ResumeHeldCandidates(long now)
+        {
+            if (Interlocked.Exchange(ref _resumed, 0) == 0)
+                return;
+            foreach (var state in _candidates.Values)
+            {
+                if (state.Rule != null && state.Pending == null && !state.Failed && state.NextDue != long.MaxValue && state.NextDue > now)
+                    state.NextDue = now;
             }
         }
 
@@ -708,6 +734,7 @@ namespace BrowserInterruptAutomation
             // same tick a window is first reported must be visible before that decision is made.
             _sweptThisPass.Clear();
             ApplyRuleChanges(now);
+            ResumeHeldCandidates(now);
             DrainNativeQueue(now);
             DrainOverlayDirtyQueue(now);
 
@@ -1342,8 +1369,11 @@ namespace BrowserInterruptAutomation
                 state.NextDue = long.MaxValue;
                 return;
             }
-            if (Paused)
+            if (Paused && state.Rule != null && state.Rule.Action != BrowserPopupAction.WatchOnly)
             {
+                // Already matched (so already counted as unresolved) and held for Resume: nothing
+                // to re-decide, and no reason to re-read its message text every recheck. A rule
+                // change that could alter the match resets state.Rule (ApplyRuleChanges).
                 state.NextDue = now + PausedRecheckMs;
                 return;
             }
@@ -1382,6 +1412,16 @@ namespace BrowserInterruptAutomation
             if (IsTripped(rule))
             {
                 state.NextDue = long.MaxValue;
+                return;
+            }
+
+            // Rule selection deliberately runs while paused: a popup that opens during a pause is
+            // matched, counted as unresolved (HasUnresolvedPopup), and only its ACTION is held
+            // back until Resume (see ResumeHeldCandidates). A watch-only match is not an action, so
+            // its Detected report is still raised while paused.
+            if (Paused && rule.Action != BrowserPopupAction.WatchOnly)
+            {
+                state.NextDue = now + PausedRecheckMs;
                 return;
             }
 

@@ -1136,6 +1136,142 @@ namespace BrowserInterruptAutomation.Tests
             Assert.False(w.Alive);
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void MatchingPopupOpeningDuringPause_IsUnresolved_UntouchedUntilResume_ThenDismissedPromptly(bool useClose)
+        {
+            var h = new Harness();
+            if (useClose)
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            else
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "OK");
+            var w = h.Probe.AddWindow("Alert");
+            var ok = h.Probe.AddChild(w, "OK");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(w);
+            for (long t = 300; t <= 1500; t += 300)
+                h.Pump(t);
+
+            Assert.True(h.Engine.HasUnresolvedPopup);
+            Assert.Equal(1, h.Engine.UnresolvedCount);
+            Assert.Equal(0, h.Probe.TotalCloses);
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(0, h.Probe.OverlaySearchCalls); // not even the target walk
+            Assert.True(w.Alive);
+
+            h.Engine.Resume();
+            h.Pump(h.Now); // one pass at the same instant: no wait for the hold-back to run out
+
+            Assert.Equal(useClose ? 1 : 0, w.Closes);
+            Assert.Equal(useClose ? 0 : 1, ok.Invokes);
+            h.PastVerifyDelay();
+            Assert.False(w.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.False(h.Engine.HasUnresolvedPopup);
+        }
+
+        [Fact]
+        public void NonMatchingPopupOpeningDuringPause_IsNotUnresolved()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var other = h.Probe.AddWindow("Something else");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(other);
+            h.Settle();
+
+            Assert.False(h.Engine.HasUnresolvedPopup);
+            Assert.Equal(0, h.Probe.TotalCloses);
+            Assert.True(other.Alive);
+        }
+
+        [Fact]
+        public void WatchOnlyMatchDuringPause_IsReportedOnce_AndNeverCountsAsUnresolved()
+        {
+            var h = new Harness();
+            h.AddRule("watch", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.WatchOnly);
+            var w = h.Probe.AddWindow("Alert");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(w);
+            h.Settle();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected)); // reporting is not touching the popup
+            Assert.False(h.Engine.HasUnresolvedPopup);
+
+            h.Engine.Resume();
+            h.Pump(h.Now + 1000);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected)); // still once
+            Assert.True(w.Alive);
+        }
+
+        [Fact]
+        public void SeveralPopupsDuringPause_AreAllCounted_AndAllDismissedAfterResume()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var first = h.Probe.AddWindow("Alert one");
+            var second = h.Probe.AddWindow("Alert two");
+            var unrelated = h.Probe.AddWindow("Unrelated");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(first);
+            h.AppearWindow(unrelated);
+            h.Pump(300);
+            Assert.Equal(1, h.Engine.UnresolvedCount);
+            h.AppearWindow(second);
+            h.Pump(600);
+            Assert.Equal(2, h.Engine.UnresolvedCount);
+            Assert.Equal(0, h.Probe.TotalCloses);
+
+            h.Engine.Resume();
+            h.Pump(h.Now);
+            h.PastVerifyDelay();
+
+            Assert.False(first.Alive);
+            Assert.False(second.Alive);
+            Assert.True(unrelated.Alive);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Dismissed).Count());
+            Assert.Equal(0, h.Engine.UnresolvedCount);
+        }
+
+        [Fact]
+        public void HeldPopup_IsNotReSelectedOrItsMessageReReadOnEveryPausedRecheck()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, message: "sure?", nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert", message: "Are you sure?");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(w);
+            int readsAfterFirst = h.Probe.MessageTextCalls;
+            for (long t = 300; t <= 3000; t += 300)
+                h.Pump(t);
+
+            Assert.Equal(1, readsAfterFirst);
+            Assert.Equal(readsAfterFirst, h.Probe.MessageTextCalls);
+            Assert.True(h.Engine.HasUnresolvedPopup);
+        }
+
+        [Fact]
+        public void PendingVerification_IsUnchangedByPause_StillConfirmedWhilePaused()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w); // closed, verification pending
+            Assert.True(h.Engine.HasUnresolvedPopup);
+
+            h.Engine.Paused = true;
+            h.PastVerifyDelay();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.False(h.Engine.HasUnresolvedPopup);
+        }
+
         // ------------------------------------------------------------------ defense in depth
 
         [Fact]

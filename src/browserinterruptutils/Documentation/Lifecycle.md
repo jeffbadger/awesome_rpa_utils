@@ -85,9 +85,11 @@ finally
 }
 ```
 
-While paused, popups are noticed but not touched. When you `Resume`, any popup that appeared
-meanwhile and is *still open* is then dealt with, so a genuine interruption that arrived during the
-step is not lost.
+While paused, popups are noticed but not touched. A popup that a dismiss rule matches during the
+pause is selected and counted (`HasUnresolvedPopup` is `true` for it) and only the rule's click or
+close is held back; a watch-only rule still raises `PopupDetected`, since reporting does not touch the
+popup. When you `Resume`, any such popup that is *still open* is dealt with promptly, so a genuine
+interruption that arrived during the step is not lost.
 
 To exclude one kind of popup for a longer stretch instead, switch just that rule off with
 `SetRuleEnabled`. Popups owned by the automation's own process are never touched.
@@ -113,7 +115,9 @@ held back until `Resume`.
 
 To be certain a popup is untouched, pause before it appears. Otherwise, after `Pause` check
 `HasUnresolvedPopup`, or wait about 400 ms, and re-check that the popup is still there before driving
-it.
+it. `HasUnresolvedPopup` is `true` for any popup a dismiss rule matched, including one that opened
+after `Pause` and is waiting for `Resume`, so it does not by itself say whether a click was already
+issued: the 400 ms wait covers that.
 
 ## A dismissal is confirmed before it is counted
 

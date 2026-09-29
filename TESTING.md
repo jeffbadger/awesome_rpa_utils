@@ -936,7 +936,7 @@ nothing.
   `sweepIntervalMs: 0` (window events alone) and with the default.
 - A popup whose title does not match (`--title=...`), or whose process does not match, stays
   open. A watch-only rule raises `PopupDetected` once and leaves the popup open.
-- `Pause` leaves a matching popup open; `Resume` then dismisses it. `SetRuleEnabled(false)`
+- `Pause` leaves a matching popup open (and `HasUnresolvedPopup` is true for one that opened during the pause); `Resume` then dismisses it promptly. `SetRuleEnabled(false)`
   does the same for one rule.
 - Open a popup *before* calling `Start` (run `--delayed-popup --delay-ms=0`) and verify the
   periodic scan dismisses it.
