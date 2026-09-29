@@ -39,7 +39,7 @@ bool AddNativeDialogDismissRuleByName(string ruleName, string nameContains, stri
     string processName, string targetElementName, out string message,
     bool exactTargetElementName = true, string roleContains = null)
 bool AddNativeDialogDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains,
-    string processName, string targetAutomationId, out string message, string roleContains = null, string automationIdContains = null)
+    string processName, string targetAutomationId, out string message, string roleContains = null)
 bool AddNativeDialogCloseRule(string ruleName, string nameContains, string messageContains,
     string processName, out string message, string roleContains = null)   // WindowPattern.Close
 bool AddNativeDialogWatchOnlyRule(string ruleName, string nameContains, string messageContains,

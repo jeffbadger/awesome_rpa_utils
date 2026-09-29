@@ -170,7 +170,7 @@ namespace BrowserInterruptAutomation
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching native dialog by invoking the descendant element with the given automation ID. Returns True if added; never throws.")]
         public bool AddNativeDialogDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains, string processName,
-            string targetAutomationId, out string message, string roleContains = null, string automationIdContains = null)
+            string targetAutomationId, out string message, string roleContains = null)
         {
             message = default;
             try
