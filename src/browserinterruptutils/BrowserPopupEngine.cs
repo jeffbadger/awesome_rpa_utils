@@ -1608,8 +1608,10 @@ namespace BrowserInterruptAutomation
         /// <summary>
         /// The popup an action was taken on is gone: counts it (per-rule count, total, the runaway
         /// breaker's window) and records <c>Dismissed</c>. No-op unless a dismissal awaits
-        /// verification. Counted even if the rule was removed meanwhile (the popup did close), but
-        /// only into a rule that is still registered.
+        /// verification. One deterministic rule for a rule removed meanwhile: if the rule is no longer
+        /// registered when this runs, nothing is counted or recorded, whichever of this and
+        /// <see cref="ApplyRuleChanges"/> (which drops such a pending dismissal too) gets there first,
+        /// so the total always equals the sum of the per-rule counts.
         /// </summary>
         private void ConfirmDismissal(CandidateState state)
         {
@@ -1621,10 +1623,11 @@ namespace BrowserInterruptAutomation
             BrowserPopupRule rule = pending.Rule;
             lock (_lock)
             {
+                if (!_rules.Contains(rule))
+                    return; // removed (or cleared) before the confirmation: nothing left to count or report
                 if (_ruleRuntime.TryGetValue(rule.RuleName, out var runtime))
                     runtime.RecentDismissals.Enqueue(pending.ActedAt);
-                if (_rules.Exists(r => string.Equals(r.RuleName, rule.RuleName, StringComparison.OrdinalIgnoreCase)))
-                    _counts[rule.RuleName] = (_counts.TryGetValue(rule.RuleName, out int c) ? c : 0) + 1;
+                _counts[rule.RuleName] = (_counts.TryGetValue(rule.RuleName, out int c) ? c : 0) + 1;
                 _total++;
             }
             RecordCore(BrowserPopupRecordKind.Dismissed, rule.RuleName, pending.Scope, pending.Info.Name,

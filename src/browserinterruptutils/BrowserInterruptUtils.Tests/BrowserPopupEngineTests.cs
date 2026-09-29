@@ -2893,5 +2893,68 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal("first", Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed)).RuleName);
             Assert.Equal("second", Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)).RuleName);
         }
+
+        [Fact]
+        public void RuleRemovedBeforeThePassObservesIt_ThenThePopupClosing_CountsAndRecordsNothing()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            Assert.False(w.Alive);
+
+            Assert.True(h.Engine.RemoveRule("r"));
+            h.Settle(100, 2000); // ApplyRuleChanges sees the removal first and drops the pending dismissal
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(0, h.Engine.TotalDismissals);
+            Assert.False(h.Engine.TryGetCount("r", out _));
+        }
+
+        [Fact]
+        public void RuleRemovedAfterThePassAppliedRuleChanges_ThenConfirmation_CountsAndRecordsNothing_TotalMatchesPerRuleSum()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 500);
+            h.AddRule("ov", BrowserPopupScope.PageOverlay, nameContains: "zzz", process: "chrome"); // watches the chrome window: its sweep runs mid-pass
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "notepad", action: BrowserPopupAction.CloseWindowPattern);
+            var chrome = h.Probe.AddWindow("tab", pid: 5, processName: "chrome");
+            var dialog = h.Probe.AddWindow("Alert", pid: 6, processName: "notepad");
+            h.AppearWindow(chrome);
+            h.AppearWindow(dialog);
+            Assert.False(dialog.Alive); // closed; verification pending
+
+            // At 600 ms the pass has already applied rule changes when the overlay sweep runs; the
+            // rule is removed from inside it, so the confirmation of the pending dismissal comes
+            // first and only afterwards would ApplyRuleChanges (next pass) see the removal.
+            bool removed = false;
+            h.Probe.OnFindOverlayCandidates = () =>
+            {
+                if (!removed)
+                {
+                    removed = true;
+                    h.Engine.RemoveRule("r");
+                }
+            };
+            h.Pump(600);
+
+            Assert.True(removed);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(0, h.Engine.TotalDismissals);
+            Assert.False(h.Engine.TryGetCount("r", out _));
+        }
+
+        [Fact]
+        public void ConfirmedDismissal_WithTheRuleStillRegistered_CountsPerRuleAndInTotal()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            h.AppearWindow(h.Probe.AddWindow("Alert"));
+            h.PastVerifyDelay();
+
+            Assert.True(h.Engine.TryGetCount("r", out int count));
+            Assert.Equal(1, count);
+            Assert.Equal(1, h.Engine.TotalDismissals);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
     }
 }

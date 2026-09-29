@@ -220,7 +220,8 @@ invoking one of its own elements.
   action succeeded but the popup is still open. Until then `HasUnresolvedPopup` stays true.
   Only confirmed dismissals count toward `maxDismissalsPerMinute`; a popup that ignores the
   click is bounded by `maxAttempts` instead. Stopping the component inside that 400 ms window
-  drops the pending confirmation (the popup was closed but is not counted).
+  drops the pending confirmation (the popup was closed but is not counted); so does removing
+  the rule inside it: a dismissal whose rule is gone is neither counted nor reported.
 - **A walk over a big page costs cross-process reads.** Each element visited reads about
   eight UI Automation properties, each a cross-process call, and the component does not use
   a `CacheRequest`. On a very large page a sweep can be slow; lower `maxOverlayNodes` (default
