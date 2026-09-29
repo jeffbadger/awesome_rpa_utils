@@ -715,6 +715,10 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Single(h.Of(BrowserPopupRecordKind.Error));
         }
 
+        // Fixture sanity, not engine behavior: this exercises FakeBrowserPopupHookSource.Start()
+        // directly and asserts nothing about BrowserPopupEngine. It proves the fake will behave
+        // correctly when Task 5 reuses it to test Start(...); do not count it toward engine-behavior
+        // coverage.
         [Fact]
         public void FakeHookSource_ReportsStartFailureWhenConfigured()
         {
@@ -724,6 +728,59 @@ namespace BrowserInterruptAutomation.Tests
 
             Assert.NotNull(message);
             Assert.Equal(1, hook.StartCalls);
+        }
+
+        // ------------------------------------------------------------------ process-name cache eviction
+
+        /// <summary>
+        /// Regresses the PID-reuse staleness bug in <c>_processNameCache</c>: once the last
+        /// NativeDialog candidate for a process id is gone, that PID's cached name must be
+        /// evicted, not left to be resolved for an unrelated later process. Without the eviction
+        /// (in <c>RemoveCandidate</c>/<c>EvictProcessNameIfUnreferenced</c>), a PageOverlay
+        /// candidate that happens to carry the reused PID would still resolve to the exited
+        /// process's stale name and wrongly match a rule scoped to that stale name.
+        /// </summary>
+        [Fact]
+        public void ProcessNameCache_IsEvictedWithTheLastCandidateForAPid_SoAReusedPidResolvesTheNewName()
+        {
+            var h = new Harness();
+            h.AddRule("closeOld", BrowserPopupScope.NativeDialog, nameContains: "Dlg", process: "oldproc", action: BrowserPopupAction.CloseWindowPattern);
+            h.AddRule("matchesNew", BrowserPopupScope.PageOverlay, nameContains: "Popup", process: "newproc");
+            h.AddRule("staleMatch", BrowserPopupScope.PageOverlay, nameContains: "Popup", process: "oldproc");
+            // Enables overlay watching for every process (no ProcessName criterion), independent
+            // of the two rules above, so the still-open, unrelated window below gets watched.
+            h.AddRule("watchAny", BrowserPopupScope.PageOverlay, nameContains: "zzz-never-matches-xyz");
+
+            // The old process (pid 77) opens and is immediately dismissed: its only tracked
+            // candidate is removed, which must evict pid 77's cached name ("oldproc").
+            var oldWindow = h.Probe.AddWindow("Dlg", pid: 77, processName: "oldproc");
+            h.AppearWindow(oldWindow);
+            Assert.False(oldWindow.Alive);
+
+            // An unrelated, still-open browser window - never itself using pid 77 - hosts a page
+            // overlay whose reported ProcessId happens to be the reused pid 77 (Task 1's
+            // BrowserElementInfo gives overlays only a ProcessId, so the engine has no way to
+            // learn its owner's name except through the cache).
+            var otherWindow = h.Probe.AddWindow("Tab", pid: 999, processName: "somebrowser");
+            h.AppearWindow(otherWindow);
+            var overlay = h.Probe.AddOverlay(otherWindow, "Popup banner", pid: 77);
+            h.AppearOverlay(otherWindow);
+
+            // With the stale entry evicted, pid 77 resolves to no name at all here (the engine
+            // genuinely does not know it yet) - so it must NOT be wrongly resolved to "oldproc"
+            // and match the rule scoped to the exited process.
+            Assert.DoesNotContain(h.Of(BrowserPopupRecordKind.Detected), r => r.RuleName == "staleMatch");
+
+            // The genuinely new process now announces itself via its own top-level window,
+            // legitimately caching "newproc" for pid 77.
+            h.Now += 200;
+            var newWindow = h.Probe.AddWindow("NewProcDlg", pid: 77, processName: "newproc");
+            h.AppearWindow(newWindow);
+
+            // Advance to the overlay candidate's next scheduled recheck: it must now resolve pid
+            // 77 to "newproc" and match the rule scoped to the genuinely new process.
+            h.Pump(h.Now + BrowserPopupEngine.ScheduleMs[1]);
+            Assert.Contains(h.Of(BrowserPopupRecordKind.Detected), r => r.RuleName == "matchesNew");
         }
 
         // ------------------------------------------------------------------ sweep discovery

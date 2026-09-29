@@ -102,6 +102,31 @@ namespace BrowserInterruptAutomation
     /// automation-ID targeting no equivalent "exact" flag and automation IDs are ordinarily
     /// stable, exact identifiers rather than free text.
     /// </item>
+    /// <item>
+    /// <b><c>_processNameCache</c> is long-lived, unlike the reference's per-pass cache.</b> The
+    /// reference's <c>PopupEngine.Pump</c> clears its <c>_processNames</c> lookup at the top of
+    /// every pass, with a comment explaining that a reused process id can then never resolve to a
+    /// stale name from an earlier pass - every window it ever looks at has a real Win32 handle it
+    /// can re-describe on the spot, so nothing is lost by throwing the lookup away each time.
+    /// Task 1's <see cref="BrowserElementInfo"/> gives a <see cref="BrowserPopupScope.PageOverlay"/>
+    /// candidate only a <see cref="BrowserElementInfo.ProcessId"/>, never a process name, and there
+    /// is no per-element "describe" call this engine can make to learn one directly (see the
+    /// candidate-refresh bullet above) - the only place a process name is ever learned is
+    /// <see cref="IBrowserPopupProbe.DescribeWindow"/>/<see cref="IBrowserPopupProbe.EnumerateTopLevelWindows"/>,
+    /// both <see cref="BrowserPopupScope.NativeDialog"/>-only. So <c>_processNameCache</c> has to
+    /// outlive a single <see cref="Pump"/> pass, or a <see cref="BrowserPopupRule.ProcessName"/>
+    /// criterion could never be satisfied for an overlay rule at all: clearing it every pass the
+    /// way the reference does would mean nothing ever populates it again for a window that was
+    /// already known before that pass began. The risk this trades away: if a process exits and its
+    /// PID is reused by an unrelated process before every candidate that still carries the old PID
+    /// has been removed, <see cref="ProcessNameOf"/> can return the exited process's stale name for
+    /// the new one - wrongly matching, or failing to match, a <see cref="BrowserPopupRule.ProcessName"/>
+    /// criterion (including via <see cref="IsOverlayInterestingProcess"/>, which decides overlay
+    /// watch interest). <see cref="RemoveCandidate"/> bounds this window as tightly as the engine
+    /// can manage with no independent "this process exited" signal: it evicts a PID's cache entry
+    /// the moment no tracked candidate of either scope still carries it, rather than waiting for
+    /// <see cref="ResetRuntime"/>.
+    /// </item>
     /// </list>
     /// </remarks>
     internal sealed class BrowserPopupEngine : IDisposable
@@ -207,7 +232,18 @@ namespace BrowserInterruptAutomation
         private int _unresolved;
         private int _overlaySweepIntervalMs;
 
-        /// <summary>How often to scan for native-dialog windows the hook did not report; 0 turns the scan off.</summary>
+        // The six settable configuration properties below are plain, unsynchronized properties -
+        // like the reference's identical SweepIntervalMs/MaxAttempts/MaxDismissalsPerMinute, this
+        // is not a regression. Per the "configuration is by settable property" remark above, each
+        // one must be set before a worker loop starts calling Pump, not hot-swapped while one is
+        // running: unlike Paused (volatile) and the rule-CRUD methods (lock-guarded), reading one
+        // of these mid-Pump is not guaranteed to observe a concurrent write.
+
+        /// <summary>
+        /// How often to scan for native-dialog windows the hook did not report; 0 turns the scan
+        /// off. Set before starting the worker loop; not safe to change while <see cref="Pump"/>
+        /// is running on another thread.
+        /// </summary>
         internal int SweepIntervalMs { get; set; } = 1000;
 
         /// <summary>
@@ -215,7 +251,8 @@ namespace BrowserInterruptAutomation
         /// overlays; 0 turns the periodic sweep off (overlay discovery still happens on
         /// <see cref="IBrowserPopupHookSource.WindowStructureChanged"/>). Clamped to at least
         /// <see cref="MinOverlaySweepIntervalMs"/> whenever set above zero, since each sweep is a
-        /// bounded but real cross-process subtree walk per watched window.
+        /// bounded but real cross-process subtree walk per watched window. Set before starting the
+        /// worker loop; not safe to change while <see cref="Pump"/> is running on another thread.
         /// </summary>
         internal int OverlaySweepIntervalMs
         {
@@ -223,16 +260,31 @@ namespace BrowserInterruptAutomation
             set => _overlaySweepIntervalMs = value <= 0 ? 0 : Math.Max(value, MinOverlaySweepIntervalMs);
         }
 
-        /// <summary>How many times to try to dismiss one popup before giving up on it.</summary>
+        /// <summary>
+        /// How many times to try to dismiss one popup before giving up on it. Set before starting
+        /// the worker loop; not safe to change while <see cref="Pump"/> is running on another thread.
+        /// </summary>
         internal int MaxAttempts { get; set; } = 3;
 
-        /// <summary>How many popups one rule may dismiss in a minute before it stops itself.</summary>
+        /// <summary>
+        /// How many popups one rule may dismiss in a minute before it stops itself. Set before
+        /// starting the worker loop; not safe to change while <see cref="Pump"/> is running on
+        /// another thread.
+        /// </summary>
         internal int MaxDismissalsPerMinute { get; set; } = 20;
 
-        /// <summary>The most elements a single <see cref="IBrowserPopupProbe.FindOverlayCandidates"/> walk may visit.</summary>
+        /// <summary>
+        /// The most elements a single <see cref="IBrowserPopupProbe.FindOverlayCandidates"/> walk
+        /// may visit. Set before starting the worker loop; not safe to change while
+        /// <see cref="Pump"/> is running on another thread.
+        /// </summary>
         internal int MaxOverlayNodes { get; set; } = 500;
 
-        /// <summary>The deepest a single <see cref="IBrowserPopupProbe.FindOverlayCandidates"/> walk may descend.</summary>
+        /// <summary>
+        /// The deepest a single <see cref="IBrowserPopupProbe.FindOverlayCandidates"/> walk may
+        /// descend. Set before starting the worker loop; not safe to change while <see cref="Pump"/>
+        /// is running on another thread.
+        /// </summary>
         internal int MaxOverlayDepth { get; set; } = 25;
 
         /// <summary>While set, popups are noticed but not touched; they are dealt with after it is cleared.</summary>
@@ -826,6 +878,30 @@ namespace BrowserInterruptAutomation
                 foreach (var key in orphaned)
                     _candidates.Remove(key);
             }
+
+            // Bounds _processNameCache's staleness window (see the type remarks' 8th bullet):
+            // once the last candidate anywhere that still carries this PID is gone, forget the
+            // name we cached for it, so a later process that reuses the PID is never resolved to
+            // the exited process's name. Only checked here (a NativeDialog removal), since only
+            // the NativeDialog discovery paths ever populate the cache in the first place.
+            EvictProcessNameIfUnreferenced(state.ProcessId);
+        }
+
+        /// <summary>
+        /// Removes <paramref name="processId"/>'s cached name once no tracked candidate - of
+        /// either scope - still carries it, so an overlay candidate belonging to the same
+        /// still-open browser process keeps resolving its name correctly.
+        /// </summary>
+        private void EvictProcessNameIfUnreferenced(int processId)
+        {
+            if (processId == 0)
+                return;
+            foreach (var candidate in _candidates.Values)
+            {
+                if (candidate.ProcessId == processId)
+                    return;
+            }
+            _processNameCache.Remove(processId);
         }
 
         // ------------------------------------------------------------------ deciding
