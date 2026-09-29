@@ -690,8 +690,14 @@ namespace BrowserInterruptAutomation
         /// <summary>Stops watching. Rules, counts and the log are kept, so <see cref="Start"/> can resume.</summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success, including when it was not running; <c>false</c> only if something unexpected failed. Never throws.</returns>
+        /// <remarks>
+        /// Once this returns, no new UI Automation invoke or close call can start. A call already
+        /// under way is allowed to finish first; if its browser is hung, <c>Stop</c> can block for
+        /// as long as that call does. A discovery pass already in progress may finish and raise
+        /// events after <c>Stop</c> returns.
+        /// </remarks>
         [Category("Interrupt - Lifecycle")]
-        [Description("Stops watching for browser popups. Rules and the log are kept. Returns True on success, including when not running; never throws.")]
+        [Description("Stops watching for browser popups. No new UI Automation invoke or close call starts once it returns; it waits for a call under way, so a hung browser can delay it. A discovery pass already in progress may finish and raise events after it returns. Rules and the log are kept. Returns True on success, including when not running; never throws.")]
         public bool Stop(out string message)
         {
             message = default;
@@ -1116,6 +1122,10 @@ namespace BrowserInterruptAutomation
             }
             if (worker == null)
                 return;
+
+            // The worker may still be in discovery and reach Act after cancellation. StopActions
+            // establishes the action barrier; a call already in flight finishes before it returns.
+            _engine.StopActions();
 
             // Cancelling and joining the worker must happen even if unhooking throws: otherwise the
             // handler would go on dismissing popups while the component reports it is stopped.

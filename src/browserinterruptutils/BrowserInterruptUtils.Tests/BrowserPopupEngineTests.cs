@@ -138,6 +138,46 @@ namespace BrowserInterruptAutomation.Tests
             Assert.True(w.Alive);
         }
 
+        [Fact]
+        public void StopActionsDuringTargetDiscovery_PreventsActionAndRuntimeResetAllowsItAgain()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert",
+                action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var window = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(window, "Yes");
+            using var discoveryEntered = new ManualResetEventSlim(false);
+            using var finishDiscovery = new ManualResetEventSlim(false);
+            h.Probe.OnFindOverlayCandidates = () =>
+            {
+                discoveryEntered.Set();
+                if (!finishDiscovery.Wait(5000))
+                    throw new TimeoutException("The test did not release target discovery.");
+            };
+            h.Hook.FireWindowOpened(window);
+            Exception pumpFailure = null;
+            var worker = new Thread(() =>
+            {
+                try { h.Pump(100); }
+                catch (Exception ex) { pumpFailure = ex; }
+            }) { IsBackground = true };
+            worker.Start();
+
+            Assert.True(discoveryEntered.Wait(5000), "target discovery did not start");
+            h.Engine.StopActions();
+            finishDiscovery.Set();
+            Assert.True(worker.Join(5000), "the popup pump did not finish");
+            Assert.Null(pumpFailure);
+            Assert.Equal(0, yes.Invokes);
+
+            h.Probe.OnFindOverlayCandidates = null;
+            h.Engine.ResetRuntime();
+            var nextWindow = h.Probe.AddWindow("Alert");
+            var nextYes = h.Probe.AddChild(nextWindow, "Yes");
+            h.AppearWindow(nextWindow);
+            Assert.Equal(1, nextYes.Invokes);
+        }
+
         // ------------------------------------------------------------------ Paused / rule changes vs an action in flight
 
         [Fact]

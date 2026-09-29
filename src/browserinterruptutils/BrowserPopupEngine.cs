@@ -378,11 +378,11 @@ namespace BrowserInterruptAutomation
         /// <remarks>The engine-level default is conservative; <c>BrowserInterruptUtils.Start</c> always overrides it (public default 50).</remarks>
         internal int MaxOverlayDepth { get; set; } = 25;
 
-        // Held by the worker only around the final Paused/rule re-check and the probe's
-        // TryInvoke/TryClose plus recording its result (never during the slow discovery walks), so
-        // Pause, SetRuleEnabled(false), RemoveRule and ClearRules can wait for an action already
-        // under way instead of returning while it is still about to land.
+        // Held around the final action-state re-check and the probe's TryInvoke/TryClose (never
+        // during the slow discovery walks), so lifecycle and rule changes can wait for an action
+        // already under way instead of returning while it is still about to land.
         private readonly object _actionLock = new object();
+        private bool _actionsStopped;
 
         /// <summary>
         /// While set, popups are noticed but not touched; they are dealt with after it is cleared.
@@ -525,6 +525,13 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        /// <summary>Stops new invoke/close calls and waits for any one already under way to finish.</summary>
+        internal void StopActions()
+        {
+            lock (_actionLock)
+                _actionsStopped = true;
+        }
+
         private bool IsRegistered(BrowserPopupRule rule) => Array.IndexOf(SnapshotRules(), rule) >= 0;
 
         internal BrowserPopupRule[] SnapshotRules()
@@ -644,6 +651,9 @@ namespace BrowserInterruptAutomation
         /// <summary>Forgets every tracked candidate, queued report and watch registration. Only call while no worker is pumping.</summary>
         internal void ResetRuntime()
         {
+            lock (_actionLock)
+                _actionsStopped = false;
+
             while (_faults.TryDequeue(out _)) { }
             while (_nativeQueue.TryDequeue(out _)) Interlocked.Decrement(ref _nativeQueued);
             while (_overlayDirtyQueue.TryDequeue(out _)) Interlocked.Decrement(ref _overlayDirtyQueued);
@@ -1443,7 +1453,7 @@ namespace BrowserInterruptAutomation
                 // changed since Evaluate chose the rule (the discovery above is slow).
                 // rule.Enabled is not volatile: this read sees a writer's change because the writer
                 // (SetRuleEnabled) takes and releases _actionLock in WaitForIdle before this acquire.
-                if (Paused || !rule.Enabled || !IsRegistered(rule))
+                if (_actionsStopped || Paused || !rule.Enabled || !IsRegistered(rule))
                 {
                     state.NextDue = now + PausedRecheckMs;
                     return;
