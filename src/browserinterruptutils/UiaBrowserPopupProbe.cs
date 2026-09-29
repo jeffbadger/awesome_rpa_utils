@@ -581,6 +581,10 @@ namespace BrowserInterruptAutomation
 
             CacheElement(elementRef, element);
 
+            // Only a native window (non-zero hwnd) has a style to read. Read on every describe, so the
+            // engine's per-evaluation DescribeWindow always acts on the current style.
+            bool isMainWindowLike = hwnd != IntPtr.Zero && NativeMethods.IsMainWindowStyle(NativeMethods.GetWindowStyle(hwnd));
+
             return new BrowserElementInfo
             {
                 Name = name,
@@ -589,6 +593,7 @@ namespace BrowserInterruptAutomation
                 ControlType = controlType,
                 LocalizedControlType = localizedControlType,
                 ProcessId = processId,
+                IsMainWindowLike = isMainWindowLike,
                 Ref = elementRef
             };
         }

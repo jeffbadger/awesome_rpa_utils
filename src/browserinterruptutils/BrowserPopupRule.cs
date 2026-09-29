@@ -22,7 +22,12 @@ namespace BrowserInterruptAutomation
         /// <summary>Invoke a descendant element found by its automation ID (<see cref="BrowserPopupRule.TargetAutomationId"/>).</summary>
         InvokeByAutomationId,
 
-        /// <summary>Close the popup's own window (its UIA Window pattern). Valid only for <see cref="BrowserPopupScope.NativeDialog"/>.</summary>
+        /// <summary>
+        /// Close the popup's own window (its UIA Window pattern). Valid only for <see cref="BrowserPopupScope.NativeDialog"/>.
+        /// The engine refuses (one <c>DismissFailed</c>, no close attempted) when the window looks like a
+        /// main application window (<see cref="BrowserElementInfo.IsMainWindowLike"/>), since a name
+        /// substring can match the browser's own main window; use a dismiss-by-button rule for those.
+        /// </summary>
         CloseWindowPattern,
 
         /// <summary>Only report the popup; never act on it.</summary>

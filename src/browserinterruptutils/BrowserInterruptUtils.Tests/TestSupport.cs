@@ -38,6 +38,9 @@ namespace BrowserInterruptAutomation.Tests
         public bool IgnoreInvoke;
         public bool IgnoreClose;
 
+        /// <summary>The window has a minimize/maximize box (a normal application window, e.g. the browser's main window) as opposed to a dialog.</summary>
+        public bool IsMainWindowLike;
+
         /// <summary>The invoke/close reports success but the popup stays open (a UIA call that returned before the browser acted, or that the page ignored).</summary>
         public bool SucceedWithoutClosing;
         public int Invokes;
@@ -52,6 +55,7 @@ namespace BrowserInterruptAutomation.Tests
             ControlType = ControlType,
             LocalizedControlType = LocalizedControlType,
             ProcessId = Pid,
+            IsMainWindowLike = IsMainWindowLike,
             Ref = Ref
         };
     }

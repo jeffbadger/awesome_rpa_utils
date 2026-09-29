@@ -33,6 +33,15 @@ namespace BrowserInterruptAutomation
         public string LocalizedControlType { get; set; }
         public int ProcessId { get; set; }
 
+        /// <summary>
+        /// Native windows only: the window has a minimize or maximize box (<c>WS_MINIMIZEBOX</c>/
+        /// <c>WS_MAXIMIZEBOX</c>), i.e. it looks like a normal resizable application window such as
+        /// the browser's main window rather than a JS/system dialog. Also <c>true</c> when the
+        /// window style could not be read (fail safe). The engine refuses to close such a window
+        /// with a <see cref="BrowserPopupAction.CloseWindowPattern"/> rule.
+        /// </summary>
+        public bool IsMainWindowLike { get; set; }
+
         /// <summary>The opaque handle back to the real element, used to act on it later.</summary>
         public BrowserElementRef Ref { get; set; }
     }

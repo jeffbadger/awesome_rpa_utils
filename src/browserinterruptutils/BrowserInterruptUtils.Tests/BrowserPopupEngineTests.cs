@@ -1962,5 +1962,72 @@ namespace BrowserInterruptAutomation.Tests
             h.Pump(h.Now + BrowserPopupEngine.ReapIntervalMs);
             Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
         }
+
+        // ------------------------------------------------------------------ main-window refusal
+
+        [Fact]
+        public void CloseRule_RefusesAMainWindowLikeWindow_OnceAndNeverCallsTryClose()
+        {
+            var h = new Harness();
+            h.AddRule("closeIt", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.CloseWindowPattern);
+            var mainWindow = h.Probe.AddWindow("Example Domain - Google Chrome");
+            mainWindow.IsMainWindowLike = true;
+
+            h.AppearWindow(mainWindow);
+            h.Settle();
+
+            Assert.True(mainWindow.Alive);
+            Assert.Equal(0, mainWindow.Closes);
+            Assert.Equal(0, h.Probe.TotalCloses);
+            var failed = Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal("refused to close a window that looks like a main application window; use a dismiss-by-button rule or a more specific rule", failed.Detail);
+            Assert.Equal(0, failed.Attempts); // no retries were burned
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void CloseRule_ClosesADialogLikeWindow()
+        {
+            var h = new Harness();
+            h.AddRule("closeIt", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.CloseWindowPattern);
+            var dialog = h.Probe.AddWindow("Example Domain says");
+
+            h.AppearWindow(dialog);
+            h.PastVerifyDelay();
+
+            Assert.False(dialog.Alive);
+            Assert.Equal(1, dialog.Closes);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void DismissByNameRule_IsUnaffectedByAMainWindowLikeWindow()
+        {
+            var h = new Harness();
+            h.AddRule("press", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.InvokeByName, targetName: "OK");
+            var window = h.Probe.AddWindow("Example Domain");
+            window.IsMainWindowLike = true;
+            var ok = h.Probe.AddChild(window, "OK");
+
+            h.AppearWindow(window);
+            h.PastVerifyDelay();
+
+            Assert.Equal(1, ok.Invokes);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Theory]
+        [InlineData(0x14CF0000u, true)]  // WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_CLIPSIBLINGS (typical main window)
+        [InlineData(0x00020000u, true)]  // WS_MINIMIZEBOX alone
+        [InlineData(0x00010000u, true)]  // WS_MAXIMIZEBOX alone
+        [InlineData(0x14C80000u, false)] // caption + sysmenu, no min/max boxes (a dialog)
+        [InlineData(0x80880000u, false)] // WS_POPUP | WS_CAPTION | WS_SYSMENU: a message box
+        [InlineData(0u, true)]           // unreadable style: refuse
+        public void IsMainWindowStyle_ChecksTheMinimizeAndMaximizeBoxes(uint style, bool expected)
+        {
+            Assert.Equal(expected, NativeMethods.IsMainWindowStyle(style));
+        }
     }
 }

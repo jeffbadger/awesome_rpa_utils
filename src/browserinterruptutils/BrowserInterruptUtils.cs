@@ -194,7 +194,8 @@ namespace BrowserInterruptAutomation
             }
         }
 
-        /// <summary>Adds a rule that dismisses a matching native dialog by closing its window, for a dialog with no element worth invoking.</summary>
+        /// <summary>Adds a rule that dismisses a matching native dialog by closing its window, for a dialog with no element worth invoking.
+        /// A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never closed: the rule reports <c>PopupDismissFailed</c> once instead.</summary>
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
