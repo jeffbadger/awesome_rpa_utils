@@ -693,11 +693,12 @@ namespace BrowserInterruptAutomation
         /// <remarks>
         /// Once this returns, no new UI Automation invoke or close call can start. A call already
         /// under way is allowed to finish first; if its browser is hung, <c>Stop</c> can block for
-        /// as long as that call does. A discovery pass already in progress may finish and raise
-        /// events after <c>Stop</c> returns.
+        /// as long as that call does. UI Automation returns before the browser acts, so a call
+        /// issued before <c>Stop</c> may still take effect afterwards, and its dismissal result or
+        /// a discovery pass already in progress may raise events after <c>Stop</c> returns.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
-        [Description("Stops watching for browser popups. No new UI Automation invoke or close call starts once it returns; it waits for a call under way, so a hung browser can delay it. A discovery pass already in progress may finish and raise events after it returns. Rules and the log are kept. Returns True on success, including when not running; never throws.")]
+        [Description("Stops watching for browser popups. No new UI Automation invoke or close call starts once it returns; it waits for a call under way, so a hung browser can delay it. An action already issued may still take effect, and a dismissal result or discovery pass may raise events after it returns. Rules and the log are kept. Returns True on success, including when not running; never throws.")]
         public bool Stop(out string message)
         {
             message = default;

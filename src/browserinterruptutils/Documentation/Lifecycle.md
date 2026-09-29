@@ -21,8 +21,9 @@ waits at most 5 seconds for them). Popups matching a rule are dismissed on backg
 then on. `Stop` removes the UI Automation handlers and signals the worker to exit; rules, counts and
 the log are kept, so `Start` can resume later. Once `Stop` returns, no new UI Automation invoke or close
 call can start; a call already under way must finish first, so a hung browser can delay `Stop`.
-A discovery pass already in progress may finish and raise events after `Stop` returns. `Stop`
-succeeds even if it was not running, and disposing the component stops it too.
+UI Automation returns before the browser acts, so an action issued before `Stop` may still take effect
+afterwards, and its dismissal result or an in-progress discovery pass may raise events after `Stop`
+returns. `Stop` succeeds even if it was not running, and disposing the component stops it too.
 
 `Start` returns `false` (with a message) if it is already running, a setting is out of range,
 UI Automation events could not be started in this session, a previous run is still shutting down, or
