@@ -30,6 +30,11 @@ The first three carry a `BrowserPopupEventArgs`:
 
 `InterruptError` carries a `BrowserInterruptErrorEventArgs` (`RuleName`, `Message`, `TimestampUtc`).
 
+An unexpected failure inside one popup's handling (for example a UI Automation call that throws) is reported as
+an `InterruptError` and the handler carries on with the other popups, retrying the affected one after a short
+pause. Such reports are rate-limited: about one per popup per 30 seconds, and only a handful per pass, so a popup
+that fails persistently cannot flood the log.
+
 ## Events arrive once the handler's state is up to date
 
 An event is raised after the handler has finished updating everything it reports: by the time
