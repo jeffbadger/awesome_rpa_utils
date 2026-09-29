@@ -175,7 +175,7 @@ namespace BrowserInterruptAutomation
                 if (hwnd == IntPtr.Zero || !NativeMethods.IsWindow(hwnd))
                     return null;
 
-                AutomationElement element = ResolveFromHandle(hwnd);
+                AutomationElement element = ResolveFromHandle(hwnd, out _);
                 return element == null ? null : DescribeElement(element, hwnd);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -269,13 +269,17 @@ namespace BrowserInterruptAutomation
                 // engine bounds it by MaxAttempts, its owner window's death and the periodic reap
                 // (which only trusts refs it pinned), instead of dropping a possibly live popup.
                 Liveness liveness = Resolve(element, out AutomationElement resolved);
-                if (liveness == Liveness.Unknown)
-                    return true;
-                return liveness == Liveness.Alive && IsElementAvailable(resolved);
+                if (liveness == Liveness.Alive)
+                    liveness = LivenessClassifier.ClassifyRead(ReadElement(resolved));
+                // Only a definitive Dead reports false; Unknown (transient read/provider failure,
+                // or nothing to resolve from) reports alive. The engine treats "alive at the
+                // verification deadline" as a failed attempt bounded by MaxAttempts, so an
+                // unknown answer is retried rather than recorded as a dismissal.
+                return LivenessClassifier.ReportsAlive(liveness);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
-                return false;
+                return true; // a failure to even ask is not evidence the popup closed
             }
         }
 
@@ -323,11 +327,8 @@ namespace BrowserInterruptAutomation
             failureReason = null;
             try
             {
-                if (!TryResolve(target, out AutomationElement element) || element == null)
-                {
-                    failureReason = "The element could not be found (it may have already closed).";
+                if (!ResolveForAction(target, out AutomationElement element, out failureReason))
                     return false;
-                }
 
                 if (TryGetPattern(element, InvokePattern.Pattern, out object invokeObj) && invokeObj is InvokePattern invoke)
                     return TryUiaAction("Invoke", () => invoke.Invoke(), out failureReason);
@@ -351,11 +352,8 @@ namespace BrowserInterruptAutomation
             failureReason = null;
             try
             {
-                if (!TryResolve(target, out AutomationElement element) || element == null)
-                {
-                    failureReason = "The element could not be found (it may have already closed).";
+                if (!ResolveForAction(target, out AutomationElement element, out failureReason))
                     return false;
-                }
 
                 if (!TryGetPattern(element, WindowPattern.Pattern, out object windowObj) || !(windowObj is WindowPattern windowPattern))
                 {
@@ -393,24 +391,33 @@ namespace BrowserInterruptAutomation
         private bool TryResolve(BrowserElementRef target, out AutomationElement element) =>
             Resolve(target, out element) == Liveness.Alive;
 
-        /// <summary>What <see cref="Resolve"/> could establish about a reference.</summary>
-        private enum Liveness
+        /// <summary>
+        /// <see cref="TryResolve"/> for actions: on failure says why. An <see cref="Liveness.Unknown"/>
+        /// resolution (a transient provider failure) is reported as "could not be verified", never as
+        /// "already closed", so the caller does not conclude the popup is gone.
+        /// </summary>
+        private bool ResolveForAction(BrowserElementRef target, out AutomationElement element, out string failureReason)
         {
-            /// <summary>Resolved to a live element.</summary>
-            Alive,
-
-            /// <summary>Definitively gone: its window is destroyed, or a pinned/cached element is unavailable.</summary>
-            Dead,
-
-            /// <summary>A window-less reference that is neither pinned nor cached: nothing can be said about it.</summary>
-            Unknown
+            Liveness liveness = Resolve(target, out element);
+            if (liveness == Liveness.Alive && element != null)
+            {
+                failureReason = null;
+                return true;
+            }
+            element = null;
+            failureReason = liveness == Liveness.Unknown
+                ? "The element's state could not be determined right now (a transient UI Automation failure or an unresolvable reference); it may still be open."
+                : "The element could not be found (it may have already closed).";
+            return false;
         }
 
         /// <summary>
         /// The tri-state core of <see cref="TryResolve"/>/<see cref="IsAlive"/>. A pinned element (see
         /// <see cref="Retain"/>) is consulted before the cache and is never evicted by rotation, so for
-        /// a pinned reference the answer is always definitive. Only a window-less reference that is
-        /// neither pinned nor cached is <see cref="Liveness.Unknown"/>.
+        /// a pinned reference a destroyed window or a confirmed-unavailable element is definitive.
+        /// A window-less reference that is neither pinned nor cached, and any non-definitive read or
+        /// provider failure (see <see cref="LivenessClassifier"/>), is <see cref="Liveness.Unknown"/>
+        /// and never evicts a cache entry.
         /// </summary>
         private Liveness Resolve(BrowserElementRef target, out AutomationElement element)
         {
@@ -421,7 +428,7 @@ namespace BrowserInterruptAutomation
             // just-destroyed window's element can keep answering from a stale provider while
             // teardown is still in progress), so it must never be the only liveness test. A dead
             // handle also evicts the cache entry so a strong element reference is not kept for it.
-            if (target.Hwnd != IntPtr.Zero && !NativeMethods.IsWindow(target.Hwnd))
+            if (LivenessClassifier.ClassifyWindow(target.Hwnd != IntPtr.Zero, target.Hwnd == IntPtr.Zero || NativeMethods.IsWindow(target.Hwnd)) == Liveness.Dead)
             {
                 _cache.Remove(target);
                 return Liveness.Dead;
@@ -433,11 +440,14 @@ namespace BrowserInterruptAutomation
                 _pinned.TryGetValue(target, out pinned);
             if (pinned != null)
             {
-                if (IsElementAvailable(pinned))
+                ReadOutcome pinnedRead = ReadElement(pinned);
+                if (pinnedRead == ReadOutcome.Ok)
                 {
                     element = pinned;
                     return Liveness.Alive;
                 }
+                if (pinnedRead == ReadOutcome.OtherFailure)
+                    return Liveness.Unknown; // non-definitive: keep the pin, do not fall through to a re-resolve
                 // The pin stays until Release (the engine owns its lifetime) so this stays a
                 // definitive "dead" on every later call instead of decaying into "unknown".
                 pinnedButDead = true;
@@ -445,12 +455,15 @@ namespace BrowserInterruptAutomation
 
             if (_cache.TryGet(target, out AutomationElement cached))
             {
-                if (IsElementAvailable(cached))
+                ReadOutcome cachedRead = ReadElement(cached);
+                if (cachedRead == ReadOutcome.Ok)
                 {
                     element = cached;
                     return Liveness.Alive;
                 }
-                _cache.Remove(target); // dead: drop it now rather than wait for rotation
+                if (!LivenessClassifier.ShouldEvictCacheEntry(cachedRead))
+                    return Liveness.Unknown; // non-definitive failure: keep the entry, do not claim it is gone
+                _cache.Remove(target); // confirmed unavailable: drop it now rather than wait for rotation
                 if (target.Hwnd == IntPtr.Zero)
                     return Liveness.Dead;
             }
@@ -458,13 +471,16 @@ namespace BrowserInterruptAutomation
             if (target.Hwnd == IntPtr.Zero)
                 return pinnedButDead ? Liveness.Dead : Liveness.Unknown; // no cache entry, no window to re-resolve from
 
-            AutomationElement windowElement = ResolveFromHandle(target.Hwnd);
+            AutomationElement windowElement = ResolveFromHandle(target.Hwnd, out ReadOutcome handleRead);
             if (windowElement == null)
-                return Liveness.Dead;
+                return LivenessClassifier.ClassifyRead(handleRead) == Liveness.Dead ? Liveness.Dead : Liveness.Unknown;
 
             int[] runtimeId = target.RuntimeId;
+            int[] windowRuntimeId = runtimeId == null || runtimeId.Length == 0 ? null : SafeGet(() => windowElement.GetRuntimeId(), null);
+            if (runtimeId != null && runtimeId.Length != 0 && windowRuntimeId == null)
+                return Liveness.Unknown; // could not read the window's identity: not evidence the element is gone
             if (runtimeId == null || runtimeId.Length == 0
-                || RuntimeIdEquals(SafeGet(() => windowElement.GetRuntimeId(), null), runtimeId))
+                || RuntimeIdEquals(windowRuntimeId, runtimeId))
             {
                 CacheElement(target, windowElement);
                 element = windowElement;
@@ -600,39 +616,51 @@ namespace BrowserInterruptAutomation
 
         // ------------------------------------------------------------------ safe UIA helpers
 
-        private static AutomationElement ResolveFromHandle(IntPtr hwnd)
+        private static AutomationElement ResolveFromHandle(IntPtr hwnd, out ReadOutcome outcome)
         {
             try
             {
-                return AutomationElement.FromHandle(hwnd);
+                AutomationElement element = AutomationElement.FromHandle(hwnd);
+                outcome = ReadOutcome.Ok;
+                return element;
             }
             catch (ElementNotAvailableException)
             {
+                outcome = ReadOutcome.Unavailable;
                 return null;
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
             {
+                outcome = ReadOutcome.OtherFailure;
                 return null;
             }
         }
 
         /// <summary>Mirrors <c>UIAutomationUtils.IsElementAvailable</c>: a cheap <c>Current</c> read is enough to detect a dead element.</summary>
-        private static bool IsElementAvailable(AutomationElement element)
+        private static bool IsElementAvailable(AutomationElement element) =>
+            ReadElement(element) == ReadOutcome.Ok;
+
+        /// <summary>
+        /// One cheap <c>Current</c> read, classified: only <see cref="ElementNotAvailableException"/> is
+        /// <see cref="ReadOutcome.Unavailable"/> (definitive); any other failure is
+        /// <see cref="ReadOutcome.OtherFailure"/> (non-definitive). A null element is unavailable.
+        /// </summary>
+        private static ReadOutcome ReadElement(AutomationElement element)
         {
             if (element == null)
-                return false;
+                return ReadOutcome.Unavailable;
             try
             {
                 _ = element.Current.IsEnabled;
-                return true;
+                return ReadOutcome.Ok;
             }
             catch (ElementNotAvailableException)
             {
-                return false;
+                return ReadOutcome.Unavailable;
             }
             catch (Exception)
             {
-                return false;
+                return ReadOutcome.OtherFailure;
             }
         }
 

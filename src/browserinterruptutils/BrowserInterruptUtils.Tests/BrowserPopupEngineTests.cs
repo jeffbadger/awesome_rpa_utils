@@ -1737,6 +1737,47 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void UnknownLivenessAtTheVerificationDeadline_IsAFailedAttemptNotADismissal_ThenALaterConfirmedCloseIsCountedOnce()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+            w.SucceedWithoutClosing = true; // the call returns success but the popup is in fact still open ...
+            w.LivenessUnknown = true;       // ... and the probe cannot say either way (transient provider failure): IsAlive is true
+
+            h.AppearWindow(w);
+            h.PastVerifyDelay(); // the deadline: unknown counts as still open, i.e. a failed attempt
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(0, h.Engine.TotalDismissals);
+            Assert.True(h.Engine.HasUnresolvedPopup);
+
+            w.SucceedWithoutClosing = false; // the retry (bounded by MaxAttempts) now actually closes it
+            w.LivenessUnknown = false;
+            h.Settle(1000, 6000);
+
+            var dismissed = Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(2, dismissed.Attempts);
+            Assert.Equal(1, h.Engine.TotalDismissals);
+            Assert.False(h.Engine.HasUnresolvedPopup);
+        }
+
+        [Fact]
+        public void UnknownLivenessAtTheDeadline_NeverCountsADismissalItCannotConfirm()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+            w.LivenessUnknown = true;
+
+            h.AppearWindow(w);
+            Assert.False(w.Alive); // it did close, but the probe keeps answering "unknown" (alive)
+            h.Settle(100, 6000);
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed)); // never claimed without a definitive answer
+            Assert.Equal(0, h.Engine.TotalDismissals);
+        }
+
+        [Fact]
         public void AttemptsSpentBeforePause_DismissFailedIsStillRecordedWhilePaused_WithNoNewCall()
         {
             var h = new Harness();
