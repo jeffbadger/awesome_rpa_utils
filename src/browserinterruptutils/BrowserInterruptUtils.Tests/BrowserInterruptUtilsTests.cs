@@ -612,6 +612,13 @@ namespace BrowserInterruptAutomation.Tests
             Assert.True(w.Alive);
             Assert.Equal("w", args.RuleName);
             Assert.Equal(0, args.Attempts);
+            Assert.Null(args.TargetInvoked);
+
+            // The JSON record keeps its established shape: a missing target is still an empty string.
+            Assert.True(rig.Utils.GetLastEventJson(out string lastJson, out _));
+            using var doc = JsonDocument.Parse(lastJson);
+            Assert.Equal(JsonValueKind.String, doc.RootElement.GetProperty("target").ValueKind);
+            Assert.Equal("", doc.RootElement.GetProperty("target").GetString());
         }
 
         [Fact]
@@ -631,6 +638,10 @@ namespace BrowserInterruptAutomation.Tests
 
             Assert.True(failed.Wait(10000), "PopupDismissFailed was not raised");
             Assert.Contains("still open", args.Detail);
+            Assert.Null(args.TargetInvoked);
+            Assert.True(rig.Utils.GetLastEventJson(out string lastJson, out _));
+            using (var doc = JsonDocument.Parse(lastJson))
+                Assert.Equal("", doc.RootElement.GetProperty("target").GetString());
             Assert.True(WaitFor(() =>
             {
                 rig.Utils.HasUnresolvedPopup(out bool u, out _);

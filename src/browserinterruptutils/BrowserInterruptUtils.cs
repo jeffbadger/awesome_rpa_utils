@@ -1048,8 +1048,9 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        // The record keeps an empty string for "no target" (the JSON log format); the event args document null.
         private static BrowserPopupEventArgs ToPopupArgs(BrowserPopupRecord r) =>
-            new BrowserPopupEventArgs(r.RuleName, r.Scope, r.Name, r.MessageText, r.Role, r.ProcessName, r.ProcessId, r.TargetInvoked, r.Attempts, r.TimestampUtc, r.Detail);
+            new BrowserPopupEventArgs(r.RuleName, r.Scope, r.Name, r.MessageText, r.Role, r.ProcessName, r.ProcessId, string.IsNullOrEmpty(r.TargetInvoked) ? null : r.TargetInvoked, r.Attempts, r.TimestampUtc, r.Detail);
 
         /// <summary>
         /// Raises an event, isolating each subscriber so one that throws cannot stop the others or
