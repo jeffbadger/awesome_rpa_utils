@@ -49,7 +49,7 @@ browserInterrupt.Start(out _, sweepIntervalMs: 1000, overlaySweepIntervalMs: 200
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `sweepIntervalMs` | 1000 | How often (0-60000 ms) to scan the browser's top-level windows for native dialogs as a safety net. It finds dialogs that were already open at `Start` and ones the UI Automation event missed. `0` relies on events alone. |
+| `sweepIntervalMs` | 1000 | How often (0-60000 ms) to scan the browser's top-level windows for native dialogs as a safety net. It finds dialogs that were already open at `Start` and ones the UI Automation event missed. `0` relies on events alone. Only visible windows of a process some enabled native rule names (or that a page-overlay rule wants to watch) are examined; a rule added later is applied to already-open windows on the next scan. |
 | `overlaySweepIntervalMs` | 2000 | How often (0-60000 ms) to walk every watched browser window's page for overlays. `0` turns the periodic walk off (overlays are then found only when the page's structure changes). A value above 0 is raised to 500 ms, because each walk is a series of calls into the browser. |
 | `maxAttempts` | 3 | How many times (1-10) to try to dismiss one popup before reporting `PopupDismissFailed`. |
 | `maxDismissalsPerMinute` | 20 | How many popups (1-1000) one rule may dismiss in a minute before it stops itself. |

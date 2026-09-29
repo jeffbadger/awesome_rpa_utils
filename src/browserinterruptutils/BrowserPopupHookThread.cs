@@ -324,6 +324,10 @@ namespace BrowserInterruptAutomation
                     // have registered while this call was resolving the element above.
                     if (_watched.ContainsKey(windowRoot))
                         return;
+                    // Stop clears _watched under this lock after clearing _started; refusing here
+                    // means a WatchWindow racing (or following) Stop cannot leave a handler behind.
+                    if (!_started)
+                        return;
 
                     Automation.AddStructureChangedEventHandler(windowElement, TreeScope.Subtree, handler);
                     _watched[windowRoot] = new WatchEntry

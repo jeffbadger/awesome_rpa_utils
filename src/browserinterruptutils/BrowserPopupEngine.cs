@@ -213,6 +213,11 @@ namespace BrowserInterruptAutomation
         private HashSet<string> _overlayProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _overlayWatchesAnyProcess;
 
+        // Same, for enabled NativeDialog rules: a top-level window is only tracked/described when
+        // its process is named by one of them (or one names no process). See TrackNativeWindow.
+        private HashSet<string> _nativeProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private bool _nativeWatchesAnyProcess;
+
         private readonly ConcurrentQueue<BrowserWindowInfo> _nativeQueue = new ConcurrentQueue<BrowserWindowInfo>();
         private int _nativeQueued;
         private readonly ConcurrentQueue<BrowserElementRef> _overlayDirtyQueue = new ConcurrentQueue<BrowserElementRef>();
@@ -235,6 +240,21 @@ namespace BrowserInterruptAutomation
         private bool _overlaySwept;
         private int _unresolved;
         private int _overlaySweepIntervalMs;
+
+        // Overlay windows already swept during the current Pump pass, so a dirty-signal sweep and
+        // the periodic sweep (or N signals for one window) never walk the same window twice.
+        private readonly HashSet<BrowserElementRef> _sweptThisPass = new HashSet<BrowserElementRef>();
+
+        // Set once the candidate cap has been reported, cleared when the count drops below it, so
+        // a page that keeps the engine at the cap logs one error, not one per sweep.
+        private bool _capReported;
+
+        // Windows the hook reported that no rule wanted at the time (see TrackNativeWindow), so a
+        // rule added or enabled later can still act on one that is already open even with the
+        // periodic scan off. Bounded and oldest-first; a window with no need is never described.
+        internal const int MaxSkippedWindows = 256;
+        private readonly Dictionary<IntPtr, BrowserWindowInfo> _skippedWindows = new Dictionary<IntPtr, BrowserWindowInfo>();
+        private readonly Queue<IntPtr> _skippedOrder = new Queue<IntPtr>();
 
         // The six settable configuration properties below are plain, unsynchronized properties -
         // like the reference's identical SweepIntervalMs/MaxAttempts/MaxDismissalsPerMinute, this
@@ -282,6 +302,7 @@ namespace BrowserInterruptAutomation
         /// may visit. Set before starting the worker loop; not safe to change while
         /// <see cref="Pump"/> is running on another thread.
         /// </summary>
+        /// <remarks>The engine-level default is conservative; <c>BrowserInterruptUtils.Start</c> always overrides it (public default 5000).</remarks>
         internal int MaxOverlayNodes { get; set; } = 500;
 
         /// <summary>
@@ -289,6 +310,7 @@ namespace BrowserInterruptAutomation
         /// descend. Set before starting the worker loop; not safe to change while <see cref="Pump"/>
         /// is running on another thread.
         /// </summary>
+        /// <remarks>The engine-level default is conservative; <c>BrowserInterruptUtils.Start</c> always overrides it (public default 50).</remarks>
         internal int MaxOverlayDepth { get; set; } = 25;
 
         // Held by the worker only around the final Paused/rule re-check and the probe's
@@ -334,7 +356,7 @@ namespace BrowserInterruptAutomation
                 message = "rule is required.";
                 return false;
             }
-            string validation = BrowserPopupRule.ValidateCommon(rule.RuleName, rule.NameContains, rule.AutomationIdContains,
+            string validation = BrowserPopupRule.ValidateCommon(rule.RuleName, rule.NameContains, rule.MessageContains, rule.AutomationIdContains,
                 rule.ProcessName, rule.RoleContains, rule.Scope, rule.Action);
             if (validation != null)
             {
@@ -469,6 +491,18 @@ namespace BrowserInterruptAutomation
 
         internal bool HasUnresolvedPopup => UnresolvedCount > 0;
 
+        /// <summary>The number of tracked candidates of one scope. For tests; not thread-safe against a running worker.</summary>
+        internal int TrackedCandidateCountForTests(BrowserPopupScope scope)
+        {
+            int count = 0;
+            foreach (var state in _candidates.Values)
+            {
+                if (state.Scope == scope)
+                    count++;
+            }
+            return count;
+        }
+
         internal BrowserPopupRecord[] GetLog(int maxEntries)
         {
             lock (_lock)
@@ -553,6 +587,8 @@ namespace BrowserInterruptAutomation
                 catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
             }
             _watchedWindows.Clear();
+            _skippedWindows.Clear();
+            _skippedOrder.Clear();
             _candidates.Clear();
             _hwndIndex.Clear();
             _processNameCache.Clear();
@@ -578,6 +614,7 @@ namespace BrowserInterruptAutomation
             // Ahead of draining: the overlay process-interest set it (re)computes here is what
             // DrainNativeQueue's watch-registration decision below reads, so a rule added in the
             // same tick a window is first reported must be visible before that decision is made.
+            _sweptThisPass.Clear();
             ApplyRuleChanges(now);
             DrainNativeQueue(now);
             DrainOverlayDirtyQueue(now);
@@ -614,6 +651,8 @@ namespace BrowserInterruptAutomation
                     unresolved++;
             }
             Volatile.Write(ref _unresolved, unresolved);
+            if (_capReported && _candidates.Count < MaxTrackedCandidates)
+                _capReported = false;
 
             if (SweepIntervalMs > 0)
                 next = Math.Min(next, _lastNativeSweep + SweepIntervalMs);
@@ -636,6 +675,7 @@ namespace BrowserInterruptAutomation
             _seenRulesVersion = version;
 
             RecomputeOverlayInterest();
+            RetrySkippedWindows(now);
 
             BrowserPopupRule[] rules = SnapshotRules();
             foreach (var state in _candidates.Values)
@@ -689,6 +729,39 @@ namespace BrowserInterruptAutomation
             }
             _overlayProcessNames = names;
             _overlayWatchesAnyProcess = any;
+
+            var nativeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool nativeAny = false;
+            foreach (var rule in SnapshotRules())
+            {
+                if (rule.Scope != BrowserPopupScope.NativeDialog || !rule.Enabled)
+                    continue;
+                if (string.IsNullOrWhiteSpace(rule.ProcessName))
+                    nativeAny = true;
+                else
+                    nativeNames.Add(BrowserPopupRule.TrimExe(rule.ProcessName));
+            }
+            _nativeProcessNames = nativeNames;
+            _nativeWatchesAnyProcess = nativeAny;
+        }
+
+        /// <summary>Whether some enabled NativeDialog rule could match a window of this process (the cheap pre-filter before describing it).</summary>
+        private bool IsNativeInterestingProcess(string processName) =>
+            _nativeWatchesAnyProcess || (!string.IsNullOrEmpty(processName) && _nativeProcessNames.Contains(BrowserPopupRule.TrimExe(processName)));
+
+        /// <summary>Whether a top-level window of this process is worth tracking at all: a native rule or an overlay rule wants it.</summary>
+        private bool IsTrackableProcess(string processName) =>
+            IsNativeInterestingProcess(processName) || IsOverlayInterestingProcess(processName);
+
+        /// <summary>Notes, once until the count drops below the cap again, that discovery was cut short by <see cref="MaxTrackedCandidates"/>.</summary>
+        private void NoteCandidateCapHit()
+        {
+            if (_capReported)
+                return;
+            _capReported = true;
+            RecordError(string.Empty, "The engine is tracking " + MaxTrackedCandidates + " candidate popups, its safety limit, "
+                + "so newly found windows or page elements are being ignored until some go away. "
+                + "This usually means a rule is too broad; add roleContains/nameContains to narrow it.");
         }
 
         private bool IsOverlayInterestingProcess(string processName) =>
@@ -749,15 +822,15 @@ namespace BrowserInterruptAutomation
             while (_nativeQueue.TryDequeue(out BrowserWindowInfo win))
             {
                 Interlocked.Decrement(ref _nativeQueued);
-                CacheProcessName(win.ProcessId, win.ProcessName);
                 if (_hwndIndex.TryGetValue(win.Hwnd, out var existingRef) && _candidates.TryGetValue(existingRef, out var existing))
                 {
-                    if (existing.NextDue == long.MaxValue)
+                    CacheProcessName(win.ProcessId, win.ProcessName);
+                    if (existing.NextDue == long.MaxValue && IsNativeInterestingProcess(win.ProcessName))
                         existing.NextDue = now;
                     MaybeWatchForOverlay(win.Hwnd, win.ProcessName, existing.Ref);
                     continue;
                 }
-                TrackNativeWindow(win, now);
+                TrackNativeWindow(win, now, rememberIfSkipped: true);
             }
         }
 
@@ -770,7 +843,7 @@ namespace BrowserInterruptAutomation
                     continue;
                 if (!_probe.IsAlive(pair.Value))
                     (gone ??= new List<BrowserElementRef>()).Add(pair.Value);
-                else if (state.NextDue == long.MaxValue && !state.Failed)
+                else if (state.NextDue == long.MaxValue && !state.Failed && IsNativeInterestingProcess(ProcessNameOf(state.ProcessId)))
                     state.NextDue = now; // idle: look again, its name or message may have changed
             }
             if (gone != null)
@@ -795,10 +868,24 @@ namespace BrowserInterruptAutomation
             }
         }
 
-        private void TrackNativeWindow(BrowserWindowInfo win, long now)
+        private void TrackNativeWindow(BrowserWindowInfo win, long now, bool rememberIfSkipped = false)
         {
-            if (_candidates.Count >= MaxTrackedCandidates)
+            // Cheap pre-filter before the expensive DescribeWindow (a UIA FromHandle plus several
+            // property reads): a window is only worth describing if a native rule could match its
+            // process, or an overlay rule wants to watch it. Anything else (most of the desktop) is
+            // never touched. It is not remembered, so a rule added later picks it up on the next sweep.
+            bool nativeInteresting = IsNativeInterestingProcess(win.ProcessName);
+            if (!nativeInteresting && !IsOverlayInterestingProcess(win.ProcessName))
+            {
+                if (rememberIfSkipped)
+                    RememberSkipped(win);
                 return;
+            }
+            if (_candidates.Count >= MaxTrackedCandidates)
+            {
+                NoteCandidateCapHit();
+                return;
+            }
             CacheProcessName(win.ProcessId, win.ProcessName);
             BrowserElementInfo info = _probe.DescribeWindow(win.Hwnd);
             if (info == null)
@@ -812,11 +899,43 @@ namespace BrowserInterruptAutomation
                 ProcessId = info.ProcessId,
                 Info = info,
                 FirstSeen = now,
-                NextDue = now
+                // A window tracked only so its page can be watched for overlays has nothing to evaluate.
+                NextDue = nativeInteresting ? now : long.MaxValue
             };
             _candidates[state.Ref] = state;
             _hwndIndex[win.Hwnd] = state.Ref;
             MaybeWatchForOverlay(win.Hwnd, win.ProcessName, info.Ref);
+        }
+
+        private void RememberSkipped(BrowserWindowInfo win)
+        {
+            if (_skippedWindows.ContainsKey(win.Hwnd))
+                return;
+            while (_skippedOrder.Count >= MaxSkippedWindows)
+                _skippedWindows.Remove(_skippedOrder.Dequeue());
+            _skippedWindows[win.Hwnd] = win;
+            _skippedOrder.Enqueue(win.Hwnd);
+        }
+
+        /// <summary>After a rule change: tracks any remembered window a rule now wants. The rest stay remembered, undescribed.</summary>
+        private void RetrySkippedWindows(long now)
+        {
+            if (_skippedWindows.Count == 0)
+                return;
+            List<BrowserWindowInfo> wanted = null;
+            foreach (var win in _skippedWindows.Values)
+            {
+                if (IsTrackableProcess(win.ProcessName))
+                    (wanted ??= new List<BrowserWindowInfo>()).Add(win);
+            }
+            if (wanted == null)
+                return;
+            foreach (var win in wanted)
+            {
+                _skippedWindows.Remove(win.Hwnd); // stale entries in _skippedOrder are harmless: Remove of a missing key is a no-op
+                if (!_hwndIndex.ContainsKey(win.Hwnd))
+                    TrackNativeWindow(win, now);
+            }
         }
 
         private void MaybeWatchForOverlay(IntPtr hwnd, string processName, BrowserElementRef windowRef)
@@ -833,13 +952,20 @@ namespace BrowserInterruptAutomation
 
         private void DrainOverlayDirtyQueue(long now)
         {
+            // Drain first, then sweep each distinct window once: N signals for one window
+            // (a page mutating rapidly) cost one walk, not N.
+            HashSet<BrowserElementRef> dirty = null;
             while (_overlayDirtyQueue.TryDequeue(out BrowserElementRef windowRef))
             {
                 Interlocked.Decrement(ref _overlayDirtyQueued);
                 if (!_watchedWindows.ContainsValue(windowRef))
                     continue; // stale: unwatched (or never watched) since the signal was queued
-                SweepOneOverlayWindow(windowRef, now);
+                (dirty ??= new HashSet<BrowserElementRef>()).Add(windowRef);
             }
+            if (dirty == null)
+                return;
+            foreach (var windowRef in dirty)
+                SweepOneOverlayWindow(windowRef, now);
         }
 
         private void OverlaySweepAll(long now)
@@ -854,11 +980,25 @@ namespace BrowserInterruptAutomation
 
         private void SweepOneOverlayWindow(BrowserElementRef windowRef, long now)
         {
+            if (!_sweptThisPass.Add(windowRef))
+                return; // already walked during this pass
             if (!_probe.IsAlive(windowRef))
                 return; // the native-dialog sweep/liveness check will notice and unwatch it
 
             IReadOnlyList<BrowserElementInfo> found = _probe.FindOverlayCandidates(windowRef, MaxOverlayNodes, MaxOverlayDepth);
             if (found == null)
+                return;
+
+            // Snapshot the enabled overlay rules once; an element is only worth tracking if it
+            // passes the cheap phase of at least one, so the (mostly irrelevant) rest of a big
+            // page never fills the candidate table.
+            List<BrowserPopupRule> overlayRules = null;
+            foreach (var rule in SnapshotRules())
+            {
+                if (rule.Enabled && rule.Scope == BrowserPopupScope.PageOverlay)
+                    (overlayRules ??= new List<BrowserPopupRule>()).Add(rule);
+            }
+            if (overlayRules == null)
                 return;
 
             foreach (var element in found)
@@ -872,8 +1012,26 @@ namespace BrowserInterruptAutomation
                         existing.NextDue = now;
                     continue;
                 }
-                if (_candidates.Count >= MaxTrackedCandidates)
+                string elementProcess = ProcessNameOf(element.ProcessId);
+                bool relevant = false;
+                foreach (var rule in overlayRules)
+                {
+                    // An element's process name is only known once one of its process's windows was
+                    // seen; while it is unknown, do not let that alone keep a candidate out. Evaluate
+                    // makes the real process decision once the name is known.
+                    if (rule.MatchesCheap(element, elementProcess.Length == 0 ? rule.ProcessName : elementProcess))
+                    {
+                        relevant = true;
+                        break;
+                    }
+                }
+                if (!relevant)
                     continue;
+                if (_candidates.Count >= MaxTrackedCandidates)
+                {
+                    NoteCandidateCapHit();
+                    continue;
+                }
                 var state = new CandidateState
                 {
                     Ref = element.Ref,
@@ -951,6 +1109,14 @@ namespace BrowserInterruptAutomation
             BrowserElementInfo info = state.Info;
             if (state.Scope == BrowserPopupScope.NativeDialog)
             {
+                if (!IsNativeInterestingProcess(ProcessNameOf(state.ProcessId)))
+                {
+                    // Tracked only so its page can be watched, or its rule was disabled/removed:
+                    // nothing to describe. A rule change re-arms it (ApplyRuleChanges).
+                    state.Rule = null;
+                    state.NextDue = long.MaxValue;
+                    return;
+                }
                 info = _probe.DescribeWindow(state.Hwnd);
                 if (info == null)
                 {
@@ -986,10 +1152,17 @@ namespace BrowserInterruptAutomation
             {
                 if (!candidate.Enabled || candidate.Scope != state.Scope)
                     continue;
-                if (candidate.NeedsMessage && text == null)
-                    text = _probe.TryGetMessageText(state.Ref) ?? string.Empty;
-                if (!candidate.Matches(info, processName, text))
+                // Cheap criteria first; message text (a subtree walk) only once they pass, and
+                // fetched at most once however many rules want it.
+                if (!candidate.MatchesCheap(info, processName))
                     continue;
+                if (candidate.NeedsMessage)
+                {
+                    if (text == null)
+                        text = _probe.TryGetMessageText(state.Ref) ?? string.Empty;
+                    if (!candidate.MatchesMessage(text))
+                        continue;
+                }
                 rule = candidate;
                 break;
             }
@@ -1043,19 +1216,18 @@ namespace BrowserInterruptAutomation
                 return;
             }
 
-            BrowserElementRef target = state.Ref;
+            var targets = new List<KeyValuePair<BrowserElementRef, string>>();
             string label = "(close)";
             if (rule.Action != BrowserPopupAction.CloseWindowPattern)
             {
-                BrowserElementRef? found = FindTarget(state, rule, out label);
-                if (found == null)
+                FindTargets(state, rule, targets);
+                if (targets.Count == 0)
                 {
                     if (!Retry(state, now))
                         Fail(state, rule, info, text, processName,
                             "No element named " + Describe(rule) + " was found inside the popup.");
                     return;
                 }
-                target = found.Value;
             }
 
             bool ok;
@@ -1081,12 +1253,25 @@ namespace BrowserInterruptAutomation
                 if (rule.Action == BrowserPopupAction.CloseWindowPattern)
                 {
                     ok = state.Scope == BrowserPopupScope.NativeDialog
-                        ? _probe.TryClose(target, out failureReason)
+                        ? _probe.TryClose(state.Ref, out failureReason)
                         : SetUnreachableFailure(out failureReason);
                 }
                 else
                 {
-                    ok = _probe.TryInvoke(target, out failureReason);
+                    // More than one element can match by name (a text node "Please accept the
+                    // terms" ahead of the "Accept" button); try them in order within this one
+                    // attempt until an invoke succeeds.
+                    ok = false;
+                    failureReason = null;
+                    foreach (var candidateTarget in targets)
+                    {
+                        ok = _probe.TryInvoke(candidateTarget.Key, out failureReason);
+                        if (ok)
+                        {
+                            label = candidateTarget.Value;
+                            break;
+                        }
+                    }
                 }
 
                 if (ok)
@@ -1128,18 +1313,23 @@ namespace BrowserInterruptAutomation
                 ? "automation ID '" + rule.TargetAutomationId + "'"
                 : "'" + rule.TargetElementName + "'";
 
+        /// <summary>The most name matches tried per attempt; a popup rarely has more than a couple.</summary>
+        private const int MaxTargetsPerAttempt = 5;
+
         /// <summary>
-        /// Finds the descendant a click/invoke rule targets, by walking the popup's own subtree
-        /// via <see cref="IBrowserPopupProbe.FindOverlayCandidates"/> - the only descendant-search
-        /// primitive Task 1's probe interface exposes. See the type remarks.
+        /// Collects the descendants a click/invoke rule may target, in the order they should be
+        /// tried, by walking the popup's own subtree via <see cref="IBrowserPopupProbe.FindOverlayCandidates"/>
+        /// - the only descendant-search primitive Task 1's probe interface exposes. See the type
+        /// remarks. Button-like matches come first (a name substring can also match a text node),
+        /// each group in the probe's walk order, capped at <see cref="MaxTargetsPerAttempt"/>.
         /// </summary>
-        private BrowserElementRef? FindTarget(CandidateState state, BrowserPopupRule rule, out string label)
+        private void FindTargets(CandidateState state, BrowserPopupRule rule, List<KeyValuePair<BrowserElementRef, string>> targets)
         {
-            label = null;
             IReadOnlyList<BrowserElementInfo> descendants = _probe.FindOverlayCandidates(state.Ref, MaxOverlayNodes, MaxOverlayDepth);
             if (descendants == null)
-                return null;
+                return;
 
+            var others = new List<KeyValuePair<BrowserElementRef, string>>();
             foreach (var element in descendants)
             {
                 if (element == null)
@@ -1151,10 +1341,21 @@ namespace BrowserInterruptAutomation
                         : BrowserPopupRule.Contains(element.Name, rule.TargetElementName);
                 if (!match)
                     continue;
-                label = string.IsNullOrEmpty(element.Name) ? element.AutomationId : element.Name;
-                return element.Ref;
+                var entry = new KeyValuePair<BrowserElementRef, string>(element.Ref,
+                    string.IsNullOrEmpty(element.Name) ? element.AutomationId : element.Name);
+                if (BrowserPopupRule.Contains(element.ControlType, "Button"))
+                    targets.Add(entry);
+                else
+                    others.Add(entry);
+                if (targets.Count >= MaxTargetsPerAttempt)
+                    break;
             }
-            return null;
+            foreach (var entry in others)
+            {
+                if (targets.Count >= MaxTargetsPerAttempt)
+                    break;
+                targets.Add(entry);
+            }
         }
 
         private bool IsRunaway(BrowserPopupRule rule, long now)

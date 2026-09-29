@@ -1028,5 +1028,274 @@ namespace BrowserInterruptAutomation.Tests
             Assert.False(w.Alive);
             Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
         }
+
+        // ------------------------------------------------------------------ native pre-filter (C1)
+
+        [Fact]
+        public void NativeWindow_OfAnUnrelatedProcess_IsNeverDescribed()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("alert", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "chrome", action: BrowserPopupAction.CloseWindowPattern);
+            var notepad = h.Probe.AddWindow("Untitled - Notepad", pid: 300, processName: "notepad");
+            var explorer = h.Probe.AddWindow("File Explorer", pid: 301, processName: "explorer");
+
+            h.AppearWindow(notepad); // via the hook
+            h.Pump(1000);            // via the sweep
+            h.Pump(2000);
+
+            Assert.Equal(0, h.Probe.DescribeWindowCalls);
+            Assert.Empty(h.Records);
+            Assert.True(notepad.Alive && explorer.Alive);
+        }
+
+        [Fact]
+        public void NativeWindow_OfTheRulesProcess_IsDescribedAndDismissed_WithoutDescribingOthers()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("alert", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "chrome.exe", action: BrowserPopupAction.CloseWindowPattern);
+            var notepad = h.Probe.AddWindow("Alert - Notepad", pid: 300, processName: "notepad");
+            var dialog = h.Probe.AddWindow("Alert", pid: 100, processName: "chrome");
+
+            h.Pump(0);
+            h.Settle();
+
+            Assert.False(dialog.Alive);
+            Assert.True(notepad.Alive);
+            Assert.True(h.Probe.DescribeWindowCalls > 0);
+        }
+
+        [Fact]
+        public void NativeWindow_SkippedBeforeARuleExists_IsPickedUpOnTheNextSweepAfterTheRuleIsAdded()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            var dialog = h.Probe.AddWindow("Alert", pid: 100, processName: "chrome");
+            h.Pump(0);
+            Assert.Equal(0, h.Probe.DescribeWindowCalls);
+
+            h.AddRule("alert", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "chrome", action: BrowserPopupAction.CloseWindowPattern);
+            h.Pump(1000);
+            h.Settle(1100, 4000);
+
+            Assert.False(dialog.Alive);
+        }
+
+        [Fact]
+        public void NativeWindow_TrackedOnlyForOverlayWatching_IsNotReDescribedEverySweep()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
+            var browser = h.Probe.AddWindow("tab", pid: 100, processName: "chrome");
+
+            h.Pump(0);
+            h.Settle(100, 3000);
+            int describes = h.Probe.DescribeWindowCalls;
+
+            Assert.Contains(browser.Ref, h.Hook.CurrentlyWatched);
+            Assert.Equal(1, describes); // once, to learn its ref; never for evaluation
+            h.Pump(5000);
+            h.Pump(6000);
+            Assert.Equal(describes, h.Probe.DescribeWindowCalls);
+        }
+
+        // ------------------------------------------------------------------ message read last (I1)
+
+        [Fact]
+        public void MessageText_IsNotFetched_WhenTheCheapCriteriaFail()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Session", message: "expire", action: BrowserPopupAction.CloseWindowPattern);
+            var other = h.Probe.AddWindow("Something else", "expire soon");
+
+            h.AppearWindow(other);
+            h.Settle();
+
+            Assert.Equal(0, h.Probe.MessageTextCalls);
+            Assert.True(other.Alive);
+        }
+
+        [Fact]
+        public void MessageText_IsFetchedOncePerEvaluation_ForManyMessageRules()
+        {
+            var h = new Harness();
+            for (int i = 0; i < 4; i++)
+                h.AddRule("r" + i, BrowserPopupScope.NativeDialog, nameContains: "Session", message: "never-" + i, action: BrowserPopupAction.WatchOnly);
+            var w = h.Probe.AddWindow("Session dialog", "hello");
+
+            h.AppearWindow(w);
+
+            Assert.Equal(1, h.Probe.MessageTextCalls);
+        }
+
+        [Fact]
+        public void OverlayMessageRule_StillMatchesOnceTheCheapCriteriaPass()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.PageOverlay, role: "dialog", message: "cookies");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            h.Probe.AddOverlay(window, "Banner", "We use cookies");
+            h.AppearOverlay(window);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+        }
+
+        // ------------------------------------------------------------------ dirty queue de-duplication (I2)
+
+        [Fact]
+        public void ManyDirtySignals_ForOneWindow_CostOneOverlaySearchPerPump()
+        {
+            var h = new Harness();
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            int before = h.Probe.OverlaySearchCalls;
+
+            for (int i = 0; i < 25; i++)
+                h.Hook.FireStructureChanged(window.Ref);
+            h.Engine.Pump(h.Now);
+
+            Assert.Equal(1, h.Probe.OverlaySearchCalls - before);
+        }
+
+        [Fact]
+        public void DirtySignals_ForTwoWindows_SweepEachOnce_AndPeriodicSweepDoesNotRepeatThemInTheSamePass()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 1000);
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, role: "dialog");
+            var a = h.Probe.AddWindow("a");
+            var b = h.Probe.AddWindow("b");
+            h.AppearWindow(a);
+            h.AppearWindow(b);
+            h.Pump(5000);
+            int before = h.Probe.OverlaySearchCalls;
+
+            for (int i = 0; i < 5; i++)
+            {
+                h.Hook.FireStructureChanged(a.Ref);
+                h.Hook.FireStructureChanged(b.Ref);
+            }
+            h.Engine.Pump(6000); // periodic sweep is also due in this pass
+
+            Assert.Equal(2, h.Probe.OverlaySearchCalls - before);
+        }
+
+        // ------------------------------------------------------------------ candidate admission (I3)
+
+        [Fact]
+        public void LargePage_WithALateMatchingDialog_StillDetectsIt_AndTracksNoIrrelevantElements()
+        {
+            var h = new Harness();
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, nameContains: "Cookie consent", role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            for (int i = 0; i < 3000; i++)
+                h.Probe.AddChild(window, "item " + i, role: "text");
+            var dialog = h.Probe.AddOverlay(window, "Cookie consent", role: "dialog");
+            h.Engine.MaxOverlayNodes = 5000;
+
+            h.AppearOverlay(window);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Equal(1, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
+
+        [Fact]
+        public void ElementsMatchingNoOverlayRule_AreNeverTracked()
+        {
+            var h = new Harness();
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, nameContains: "Cookie", role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            for (int i = 0; i < 50; i++)
+                h.Probe.AddOverlay(window, "Other " + i, role: "dialog");
+
+            h.AppearOverlay(window);
+
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
+
+        [Fact]
+        public void CandidateCap_IsReportedOnce_NotEverySweep()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 500);
+            h.AddRule("any", BrowserPopupScope.PageOverlay, role: "dialog");
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            for (int i = 0; i < BrowserPopupEngine.MaxTrackedCandidates + 10; i++)
+                h.Probe.AddOverlay(window, "d" + i, role: "dialog");
+            h.Engine.MaxOverlayNodes = 100000;
+
+            h.AppearOverlay(window);
+            h.Pump(h.Now + 600);
+            h.Pump(h.Now + 600);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        // ------------------------------------------------------------------ target choice (I6)
+
+        [Fact]
+        public void PartialNameTarget_SkipsATextNodeListedBeforeTheButton()
+        {
+            var h = new Harness();
+            h.AddRule("terms", BrowserPopupScope.PageOverlay, role: "dialog", action: BrowserPopupAction.InvokeByName,
+                targetName: "accept", exactTarget: false);
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Terms", role: "dialog");
+            var text = h.Probe.AddChild(overlay, "Please accept the terms", role: "text");
+            text.IgnoreInvoke = true;
+            var button = h.Probe.AddChild(overlay, "Accept all", role: "button");
+
+            h.AppearOverlay(window);
+            h.Settle();
+
+            Assert.Equal(1, button.Invokes);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal("Accept all", h.Of(BrowserPopupRecordKind.Dismissed).Single().TargetInvoked);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void PartialNameTarget_PrefersAButtonOverAnEarlierNonButtonMatch()
+        {
+            var h = new Harness();
+            h.AddRule("terms", BrowserPopupScope.PageOverlay, role: "dialog", action: BrowserPopupAction.InvokeByName,
+                targetName: "accept", exactTarget: false);
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Terms", role: "dialog");
+            var text = h.Probe.AddChild(overlay, "Please accept the terms", role: "text");
+            text.ControlType = "Text";
+            var button = h.Probe.AddChild(overlay, "Accept all", role: "button");
+
+            h.AppearOverlay(window);
+
+            Assert.Equal(0, text.Invokes);
+            Assert.Equal(1, button.Invokes);
+        }
+
+        [Fact]
+        public void PartialNameTarget_TriesLaterMatchesWithinTheSameAttempt_WhenNoneIsButtonLike()
+        {
+            var h = new Harness();
+            h.AddRule("terms", BrowserPopupScope.PageOverlay, role: "dialog", action: BrowserPopupAction.InvokeByName,
+                targetName: "ok", exactTarget: false);
+            var window = h.Probe.AddWindow("tab");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Terms", role: "dialog");
+            var first = h.Probe.AddChild(overlay, "ok text", role: "text");
+            first.ControlType = "Text";
+            first.IgnoreInvoke = true;
+            var second = h.Probe.AddChild(overlay, "ok link", role: "link");
+            second.ControlType = "Hyperlink";
+
+            h.AppearOverlay(window);
+
+            Assert.Equal(1, first.Invokes);
+            Assert.Equal(1, second.Invokes);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
     }
 }

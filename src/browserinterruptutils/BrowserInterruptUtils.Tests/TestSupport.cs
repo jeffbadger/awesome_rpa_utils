@@ -65,6 +65,12 @@ namespace BrowserInterruptAutomation.Tests
         /// <summary>Every root <see cref="FindOverlayCandidates"/> was called with, in order.</summary>
         public readonly List<BrowserElementRef> OverlaySearchRoots = new List<BrowserElementRef>();
 
+        /// <summary>How many times <see cref="DescribeWindow"/> was called (the expensive per-window UIA read).</summary>
+        public int DescribeWindowCalls { get; private set; }
+
+        /// <summary>How many times <see cref="TryGetMessageText"/> was called (a bounded subtree walk in the real probe).</summary>
+        public int MessageTextCalls { get; private set; }
+
         public FakeElement AddWindow(string name, string message = "", int pid = 100, string processName = "chrome", string className = "Chrome_WidgetWin_1")
         {
             var hwnd = new IntPtr(_nextHandle);
@@ -138,6 +144,7 @@ namespace BrowserInterruptAutomation.Tests
 
         public BrowserElementInfo DescribeWindow(IntPtr hwnd)
         {
+            DescribeWindowCalls++;
             var el = _elements.Values.FirstOrDefault(e => e.IsWindow && e.Ref.Hwnd == hwnd);
             return el == null || !el.Alive ? null : el.ToInfo();
         }
@@ -170,7 +177,11 @@ namespace BrowserInterruptAutomation.Tests
 
         public bool IsAlive(BrowserElementRef element) => _elements.TryGetValue(element, out var el) && el.Alive;
 
-        public string TryGetMessageText(BrowserElementRef element) => _elements.TryGetValue(element, out var el) ? el.Message : null;
+        public string TryGetMessageText(BrowserElementRef element)
+        {
+            MessageTextCalls++;
+            return _elements.TryGetValue(element, out var el) ? el.Message : null;
+        }
 
         /// <summary>Called when an invoke/close begins, before it lands (on the calling thread).</summary>
         public Action ActionEntered;

@@ -67,15 +67,11 @@ namespace BrowserInterruptAutomation
     /// <c>Name</c>, or <c>null</c> if none is found within the (small) bound.
     /// </item>
     /// <item>
-    /// <b>No <c>IsWindowVisible</c> filtering.</b> Unlike <c>Win32PopupProbe.EnumerateTopLevelWindows</c>,
-    /// this probe does not filter by window visibility: Task 1 did not duplicate
-    /// <c>IsWindowVisible</c> into this component's <see cref="NativeMethods"/> (only
-    /// <c>EnumWindows</c>/<c>GetClassName</c>/<c>GetWindowThreadProcessId</c>/<c>GetAncestor</c>/
-    /// <c>IsWindow</c> were), and a native JS <c>alert</c>/<c>confirm</c>/<c>prompt</c> dialog is
-    /// always visible for as long as it exists, so <see cref="NativeMethods.IsWindow"/> alone is a
-    /// sufficient liveness/relevance check for this component's purposes. Worth Task 5 (or a
-    /// later reviewer) knowing about if a non-dialog, deliberately-hidden top-level window of a
-    /// watched process ever turns out to need excluding.
+    /// <b><c>EnumerateTopLevelWindows</c> skips invisible windows.</b> A native JS
+    /// <c>alert</c>/<c>confirm</c>/<c>prompt</c> dialog is visible for as long as it exists, while a
+    /// browser process owns many hidden top-level windows, so <c>NativeMethods.IsWindowVisible</c>
+    /// is checked inside the enumeration itself (no interface member is involved). Windows that
+    /// arrive through the hook are not filtered this way.
     /// </item>
     /// </list>
     /// </remarks>
@@ -114,6 +110,10 @@ namespace BrowserInterruptAutomation
                     try
                     {
                         if (hwnd == IntPtr.Zero || !NativeMethods.IsWindow(hwnd))
+                            return true;
+                        // A JS dialog is visible for its whole lifetime, so hidden windows (of which
+                        // a browser process has many) are skipped before anything else is read.
+                        if (!NativeMethods.IsWindowVisible(hwnd))
                             return true;
                         // Only top-level windows are candidates; controls inside them are not
                         // (same check PopupHookThread/Win32PopupProbe's sibling component uses).
