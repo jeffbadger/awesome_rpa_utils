@@ -1053,7 +1053,13 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   `maxDismissalsPerMinute`: `InterruptError` fires, the rule lists as `"stopped": true`, and
   `SetRuleEnabled(true)` resumes it.
 - **Thread hygiene.** Cycle `Start`/`Stop` many times and dispose while running: the thread count
-  must not grow, and no UI Automation handler remains registered.
+  must not grow, and no UI Automation handler remains registered and no trailing-notification timer
+  fires after `Stop`.
+- **Structure-change burst, then a late overlay, with the sweep off.** With
+  `overlaySweepIntervalMs = 0`, on a real page make a burst of DOM changes and have an in-page overlay
+  appear a moment after the first change's walk (well inside the 250 ms cooldown): the overlay must
+  still be found via the one trailing notification. Also confirm a steady stream of changes causes
+  at most about one walk per 250 ms plus a final one.
 - **Windows-only xunit classes.** Run `UiaTests` and `HookThreadUiaTests` (they drive the real
   UI Automation probe and hook against a WPF window, and are compiled but have **not yet been executed**
   anywhere) on a Windows host with the Windows desktop runtime: `dotnet test

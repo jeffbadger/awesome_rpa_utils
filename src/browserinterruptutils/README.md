@@ -194,9 +194,12 @@ invoking one of its own elements.
   specific rule") and never calls close; dismiss-by-button rules are unaffected. That JS
   dialogs really lack those boxes in each browser is a pending live check.
 - **Structure-changed notifications are throttled.** A page change wakes an overlay look
-  at most once per 250 ms per browser window; changes inside that interval are dropped
-  and caught by the periodic overlay sweep (`overlaySweepIntervalMs`, default 2 s,
-  minimum 500 ms unless 0). The 250 ms figure has not been tuned against real pages.
+  at most once per 250 ms per browser window: the first change wakes one immediately and
+  any changes inside that interval collapse into one trailing wake-up when it ends (leading
+  edge plus one trailing notification per burst), so with the periodic sweep off
+  (`overlaySweepIntervalMs = 0`) a burst of changes still ends with a final look. The periodic
+  sweep (`overlaySweepIntervalMs`, default 2 s, minimum 500 ms unless 0) remains the fallback
+  for anything else. The 250 ms figure has not been tuned against real pages.
 - **Nothing runs on the automation's thread.** A hook thread receives UI Automation events
   and does almost nothing (a class check and a hand-off); a separate worker thread does the
   reading, invoking and event-raising. `Start` returns as soon as the hooks are installed,

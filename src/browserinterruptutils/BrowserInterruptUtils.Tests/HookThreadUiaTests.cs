@@ -108,6 +108,66 @@ namespace BrowserInterruptAutomation.Tests
             });
         }
 
+        [Fact]
+        public void RapidStructureChanges_ProduceALeadingAndATrailingNotification_AndNoneAfterUnwatch()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            RunOnStaThread(() =>
+            {
+                var hook = new BrowserPopupHookThread();
+                try
+                {
+                    bool started = hook.Start(_ => { }, out string message);
+                    Assert.True(started, message);
+
+                    using (var host = new WpfHost())
+                    {
+                        var windowRef = new BrowserElementRef(Array.Empty<int>(), host.Hwnd);
+
+                        int count = 0;
+                        var first = new ManualResetEventSlim(false);
+                        var second = new ManualResetEventSlim(false);
+                        hook.WindowStructureChanged += r =>
+                        {
+                            int n = Interlocked.Increment(ref count);
+                            if (n >= 1) first.Set();
+                            if (n >= 2) second.Set();
+                        };
+
+                        hook.WatchWindow(windowRef);
+                        host.AddChildButton();
+                        Assert.True(first.Wait(TimeSpan.FromSeconds(10)), "The leading WindowStructureChanged did not fire.");
+
+                        // Two more structural changes right after the leading raise (inside the
+                        // 250 ms cooldown, unless UIA delivery lagged, in which case the second is
+                        // itself a leading raise): either way a second notification must arrive -
+                        // the trailing one is what guarantees it when the sweep is off.
+                        host.AddChildButton();
+                        host.AddChildButton();
+                        Assert.True(second.Wait(TimeSpan.FromSeconds(10)), "No second (trailing) WindowStructureChanged arrived after a burst.");
+
+                        // Let everything settle, then make a burst and unwatch straight away: the
+                        // pending trailing (if any) must be cancelled and never delivered.
+                        Thread.Sleep(1000);
+                        host.AddChildButton();
+                        host.AddChildButton();
+                        host.AddChildButton();
+                        hook.UnwatchWindow(windowRef);
+                        Thread.Sleep(200);
+                        int atUnwatch = Volatile.Read(ref count);
+                        Thread.Sleep(1500);
+                        Assert.Equal(atUnwatch, Volatile.Read(ref count));
+                    }
+                }
+                finally
+                {
+                    hook.Stop();
+                }
+            });
+        }
+
         /// <summary>
         /// Runs <paramref name="action"/> (the hook/automation-client calls) on a dedicated STA
         /// thread. See <c>UiaTests.RunOnStaThread</c> for the identical rationale; duplicated here

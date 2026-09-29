@@ -56,9 +56,11 @@ browserInterrupt.Start(out _, sweepIntervalMs: 1000, overlaySweepIntervalMs: 200
 | `maxOverlayNodes` | 5000 | The most elements (1-100000) one overlay walk may visit. A larger page has more room but a slower walk. |
 | `maxOverlayDepth` | 50 | The deepest (1-1000) one overlay walk may descend. |
 
-Page changes wake an overlay look at most once per 250 ms per browser window; a change inside that
-interval is dropped and picked up by the periodic overlay sweep. That figure has not yet been tuned
-against real pages.
+Page changes wake an overlay look at most once per 250 ms per browser window: the first change
+wakes one immediately, and any changes inside that interval collapse into one more look when it
+ends (a leading edge plus one trailing notification per burst). So even with
+`overlaySweepIntervalMs = 0` (periodic sweep off) a burst of page changes always ends with a final
+look. That figure has not yet been tuned against real pages.
 
 The first look at a fresh browser tab can be slow because Chromium builds its accessibility tree lazily.
 
