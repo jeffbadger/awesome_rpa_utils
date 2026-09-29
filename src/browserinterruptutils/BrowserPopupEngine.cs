@@ -1420,6 +1420,19 @@ namespace BrowserInterruptAutomation
 
         private void Act(CandidateState state, BrowserPopupRule rule, BrowserElementInfo info, string text, string processName, long now)
         {
+            // Defense in depth for every acting NativeDialog rule: a name/message substring can match
+            // the browser's MAIN window (a tab title containing it). Closing that closes the whole
+            // browser, and an invoke rule would walk the window's whole subtree - the PAGE - and press
+            // the first page control with the target's name. A window with a minimize/maximize box is a
+            // normal application window, not a JS or system dialog, so refuse any action on it before
+            // any probe call (WatchOnly never reaches here). Refused once, without spending retries:
+            // nothing about it will change on a retry.
+            if (state.Scope == BrowserPopupScope.NativeDialog && info.IsMainWindowLike)
+            {
+                Fail(state, rule, info, text, processName, MainWindowRefusal);
+                return;
+            }
+
             if (IsRunaway(rule, now))
             {
                 TripRule(rule);
@@ -1432,18 +1445,6 @@ namespace BrowserInterruptAutomation
             if (state.Attempts >= MaxAttempts)
             {
                 Fail(state, rule, info, text, processName, "The popup was still open after " + state.Attempts + " attempts.");
-                return;
-            }
-
-            // Defense in depth for CloseWindowPattern: a name/message substring can match the
-            // browser's MAIN window (a tab title containing it), and closing that closes the whole
-            // browser. A window with a minimize/maximize box is a normal application window, not a JS
-            // or system dialog, so refuse before any probe call. Refused once, without spending
-            // retries: nothing about it will change on a retry (Invoke-based dismissals, which only
-            // press a button inside the popup, are unaffected).
-            if (rule.Action == BrowserPopupAction.CloseWindowPattern && state.Scope == BrowserPopupScope.NativeDialog && info.IsMainWindowLike)
-            {
-                Fail(state, rule, info, text, processName, MainWindowRefusal);
                 return;
             }
 
@@ -1588,9 +1589,9 @@ namespace BrowserInterruptAutomation
                 state.NextDue = now + RetryDelayMs;
         }
 
-        /// <summary>The <c>DismissFailed</c> detail when a close rule matched a main-window-like window.</summary>
-        internal const string MainWindowRefusal = "refused to close a window that looks like a main application window; "
-            + "use a dismiss-by-button rule or a more specific rule";
+        /// <summary>The <c>DismissFailed</c> detail when an acting (invoke or close) native rule matched a main-window-like window.</summary>
+        internal const string MainWindowRefusal = "refused to act on a window that looks like a main application window; "
+            + "use a page-overlay rule (scope PageOverlay) or a more specific rule";
 
         private static bool SetUnreachableFailure(out string failureReason)
         {

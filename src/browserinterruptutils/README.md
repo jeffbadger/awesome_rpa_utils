@@ -186,13 +186,15 @@ invoking one of its own elements.
   (ID and name) from the browser window it was found in. `processName` on an overlay rule,
   the "never touch the automation's own popups" check, and the `ProcessName`/`ProcessId` of
   its events all use that window.
-- **A close rule never closes a main-window-like window.** A native window with a minimize or
+- **A native rule never acts on a main-window-like window.** A native window with a minimize or
   maximize box looks like a normal application window (for example a browser window whose tab
-  title contains the rule's text), and closing it would close the whole browser. For such a
-  window an `AddNativeDialogCloseRule` rule raises one `PopupDismissFailed` ("refused to close
-  a window that looks like a main application window; use a dismiss-by-button rule or a more
-  specific rule") and never calls close; dismiss-by-button rules are unaffected. That JS
-  dialogs really lack those boxes in each browser is a pending live check.
+  title contains the rule's text). Closing it would close the whole browser, and a
+  dismiss-by-button rule would search its whole subtree, the page, and press the first page
+  control with that name. For such a window every acting native rule (close or dismiss-by-button)
+  raises one `PopupDismissFailed` ("refused to act on a window that looks like a main application
+  window; use a page-overlay rule (scope PageOverlay) or a more specific rule") and makes no probe
+  call; a watch-only rule still reports it. That JS dialogs really lack those boxes in each
+  browser is a pending live check.
 - **Structure-changed notifications are throttled.** A page change wakes an overlay look
   at most once per 250 ms per browser window: the first change wakes one immediately and
   any changes inside that interval collapse into one trailing wake-up when it ends (leading

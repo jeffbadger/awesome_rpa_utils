@@ -2428,7 +2428,7 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(0, mainWindow.Closes);
             Assert.Equal(0, h.Probe.TotalCloses);
             var failed = Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
-            Assert.Equal("refused to close a window that looks like a main application window; use a dismiss-by-button rule or a more specific rule", failed.Detail);
+            Assert.Equal(BrowserPopupEngine.MainWindowRefusal, failed.Detail);
             Assert.Equal(0, failed.Attempts); // no retries were burned
             Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
         }
@@ -2450,8 +2450,10 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
-        public void DismissByNameRule_IsUnaffectedByAMainWindowLikeWindow()
+        public void DismissByNameRule_RefusesAMainWindowLikeWindow_WithoutAnyProbeWalkOrInvoke()
         {
+            // A tab titled "Example Domain" makes the browser's main window match; the invoke rule
+            // must not walk the page and press its first control named "OK".
             var h = new Harness();
             h.AddRule("press", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.InvokeByName, targetName: "OK");
             var window = h.Probe.AddWindow("Example Domain");
@@ -2459,11 +2461,75 @@ namespace BrowserInterruptAutomation.Tests
             var ok = h.Probe.AddChild(window, "OK");
 
             h.AppearWindow(window);
+            h.Settle();
+
+            Assert.Equal(0, ok.Invokes);
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(0, h.Probe.OverlaySearchCalls); // FindTargets never walked the subtree
+            Assert.True(window.Alive);
+            var failed = Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(BrowserPopupEngine.MainWindowRefusal, failed.Detail);
+            Assert.Equal(0, failed.Attempts);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void DismissByAutomationIdRule_RefusesAMainWindowLikeWindow_WithoutAnyProbeWalkOrInvoke()
+        {
+            var h = new Harness();
+            h.AddRule("press", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.InvokeByAutomationId, targetAutomationId: "okButton");
+            var window = h.Probe.AddWindow("Example Domain");
+            window.IsMainWindowLike = true;
+            var ok = h.Probe.AddChild(window, "OK", automationId: "okButton");
+
+            h.AppearWindow(window);
+            h.Settle();
+
+            Assert.Equal(0, ok.Invokes);
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(0, h.Probe.OverlaySearchCalls);
+            var failed = Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(BrowserPopupEngine.MainWindowRefusal, failed.Detail);
+            Assert.Equal(0, failed.Attempts);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void DismissRules_StillWorkOnADialogLikeWindow()
+        {
+            var h = new Harness();
+            h.AddRule("byName", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.InvokeByName, targetName: "OK");
+            h.AddRule("byId", BrowserPopupScope.NativeDialog, nameContains: "Other", action: BrowserPopupAction.InvokeByAutomationId, targetAutomationId: "okButton");
+            var first = h.Probe.AddWindow("Example Domain says");
+            var firstOk = h.Probe.AddChild(first, "OK");
+            var second = h.Probe.AddWindow("Other page says");
+            var secondOk = h.Probe.AddChild(second, "OK", automationId: "okButton");
+
+            h.AppearWindow(first);
+            h.AppearWindow(second);
             h.PastVerifyDelay();
 
-            Assert.Equal(1, ok.Invokes);
-            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(1, firstOk.Invokes);
+            Assert.Equal(1, secondOk.Invokes);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Dismissed).Count());
             Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void WatchOnlyRule_StillReportsAMainWindowLikeWindow()
+        {
+            var h = new Harness();
+            h.AddRule("watch", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.WatchOnly);
+            var window = h.Probe.AddWindow("Example Domain");
+            window.IsMainWindowLike = true;
+
+            h.AppearWindow(window);
+            h.Settle();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(0, h.Probe.TotalCloses);
         }
 
         [Theory]

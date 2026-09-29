@@ -26,7 +26,9 @@ namespace BrowserInterruptAutomation
         /// Close the popup's own window (its UIA Window pattern). Valid only for <see cref="BrowserPopupScope.NativeDialog"/>.
         /// The engine refuses (one <c>DismissFailed</c>, no close attempted) when the window looks like a
         /// main application window (<see cref="BrowserElementInfo.IsMainWindowLike"/>), since a name
-        /// substring can match the browser's own main window; use a dismiss-by-button rule for those.
+        /// substring can match the browser's own main window. The same refusal applies to the invoke
+        /// actions of a NativeDialog rule (their subtree walk would cover the page); only
+        /// <see cref="WatchOnly"/> still reports such a window.
         /// </summary>
         CloseWindowPattern,
 

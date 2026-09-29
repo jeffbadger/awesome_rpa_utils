@@ -129,6 +129,7 @@ namespace BrowserInterruptAutomation
         /// <param name="exactTargetElementName"><c>true</c> to need the element's whole name; <c>false</c> to accept the first descendant whose name contains it.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
+        /// <remarks>A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never acted on: the rule reports <c>PopupDismissFailed</c> once instead, and nothing inside the window is searched or invoked. Use a page-overlay rule for in-page content.</remarks>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching native dialog by invoking the named descendant element. Returns True if added; never throws.")]
         public bool AddNativeDialogDismissRuleByName(string ruleName, string nameContains, string messageContains, string processName,
@@ -167,6 +168,7 @@ namespace BrowserInterruptAutomation
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
+        /// <remarks>A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never acted on: the rule reports <c>PopupDismissFailed</c> once instead, and nothing inside the window is searched or invoked. Use a page-overlay rule for in-page content.</remarks>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching native dialog by invoking the descendant element with the given automation ID. Returns True if added; never throws.")]
         public bool AddNativeDialogDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains, string processName,
@@ -196,7 +198,7 @@ namespace BrowserInterruptAutomation
         }
 
         /// <summary>Adds a rule that dismisses a matching native dialog by closing its window, for a dialog with no element worth invoking.
-        /// A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never closed: the rule reports <c>PopupDismissFailed</c> once instead.</summary>
+        /// A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never closed: the rule reports <c>PopupDismissFailed</c> once instead. Dismiss-by-button rules are refused on such a window too.</summary>
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
@@ -233,6 +235,7 @@ namespace BrowserInterruptAutomation
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
+        /// <remarks>A watch-only rule is not an action, so it still reports a window that looks like a main application window, which acting native rules refuse.</remarks>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that only reports a matching native dialog and never touches it. Returns True if added; never throws.")]
         public bool AddNativeDialogWatchOnlyRule(string ruleName, string nameContains, string messageContains, string processName,

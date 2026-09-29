@@ -49,16 +49,18 @@ or `null`) to not check it. **A process name alone is never enough**, so a too-b
   a native close rule needs `nameContains` or `messageContains`.
 - A page overlay rule needs at least one of `roleContains`, `nameContains` and `automationIdContains`.
 
-### Close rules refuse main-window-like windows
+### Native rules refuse main-window-like windows
 
-A close rule ends the window it matched. Because a `nameContains` can match the browser's own main
-window (a tab title containing the text), the handler checks before closing: a native window that has a
-minimize or maximize box is a normal application window, not a JS or system dialog, and is **never
-closed**. Instead the rule raises one `PopupDismissFailed` (no retries) whose `Detail` is "refused to
-close a window that looks like a main application window; use a dismiss-by-button rule or a more
-specific rule". A style that cannot be read is treated the same way. Prefer a dismiss-by-button rule
-(`AddNativeDialogDismissRuleByName`), which is never refused: it presses a button inside the popup. The
-live checks confirm that each browser's JS dialogs really lack the minimize/maximize boxes.
+Because a `nameContains` can match the browser's own main window (a tab title containing the text), the
+handler checks before acting. A close rule would end the whole browser; a dismiss-by-button rule would
+search the window's whole subtree, which is the page, and press the first page control with that name.
+So a native window that has a minimize or maximize box is a normal application window, not a JS or
+system dialog, and **no native rule ever acts on it**, whether it would invoke or close. Instead the
+rule raises one `PopupDismissFailed` (no retries, nothing searched or clicked) whose `Detail` is "refused
+to act on a window that looks like a main application window; use a page-overlay rule (scope
+PageOverlay) or a more specific rule". A style that cannot be read is treated the same way. A
+watch-only rule is not an action and still reports such a window. The live checks confirm that each
+browser's JS dialogs really lack the minimize/maximize boxes.
 
 ### A page overlay belongs to its window's process
 
@@ -70,9 +72,9 @@ own popups.
 ### Always set enough to be specific
 
 - A **native dialog** rule is checked against every window of the process it names, not only
-  dialogs, so a rule that names only `chrome` could act on the browser's main window. That is
-  why a process-only rule is refused: add a `messageContains`, a `nameContains` or a
-  `roleContains` (a close rule needs a name or message).
+  dialogs, so a rule that names only `chrome` could match the browser's main window (which
+  an acting rule then refuses, see above). That is why a process-only rule is refused: add a
+  `messageContains`, a `nameContains` or a `roleContains` (a close rule needs a name or message).
 - A **page overlay** rule is checked against every element the bounded walk visits, not only
   elements that look like dialogs. A rule with only `nameContains: "Accept"` can match the
   Accept button itself rather than the banner around it. Set `roleContains` (for example
@@ -103,7 +105,7 @@ own popups.
 |---|---|---|
 | `AddNativeDialogDismissRuleByName` | `NativeDialog` | Invokes the descendant element with this name (usually a button such as `OK`). `exactTargetElementName: false` accepts the first descendant whose name *contains* the text. |
 | `AddNativeDialogDismissRuleByAutomationId` | `NativeDialog` | Invokes the descendant with this automation ID. |
-| `AddNativeDialogCloseRule` | `NativeDialog` | Closes the dialog's window through its window pattern, for a dialog with nothing worth clicking. Refuses a window that looks like a main application window (see below). |
+| `AddNativeDialogCloseRule` | `NativeDialog` | Closes the dialog's window through its window pattern, for a dialog with nothing worth clicking. Refuses a window that looks like a main application window (see above). |
 | `AddNativeDialogWatchOnlyRule` | `NativeDialog` | Reports the dialog (event and log); never touches it. |
 | `AddPageOverlayDismissRuleByName` | `PageOverlay` | Invokes the descendant element with this name (a button such as `Accept all` or a close control). |
 | `AddPageOverlayDismissRuleByAutomationId` | `PageOverlay` | Invokes the descendant with this automation ID. |

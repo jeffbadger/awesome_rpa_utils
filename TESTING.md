@@ -1011,11 +1011,13 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
 - **Verify-before-count.** A dismissal is recorded only 400 ms (`VerifyDelayMs`) after the invoke, once
   the popup is gone: confirm `PopupDismissed` fires about 0.4 s after the popup closes and that a control
   whose invoke does nothing ends in `PopupDismissFailed` after `maxAttempts` with no `PopupDismissed`.
-- **Main-window refusal.** With `AddNativeDialogCloseRule` whose `nameContains` matches a tab title, open
-  a normal Chrome, Edge and Firefox window with that title: the rule must raise one `PopupDismissFailed`
-  ("refused to close a window that looks like a main application window...") and the window must stay
-  open. Then raise a JS `alert`/`confirm`/`prompt` (and a `beforeunload` prompt) that is a top-level
-  window and confirm a close rule DOES close it, i.e. that each browser's dialogs really lack
+- **Main-window refusal.** With `AddNativeDialogCloseRule` and with `AddNativeDialogDismissRuleByName`
+  (target `OK`, on a page that has a control named `OK`), whose `nameContains` matches a tab title, open
+  a normal Chrome, Edge and Firefox window with that title: each rule must raise one `PopupDismissFailed`
+  ("refused to act on a window that looks like a main application window...") and the window and the page
+  control must stay untouched. Then raise a JS `alert`/`confirm`/`prompt` (and a `beforeunload` prompt)
+  that is a top-level window and confirm a close rule and a dismiss-by-button rule DO dismiss it, i.e.
+  that each browser's dialogs really lack
   `WS_MINIMIZEBOX`/`WS_MAXIMIZEBOX` (read the style with Spy++/Inspect if not). Record per browser.
 - **Overlay in a renderer-owned process.** Inspect a page overlay's UI Automation `ProcessId` in each
   browser: if it differs from the browser window's, confirm a `processName`-scoped `PageOverlay` rule
