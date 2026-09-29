@@ -218,8 +218,10 @@ invoking one of its own elements.
   nothing: that spends one of the `maxAttempts` attempts (no `PopupDismissed`), the worker
   tries again, and after `maxAttempts` it raises `PopupDismissFailed` with a detail saying the
   action succeeded but the popup is still open. Until then `HasUnresolvedPopup` stays true.
-  Only confirmed dismissals count toward `maxDismissalsPerMinute`; a popup that ignores the
-  click is bounded by `maxAttempts` instead. Stopping the component inside that 400 ms window
+  Confirmed dismissals, plus actions issued and still awaiting that confirmation, count toward
+  `maxDismissalsPerMinute` (so a burst of simultaneous popups cannot all be acted on before any
+  confirmation lands); an action that leaves the popup open stops counting and is bounded by
+  `maxAttempts` instead. Stopping the component inside that 400 ms window
   drops the pending confirmation (the popup was closed but is not counted); so does removing
   the rule inside it: a dismissal whose rule is gone is neither counted nor reported.
 - **A walk over a big page costs cross-process reads.** Each element visited reads about

@@ -2956,5 +2956,90 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(1, h.Engine.TotalDismissals);
             Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
         }
+
+        [Fact]
+        public void BurstOfSimultaneousPopups_IsCappedAtTheLimit_BeforeAnyConfirmationLands()
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 3;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", action: BrowserPopupAction.CloseWindowPattern);
+            var windows = Enumerable.Range(0, 5).Select(_ => h.Probe.AddWindow("Nag")).ToList();
+
+            foreach (var w in windows)
+                h.Hook.FireWindowOpened(w);
+            h.Pump(0);
+
+            Assert.Equal(3, h.Probe.TotalCloses);
+            Assert.True(h.Engine.IsRuleTripped("nag"));
+            var error = Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Equal("nag", error.RuleName);
+            Assert.Contains("SetRuleEnabled", error.Detail);
+
+            h.PastVerifyDelay();
+            h.Settle(1000, 4000);
+
+            Assert.Equal(3, h.Probe.TotalCloses);
+            Assert.Equal(3, h.Of(BrowserPopupRecordKind.Dismissed).Count());
+            Assert.Equal(3, h.Engine.TotalDismissals);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error)); // one trip, one error
+            Assert.Equal(2, windows.Count(w => w.Alive));
+        }
+
+        [Fact]
+        public void ActionThatLeavesThePopupOpen_IsNotCountedAsADismissal_AndStopsCountingTowardTheBreaker()
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 2;
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var ignoring = h.Probe.AddWindow("Nag");
+            h.Probe.AddChild(ignoring, "Yes").SucceedWithoutClosing = true;
+            var normal = h.Probe.AddWindow("Nag");
+            h.Probe.AddChild(normal, "Yes");
+
+            h.Hook.FireWindowOpened(ignoring);
+            h.Hook.FireWindowOpened(normal);
+            h.Pump(0); // two actions issued, none confirmed yet: at the limit, but not over it
+            Assert.False(h.Engine.IsRuleTripped("nag"));
+
+            h.PastVerifyDelay(); // the ignored one is still open: DismissFailed, no longer pending; the other is confirmed
+            Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+
+            var third = h.Probe.AddWindow("Nag");
+            h.Probe.AddChild(third, "Yes");
+            h.Now += 100;
+            h.AppearWindow(third); // 1 confirmed + 0 pending: room for one more
+            h.PastVerifyDelay();
+
+            Assert.False(third.Alive);
+            Assert.False(h.Engine.IsRuleTripped("nag"));
+            Assert.Equal(2, h.Engine.TotalDismissals);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void ConfirmedDismissals_AreNotCountedTwice_WhenTheyMoveFromPendingToConfirmed()
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 3;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", action: BrowserPopupAction.CloseWindowPattern);
+
+            for (int i = 0; i < 3; i++)
+            {
+                h.Now += 1000;
+                h.AppearWindow(h.Probe.AddWindow("Nag"));
+                h.PastVerifyDelay(); // each is confirmed before the next appears
+            }
+
+            // 3 confirmed, 0 pending: the fourth is over the limit (3 >= 3) exactly once, not earlier.
+            Assert.Equal(3, h.Engine.TotalDismissals);
+            Assert.False(h.Engine.IsRuleTripped("nag"));
+            var fourth = h.Probe.AddWindow("Nag");
+            h.Now += 1000;
+            h.AppearWindow(fourth);
+            Assert.True(fourth.Alive);
+            Assert.True(h.Engine.IsRuleTripped("nag"));
+        }
     }
 }

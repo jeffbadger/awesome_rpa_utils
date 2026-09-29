@@ -147,10 +147,12 @@ longer counts toward `HasUnresolvedPopup`.
 
 If a rule's popup reappears every time it is dismissed - the page is complaining about something the
 click does not fix - the handler would click it forever. Instead a rule that has dismissed
-`maxDismissalsPerMinute` popups (confirmed closed, see above) within a minute **stops itself**: it raises `InterruptError` and is
+`maxDismissalsPerMinute` popups within a minute (confirmed closed, plus any it has just acted on and is still waiting 400 ms to
+confirm, so a burst of simultaneous popups is cut off at the limit) **stops itself**: it raises `InterruptError` and is
 listed as `"stopped": true` by `ListRulesJson`. Its popup is then left open, so the problem is visible
 instead of hidden.
 
+An action that is later found to have left the popup open stops counting, but the rule stays stopped once it has tripped.
 Sort out why it recurs, then `SetRuleEnabled(rule, true, ...)` turns the rule back on.
 
 ## Clean-up

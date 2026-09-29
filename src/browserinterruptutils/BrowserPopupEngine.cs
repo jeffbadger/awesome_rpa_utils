@@ -31,8 +31,11 @@ namespace BrowserInterruptAutomation
     /// action did nothing, so it consumes an attempt (retry through the normal path, or
     /// <c>DismissFailed</c> once <see cref="MaxAttempts"/> is spent) and no <c>Dismissed</c> is
     /// ever recorded for it. That bounds a do-nothing invoke to <see cref="MaxAttempts"/> per
-    /// popup instance; the runaway breaker only sees confirmed dismissals, which is what it is
-    /// for (a popup that keeps coming back after real dismissals). The verification is
+    /// popup instance. The runaway breaker counts confirmed dismissals plus actions still awaiting
+    /// their verification (so a burst of simultaneous popups cannot all be acted on before any
+    /// confirmation lands); an action that ends "still open" stops counting, so a do-nothing
+    /// invoke never inflates it (a popup that keeps coming back after real dismissals is what it is
+    /// for). The verification is
     /// read-only, so it takes no action lock and needs no Paused/rule re-check; a retry it
     /// schedules goes through <see cref="Act"/> and its re-checks. The action
     /// still has a window to race against, though: a pass reads <see cref="Paused"/>, then does
@@ -357,7 +360,8 @@ namespace BrowserInterruptAutomation
         internal int MaxAttempts { get; set; } = 3;
 
         /// <summary>
-        /// How many popups one rule may dismiss in a minute before it stops itself. Set before
+        /// How many popups one rule may dismiss in a minute before it stops itself; dismissals still
+        /// awaiting their verification count toward it (see <see cref="IsRunaway"/>). Set before
         /// starting the worker loop; not safe to change while <see cref="Pump"/> is running on
         /// another thread.
         /// </summary>
@@ -1509,7 +1513,7 @@ namespace BrowserInterruptAutomation
                 TripRule(rule);
                 state.NextDue = long.MaxValue;
                 RecordError(rule.RuleName, "Rule '" + rule.RuleName + "' dismissed " + MaxDismissalsPerMinute
-                    + " popups in the last minute, so it stopped dismissing. Its popup keeps coming back; "
+                    + " popups in the last minute (counting actions still awaiting confirmation), so it stopped dismissing. Its popup keeps coming back; "
                     + "call SetRuleEnabled to turn it back on once that is sorted out.");
                 return;
             }
@@ -1723,15 +1727,29 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        /// <summary>
+        /// Whether acting once more would take the rule past <see cref="MaxDismissalsPerMinute"/>: the
+        /// confirmed dismissals of the last minute PLUS the actions already issued and still awaiting
+        /// verification (<see cref="VerifyDelayMs"/> later). Counting only confirmed ones would let a
+        /// burst of simultaneous popups all be acted on before any confirmation landed. No double
+        /// counting: a pending action leaves the candidate the moment it is confirmed (and is queued
+        /// as a confirmed one), and one that ends "still open" or failed stops counting altogether.
+        /// </summary>
         private bool IsRunaway(BrowserPopupRule rule, long now)
         {
+            int issued = 0;
+            foreach (var candidate in _candidates.Values)
+            {
+                if (candidate.Pending != null && ReferenceEquals(candidate.Pending.Rule, rule))
+                    issued++;
+            }
             lock (_lock)
             {
                 if (!_ruleRuntime.TryGetValue(rule.RuleName, out var runtime))
                     return false;
                 while (runtime.RecentDismissals.Count > 0 && now - runtime.RecentDismissals.Peek() > RunawayWindowMs)
                     runtime.RecentDismissals.Dequeue();
-                return runtime.RecentDismissals.Count >= MaxDismissalsPerMinute;
+                return runtime.RecentDismissals.Count + issued >= MaxDismissalsPerMinute;
             }
         }
 
