@@ -43,6 +43,7 @@ $releaseAssemblies = @(
     "ReconciliationAutomation.dll"
     "TextExtractAutomation.dll"
     "ResourceLockAutomation.dll"
+    "BrowserInterruptAutomation.dll"
 )
 
 # Every component project multi-targets these two TFMs (OcrUtils uses the versioned

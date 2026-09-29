@@ -8,7 +8,7 @@
     <AssemblyName>BrowserInterruptAutomation</AssemblyName>
     <RootNamespace>BrowserInterruptAutomation</RootNamespace>
     <Platforms>AnyCPU;x64</Platforms>
-    <!-- Needed for System.Windows.Automation (AutomationElement and friends), added in a later phase -->
+    <!-- Needed for System.Windows.Automation (AutomationElement and friends) -->
     <UseWPF>true</UseWPF>
     <!-- Allows building this Windows-targeted, WPF-referencing project from a non-Windows SDK host -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
@@ -63,6 +63,11 @@
     -->
     <Compile Remove="UiaBrowserPopupProbe.cs" Condition="'$(UseWPF)' != 'true'" />
     <Compile Remove="BrowserPopupHookThread.cs" Condition="'$(UseWPF)' != 'true'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- README shown on the NuGet package page (PackageReadmeFile is set in Directory.Build.targets) -->
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
