@@ -1205,6 +1205,61 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(describes, h.Probe.DescribeWindowCalls);
         }
 
+        [Fact]
+        public void DisablingTheLastOverlayRule_UnwatchesTheProcess_AndStopsOverlaySearches()
+        {
+            var h = new Harness(sweepIntervalMs: 1000, overlaySweepIntervalMs: 500);
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
+            var browser = h.Probe.AddWindow("tab", pid: 100, processName: "chrome");
+            h.Pump(0);
+            Assert.Contains(browser.Ref, h.Hook.CurrentlyWatched);
+
+            Assert.True(h.Engine.SetRuleEnabled("cookie", false));
+            h.Pump(100);
+
+            Assert.Contains(browser.Ref, h.Hook.UnwatchCalls);
+            Assert.DoesNotContain(browser.Ref, h.Hook.CurrentlyWatched);
+            int searches = h.Probe.OverlaySearchCalls;
+            h.Hook.FireStructureChanged(browser.Ref);
+            h.Pump(700);
+            h.Pump(1500);
+            h.Pump(3000);
+            Assert.Equal(searches, h.Probe.OverlaySearchCalls); // nothing searches a process no enabled rule wants
+        }
+
+        [Fact]
+        public void ReEnablingAnOverlayRule_WatchesTheProcessAgain()
+        {
+            var h = new Harness(sweepIntervalMs: 1000, overlaySweepIntervalMs: 500);
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
+            var browser = h.Probe.AddWindow("tab", pid: 100, processName: "chrome");
+            h.Pump(0);
+            Assert.True(h.Engine.SetRuleEnabled("cookie", false));
+            h.Pump(100);
+            Assert.DoesNotContain(browser.Ref, h.Hook.CurrentlyWatched);
+
+            Assert.True(h.Engine.SetRuleEnabled("cookie", true));
+            h.Pump(200);
+
+            Assert.Contains(browser.Ref, h.Hook.CurrentlyWatched);
+        }
+
+        [Fact]
+        public void DisablingOneOfTwoOverlayRules_KeepsWatchingWhileAnotherEnabledRuleWantsTheProcess()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("a", BrowserPopupScope.PageOverlay, nameContains: "A", process: "chrome");
+            h.AddRule("b", BrowserPopupScope.PageOverlay, nameContains: "B", process: "chrome");
+            var browser = h.Probe.AddWindow("tab", pid: 100, processName: "chrome");
+            h.Pump(0);
+
+            Assert.True(h.Engine.SetRuleEnabled("a", false));
+            h.Pump(100);
+
+            Assert.Contains(browser.Ref, h.Hook.CurrentlyWatched);
+            Assert.Empty(h.Hook.UnwatchCalls);
+        }
+
         // ------------------------------------------------------------------ message read last (I1)
 
         [Fact]

@@ -777,7 +777,10 @@ namespace BrowserInterruptAutomation
             bool any = false;
             foreach (var rule in SnapshotRules())
             {
-                if (rule.Scope != BrowserPopupScope.PageOverlay)
+                // A disabled rule never acts, so it must not keep a process in the watch set (the
+                // native interest below already skips it). Turning it back on bumps the rules
+                // version, which recomputes this and re-watches.
+                if (rule.Scope != BrowserPopupScope.PageOverlay || !rule.Enabled)
                     continue;
                 if (string.IsNullOrWhiteSpace(rule.ProcessName))
                     any = true;
