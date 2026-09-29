@@ -17,4 +17,5 @@ touching the component source trees.
   features (e.g. the [REST code generator](plans/2026-08-31-swagger-rest-codegen.md)
   and its [multi-format input support](plans/2026-09-06-multi-format-rest-codegen.md), the
   [TextExtractUtils design](plans/2026-09-26-textextractutils-design.md) and the
-  [ResourceLockUtils design](plans/2026-09-27-resourcelockutils-design.md)).
+  [ResourceLockUtils design](plans/2026-09-27-resourcelockutils-design.md) and the
+  [BrowserInterruptUtils design](plans/2026-09-29-browserinterruptutils-design.md)).
