@@ -16,6 +16,20 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!--
+    BrowserInterruptUtils.cs (Task 5) constructs the real UIA-backed UiaBrowserPopupProbe/
+    BrowserPopupHookThread in its production (parameterless) constructor path, but is otherwise
+    UIA-free (its internal DI constructor takes IBrowserPopupProbe/IBrowserPopupHookSource, so
+    BrowserInterruptUtils.Tests can drive it entirely through fakes). Rather than excluding the
+    whole file when UseWPF=false (as UiaBrowserPopupProbe.cs/BrowserPopupHookThread.cs are),
+    BROWSERINTERRUPT_UIA gates only the two `new` calls that reference those real types, behind
+    an #if in BrowserInterruptUtils.cs. That keeps the file - and therefore its test file -
+    includable in the local -p:UseWPF=false test-running convenience described above.
+  -->
+  <PropertyGroup Condition="'$(UseWPF)' == 'true'">
+    <DefineConstants>$(DefineConstants);BROWSERINTERRUPT_UIA</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Lets BrowserInterruptUtils.Tests drive the popup engine with fake probes -->
     <InternalsVisibleTo Include="BrowserInterruptUtils.Tests" />
