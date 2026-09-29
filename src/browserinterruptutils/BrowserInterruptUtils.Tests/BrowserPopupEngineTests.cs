@@ -1627,6 +1627,96 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(2, yes.Invokes);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void ActionIssuedJustBeforePause_IsStillConfirmedWhilePaused_SoDismissedIsRecordedAfterPauseReturned(bool useClose)
+        {
+            var h = new Harness();
+            if (useClose)
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            else
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            h.Probe.AddChild(w, "Yes");
+
+            h.AppearWindow(w); // the call is issued, the browser has (in effect) acted, the outcome is not yet confirmed
+            Assert.Equal(1, h.Probe.TotalInvokes + h.Probe.TotalCloses);
+            h.Engine.Paused = true;
+            h.Engine.WaitForIdle(); // Pause has returned
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+
+            h.PastVerifyDelay(); // the confirmation is read-only, so it still runs while paused
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)); // documented: raised after Pause returned
+            Assert.Equal(1, h.Engine.TotalDismissals);
+            Assert.Equal(1, h.Probe.TotalInvokes + h.Probe.TotalCloses); // and no new call started
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void PopupStillOpenAfterAnIssuedAction_WhilePaused_StartsNoNewCall_UntilResume_ThenIsDismissed(bool useClose)
+        {
+            var h = new Harness();
+            if (useClose)
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            else
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+            w.SucceedWithoutClosing = true;
+            yes.SucceedWithoutClosing = true;
+
+            h.AppearWindow(w);
+            int issued = h.Probe.TotalInvokes + h.Probe.TotalCloses;
+            Assert.Equal(1, issued);
+            h.Engine.Paused = true;
+            h.Engine.WaitForIdle();
+
+            // Verification (due while paused) finds the popup still open; the retry it schedules must not start.
+            for (long t = 100; t <= 5000; t += 100)
+            {
+                h.Pump(t);
+                Assert.Equal(issued, h.Probe.TotalInvokes + h.Probe.TotalCloses);
+            }
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.True(h.Engine.HasUnresolvedPopup);
+
+            // Resume: the held retry proceeds normally, and this time the browser acts.
+            w.SucceedWithoutClosing = false;
+            yes.SucceedWithoutClosing = false;
+            h.Engine.Paused = false;
+            h.Settle(5100, 8000);
+
+            Assert.Equal(2, h.Probe.TotalInvokes + h.Probe.TotalCloses);
+            var dismissed = Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(2, dismissed.Attempts);
+            Assert.False(h.Engine.HasUnresolvedPopup);
+        }
+
+        [Fact]
+        public void AttemptsSpentBeforePause_DismissFailedIsStillRecordedWhilePaused_WithNoNewCall()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+            yes.SucceedWithoutClosing = true;
+
+            h.AppearWindow(w);
+            h.Engine.Paused = true;
+            h.Engine.WaitForIdle();
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+
+            h.PastVerifyDelay();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed)); // documented: may be raised after Pause returned
+            Assert.Equal(1, yes.Invokes);
+        }
+
         [Fact]
         public void RemovingTheRule_DuringTheVerifyWindow_RecordsAndCountsNothing()
         {

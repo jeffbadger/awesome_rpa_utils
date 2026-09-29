@@ -88,6 +88,21 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void PauseIsNotDocumentedAsStoppingAnAlreadyIssuedDismissal()
+        {
+            // Pause only stops NEW invoke/close calls; UIA returns before the browser acts, so an
+            // already-issued dismissal may still take effect (and be recorded) after Pause returns.
+            string lifecycle = File.ReadAllText(Path.Combine(ComponentDirectory(), "Documentation", "Lifecycle.md")).Replace("\r\n", "\n");
+            foreach (string page in new[] { Readme(), lifecycle })
+            {
+                string flat = Regex.Replace(page, "\\s+", " ");
+                Assert.DoesNotContain("nothing the handler does can land", flat);
+                Assert.Contains("already", flat);
+                Assert.Contains("may still take effect", flat);
+            }
+        }
+
+        [Fact]
         public void TheDocumentedLimits_MatchTheCode()
         {
             string rules = File.ReadAllText(Path.Combine(ComponentDirectory(), "Documentation", "Rules.md")).Replace("\r\n", "\n");
