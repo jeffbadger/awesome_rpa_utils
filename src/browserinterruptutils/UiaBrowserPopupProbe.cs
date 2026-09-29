@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -30,7 +29,7 @@ namespace BrowserInterruptAutomation
     /// <b>Resolution/caching layer.</b> <see cref="BrowserElementRef"/> is deliberately UIA-free
     /// (a runtime-id array plus an optional HWND, no live <see cref="AutomationElement"/>), so
     /// every call that receives one must resolve it back into a real element. <see cref="_cache"/>
-    /// (a <see cref="ConcurrentDictionary{TKey,TValue}"/> of <see cref="WeakReference{T}"/>) is
+    /// (a <see cref="GenerationalCache{TKey,TValue}"/> of strong references) is
     /// populated every time this probe discovers or describes an element (in
     /// <see cref="DescribeElement"/>, the single place every element turns into a
     /// <see cref="BrowserElementInfo"/>) so that a later <see cref="TryInvoke"/>/
@@ -42,12 +41,19 @@ namespace BrowserInterruptAutomation
     /// ever set for a native dialog's own top-level window) plus a bounded runtime-id-matching
     /// subtree search if the ref names a descendant rather than the window itself; a ref with no
     /// <c>Hwnd</c> (a page-overlay element, which has none) that misses the cache is simply
-    /// unreachable and reported as such - there is no other way to relocate it. There is no
-    /// active eviction: entries are held by <see cref="WeakReference{T}"/> (never pinning a dead
-    /// COM wrapper past the underlying element's own lifetime), and <c>BrowserPopupEngine</c>
-    /// already tracks and forgets its own candidates independently, so a stale entry here costs
-    /// nothing beyond the dictionary slot itself. A full eviction policy (e.g. a bounded LRU) is
-    /// left to a later task if a very long-running session ever shows this growing unboundedly.
+    /// unreachable and reported as such - there is no other way to relocate it. The cache
+    /// holds STRONG references: the wrappers a subtree walk discovers are otherwise unreferenced,
+    /// so weak ones could be collected by a GC between discovery and the engine's later
+    /// re-check (0.15-2 s later), which would make a live overlay look dead. Growth is bounded
+    /// by generation instead: the cache rotates (drops entries nobody looked up or re-discovered
+    /// for two generations) when the current generation reaches <see cref="CacheMaxEntriesPerGeneration"/>
+    /// entries or is <see cref="CacheRotateAfterMs"/> old, so it holds at most twice the cap, and a
+    /// hit is promoted so an element still in use survives. A hit that turns out dead is removed
+    /// at once. Rotation is not tied to <c>FindOverlayCandidates</c> calls, because one sweep
+    /// makes several (one per watched window, plus one per popup for target lookup) and rotating
+    /// per call would evict a popup found early in the sweep before the engine re-checks it.
+    /// A native window that falls out is re-resolved from its <c>Hwnd</c>; an overlay that does
+    /// is re-found by the next walk (walks re-cache every element they visit).
     /// </item>
     /// <item>
     /// <b>Tree walker choice.</b> <see cref="_childWalker"/> is built from
@@ -84,9 +90,15 @@ namespace BrowserInterruptAutomation
         /// </summary>
         private static readonly TreeWalker _childWalker = new TreeWalker(Condition.TrueCondition);
 
-        /// <summary>Caches every element this probe has discovered/described. See the type remarks.</summary>
-        private readonly ConcurrentDictionary<BrowserElementRef, WeakReference<AutomationElement>> _cache =
-            new ConcurrentDictionary<BrowserElementRef, WeakReference<AutomationElement>>();
+        /// <summary>Most elements one cache generation holds before it rotates (a default 5000-node walk fits in one).</summary>
+        internal const int CacheMaxEntriesPerGeneration = 8192;
+
+        /// <summary>How long a cache generation lives before it rotates, in milliseconds.</summary>
+        internal const int CacheRotateAfterMs = 60000;
+
+        /// <summary>Holds every element this probe has discovered/described. See the type remarks.</summary>
+        private readonly GenerationalCache<BrowserElementRef, AutomationElement> _cache =
+            new GenerationalCache<BrowserElementRef, AutomationElement>(CacheMaxEntriesPerGeneration, CacheRotateAfterMs);
 
         /// <summary>Bounds the fallback runtime-id search used to relocate a cache-missed descendant of a still-resolvable window.</summary>
         private const int ResolveFallbackMaxNodes = 5000;
@@ -330,7 +342,7 @@ namespace BrowserInterruptAutomation
         {
             if (element == null)
                 return;
-            _cache[elementRef] = new WeakReference<AutomationElement>(element);
+            _cache.Set(elementRef, element);
         }
 
         /// <summary>
@@ -345,12 +357,14 @@ namespace BrowserInterruptAutomation
         {
             element = null;
 
-            if (_cache.TryGetValue(target, out WeakReference<AutomationElement> weak)
-                && weak.TryGetTarget(out AutomationElement cached)
-                && IsElementAvailable(cached))
+            if (_cache.TryGet(target, out AutomationElement cached))
             {
-                element = cached;
-                return true;
+                if (IsElementAvailable(cached))
+                {
+                    element = cached;
+                    return true;
+                }
+                _cache.Remove(target); // dead: drop it now rather than wait for rotation
             }
 
             if (target.Hwnd == IntPtr.Zero)
@@ -427,15 +441,22 @@ namespace BrowserInterruptAutomation
             if (element == null || !IsElementAvailable(element))
                 return null;
 
+            // Identity first, then the rest: an element with no runtime ID and no window handle
+            // cannot be told apart from any other such element (they would all share one key,
+            // aliasing one candidate and one cache slot), so it is not describable at all. An
+            // element that is a window (non-zero hwnd) may lack a runtime ID and is keyed by its
+            // handle, which is unique; see BrowserElementRef.TryCreate.
+            int[] runtimeId = SafeGet(() => element.GetRuntimeId(), null);
+            if (!BrowserElementRef.TryCreate(runtimeId, hwnd, out BrowserElementRef elementRef))
+                return null;
+
             string name = SafeGet(() => element.Current.Name, string.Empty) ?? string.Empty;
             string automationId = SafeGet(() => element.Current.AutomationId, string.Empty) ?? string.Empty;
             string className = SafeGet(() => element.Current.ClassName, string.Empty) ?? string.Empty;
             string controlType = SafeGet(() => FriendlyControlTypeName(element.Current.ControlType), string.Empty) ?? string.Empty;
             string localizedControlType = SafeGet(() => element.Current.LocalizedControlType, string.Empty) ?? string.Empty;
             int processId = SafeGet(() => element.Current.ProcessId, 0);
-            int[] runtimeId = SafeGet(() => element.GetRuntimeId(), Array.Empty<int>()) ?? Array.Empty<int>();
 
-            var elementRef = new BrowserElementRef(runtimeId, hwnd);
             CacheElement(elementRef, element);
 
             return new BrowserElementInfo

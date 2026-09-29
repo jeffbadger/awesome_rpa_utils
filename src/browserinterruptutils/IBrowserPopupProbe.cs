@@ -52,6 +52,23 @@ namespace BrowserInterruptAutomation
             Hwnd = hwnd;
         }
 
+        /// <summary>
+        /// Builds a reference only when it can identify one element: a non-empty runtime ID, or
+        /// failing that a non-zero <paramref name="hwnd"/> (a top-level window is keyed by its
+        /// handle, which is unique). An empty runtime ID with no handle would make every such
+        /// element equal to every other (one candidate, one cache slot), so it is refused.
+        /// </summary>
+        public static bool TryCreate(int[] runtimeId, IntPtr hwnd, out BrowserElementRef elementRef)
+        {
+            if ((runtimeId == null || runtimeId.Length == 0) && hwnd == IntPtr.Zero)
+            {
+                elementRef = default;
+                return false;
+            }
+            elementRef = new BrowserElementRef(runtimeId, hwnd);
+            return true;
+        }
+
         /// <summary>The element's UIA runtime ID; empty (never <c>null</c>) if none is available.</summary>
         public int[] RuntimeId { get; }
 
