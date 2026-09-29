@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>BrowserInterruptAutomation</AssemblyName>
+    <RootNamespace>BrowserInterruptAutomation</RootNamespace>
+    <Platforms>AnyCPU;x64</Platforms>
+    <!-- Needed for System.Windows.Automation (AutomationElement and friends), added in a later phase -->
+    <UseWPF>true</UseWPF>
+    <!-- Allows building this Windows-targeted, WPF-referencing project from a non-Windows SDK host -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Emit BrowserInterruptAutomation.xml next to the DLL so the XML doc comments are consumable -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets BrowserInterruptUtils.Tests drive the popup engine with fake probes -->
+    <InternalsVisibleTo Include="BrowserInterruptUtils.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project lives in a subfolder; keep its sources out of this DLL -->
+    <Compile Remove="BrowserInterruptUtils.Tests/**/*.cs" />
+  </ItemGroup>
+
+</Project>
