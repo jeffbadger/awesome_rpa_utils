@@ -110,8 +110,16 @@ namespace BrowserInterruptAutomation
             public AutomationElement Element;
             public StructureChangedEventHandler Handler;
 
-            /// <summary><c>Environment.TickCount64</c> of the last raised notification for this window; <see cref="long.MinValue"/> if none yet. Read/written only via <see cref="Interlocked"/>.</summary>
-            public long LastRaisedTicks = long.MinValue;
+            /// <summary>
+            /// <c>Environment.TickCount64</c> of the last raised notification for this window.
+            /// Seeded at registration time (see <see cref="WatchWindow"/>) via
+            /// <see cref="StructureChangedThrottle.InitialSeed"/> - see that method's doc comment
+            /// for why <see cref="long.MinValue"/> is unsafe here (it made the throttle's
+            /// subtraction overflow and permanently silenced <see cref="WindowStructureChanged"/>
+            /// for every window; a critical Task 4 code-review finding). Read/written only via
+            /// <see cref="Interlocked"/> (see <see cref="StructureChangedThrottle.ShouldRaise"/>).
+            /// </summary>
+            public long LastRaisedTicks;
         }
 
         private readonly object _lifecycleLock = new object();
@@ -321,7 +329,10 @@ namespace BrowserInterruptAutomation
                     _watched[windowRoot] = new WatchEntry
                     {
                         Element = windowElement,
-                        Handler = handler
+                        Handler = handler,
+                        // Seeded so the first real StructureChanged callback for this window always
+                        // raises immediately; see the WatchEntry.LastRaisedTicks doc comment.
+                        LastRaisedTicks = StructureChangedThrottle.InitialSeed(Environment.TickCount64, StructureChangedCoalesceMs)
                     };
                 }
             }
@@ -427,11 +438,8 @@ namespace BrowserInterruptAutomation
                 }
 
                 long now = Environment.TickCount64;
-                long last = Interlocked.Read(ref entry.LastRaisedTicks);
-                if (now - last < StructureChangedCoalesceMs)
-                    return; // coalesced: too soon since the last raise for this window
-                if (Interlocked.CompareExchange(ref entry.LastRaisedTicks, now, last) != last)
-                    return; // another callback just won the race and will raise instead
+                if (!StructureChangedThrottle.ShouldRaise(ref entry.LastRaisedTicks, now, StructureChangedCoalesceMs))
+                    return; // coalesced: too soon since the last raise for this window, or lost a concurrent race
 
                 RaiseWindowStructureChanged(windowRoot);
             }
