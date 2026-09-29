@@ -138,6 +138,12 @@ namespace BrowserInterruptAutomation
             public bool TimerDisposed;
         }
 
+        // Lock order (outermost first): _lifecycleLock -> _watchLock; WatchEntry.TimerLock is a
+        // separate leaf never held together with _watchLock. _watchLock and TimerLock are held only
+        // for short dictionary/flag operations: never across a UIA/COM call (Add/RemoveStructureChanged
+        // EventHandler, FromHandle), a subscriber invocation or any other lock. Event callbacks
+        // (UIA threads, timer threads) take only _watchLock or TimerLock, never _lifecycleLock, so
+        // Start/Stop holding _lifecycleLock across COM calls and Thread.Join cannot block a callback.
         private readonly object _lifecycleLock = new object();
         private readonly object _watchLock = new object();
         private readonly Dictionary<BrowserElementRef, WatchEntry> _watched = new Dictionary<BrowserElementRef, WatchEntry>();
@@ -393,6 +399,8 @@ namespace BrowserInterruptAutomation
                 {
                     if (_watched.ContainsKey(windowRoot))
                         return; // already watched: no-op, see the type remarks
+                    if (!_started)
+                        return; // stopped: no registration after Stop (cheap early-out; re-checked at insert)
                 }
 
                 AutomationElement windowElement = ResolveFromHandle(windowRoot.Hwnd);
@@ -401,26 +409,48 @@ namespace BrowserInterruptAutomation
 
                 StructureChangedEventHandler handler = (sender, args) => OnStructureChangedRaw(windowRoot, args);
 
+                var entry = new WatchEntry
+                {
+                    Element = windowElement,
+                    Handler = handler,
+                    // Seeded so the first real StructureChanged callback for this window always
+                    // raises immediately; see the WatchEntry.ThrottleState doc comment.
+                    ThrottleState = StructureChangedThrottle.InitialState(Environment.TickCount64, StructureChangedCoalesceMs)
+                };
+
+                // Register OUTSIDE _watchLock: a Subtree registration is a cross-process UIA call
+                // that can take hundreds of ms on Chromium (which switches accessibility on), and
+                // every StructureChanged callback and trailing timer takes _watchLock. Holding it
+                // across this call would stall UIA's serialized event delivery for all watched
+                // windows and WindowOpened, and risks a lock-order deadlock if the managed client
+                // holds its own lock while dispatching to handlers (platform knowledge, not verified).
+                // A callback delivered before the insert below finds no entry and is dropped. That is
+                // the same exposure as a change that happened just before registration (the watch
+                // only reports changes after it exists); catching up on content already there is the
+                // engine's sweep's job, not this registry's.
+                Automation.AddStructureChangedEventHandler(windowElement, TreeScope.Subtree, handler);
+
+                bool inserted = false;
                 lock (_watchLock)
                 {
-                    // Re-check under the lock: a racing WatchWindow call for the same window may
-                    // have registered while this call was resolving the element above.
-                    if (_watched.ContainsKey(windowRoot))
-                        return;
-                    // Stop clears _watched under this lock after clearing _started; refusing here
-                    // means a WatchWindow racing (or following) Stop cannot leave a handler behind.
-                    if (!_started)
-                        return;
-
-                    Automation.AddStructureChangedEventHandler(windowElement, TreeScope.Subtree, handler);
-                    _watched[windowRoot] = new WatchEntry
+                    // Re-check under the lock: a racing WatchWindow for the same window may have
+                    // inserted while this call was registering. Stop clears _started before it takes
+                    // this lock to drain _watched, so an insert that sees _started true is always
+                    // drained by Stop, and one that sees false never leaves a handler behind.
+                    if (_started && !_watched.ContainsKey(windowRoot))
                     {
-                        Element = windowElement,
-                        Handler = handler,
-                        // Seeded so the first real StructureChanged callback for this window always
-                        // raises immediately; see the WatchEntry.ThrottleState doc comment.
-                        ThrottleState = StructureChangedThrottle.InitialState(Environment.TickCount64, StructureChangedCoalesceMs)
-                    };
+                        _watched[windowRoot] = entry;
+                        inserted = true;
+                    }
+                }
+
+                if (!inserted)
+                {
+                    // Lost the race (or Stop ran): undo this call's own registration, outside the lock.
+                    // Only this call's delegate instance is removed, so the winner's is untouched.
+                    DisposeTrailingTimer(entry);
+                    try { Automation.RemoveStructureChangedEventHandler(windowElement, handler); }
+                    catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -441,6 +471,8 @@ namespace BrowserInterruptAutomation
                         return; // not watched: safe no-op
                     _watched.Remove(windowRoot);
                 }
+                // Detached under the lock above; the COM removal and timer disposal happen outside
+                // it. A callback already in flight finds no entry (or a disposed timer) and is harmless.
                 DisposeTrailingTimer(entry);
                 Automation.RemoveStructureChangedEventHandler(entry.Element, entry.Handler);
             }
