@@ -172,20 +172,28 @@ namespace BrowserInterruptAutomation
                     return results;
 
                 var queue = new Queue<(AutomationElement Element, int Depth)>();
-                EnqueueUpToBudget(GetChildrenSafe(root), 1, results.Count, maxNodes, queue);
+                EnqueueUpToBudget(GetChildrenSafe(root), 1, 0, maxNodes, queue);
 
-                while (queue.Count > 0 && results.Count < maxNodes)
+                // `visited` is a true visited-node bound: it increments once per dequeue,
+                // unconditionally, whether or not DescribeElement below succeeds. Gating the
+                // bound on results.Count (successfully-described elements) instead would let a
+                // run of dead/unavailable elements (ElementNotAvailableException mid-walk - the
+                // exact churn this bound exists to guard against) buy extra real tree-walk work
+                // beyond maxNodes, since a dequeue that yields no result wouldn't count against
+                // it. See TryGetMessageText/FindByRuntimeId in this file for the same pattern.
+                int visited = 0;
+                while (queue.Count > 0 && visited < maxNodes)
                 {
                     (AutomationElement element, int depth) = queue.Dequeue();
+                    visited++;
+
                     BrowserElementInfo info = DescribeElement(element, IntPtr.Zero);
                     if (info == null)
-                        continue; // died mid-walk: best-effort, skip it and keep going
+                        continue; // died mid-walk: best-effort, skip it and keep going (still counts toward `visited`)
 
                     results.Add(info);
-                    if (results.Count >= maxNodes)
-                        break;
                     if (depth < maxDepth)
-                        EnqueueUpToBudget(GetChildrenSafe(element), depth + 1, results.Count, maxNodes, queue);
+                        EnqueueUpToBudget(GetChildrenSafe(element), depth + 1, visited, maxNodes, queue);
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -195,12 +203,12 @@ namespace BrowserInterruptAutomation
             return results;
         }
 
-        private static void EnqueueUpToBudget(List<AutomationElement> candidates, int depth, int alreadyProduced, int maxNodes,
+        private static void EnqueueUpToBudget(List<AutomationElement> candidates, int depth, int alreadyVisited, int maxNodes,
             Queue<(AutomationElement, int)> queue)
         {
             foreach (var candidate in candidates)
             {
-                if (alreadyProduced + queue.Count >= maxNodes)
+                if (alreadyVisited + queue.Count >= maxNodes)
                     return;
                 queue.Enqueue((candidate, depth));
             }

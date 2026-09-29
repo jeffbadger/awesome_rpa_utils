@@ -123,7 +123,12 @@ namespace BrowserInterruptAutomation.Tests
             });
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
-            thread.Join();
+            // A generous bound for a whole STA-thread-hosted probe call (as opposed to the
+            // 5-second bounds elsewhere in this file for a single UI action/dispatcher
+            // shutdown): if a probe call ever genuinely hangs (a COM deadlock, or a bug in one
+            // of the bounded walks), this must fail fast instead of hanging the test run forever.
+            if (!thread.Join(TimeSpan.FromSeconds(30)))
+                throw new TimeoutException("RunOnStaThread: the STA thread did not complete within 30 seconds (possible COM deadlock or unbounded walk).");
             if (failure != null)
                 throw failure;
         }
