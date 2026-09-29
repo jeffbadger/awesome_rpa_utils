@@ -20,11 +20,21 @@ namespace BrowserInterruptAutomation
     /// and <see cref="BrowserPopupRule"/>), each worth Task 5 knowing about:
     /// <list type="bullet">
     /// <item>
-    /// <b>No poll-and-verify action loop, but the same in-flight gate.</b> The reference's
-    /// <c>Dismiss</c> clicks a button and then polls <c>IsWindow</c> for up to ~300ms to confirm
-    /// the window actually closed, because a Win32 click is fire-and-forget.
-    /// <see cref="IBrowserPopupProbe.TryInvoke"/> and <see cref="IBrowserPopupProbe.TryClose"/>
-    /// instead report success/failure synchronously, so no sleep delegate is needed. The action
+    /// <b>Verify-before-count, with the same in-flight gate.</b> The reference's
+    /// <c>Dismiss</c> clicks a button and then polls <c>IsWindow</c> for ~300ms to confirm the
+    /// window closed. <see cref="IBrowserPopupProbe.TryInvoke"/>/<see cref="IBrowserPopupProbe.TryClose"/>
+    /// report success synchronously, but UI Automation returns before the browser acts, so
+    /// success proves nothing. Instead of sleeping on the worker, a successful action leaves the
+    /// candidate in place, still unresolved, with a deadline <see cref="VerifyDelayMs"/> later.
+    /// At the deadline <see cref="IBrowserPopupProbe.IsAlive"/> decides: gone means the dismissal
+    /// is recorded and counted (per-rule count, total, runaway window); still open means the
+    /// action did nothing, so it consumes an attempt (retry through the normal path, or
+    /// <c>DismissFailed</c> once <see cref="MaxAttempts"/> is spent) and no <c>Dismissed</c> is
+    /// ever recorded for it. That bounds a do-nothing invoke to <see cref="MaxAttempts"/> per
+    /// popup instance; the runaway breaker only sees confirmed dismissals, which is what it is
+    /// for (a popup that keeps coming back after real dismissals). The verification is
+    /// read-only, so it takes no action lock and needs no Paused/rule re-check; a retry it
+    /// schedules goes through <see cref="Act"/> and its re-checks. The action
     /// still has a window to race against, though: a pass reads <see cref="Paused"/>, then does
     /// slow UIA discovery, then acts. So, like the reference, the worker holds an action lock
     /// around the final <see cref="Paused"/>/rule-enabled/rule-registered re-check, the probe
@@ -149,6 +159,14 @@ namespace BrowserInterruptAutomation
         internal const int PausedRecheckMs = 250;
         internal const int RunawayWindowMs = 60000;
 
+        /// <summary>
+        /// How long after a successful invoke/close the engine waits before checking whether the
+        /// popup really went away. UI Automation's <c>Invoke</c>/<c>Close</c> return before the
+        /// browser has acted, so success of the call proves nothing; a dismissal is only recorded
+        /// and counted once <see cref="IBrowserPopupProbe.IsAlive"/> says the element is gone.
+        /// </summary>
+        internal const int VerifyDelayMs = 400;
+
         /// <summary>The floor enforced on <see cref="OverlaySweepIntervalMs"/> when it is set above zero.</summary>
         internal const int MinOverlaySweepIntervalMs = 500;
 
@@ -157,6 +175,18 @@ namespace BrowserInterruptAutomation
             public bool Tripped;
             public readonly Queue<long> RecentDismissals = new Queue<long>();
             public int RetryToken;
+        }
+
+        /// <summary>What an invoke/close that reported success left behind until the popup is seen to close.</summary>
+        private sealed class PendingDismissal
+        {
+            public BrowserPopupRule Rule;
+            public BrowserElementInfo Info;
+            public string Text;
+            public string ProcessName;
+            public string Label;
+            public long ActedAt;
+            public string Scope;
         }
 
         private sealed class CandidateState
@@ -181,6 +211,9 @@ namespace BrowserInterruptAutomation
             public BrowserPopupRule Rule;
             public int RetryToken;
 
+            /// <summary>Set between a successful action and its verification (<see cref="VerifyDelayMs"/> later); the candidate stays counted as unresolved meanwhile.</summary>
+            public PendingDismissal Pending;
+
             public bool Unresolved => Rule != null && Rule.Action != BrowserPopupAction.WatchOnly;
 
             public void Reset(long now)
@@ -193,6 +226,7 @@ namespace BrowserInterruptAutomation
                 Failed = false;
                 Reported = false;
                 Rule = null;
+                Pending = null;
             }
         }
 
@@ -683,6 +717,7 @@ namespace BrowserInterruptAutomation
                 if (state.Rule != null && Array.IndexOf(rules, state.Rule) < 0)
                 {
                     state.Rule = null;
+                    state.Pending = null; // its rule is gone: nothing left to count or report
                     state.Failed = false;
                     state.Reported = false;
                     state.Attempts = 0;
@@ -1048,6 +1083,9 @@ namespace BrowserInterruptAutomation
 
         private void RemoveCandidate(CandidateState state)
         {
+            // A candidate that disappears while a dismissal awaits verification is that
+            // dismissal's confirmation (every caller removes only what is gone or orphaned).
+            ConfirmDismissal(state);
             _candidates.Remove(state.Ref);
             if (state.Scope != BrowserPopupScope.NativeDialog)
                 return;
@@ -1068,7 +1106,10 @@ namespace BrowserInterruptAutomation
             if (orphaned != null)
             {
                 foreach (var key in orphaned)
+                {
+                    ConfirmDismissal(_candidates[key]);
                     _candidates.Remove(key);
+                }
             }
 
             // Bounds _processNameCache's staleness window (see the type remarks' 8th bullet):
@@ -1103,6 +1144,12 @@ namespace BrowserInterruptAutomation
             if (!_probe.IsAlive(state.Ref))
             {
                 RemoveCandidate(state);
+                return;
+            }
+
+            if (state.Pending != null)
+            {
+                VerifyStillOpen(state, now);
                 return;
             }
 
@@ -1273,31 +1320,78 @@ namespace BrowserInterruptAutomation
                         }
                     }
                 }
-
-                if (ok)
-                {
-                    lock (_lock)
-                    {
-                        if (_ruleRuntime.TryGetValue(rule.RuleName, out var runtime))
-                            runtime.RecentDismissals.Enqueue(now);
-                        if (_rules.Exists(r => string.Equals(r.RuleName, rule.RuleName, StringComparison.OrdinalIgnoreCase)))
-                            _counts[rule.RuleName] = (_counts.TryGetValue(rule.RuleName, out int c) ? c : 0) + 1;
-                        _total++;
-                    }
-                }
             }
 
             if (ok)
             {
-                RemoveCandidate(state);
-                RecordCore(BrowserPopupRecordKind.Dismissed, rule.RuleName, state.Scope.ToString(), info.Name,
-                    info.LocalizedControlType, text, processName, info.ProcessId, label, state.Attempts, string.Empty);
+                // The call returned, but the browser may not have acted (or may have ignored it):
+                // keep the candidate, still unresolved, and look again after VerifyDelayMs. Only
+                // then is it recorded as Dismissed and counted (ConfirmDismissal) or, if still
+                // open, treated as a failed attempt (VerifyStillOpen).
+                state.Pending = new PendingDismissal
+                {
+                    Rule = rule,
+                    Info = info,
+                    Text = text,
+                    ProcessName = processName,
+                    Label = label,
+                    ActedAt = now,
+                    Scope = state.Scope.ToString()
+                };
+                state.NextDue = now + VerifyDelayMs;
                 return;
             }
 
             if (state.Attempts >= MaxAttempts)
                 Fail(state, rule, info, text, processName, "The popup was still open after " + state.Attempts
                     + " attempts." + (string.IsNullOrEmpty(failureReason) ? string.Empty : " (" + failureReason + ")"));
+            else
+                state.NextDue = now + RetryDelayMs;
+        }
+
+        /// <summary>
+        /// The popup an action was taken on is gone: counts it (per-rule count, total, the runaway
+        /// breaker's window) and records <c>Dismissed</c>. No-op unless a dismissal awaits
+        /// verification. Counted even if the rule was removed meanwhile (the popup did close), but
+        /// only into a rule that is still registered.
+        /// </summary>
+        private void ConfirmDismissal(CandidateState state)
+        {
+            PendingDismissal pending = state.Pending;
+            if (pending == null)
+                return;
+            state.Pending = null;
+
+            BrowserPopupRule rule = pending.Rule;
+            lock (_lock)
+            {
+                if (_ruleRuntime.TryGetValue(rule.RuleName, out var runtime))
+                    runtime.RecentDismissals.Enqueue(pending.ActedAt);
+                if (_rules.Exists(r => string.Equals(r.RuleName, rule.RuleName, StringComparison.OrdinalIgnoreCase)))
+                    _counts[rule.RuleName] = (_counts.TryGetValue(rule.RuleName, out int c) ? c : 0) + 1;
+                _total++;
+            }
+            RecordCore(BrowserPopupRecordKind.Dismissed, rule.RuleName, pending.Scope, pending.Info.Name,
+                pending.Info.LocalizedControlType, pending.Text, pending.ProcessName, pending.Info.ProcessId,
+                pending.Label, state.Attempts, string.Empty);
+        }
+
+        /// <summary>
+        /// The verification deadline of a successful action arrived and the popup is still open
+        /// (the caller already checked liveness): the action did nothing. That is a failed
+        /// attempt - never a <c>Dismissed</c> - so it either retries through the normal path
+        /// (which re-checks <see cref="Paused"/> and the rule) or, with attempts exhausted, reports
+        /// <c>DismissFailed</c>. Read-only: it never acts itself, so it needs no action lock.
+        /// </summary>
+        private void VerifyStillOpen(CandidateState state, long now)
+        {
+            PendingDismissal pending = state.Pending;
+            if (now < state.NextDue)
+                return; // not yet: NextDue is the verification deadline
+            state.Pending = null;
+            if (state.Attempts >= MaxAttempts)
+                Fail(state, pending.Rule, pending.Info, pending.Text, pending.ProcessName,
+                    "The action succeeded but the popup is still open after " + state.Attempts + " attempts.");
             else
                 state.NextDue = now + RetryDelayMs;
         }

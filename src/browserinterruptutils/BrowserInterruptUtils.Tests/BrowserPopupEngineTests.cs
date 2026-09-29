@@ -68,6 +68,9 @@ namespace BrowserInterruptAutomation.Tests
                 return Engine.Pump(Now);
             }
 
+            /// <summary>Runs a pass once the verification delay after the last pass has elapsed (a successful action is only confirmed then).</summary>
+            public long PastVerifyDelay() => Pump(Now + BrowserPopupEngine.VerifyDelayMs);
+
             public IEnumerable<BrowserPopupRecord> Of(BrowserPopupRecordKind kind) => Records.Where(r => r.Kind == kind);
 
             public void Settle(long from = 100, long to = 3000)
@@ -298,6 +301,7 @@ namespace BrowserInterruptAutomation.Tests
             h.Pump(BrowserPopupEngine.PausedRecheckMs);
             Assert.Equal(1, yes.Invokes);
             Assert.False(w.Alive);
+            h.PastVerifyDelay();
             Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
             Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
         }
@@ -326,6 +330,7 @@ namespace BrowserInterruptAutomation.Tests
             h.AddRule("r2", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
             h.Pump(BrowserPopupEngine.PausedRecheckMs);
             Assert.Equal(1, yes.Invokes);
+            h.PastVerifyDelay();
             Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
             Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
         }
@@ -489,6 +494,7 @@ namespace BrowserInterruptAutomation.Tests
             h.Pump(BrowserPopupEngine.ScheduleMs[1]); // second look
 
             Assert.False(w.Alive);
+            h.PastVerifyDelay();
             Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
             Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
         }
@@ -556,6 +562,7 @@ namespace BrowserInterruptAutomation.Tests
 
             Assert.Equal(1, w.Closes);
             Assert.Equal(0, w.Invokes);
+            h.PastVerifyDelay();
             Assert.Equal("(close)", Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)).TargetInvoked);
         }
 
@@ -793,6 +800,7 @@ namespace BrowserInterruptAutomation.Tests
             var h = new Harness();
             h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
             h.AppearWindow(h.Probe.AddWindow("Alert"));
+            h.PastVerifyDelay();
             Assert.NotEmpty(h.Engine.GetLog(10));
 
             h.Engine.ClearLog();
@@ -952,6 +960,7 @@ namespace BrowserInterruptAutomation.Tests
             var oldWindow = h.Probe.AddWindow("Dlg", pid: 77, processName: "oldproc");
             h.AppearWindow(oldWindow);
             Assert.False(oldWindow.Alive);
+            h.PastVerifyDelay(); // the dismissal is confirmed (and the candidate removed) only after the verify delay
 
             // An unrelated, still-open browser window - never itself using pid 77 - hosts a page
             // overlay whose reported ProcessId happens to be the reused pid 77 (Task 1's
@@ -1026,6 +1035,7 @@ namespace BrowserInterruptAutomation.Tests
             h.Pump(3100);
 
             Assert.False(w.Alive);
+            h.PastVerifyDelay();
             Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
         }
 
@@ -1295,7 +1305,149 @@ namespace BrowserInterruptAutomation.Tests
 
             Assert.Equal(1, first.Invokes);
             Assert.Equal(1, second.Invokes);
+            h.PastVerifyDelay();
             Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        // ------------------------------------------------------------------ verify-before-count (I5)
+
+        [Fact]
+        public void Dismissal_IsRecordedAndCounted_OnlyOnceTheVerifyDelayHasPassedAndThePopupIsGone()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+
+            long next = h.AppearWindow(w);
+
+            Assert.Equal(1, yes.Invokes);
+            Assert.Equal(BrowserPopupEngine.VerifyDelayMs, next); // the worker is told to wake for the verification
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.False(h.Engine.TryGetCount("r", out int early) && early != 0);
+            Assert.Equal(0, h.Engine.TotalDismissals);
+            Assert.True(h.Engine.HasUnresolvedPopup); // still unresolved until seen to close
+
+            h.Pump(BrowserPopupEngine.VerifyDelayMs - 1); // not yet due
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.True(h.Engine.HasUnresolvedPopup);
+
+            h.Pump(BrowserPopupEngine.VerifyDelayMs);
+            var dismissed = Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal("Yes", dismissed.TargetInvoked);
+            Assert.Equal(1, dismissed.Attempts);
+            Assert.True(h.Engine.TryGetCount("r", out int count));
+            Assert.Equal(1, count);
+            Assert.Equal(1, h.Engine.TotalDismissals);
+            Assert.False(h.Engine.HasUnresolvedPopup);
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.NativeDialog));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void ActionThatSucceedsButLeavesThePopupOpen_NeverRecordsDismissed_SpendsAttempts_AndEndsInDismissFailed(bool useClose)
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 1; // would trip at once if unconfirmed actions counted
+            if (useClose)
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            else
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+            w.SucceedWithoutClosing = true;
+            yes.SucceedWithoutClosing = true;
+
+            h.AppearWindow(w);
+            for (long t = 100; t <= 20000; t += 100)
+                h.Pump(t);
+
+            // Exactly MaxAttempts side effects, however long the popup stays.
+            Assert.Equal(h.Engine.MaxAttempts, useClose ? w.Closes : yes.Invokes);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+            Assert.False(h.Engine.IsRuleTripped("r"));
+            Assert.True(h.Engine.TryGetCount("r", out int count));
+            Assert.Equal(0, count);
+            Assert.Equal(0, h.Engine.TotalDismissals);
+            var failed = Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(h.Engine.MaxAttempts, failed.Attempts);
+            Assert.Contains("the action succeeded but the popup is still open", failed.Detail, StringComparison.OrdinalIgnoreCase);
+            Assert.True(h.Engine.HasUnresolvedPopup); // given up on, but still open
+        }
+
+        [Fact]
+        public void Pause_DuringTheVerifyWindow_PreventsTheRetryInvoke_AndResumeRetries()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+            yes.SucceedWithoutClosing = true;
+
+            h.AppearWindow(w);
+            Assert.Equal(1, yes.Invokes);
+            h.Engine.Paused = true;
+            h.Engine.WaitForIdle();
+
+            for (long t = 100; t <= 5000; t += 100)
+                h.Pump(t);
+            Assert.Equal(1, yes.Invokes); // verification found it still open, but the retry is held back
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.True(h.Engine.HasUnresolvedPopup);
+
+            h.Engine.Paused = false;
+            h.Pump(5000 + BrowserPopupEngine.PausedRecheckMs); // the parked candidate's next look
+            Assert.Equal(2, yes.Invokes);
+        }
+
+        [Fact]
+        public void RemovingTheRule_DuringTheVerifyWindow_RecordsAndCountsNothing()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+
+            h.AppearWindow(w);
+            Assert.False(w.Alive);
+            Assert.True(h.Engine.RemoveRule("r"));
+            h.Settle(100, 2000);
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(0, h.Engine.TotalDismissals);
+            Assert.Equal(0, h.Engine.UnresolvedCount);
+        }
+
+        [Fact]
+        public void PopupThatKeepsReturningAfterConfirmedDismissals_StillTripsTheRunawayBreaker()
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 2;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+
+            FakeElement third = null;
+            for (int i = 0; i < 3; i++)
+            {
+                var w = h.Probe.AddWindow("Nag");
+                h.Probe.AddChild(w, "Yes");
+                h.Now += 1000;
+                h.AppearWindow(w);
+                if (i < 2)
+                {
+                    Assert.False(w.Alive);
+                    h.PastVerifyDelay(); // confirmed: counted toward the breaker
+                }
+                else
+                {
+                    third = w;
+                }
+            }
+
+            Assert.True(third.Alive); // the third one was refused
+            Assert.True(h.Engine.IsRuleTripped("nag"));
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Dismissed).Count());
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
         }
     }
 }

@@ -34,6 +34,9 @@ namespace BrowserInterruptAutomation.Tests
 
         public bool IgnoreInvoke;
         public bool IgnoreClose;
+
+        /// <summary>The invoke/close reports success but the popup stays open (a UIA call that returned before the browser acted, or that the page ignored).</summary>
+        public bool SucceedWithoutClosing;
         public int Invokes;
         public int Closes;
         public string LastInvokedName;
@@ -214,6 +217,8 @@ namespace BrowserInterruptAutomation.Tests
                 failureReason = "invoke ignored";
                 return false;
             }
+            if (el.SucceedWithoutClosing)
+                return true;
             el.Alive = false;
             if (el.Owner != null)
                 el.Owner.Alive = false; // invoking a dialog/overlay's button closes it, like a real one
@@ -235,6 +240,8 @@ namespace BrowserInterruptAutomation.Tests
                 failureReason = "close ignored";
                 return false;
             }
+            if (el.SucceedWithoutClosing)
+                return true;
             el.Alive = false;
             return true;
         }

@@ -327,6 +327,8 @@ namespace BrowserInterruptAutomation.Tests
             rig.Probe.AddChild(w, "Yes");
             rig.Hook.FireWindowOpened(w);
             Assert.True(WaitFor(() => !w.Alive));
+            // A dismissal is only counted once verified (VerifyDelayMs later); Stop before that drops it.
+            Assert.True(WaitFor(() => rig.Utils.GetDismissalCount("r", out int first, out _) && first == 1));
             Assert.True(rig.Utils.Stop(out _));
 
             rig.StartOk();
@@ -580,8 +582,9 @@ namespace BrowserInterruptAutomation.Tests
                 var w = rig.Probe.AddWindow("Nag");
                 rig.Probe.AddChild(w, "Yes");
                 rig.Hook.FireWindowOpened(w);
-                if (i < 2)
-                    Assert.True(WaitFor(() => !w.Alive));
+                int expected = i + 1;
+                if (i < 2) // wait for the verified count, not just the click: only confirmed dismissals feed the breaker
+                    Assert.True(WaitFor(() => rig.Utils.GetDismissalCount("nag", out int n, out _) && n == expected));
                 else
                     Assert.True(error.Wait(5000));
             }
