@@ -494,6 +494,33 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void PopupDismissedHandler_SeesFinalCountsAndNoUnresolvedPopup()
+        {
+            // The event runs on the worker thread; state read from inside the handler must already be final.
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            var done = new ManualResetEventSlim(false);
+            int count = -1, total = -1;
+            bool unresolved = true;
+            rig.Utils.PopupDismissed += (s, e) =>
+            {
+                rig.Utils.GetDismissalCount("r", out count, out _);
+                rig.Utils.GetTotalDismissals(out total, out _);
+                rig.Utils.HasUnresolvedPopup(out unresolved, out _);
+                done.Set();
+            };
+            rig.StartOk();
+            var w = rig.Probe.AddWindow("Alert");
+            rig.Probe.AddChild(w, "Yes");
+            rig.Hook.FireWindowOpened(w);
+
+            Assert.True(done.Wait(5000), "PopupDismissed was not raised");
+            Assert.Equal(1, count);
+            Assert.Equal(1, total);
+            Assert.False(unresolved);
+        }
+
+        [Fact]
         public void PageOverlay_MatchedByDismissByAutomationIdRule_IsInvokedAndReportedEverywhere()
         {
             using var rig = new Rig();

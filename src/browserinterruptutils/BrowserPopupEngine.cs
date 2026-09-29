@@ -275,6 +275,14 @@ namespace BrowserInterruptAutomation
         private int _unresolved;
         private int _overlaySweepIntervalMs;
 
+        // Records produced by the worker thread while it is inside Pump are held back and handed to
+        // the sink only after the pass has finished updating ALL engine state (counts, removed
+        // candidates, the unresolved count, the process-name cache). Otherwise a subscriber woken by
+        // the event (or reading state from inside the handler) could observe a half-updated
+        // engine, e.g. Dismissed delivered while HasUnresolvedPopup is still true.
+        private readonly List<BrowserPopupRecord> _deferred = new List<BrowserPopupRecord>();
+        private int _pumpThreadId; // managed thread id currently inside Pump, 0 when none
+
         // Overlay windows already swept during the current Pump pass, so a dirty-signal sweep and
         // the periodic sweep (or N signals for one window) never walk the same window twice.
         private readonly HashSet<BrowserElementRef> _sweptThisPass = new HashSet<BrowserElementRef>();
@@ -641,6 +649,20 @@ namespace BrowserInterruptAutomation
         /// loop calls repeatedly.
         /// </summary>
         internal long Pump(long now)
+        {
+            _pumpThreadId = Environment.CurrentManagedThreadId;
+            try
+            {
+                return PumpCore(now);
+            }
+            finally
+            {
+                _pumpThreadId = 0;
+                FlushDeferred();
+            }
+        }
+
+        private long PumpCore(long now)
         {
             while (_faults.TryDequeue(out string fault))
                 RecordError(string.Empty, fault);
@@ -1525,7 +1547,20 @@ namespace BrowserInterruptAutomation
                 if (_log.Count > LogCapacity)
                     _log.RemoveRange(0, _log.Count - LogCapacity);
             }
-            Deliver(record);
+            if (_pumpThreadId == Environment.CurrentManagedThreadId)
+                _deferred.Add(record); // delivered by Pump's finally, once the state is consistent
+            else
+                Deliver(record);
+        }
+
+        private void FlushDeferred()
+        {
+            if (_deferred.Count == 0)
+                return;
+            var batch = _deferred.ToArray();
+            _deferred.Clear();
+            foreach (var record in batch)
+                Deliver(record);
         }
 
         internal void RecordError(string ruleName, string message) =>

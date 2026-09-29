@@ -515,6 +515,104 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Contains("OK", failure.Detail);
         }
 
+        private sealed class StateSnapshot
+        {
+            public BrowserPopupRecordKind Kind;
+            public int Count;
+            public int Total;
+            public int Unresolved;
+            public int Tracked;
+        }
+
+        /// <summary>An engine whose sink captures the engine's own state at the moment each record is delivered (on the pumping thread, like the real event).</summary>
+        private static BrowserPopupEngine EngineCapturingStateAtDelivery(FakeBrowserPopupProbe probe, FakeBrowserPopupHookSource hook, List<StateSnapshot> seen)
+        {
+            BrowserPopupEngine engine = null;
+            engine = new BrowserPopupEngine(probe, hook, r =>
+            {
+                engine.TryGetCount("r", out int count);
+                seen.Add(new StateSnapshot
+                {
+                    Kind = r.Kind,
+                    Count = count,
+                    Total = engine.TotalDismissals,
+                    Unresolved = engine.UnresolvedCount,
+                    Tracked = engine.TrackedCandidateCountForTests(BrowserPopupScope.NativeDialog)
+                });
+            })
+            { SweepIntervalMs = 0, OverlaySweepIntervalMs = 0 };
+            return engine;
+        }
+
+        [Fact]
+        public void DismissedRecord_IsDeliveredOnlyAfterCountsAndUnresolvedStateAreFinal()
+        {
+            var probe = new FakeBrowserPopupProbe();
+            var hook = new FakeBrowserPopupHookSource();
+            var seen = new List<StateSnapshot>();
+            var engine = EngineCapturingStateAtDelivery(probe, hook, seen);
+            Assert.True(engine.AddRule(new BrowserPopupRule
+            {
+                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert",
+                Action = BrowserPopupAction.InvokeByName, TargetElementName = "Yes"
+            }, out string m), m);
+            var w = probe.AddWindow("Alert");
+            probe.AddChild(w, "Yes");
+
+            hook.FireWindowOpened(w);
+            engine.Pump(0);
+            engine.Pump(BrowserPopupEngine.VerifyDelayMs);
+
+            var dismissed = Assert.Single(seen, s => s.Kind == BrowserPopupRecordKind.Dismissed);
+            Assert.Equal(1, dismissed.Count);
+            Assert.Equal(1, dismissed.Total);
+            Assert.Equal(0, dismissed.Unresolved); // the popup is gone and the unresolved count already reflects it
+            Assert.Equal(0, dismissed.Tracked);
+        }
+
+        [Fact]
+        public void DismissFailedRecord_IsDeliveredOnlyAfterTheFailureStateIsFinal()
+        {
+            var probe = new FakeBrowserPopupProbe();
+            var hook = new FakeBrowserPopupHookSource();
+            var seen = new List<StateSnapshot>();
+            var engine = EngineCapturingStateAtDelivery(probe, hook, seen);
+            engine.MaxAttempts = 1;
+            Assert.True(engine.AddRule(new BrowserPopupRule
+            {
+                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert",
+                Action = BrowserPopupAction.InvokeByName, TargetElementName = "Missing"
+            }, out string m), m);
+            var w = probe.AddWindow("Alert");
+            probe.AddChild(w, "Yes"); // no "Missing" target: the attempt fails
+
+            hook.FireWindowOpened(w);
+            for (long t = 0; t <= 3100; t += 100)
+                engine.Pump(t); // walks the retry schedule until the missing target exhausts it
+
+            var failed = Assert.Single(seen, s => s.Kind == BrowserPopupRecordKind.DismissFailed);
+            Assert.Equal(0, failed.Count);
+            Assert.Equal(0, failed.Total);
+            Assert.Equal(1, failed.Unresolved); // still open, and already counted as such when the event fires
+            Assert.Equal(1, failed.Tracked);
+        }
+
+        [Fact]
+        public void RecordsRaisedDuringAPass_AreDeliveredInOrderAfterThePassFinishes()
+        {
+            var probe = new FakeBrowserPopupProbe();
+            var hook = new FakeBrowserPopupHookSource();
+            var seen = new List<StateSnapshot>();
+            var engine = EngineCapturingStateAtDelivery(probe, hook, seen);
+            engine.EnqueueFault("boom");
+
+            engine.Pump(0);
+
+            var error = Assert.Single(seen);
+            Assert.Equal(BrowserPopupRecordKind.Error, error.Kind);
+            Assert.Single(engine.GetLog(10)); // logged and delivered exactly once
+        }
+
         [Fact]
         public void Pump_ReportsWhenTheNextCandidateIsDue()
         {
