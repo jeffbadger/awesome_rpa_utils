@@ -846,6 +846,14 @@ namespace BrowserInterruptAutomation
                     state.Attempts = 0;
                     state.NextDue = now;
                 }
+                else if (state.Rule != null && !state.Rule.Enabled && state.Pending == null)
+                {
+                    // The rule that selected this candidate (and may have parked it as Failed/Reported)
+                    // was disabled: release it so the enabled rules are evaluated again, e.g. a second
+                    // rule that also matches. A PENDING verification is left alone: the action was
+                    // already issued and must still be confirmed and recorded (VerifyStillOpen).
+                    ReleaseFromRule(state, now);
+                }
                 else if (state.Failed)
                 {
                     int token = 0;
@@ -870,6 +878,16 @@ namespace BrowserInterruptAutomation
             }
 
             ReconcileOverlayWatches();
+        }
+
+        /// <summary>Forgets what a (now disabled) rule decided about a candidate and makes it due for re-evaluation.</summary>
+        private static void ReleaseFromRule(CandidateState state, long now)
+        {
+            state.Rule = null;
+            state.Failed = false;
+            state.Reported = false;
+            state.Attempts = 0;
+            state.NextDue = now;
         }
 
         private void RecomputeOverlayInterest()
@@ -1555,6 +1573,14 @@ namespace BrowserInterruptAutomation
             if (now < state.NextDue)
                 return; // not yet: NextDue is the verification deadline
             state.Pending = null;
+            if (!pending.Rule.Enabled)
+            {
+                // The rule was disabled while this verification was pending (ApplyRuleChanges leaves a
+                // pending one alone): the popup is still open, but the rule no longer applies, so give
+                // the enabled rules a fresh look instead of parking it as Failed under a disabled rule.
+                ReleaseFromRule(state, now);
+                return;
+            }
             if (state.Attempts >= MaxAttempts)
                 Fail(state, pending.Rule, pending.Info, pending.Text, pending.ProcessName,
                     "The action succeeded but the popup is still open after " + state.Attempts + " attempts.");

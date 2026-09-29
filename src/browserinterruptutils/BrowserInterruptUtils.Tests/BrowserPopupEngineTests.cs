@@ -1736,6 +1736,133 @@ namespace BrowserInterruptAutomation.Tests
             Assert.False(h.Engine.HasUnresolvedPopup);
         }
 
+        // ------------------------------------------------------------------ disabling/removing a rule releases what it selected
+
+        /// <summary>Rule "A" (close; the window ignores it, so it fails after one attempt) and rule "B" (press Yes) both match "Alert"; A is first, so A owns the candidate.</summary>
+        private static (Harness H, FakeElement W, FakeElement Yes) FailedByAFixture()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("A", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            h.AddRule("B", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            w.IgnoreClose = true;
+            var yes = h.Probe.AddChild(w, "Yes");
+            h.AppearWindow(w);
+            h.Settle(100, 1000);
+            Assert.Equal("A", Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed)).RuleName);
+            Assert.Equal(0, yes.Invokes); // A owns the candidate, B never got a turn
+            return (h, w, yes);
+        }
+
+        [Fact]
+        public void DisablingTheRuleThatFailed_LetsAnotherMatchingRuleDismissTheSamePopup()
+        {
+            var (h, w, yes) = FailedByAFixture();
+
+            Assert.True(h.Engine.SetRuleEnabled("A", false));
+            h.Settle(h.Now + 100, h.Now + 3000);
+
+            Assert.Equal(1, yes.Invokes);
+            var dismissed = Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal("B", dismissed.RuleName);
+            Assert.False(w.Alive);
+        }
+
+        [Fact]
+        public void RemovingTheRuleThatFailed_LetsAnotherMatchingRuleDismissTheSamePopup()
+        {
+            var (h, w, yes) = FailedByAFixture();
+
+            Assert.True(h.Engine.RemoveRule("A"));
+            h.Settle(h.Now + 100, h.Now + 3000);
+
+            Assert.Equal(1, yes.Invokes);
+            Assert.Equal("B", Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)).RuleName);
+            Assert.False(w.Alive);
+        }
+
+        [Fact]
+        public void DisablingAWatchOnlyRuleThatReportedThePopup_LetsAnotherMatchingRuleDismissIt()
+        {
+            var h = new Harness();
+            h.AddRule("A", BrowserPopupScope.NativeDialog, nameContains: "Alert"); // watch-only, first
+            h.AddRule("B", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            h.Settle(100, 1000);
+            Assert.Equal("A", Assert.Single(h.Of(BrowserPopupRecordKind.Detected)).RuleName);
+            Assert.True(w.Alive);
+
+            Assert.True(h.Engine.SetRuleEnabled("A", false));
+            h.Settle(h.Now + 100, h.Now + 3000);
+
+            Assert.Equal("B", Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)).RuleName);
+            Assert.False(w.Alive);
+        }
+
+        [Fact]
+        public void DisablingTheRule_WhileItsVerificationIsPending_KeepsThePendingState_AndStillRecordsTheConfirmation()
+        {
+            var h = new Harness();
+            h.AddRule("A", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            h.AddRule("B", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+
+            h.AppearWindow(w);
+            Assert.Equal(1, w.Closes); // A acted; its confirmation is pending
+            Assert.True(h.Engine.SetRuleEnabled("A", false));
+            h.Pump(h.Now); // a pass before the verification deadline: nothing may be released or re-decided
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(0, yes.Invokes);
+
+            h.PastVerifyDelay();
+
+            var dismissed = Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal("A", dismissed.RuleName);
+            Assert.Equal(0, yes.Invokes);
+            Assert.Equal(1, h.Engine.TotalDismissals);
+        }
+
+        [Fact]
+        public void DisablingTheRule_WhilePending_AndThePopupIsStillOpenAtTheDeadline_HandsItToTheEnabledRule()
+        {
+            var h = new Harness();
+            h.AddRule("A", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            h.AddRule("B", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            w.SucceedWithoutClosing = true; // A's close returns success but the popup stays
+            var yes = h.Probe.AddChild(w, "Yes");
+
+            h.AppearWindow(w);
+            Assert.True(h.Engine.SetRuleEnabled("A", false));
+            h.PastVerifyDelay(); // still open: released from the disabled A rather than parked under it
+            h.Settle(h.Now + 100, h.Now + 3000);
+
+            Assert.Equal(1, yes.Invokes);
+            Assert.Equal("B", Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)).RuleName);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void ReEnablingTheDisabledRule_AfterAnotherRuleHandledThePopup_DoesNotHandleItTwice()
+        {
+            var (h, w, yes) = FailedByAFixture();
+            h.Engine.SetRuleEnabled("A", false);
+            h.Settle(h.Now + 100, h.Now + 3000);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            int closes = w.Closes;
+
+            Assert.True(h.Engine.SetRuleEnabled("A", true));
+            h.Settle(h.Now + 100, h.Now + 3000);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(1, yes.Invokes);
+            Assert.Equal(closes, w.Closes);
+            Assert.Equal(1, h.Engine.TotalDismissals);
+        }
+
         [Fact]
         public void UnknownLivenessAtTheVerificationDeadline_IsAFailedAttemptNotADismissal_ThenALaterConfirmedCloseIsCountedOnce()
         {
