@@ -760,7 +760,14 @@ namespace BrowserInterruptAutomation
                     _due.Add(state);
             }
             foreach (var state in _due)
+            {
+                // An earlier evaluation in this pass may have dropped this one: an owner window that
+                // died takes its overlay candidates with it (RemoveCandidate). A dropped candidate is
+                // unpinned and must not be matched, searched or acted on, nor emit a stale record.
+                if (!IsTracked(state))
+                    continue;
                 Evaluate(state, now);
+            }
 
             long next = long.MaxValue;
             int unresolved = 0;
@@ -786,6 +793,10 @@ namespace BrowserInterruptAutomation
                 next = Math.Min(next, _lastReap + ReapIntervalMs); // wake up to reap even if nothing else is due
             return next;
         }
+
+        /// <summary>Whether <paramref name="state"/> is still the candidate tracked under its ref (not dropped, not replaced) - the pass's due snapshot can outlive a removal.</summary>
+        private bool IsTracked(CandidateState state) =>
+            _candidates.TryGetValue(state.Ref, out var current) && ReferenceEquals(current, state);
 
         /// <summary>A candidate (either scope) waiting on nothing but a rule change or a sweep re-finding it (NextDue is never) and with no dismissal awaiting verification.</summary>
         private static bool IsParked(CandidateState state) =>

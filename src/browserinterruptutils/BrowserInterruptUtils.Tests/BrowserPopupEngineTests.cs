@@ -2739,5 +2739,41 @@ namespace BrowserInterruptAutomation.Tests
         {
             Assert.Equal(expected, NativeMethods.IsMainWindowStyle(style));
         }
+
+        // ------------------------------------------------------------------ post-merge review fixes
+
+        [Fact]
+        public void OverlayOrphanedByItsOwnerDyingMidPass_IsNotEvaluatedAfterBeingDropped()
+        {
+            var h = new Harness();
+            // The native rule keeps the owner window due (it has something to evaluate); the overlay
+            // rule's target does not exist yet, so the overlay is parked on its retry schedule.
+            h.AddRule("owner", BrowserPopupScope.NativeDialog, nameContains: "zzz", process: "chrome");
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome",
+                action: BrowserPopupAction.InvokeByName, targetName: "Accept");
+            var window = h.Probe.AddWindow("tab", pid: 5, processName: "chrome");
+            var sibling = h.Probe.AddWindow("other tab", pid: 5, processName: "chrome"); // keeps the process name cached once window is gone
+            h.AppearWindow(window);
+            h.AppearWindow(sibling);
+            var overlay = h.Probe.AddOverlay(window, "Cookie banner");
+            h.AppearOverlay(window);
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(1, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+
+            // Both come due at 150 ms; the owner is evaluated first and finds itself dead, which
+            // drops the overlay from the tracked set while it still sits in the pass's due snapshot.
+            var accept = h.Probe.AddChild(overlay, "Accept");
+            h.Probe.Destroy(window);
+            h.Pump(BrowserPopupEngine.ScheduleMs[1]);
+            h.Settle(200, 3000);
+
+            Assert.Equal(0, accept.Invokes);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+            Assert.DoesNotContain(overlay.Ref, h.Probe.Retained);
+        }
     }
 }
