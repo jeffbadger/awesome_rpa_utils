@@ -22,6 +22,13 @@ namespace BrowserInterruptAutomation
     /// as a safety net), acts on a worker thread, and records the outcome in a log you can query
     /// and in events.
     /// </para>
+    /// <para>
+    /// <see cref="Pause"/>, <see cref="RemoveRule"/>, <see cref="ClearRules"/> and
+    /// <see cref="SetRuleEnabled"/> (when turning a rule off) are hard stops: they wait for an
+    /// invoke or close already under way, so nothing switched off can land after they return. That
+    /// UI Automation call has no timeout, so a hung target application can delay these methods for
+    /// as long as it stays hung.
+    /// </para>
     /// </summary>
     [Description("Watches for known browser popups (native dialogs and in-page overlays) in the background and " +
                  "dismisses them while the automation is busy. Define rules by name/message/process/role, then " +
@@ -357,8 +364,13 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">The rule to remove.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> if the rule existed and was removed; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
+        /// <remarks>
+        /// Once this returns, the rule can no longer act. It first waits for any invoke or close
+        /// already under way to finish, and that call has no timeout: a frozen target application
+        /// can hang a cross-process UI Automation call, delaying this method for as long as it does.
+        /// </remarks>
         [Category("Interrupt - Rules")]
-        [Description("Removes a rule. Returns True if it existed; never throws.")]
+        [Description("Removes a rule. Waits for a dismissal already under way, so a hung browser can delay it. Returns True if it existed; never throws.")]
         public bool RemoveRule(string ruleName, out string message)
         {
             message = default;
@@ -384,8 +396,13 @@ namespace BrowserInterruptAutomation
         /// <summary>Removes every rule and dismissal count. The log is kept.</summary>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the component is disposed. Never throws.</returns>
+        /// <remarks>
+        /// Once this returns, no removed rule can act. It first waits for any invoke or close already
+        /// under way to finish, and that call has no timeout: a frozen target application can hang a
+        /// cross-process UI Automation call, delaying this method for as long as it does.
+        /// </remarks>
         [Category("Interrupt - Rules")]
-        [Description("Removes every rule. Returns True on success; never throws.")]
+        [Description("Removes every rule. Waits for a dismissal already under way, so a hung browser can delay it. Returns True on success; never throws.")]
         public bool ClearRules(out string message)
         {
             message = default;
@@ -412,8 +429,14 @@ namespace BrowserInterruptAutomation
         /// <param name="enabled"><c>true</c> to turn the rule on; <c>false</c> to turn it off.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> if the rule exists and was changed; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
+        /// <remarks>
+        /// Turning a rule off waits for any invoke or close already under way to finish, so once this
+        /// returns the rule can no longer act. That call has no timeout: a frozen target application
+        /// can hang a cross-process UI Automation call, delaying this method for as long as it does.
+        /// Turning a rule on never waits.
+        /// </remarks>
         [Category("Interrupt - Rules")]
-        [Description("Turns a rule off or on. Turning it on also clears a runaway stop. Returns True on success; never throws.")]
+        [Description("Turns a rule off or on. Turning off waits for a dismissal already under way, so a hung browser can delay it. Turning on also clears a runaway stop. Returns True on success; never throws.")]
         public bool SetRuleEnabled(string ruleName, bool enabled, out string message)
         {
             message = default;
@@ -701,10 +724,14 @@ namespace BrowserInterruptAutomation
         /// then waits for any invoke or close the worker has already begun to finish, and the worker
         /// re-checks the flag under the same lock right before it acts. Once this returns
         /// <c>true</c>, nothing the handler does can land, so a step can safely drive a popup itself.
-        /// The wait is bounded by one probe call, since the lock is never held during discovery.
+        /// The lock is never held during discovery, so the wait lasts only as long as the one
+        /// invoke or close already under way. That call has no timeout of its own, though: if the
+        /// browser or dialog it targets is frozen, a cross-process UI Automation call can hang, and
+        /// this method blocks for as long as it does. Like <c>InterruptUtils</c>, there is no way to
+        /// abandon the wait.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
-        [Description("Stops the handler touching popups until Resume, without stopping the watch. Returns True on success; never throws.")]
+        [Description("Stops the handler touching popups until Resume, without stopping the watch. Waits for a dismissal already under way, so a hung browser can delay it. Returns True on success; never throws.")]
         public bool Pause(out string message)
         {
             message = default;
@@ -1085,8 +1112,11 @@ namespace BrowserInterruptAutomation
                 cts.Cancel();
                 _engine.Wake();
                 // If it does not end in time it is mid-pass and ends on its own once that
-                // returns, releasing the run itself.
-                ReleaseRun(cts, worker.Join(3000));
+                // returns, releasing the run itself. When this is called from the worker itself
+                // (an event subscriber calling Stop or Dispose) a join could only time out, so
+                // skip it: the worker's own exit releases the run.
+                bool onWorker = ReferenceEquals(Thread.CurrentThread, worker);
+                ReleaseRun(cts, !onWorker && worker.Join(3000));
             }
         }
 

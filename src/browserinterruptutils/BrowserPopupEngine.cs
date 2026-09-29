@@ -1066,6 +1066,8 @@ namespace BrowserInterruptAutomation
                 // was switched off before they returned cannot start here, and what is under way
                 // has finished by the time they return. Checked again here because it can have
                 // changed since Evaluate chose the rule (the discovery above is slow).
+                // rule.Enabled is not volatile: this read sees a writer's change because the writer
+                // (SetRuleEnabled) takes and releases _actionLock in WaitForIdle before this acquire.
                 if (Paused || !rule.Enabled || !IsRegistered(rule))
                 {
                     state.NextDue = now + PausedRecheckMs;

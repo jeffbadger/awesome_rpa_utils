@@ -219,6 +219,117 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(0, yes.Invokes);
         }
 
+        [Theory]
+        [InlineData("RemoveRule")]
+        [InlineData("ClearRules")]
+        [InlineData("SetRuleEnabledFalse")]
+        public void RuleSwitchedOff_WaitsForAnActionAlreadyInFlight_ThenNothingFurtherLandsForThatRule(string how)
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var first = h.Probe.AddWindow("Alert");
+            var firstYes = h.Probe.AddChild(first, "Yes");
+            var entered = new ManualResetEventSlim(false);
+            var gate = new ManualResetEventSlim(false);
+            h.Probe.ActionEntered = () => entered.Set();
+            h.Probe.ActionGate = gate;
+            h.Hook.FireWindowOpened(first);
+
+            var pump = new Thread(() => h.Engine.Pump(0)) { IsBackground = true };
+            pump.Start();
+            Assert.True(entered.Wait(10000), "the action never started");
+
+            int returned = 0;
+            var switchingOff = new Thread(() =>
+            {
+                switch (how)
+                {
+                    case "RemoveRule": h.Engine.RemoveRule("r"); break;
+                    case "ClearRules": h.Engine.ClearRules(); break;
+                    default: h.Engine.SetRuleEnabled("r", false); break;
+                }
+                Volatile.Write(ref returned, 1);
+            }) { IsBackground = true };
+            switchingOff.Start();
+            Assert.False(switchingOff.Join(400), how + " returned while an action was still in flight");
+            Assert.Equal(0, Volatile.Read(ref returned));
+
+            gate.Set();
+            Assert.True(switchingOff.Join(10000), how + " did not return once the action finished");
+            Assert.True(pump.Join(10000));
+            Assert.False(first.Alive); // the action already under way completed
+            Assert.Equal(1, firstYes.Invokes);
+
+            var second = h.Probe.AddWindow("Alert");
+            var secondYes = h.Probe.AddChild(second, "Yes");
+            h.Probe.ActionGate = null;
+            h.Hook.FireWindowOpened(second);
+            h.Engine.Pump(1000);
+            h.Engine.Pump(2000);
+            Assert.True(second.Alive);
+            Assert.Equal(0, secondYes.Invokes); // nothing further landed after the call returned
+            Assert.Equal(1, h.Probe.TotalInvokes);
+        }
+
+        [Fact]
+        public void RuleDisabledDuringDiscovery_DoesNotAct_DoesNotSpendAnAttempt_AndReschedulesTheCandidate()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1; // one spent attempt would be enough to fail the popup
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+            h.Probe.OnFindOverlayCandidates = () =>
+            {
+                h.Probe.OnFindOverlayCandidates = null;
+                h.Engine.SetRuleEnabled("r", false); // lands after Evaluate chose the rule, before the action
+            };
+
+            long next = h.AppearWindow(w);
+
+            Assert.Equal(0, yes.Invokes);
+            Assert.True(w.Alive);
+            Assert.Equal(BrowserPopupEngine.PausedRecheckMs, next); // rescheduled for a later look, not parked
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(1, h.Engine.UnresolvedCount); // still open, still tracked (not failed or forgotten)
+
+            // The attempt was not spent: turned back on, the popup is still dismissed on the first try.
+            Assert.True(h.Engine.SetRuleEnabled("r", true));
+            h.Pump(BrowserPopupEngine.PausedRecheckMs);
+            Assert.Equal(1, yes.Invokes);
+            Assert.False(w.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void RuleRemovedDuringDiscovery_DoesNotAct_DoesNotSpendAnAttempt_AndALaterRuleStillGetsTheFirstTry()
+        {
+            var h = new Harness();
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            var yes = h.Probe.AddChild(w, "Yes");
+            h.Probe.OnFindOverlayCandidates = () =>
+            {
+                h.Probe.OnFindOverlayCandidates = null;
+                h.Engine.RemoveRule("r");
+            };
+
+            long next = h.AppearWindow(w);
+
+            Assert.Equal(0, yes.Invokes);
+            Assert.True(w.Alive);
+            Assert.Equal(BrowserPopupEngine.PausedRecheckMs, next);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+
+            h.AddRule("r2", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            h.Pump(BrowserPopupEngine.PausedRecheckMs);
+            Assert.Equal(1, yes.Invokes);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
         [Fact]
         public void ClearRules_RemovesEveryRule_AndForgetsWhatWasUnresolved()
         {

@@ -648,6 +648,69 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(1, firstYes.Invokes);
         }
 
+        [Theory]
+        [InlineData("Pause")]
+        [InlineData("RemoveRule")]
+        [InlineData("ClearRules")]
+        [InlineData("SetRuleEnabledFalse")]
+        public void HardStopCalledFromAnEventSubscriber_OnTheWorkerThread_DoesNotDeadlock(string how)
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            var done = new ManualResetEventSlim(false);
+            bool result = false;
+            rig.Utils.PopupDismissed += (s, e) =>
+            {
+                string m;
+                switch (how)
+                {
+                    case "Pause": result = rig.Utils.Pause(out m); break;
+                    case "RemoveRule": result = rig.Utils.RemoveRule("r", out m); break;
+                    case "ClearRules": result = rig.Utils.ClearRules(out m); break;
+                    default: result = rig.Utils.SetRuleEnabled("r", false, out m); break;
+                }
+                done.Set();
+            };
+            rig.StartOk();
+            var w = rig.Probe.AddWindow("Alert");
+            rig.Probe.AddChild(w, "Yes");
+            rig.Hook.FireWindowOpened(w);
+
+            Assert.True(done.Wait(TimeSpan.FromSeconds(10)), how + " from a PopupDismissed subscriber did not return (deadlock)");
+            Assert.True(result);
+            Assert.True(rig.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void StopCalledFromAnEventSubscriber_OnTheWorkerThread_ReturnsPromptlyWithoutASelfJoinStall()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "", "Yes", out _));
+            var done = new ManualResetEventSlim(false);
+            bool stopped = false;
+            TimeSpan elapsed = TimeSpan.Zero;
+            rig.Utils.PopupDismissed += (s, e) =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                stopped = rig.Utils.Stop(out _);
+                elapsed = sw.Elapsed;
+                done.Set();
+            };
+            rig.StartOk();
+            var w = rig.Probe.AddWindow("Alert");
+            rig.Probe.AddChild(w, "Yes");
+            rig.Hook.FireWindowOpened(w);
+
+            Assert.True(done.Wait(TimeSpan.FromSeconds(10)), "Stop from a PopupDismissed subscriber did not return");
+            Assert.True(stopped);
+            Assert.True(elapsed < TimeSpan.FromSeconds(2), "Stop stalled for " + elapsed + " (a self-join)");
+            Assert.False(rig.Utils.IsRunning());
+
+            // The worker finishes its pass and releases the run itself, so the component can be started again.
+            Assert.True(WaitFor(() => rig.Utils.Start(out _), 10000), "the component could not be restarted after Stop from a subscriber");
+            Assert.True(rig.Utils.IsRunning());
+        }
+
         [Fact]
         public void Events_AreRaisedOnTheWorkerThread_NotTheCallersThread()
         {
