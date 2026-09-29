@@ -24,10 +24,11 @@ namespace BrowserInterruptAutomation
     /// </para>
     /// <para>
     /// <see cref="Pause"/>, <see cref="RemoveRule"/>, <see cref="ClearRules"/> and
-    /// <see cref="SetRuleEnabled"/> (when turning a rule off) are hard stops: they wait for an
-    /// invoke or close already under way, so nothing switched off can land after they return. That
-    /// UI Automation call has no timeout, so a hung target application can delay these methods for
-    /// as long as it stays hung.
+    /// <see cref="SetRuleEnabled"/> (when turning a rule off) are hard stops for <em>starting</em>
+    /// actions: they wait for a UI Automation invoke or close already under way, so no further call
+    /// starts for what was switched off once they return. They cannot stop the browser acting on a
+    /// call that already returned (see <see cref="Pause"/>). That UI Automation call has no
+    /// timeout, so a hung target application can delay these methods for as long as it stays hung.
     /// </para>
     /// </summary>
     [Description("Watches for known browser popups (native dialogs and in-page overlays) in the background and " +
@@ -366,12 +367,14 @@ namespace BrowserInterruptAutomation
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> if the rule existed and was removed; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
         /// <remarks>
-        /// Once this returns, the rule can no longer act. It first waits for any invoke or close
-        /// already under way to finish, and that call has no timeout: a frozen target application
+        /// Once this returns, no further invoke or close call starts for the rule. It first waits for
+        /// any call under way to finish; a dismissal the browser has not yet acted on (UI Automation
+        /// returns first) may still take effect, and its outcome may still be recorded. That call
+        /// has no timeout: a frozen target application
         /// can hang a cross-process UI Automation call, delaying this method for as long as it does.
         /// </remarks>
         [Category("Interrupt - Rules")]
-        [Description("Removes a rule. Waits for a dismissal already under way, so a hung browser can delay it. Returns True if it existed; never throws.")]
+        [Description("Removes a rule. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True if it existed; never throws.")]
         public bool RemoveRule(string ruleName, out string message)
         {
             message = default;
@@ -403,7 +406,7 @@ namespace BrowserInterruptAutomation
         /// cross-process UI Automation call, delaying this method for as long as it does.
         /// </remarks>
         [Category("Interrupt - Rules")]
-        [Description("Removes every rule. Waits for a dismissal already under way, so a hung browser can delay it. Returns True on success; never throws.")]
+        [Description("Removes every rule. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True on success; never throws.")]
         public bool ClearRules(out string message)
         {
             message = default;
@@ -432,12 +435,13 @@ namespace BrowserInterruptAutomation
         /// <returns><c>true</c> if the rule exists and was changed; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
         /// <remarks>
         /// Turning a rule off waits for any invoke or close already under way to finish, so once this
-        /// returns the rule can no longer act. That call has no timeout: a frozen target application
+        /// returns no further call starts for the rule; a dismissal already issued may still take
+        /// effect and be recorded, as with <see cref="Pause"/>. That call has no timeout: a frozen target application
         /// can hang a cross-process UI Automation call, delaying this method for as long as it does.
         /// Turning a rule on never waits.
         /// </remarks>
         [Category("Interrupt - Rules")]
-        [Description("Turns a rule off or on. Turning off waits for a dismissal already under way, so a hung browser can delay it. Turning on also clears a runaway stop. Returns True on success; never throws.")]
+        [Description("Turns a rule off or on. Turning off starts no new dismissal, but one already issued may still take effect; it waits for a call under way, so a hung browser can delay it. Turning on also clears a runaway stop. Returns True on success; never throws.")]
         public bool SetRuleEnabled(string ruleName, bool enabled, out string message)
         {
             message = default;
@@ -721,10 +725,19 @@ namespace BrowserInterruptAutomation
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the component is disposed. Never throws.</returns>
         /// <remarks>
-        /// Like <c>InterruptUtils.Pause</c>, this is a hard synchronous stop: it sets the flag and
-        /// then waits for any invoke or close the worker has already begun to finish, and the worker
-        /// re-checks the flag under the same lock right before it acts. Once this returns
-        /// <c>true</c>, nothing the handler does can land, so a step can safely drive a popup itself.
+        /// Sets the flag, then waits for any UI Automation invoke or close the worker has already
+        /// begun to finish; the worker re-checks the flag under the same lock right before it
+        /// calls. Once this returns <c>true</c>, no further invoke or close call will start, and any
+        /// call already under way has finished. It cannot stop the browser from acting on a call
+        /// that already returned: UI Automation returns before the browser acts, and the handler
+        /// confirms a dismissal <c>VerifyDelayMs</c> (400 ms) later, so an action issued just before
+        /// <c>Pause</c> may still take effect afterwards (possibly closing the popup the caller is
+        /// about to drive), and its <c>PopupDismissed</c> or <c>PopupDismissFailed</c> event may
+        /// still be raised after <c>Pause</c> returns. That confirmation is read-only and still runs
+        /// while paused; a retry it schedules is held back until <see cref="Resume"/>. If a step
+        /// must be certain the popup is untouched, pause before the popup appears, or after
+        /// <c>Pause</c> check <see cref="HasUnresolvedPopup"/> or wait about 400 ms and re-check
+        /// the popup before driving it.
         /// The lock is never held during discovery, so the wait lasts only as long as the one
         /// invoke or close already under way. That call has no timeout of its own, though: if the
         /// browser or dialog it targets is frozen, a cross-process UI Automation call can hang, and
@@ -732,7 +745,7 @@ namespace BrowserInterruptAutomation
         /// abandon the wait.
         /// </remarks>
         [Category("Interrupt - Lifecycle")]
-        [Description("Stops the handler touching popups until Resume, without stopping the watch. Waits for a dismissal already under way, so a hung browser can delay it. Returns True on success; never throws.")]
+        [Description("Stops the handler touching popups until Resume, without stopping the watch. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True on success; never throws.")]
         public bool Pause(out string message)
         {
             message = default;
@@ -741,7 +754,7 @@ namespace BrowserInterruptAutomation
                 if (IsDisposed(out message))
                     return false;
                 _engine.Paused = true;
-                _engine.WaitForIdle(); // a dismissal already under way finishes before this returns
+                _engine.WaitForIdle(); // a UIA call already under way finishes before this returns (its effect may still follow)
                 message = null;
                 return true;
             }

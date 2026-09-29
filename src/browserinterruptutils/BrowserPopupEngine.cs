@@ -41,8 +41,11 @@ namespace BrowserInterruptAutomation
     /// call and the recording of its result (never during discovery), and
     /// <see cref="WaitForIdle"/> takes that lock. <see cref="SetRuleEnabled"/> (disabling),
     /// <see cref="RemoveRule"/> and <see cref="ClearRules"/> call it, and the public Pause calls it
-    /// after setting <see cref="Paused"/>, so once they return nothing switched off beforehand
-    /// can still land.
+    /// after setting <see cref="Paused"/>, so once they return no new probe invoke/close starts for
+    /// what was switched off beforehand and any under way has finished. That is all it guarantees:
+    /// the lock covers only the probe call, which returns before the browser acts, so an action
+    /// issued just before may still take effect, and its verification (which runs while paused, as
+    /// it is read-only) may still record <c>Dismissed</c> or <c>DismissFailed</c> afterwards.
     /// </item>
     /// <item>
     /// <b>Per-rule runaway/trip/retry state lives in the engine, not on the rule.</b> The
@@ -382,7 +385,7 @@ namespace BrowserInterruptAutomation
 
         /// <summary>
         /// While set, popups are noticed but not touched; they are dealt with after it is cleared.
-        /// Setting it does not by itself wait for an action already under way; call
+        /// Setting it does not by itself wait for a call already under way; call
         /// <see cref="WaitForIdle"/> afterwards for that.
         /// </summary>
         internal volatile bool Paused;
@@ -508,7 +511,9 @@ namespace BrowserInterruptAutomation
         /// <summary>
         /// Returns once any invoke or close the worker is in the middle of has finished. The worker
         /// re-checks <see cref="Paused"/> and the rule's state under the same lock before it starts
-        /// one, so after this returns nothing that was switched off beforehand can still land.
+        /// one, so after this returns no new invoke or close starts for what was switched off
+        /// beforehand. It does not stop the browser acting on a call that already returned, nor the
+        /// pending verification of such a call from recording its outcome.
         /// Safe to call from the worker thread (for example from an event subscriber): the lock is
         /// re-entrant and the worker never holds it while it raises an event.
         /// </summary>

@@ -109,9 +109,9 @@ invoking one of its own elements.
 | `AddPageOverlayDismissRuleByName` | `bool AddPageOverlayDismissRuleByName(string ruleName, string nameContains, string messageContains, string processName, string targetElementName, out string message, bool exactTargetElementName = true, string roleContains = null, string automationIdContains = null)` | Adds a rule that dismisses a matching in-page overlay by invoking the named descendant element. Returns True if added; never throws. |
 | `AddPageOverlayDismissRuleByAutomationId` | `bool AddPageOverlayDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains, string processName, string targetAutomationId, out string message, string roleContains = null)` | Adds a rule that dismisses a matching in-page overlay by invoking the descendant element with the given automation ID. Returns True if added; never throws. |
 | `AddPageOverlayWatchOnlyRule` | `bool AddPageOverlayWatchOnlyRule(string ruleName, string nameContains, string messageContains, string processName, out string message, string roleContains = null, string automationIdContains = null)` | Adds a rule that only reports a matching in-page overlay and never touches it. Returns True if added; never throws. |
-| `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule. Waits for a dismissal already under way, so a hung browser can delay it. Returns True if it existed; never throws. |
-| `ClearRules` | `bool ClearRules(out string message)` | Removes every rule. Waits for a dismissal already under way, so a hung browser can delay it. Returns True on success; never throws. |
-| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on. Turning off waits for a dismissal already under way, so a hung browser can delay it. Turning on also clears a runaway stop. Returns True on success; never throws. |
+| `RemoveRule` | `bool RemoveRule(string ruleName, out string message)` | Removes a rule. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True if it existed; never throws. |
+| `ClearRules` | `bool ClearRules(out string message)` | Removes every rule. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True on success; never throws. |
+| `SetRuleEnabled` | `bool SetRuleEnabled(string ruleName, bool enabled, out string message)` | Turns a rule off or on. Turning off starts no new dismissal, but one already issued may still take effect; it waits for a call under way, so a hung browser can delay it. Turning on also clears a runaway stop. Returns True on success; never throws. |
 | `ListRulesJson` | `bool ListRulesJson(out string rulesJson, out string message)` | Lists the rules with their state and dismissal counts as JSON. Returns True on success; never throws. |
 
 ### Lifecycle
@@ -121,7 +121,7 @@ invoking one of its own elements.
 | `Start` | `bool Start(out string message, int sweepIntervalMs = 1000, int overlaySweepIntervalMs = 2000, int maxAttempts = 3, int maxDismissalsPerMinute = 20, int maxOverlayNodes = 5000, int maxOverlayDepth = 50)` | Starts watching for browser popups in the background and dismissing those that match a rule. Stops any other instance still watching (one that has this guard), in this process or another, and waits a few seconds for it. Returns True on success; never throws. |
 | `Stop` | `bool Stop(out string message)` | Stops watching for browser popups. Rules and the log are kept. Returns True on success, including when not running; never throws. |
 | `IsRunning` | `bool IsRunning()` | Returns True while watching for browser popups is running. Never throws. |
-| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until Resume, without stopping the watch. Waits for a dismissal already under way, so a hung browser can delay it. Returns True on success; never throws. |
+| `Pause` | `bool Pause(out string message)` | Stops the handler touching popups until Resume, without stopping the watch. No new dismissal starts once it returns, but one already issued may still take effect. Waits for a call under way, so a hung browser can delay it. Returns True on success; never throws. |
 | `Resume` | `bool Resume(out string message)` | Lets the handler dismiss popups again after Pause. Returns True on success; never throws. |
 
 ### Results
@@ -222,11 +222,15 @@ invoking one of its own elements.
 - **Popups owned by the automation's own process are never touched.** For a popup from
   another process that a step is deliberately driving, use `Pause`/`Resume` or
   `SetRuleEnabled`.
-- **`Pause`, `RemoveRule`, `ClearRules` and `SetRuleEnabled(false)` are a hard stop and can
-  block.** They wait for a click already under way, so nothing the handler does can land
-  after they return. The UI Automation call it is waiting on has no timeout: if the browser
-  is frozen, these methods block for as long as it stays frozen, and there is no way to
-  abandon the wait.
+- **`Pause`, `RemoveRule`, `ClearRules` and `SetRuleEnabled(false)` stop new clicks and can
+  block.** They wait for a click call already under way, so no further click starts after
+  they return. A click already delivered may still take effect (the browser acts after UI
+  Automation returns; the handler confirms 400 ms later), and its `PopupDismissed` or
+  `PopupDismissFailed` event may still be raised. To be certain a popup is untouched, pause
+  before it appears, or after `Pause` check `HasUnresolvedPopup` or wait about 400 ms and
+  re-check the popup before driving it. The UI Automation call it is waiting on has no
+  timeout: if the browser is frozen, these methods block for as long as it stays frozen, and
+  there is no way to abandon the wait.
 - **A popup that keeps coming back cannot loop forever.** A rule that has dismissed
   `maxDismissalsPerMinute` popups in the last minute stops itself and raises
   `InterruptError`; `SetRuleEnabled(rule, true)` turns it back on.
