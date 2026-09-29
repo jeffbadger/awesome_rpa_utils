@@ -890,6 +890,80 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Empty(h.Records);
         }
 
+        // ------------------------------------------------------------------ overlay process identity
+
+        [Fact]
+        public void Overlay_InheritsItsWindowsProcessIdentity_WhenTheElementReportsADifferentPid()
+        {
+            var h = new Harness();
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome",
+                action: BrowserPopupAction.InvokeByName, targetName: "Accept");
+            var window = h.Probe.AddWindow("tab", pid: 100, processName: "chrome");
+            h.AppearWindow(window);
+            var overlay = h.Probe.AddOverlay(window, "Cookie banner", pid: 9999); // renderer-owned element
+            h.Probe.AddChild(overlay, "Accept");
+
+            h.AppearOverlay(window);
+            h.PastVerifyDelay();
+
+            var dismissed = Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(100, dismissed.ProcessId);
+            Assert.Equal("chrome", dismissed.ProcessName);
+            Assert.False(overlay.Alive);
+        }
+
+        [Fact]
+        public void OwnProcessSkip_JudgesAnOverlayByItsWindowsIdentity_NotTheElements()
+        {
+            var h = new Harness();
+            h.Probe.CurrentProcessId = 4242;
+            h.AddRule("banner", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome",
+                action: BrowserPopupAction.InvokeByName, targetName: "Accept");
+
+            // The window is the automation's own; its element reports some other PID: still hands off.
+            var ownWindow = h.Probe.AddWindow("own tab", pid: 4242, processName: "chrome");
+            h.AppearWindow(ownWindow);
+            var ownOverlay = h.Probe.AddOverlay(ownWindow, "Cookie banner", pid: 7);
+            var ownButton = h.Probe.AddChild(ownOverlay, "Accept");
+
+            // Another browser's window whose element claims the automation's PID: that is not the automation's popup.
+            var otherWindow = h.Probe.AddWindow("other tab", pid: 100, processName: "chrome");
+            h.AppearWindow(otherWindow);
+            var otherOverlay = h.Probe.AddOverlay(otherWindow, "Cookie banner", pid: 4242);
+            h.Probe.AddChild(otherOverlay, "Accept");
+
+            h.AppearOverlay(ownWindow);
+            h.AppearOverlay(otherWindow);
+            h.PastVerifyDelay();
+
+            Assert.True(ownOverlay.Alive);
+            Assert.Equal(0, ownButton.Invokes);
+            Assert.False(otherOverlay.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void Overlay_UnderAWindowOfAnotherProcess_IsNotMatchedByAProcessScopedRule()
+        {
+            var h = new Harness();
+            h.AddRule("chromeOnly", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
+            // Names no process, so every browser window is watched (the firefox one is walked too).
+            h.AddRule("watchAny", BrowserPopupScope.PageOverlay, nameContains: "zzz-never-matches-xyz");
+            var chromeWindow = h.Probe.AddWindow("chrome tab", pid: 100, processName: "chrome");
+            var firefoxWindow = h.Probe.AddWindow("firefox tab", pid: 200, processName: "firefox");
+            h.AppearWindow(chromeWindow);
+            h.AppearWindow(firefoxWindow);
+            // The element even claims chrome's PID, but it lives under firefox's window.
+            h.Probe.AddOverlay(firefoxWindow, "Cookie banner", pid: 100);
+
+            h.AppearOverlay(firefoxWindow);
+            h.Settle();
+
+            Assert.Contains(firefoxWindow.Ref, h.Probe.OverlaySearchRoots); // it really was walked
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
+
         // ------------------------------------------------------------------ log
 
         [Fact]
@@ -1060,29 +1134,27 @@ namespace BrowserInterruptAutomation.Tests
             Assert.False(oldWindow.Alive);
             h.PastVerifyDelay(); // the dismissal is confirmed (and the candidate removed) only after the verify delay
 
-            // An unrelated, still-open browser window - never itself using pid 77 - hosts a page
-            // overlay whose reported ProcessId happens to be the reused pid 77 (Task 1's
-            // BrowserElementInfo gives overlays only a ProcessId, so the engine has no way to
-            // learn its owner's name except through the cache).
-            var otherWindow = h.Probe.AddWindow("Tab", pid: 999, processName: "somebrowser");
-            h.AppearWindow(otherWindow);
-            var overlay = h.Probe.AddOverlay(otherWindow, "Popup banner", pid: 77);
-            h.AppearOverlay(otherWindow);
+            // The reused pid 77 now belongs to a still-open browser window whose process name could
+            // not be resolved (an empty name is never cached). Its page overlay inherits that
+            // window's identity, so the engine has no way to learn the name except through the cache.
+            var newWindow = h.Probe.AddWindow("Tab", pid: 77, processName: "");
+            h.AppearWindow(newWindow);
+            h.Probe.AddOverlay(newWindow, "Popup banner");
+            h.AppearOverlay(newWindow);
 
             // With the stale entry evicted, pid 77 resolves to no name at all here (the engine
             // genuinely does not know it yet) - so it must NOT be wrongly resolved to "oldproc"
             // and match the rule scoped to the exited process.
             Assert.DoesNotContain(h.Of(BrowserPopupRecordKind.Detected), r => r.RuleName == "staleMatch");
 
-            // The genuinely new process now announces itself via its own top-level window,
-            // legitimately caching "newproc" for pid 77.
+            // The genuinely new process now announces itself under its real name, legitimately
+            // caching "newproc" for pid 77.
             h.Now += 200;
-            var newWindow = h.Probe.AddWindow("NewProcDlg", pid: 77, processName: "newproc");
-            h.AppearWindow(newWindow);
+            h.Hook.FireWindowOpened(new BrowserWindowInfo { Hwnd = newWindow.Ref.Hwnd, ProcessId = 77, ProcessName = "newproc" });
 
-            // Advance to the overlay candidate's next scheduled recheck: it must now resolve pid
-            // 77 to "newproc" and match the rule scoped to the genuinely new process.
-            h.Pump(h.Now + BrowserPopupEngine.ScheduleMs[1]);
+            // The next sweep of that window (nothing was admitted while its name was unknown) must
+            // now resolve pid 77 to "newproc" and match the rule scoped to the genuinely new process.
+            h.AppearOverlay(newWindow);
             Assert.Contains(h.Of(BrowserPopupRecordKind.Detected), r => r.RuleName == "matchesNew");
         }
 

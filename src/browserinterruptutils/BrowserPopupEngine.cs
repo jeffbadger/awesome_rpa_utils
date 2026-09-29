@@ -123,7 +123,10 @@ namespace BrowserInterruptAutomation
     /// stale name from an earlier pass - every window it ever looks at has a real Win32 handle it
     /// can re-describe on the spot, so nothing is lost by throwing the lookup away each time.
     /// Task 1's <see cref="BrowserElementInfo"/> gives a <see cref="BrowserPopupScope.PageOverlay"/>
-    /// candidate only a <see cref="BrowserElementInfo.ProcessId"/>, never a process name, and there
+    /// candidate only a <see cref="BrowserElementInfo.ProcessId"/>, never a process name - and that
+    /// PID can be a renderer's rather than the browser window's - so an overlay INHERITS its
+    /// identity (PID, and through this cache the name) from the watched top-level window the sweep
+    /// walked; see <c>SweepOneOverlayWindow</c>. And there
     /// is no per-element "describe" call this engine can make to learn one directly (see the
     /// candidate-refresh bullet above) - the only place a process name is ever learned is
     /// <see cref="IBrowserPopupProbe.DescribeWindow"/>/<see cref="IBrowserPopupProbe.EnumerateTopLevelWindows"/>,
@@ -1120,6 +1123,17 @@ namespace BrowserInterruptAutomation
                 return; // already walked during this pass
             if (!_probe.IsAlive(windowRef))
                 return; // the native-dialog sweep/liveness check will notice and unwatch it
+            if (!_candidates.TryGetValue(windowRef, out CandidateState owner))
+                return; // not a tracked window (any more): its identity is unknown, so nothing found under it can be judged
+
+            // Process identity comes from the top-level window that was walked, never from the
+            // element: an in-page element's own UIA ProcessId can be a different (renderer) process
+            // than the window's, which has no cached name and would fail every process-scoped rule
+            // and the own-process check. Every overlay found under this window is stamped with the
+            // window's PID, so rule matching, the own-process safety check and the records all judge
+            // it by the same identity.
+            int ownerProcessId = owner.ProcessId;
+            string ownerProcessName = ProcessNameOf(ownerProcessId);
 
             IReadOnlyList<BrowserElementInfo> found = _probe.FindOverlayCandidates(windowRef, MaxOverlayNodes, MaxOverlayDepth);
             if (found == null)
@@ -1141,6 +1155,7 @@ namespace BrowserInterruptAutomation
             {
                 if (element == null)
                     continue;
+                element.ProcessId = ownerProcessId;
                 if (_candidates.TryGetValue(element.Ref, out var existing))
                 {
                     existing.Info = element;
@@ -1148,14 +1163,10 @@ namespace BrowserInterruptAutomation
                         existing.NextDue = now;
                     continue;
                 }
-                string elementProcess = ProcessNameOf(element.ProcessId);
                 bool relevant = false;
                 foreach (var rule in overlayRules)
                 {
-                    // An element's process name is only known once one of its process's windows was
-                    // seen; while it is unknown, do not let that alone keep a candidate out. Evaluate
-                    // makes the real process decision once the name is known.
-                    if (rule.MatchesCheap(element, elementProcess.Length == 0 ? rule.ProcessName : elementProcess))
+                    if (rule.MatchesCheap(element, ownerProcessName))
                     {
                         relevant = true;
                         break;
@@ -1173,7 +1184,7 @@ namespace BrowserInterruptAutomation
                     Ref = element.Ref,
                     Scope = BrowserPopupScope.PageOverlay,
                     OwnerWindowRef = windowRef,
-                    ProcessId = element.ProcessId,
+                    ProcessId = ownerProcessId,
                     Info = element,
                     FirstSeen = now,
                     NextDue = now
