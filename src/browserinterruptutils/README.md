@@ -82,12 +82,18 @@ throws.
 
 ### Rules
 
-At least one of `nameContains`, `roleContains`, `processName` and (for an overlay rule)
-`automationIdContains` is required on every rule, so no rule can mean "click whatever
-popup appears". Text is matched by case-insensitive substring (literally: no wildcards or
+Every rule must say enough to be specific, and a process name alone never is. A **native
+dialog** rule needs at least one of `nameContains`, `messageContains` and `roleContains`
+(a process-only rule would match every window of the browser, including the main window);
+a native **close** rule needs `nameContains` or `messageContains`. A **page overlay** rule
+needs at least one of `roleContains`, `nameContains` and `automationIdContains` (every
+element on the page belongs to the browser process, so a process-only or message-only rule
+would match them all). Text is matched by case-insensitive substring (literally: no wildcards or
 regular expressions); every criterion you set must match. `messageContains` looks only at
 the first non-empty text element inside the popup, and reading it is a call into the
-browser, so set `nameContains`, `roleContains` or `processName` as well. Rules are tried in
+browser, so it is read last, only for a popup that passes the other criteria. A rule with
+only `nameContains` can also match the popup's own button, because the button is a
+candidate too: add `roleContains` (for example `dialog`). Rules are tried in
 the order added and the first match wins. See [Rules](Documentation/Rules.md).
 
 The rule methods are named for the scope they apply to. There is deliberately **no close
@@ -159,7 +165,10 @@ invoking one of its own elements.
   and descending at most `maxOverlayDepth` levels (a very large page can hide an overlay
   beyond that budget). It runs only for browser windows whose process a `PageOverlay` rule
   names; a rule that names no process makes every top-level window a candidate, so
-  always set `processName` on an overlay rule.
+  set `processName` on an overlay rule **and** a `roleContains`, `nameContains` or
+  `automationIdContains` (a process name alone is refused). Only elements that pass at
+  least one overlay rule's non-message criteria are tracked, and the engine tracks at most
+  2000 candidates at once (it records one error if that limit is reached).
 - **Structure-changed notifications are throttled.** A page change wakes an overlay look
   at most once per 250 ms per browser window; changes inside that interval are dropped
   and caught by the periodic overlay sweep (`overlaySweepIntervalMs`, default 2 s,

@@ -977,8 +977,8 @@ automation, so its popups are eligible.
 
 Pending live checks (run each in Chrome, Edge and Firefox unless noted):
 
-- **Discovery first.** With watch-only rules for the browser (`AddNativeDialogWatchOnlyRule` with just a
-  process name; `AddPageOverlayWatchOnlyRule` with `roleContains: "dialog"`), raise each popup and read
+- **Discovery first.** With watch-only rules for the browser (`AddNativeDialogWatchOnlyRule` with
+  `roleContains: "dialog"` (a process name alone is refused); `AddPageOverlayWatchOnlyRule` with `roleContains: "dialog"`), raise each popup and read
   `GetLogJson`. Record the `name`, `role` and `message` the browser really exposes, and the names of the
   buttons, for every popup type. The dismiss checks below depend on these.
 - **`alert`/`confirm`/`prompt`.** A `NativeDialog` dismiss rule by button name (`OK`; `Cancel` for a

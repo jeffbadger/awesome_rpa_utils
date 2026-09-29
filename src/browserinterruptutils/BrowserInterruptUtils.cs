@@ -514,8 +514,8 @@ namespace BrowserInterruptAutomation
                 return false;
 
             // Normalize first, then let the engine validate what will actually be stored: a
-            // process name of ".exe" trims to nothing, and a rule left with no criterion would
-            // match every popup (see BrowserPopupRule.ValidateCommon).
+            // process name of ".exe" trims to nothing, and a rule left without a scope-specific
+            // criterion would match every popup (see BrowserPopupRule.ValidateCommon).
             rule.RuleName = (ruleName ?? string.Empty).Trim();
             rule.NameContains = (nameContains ?? string.Empty).Trim();
             rule.MessageContains = (messageContains ?? string.Empty).Trim();

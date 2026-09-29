@@ -43,19 +43,28 @@ Five things can identify a popup, and **every one you set must match**:
 
 All of them compare ignoring case and by substring, except the `processName` (whole name)
 and the `targetAutomationId` (a whole-string, case-insensitive match). Leave one empty (`""`
-or `null`) to not check it. **At least one of name, role, process and (for an overlay)
-automation ID is required**: a rule with none would match every popup, so it is refused.
+or `null`) to not check it. **A process name alone is never enough**, so a too-broad rule is refused:
+
+- A native dialog rule needs at least one of `nameContains`, `messageContains` and `roleContains`;
+  a native close rule needs `nameContains` or `messageContains`.
+- A page overlay rule needs at least one of `roleContains`, `nameContains` and `automationIdContains`.
 
 ### Always set enough to be specific
 
 - A **native dialog** rule is checked against every window of the process it names, not only
-  dialogs, so a rule that names only `chrome` could also match a browser window. Add a
-  `messageContains`, a `nameContains` or a `roleContains`.
+  dialogs, so a rule that names only `chrome` could act on the browser's main window. That is
+  why a process-only rule is refused: add a `messageContains`, a `nameContains` or a
+  `roleContains` (a close rule needs a name or message).
 - A **page overlay** rule is checked against every element the bounded walk visits, not only
   elements that look like dialogs. A rule with only `nameContains: "Accept"` can match the
   Accept button itself rather than the banner around it. Set `roleContains` (for example
   `"dialog"`) together with a `nameContains` or `messageContains` that describes the
-  container, and use `targetElementName` for the button.
+  container, and use `targetElementName` for the button. A rule with only a process name (or
+  only a message) is refused, because it would match every element on the page.
+- **A `nameContains`-only rule can match the popup's own button.** The button inside a popup is
+  a candidate too, so `nameContains: "Accept"` may match the button rather than the dialog around
+  it, for a native dialog as well as an overlay. Add `roleContains` (for example `dialog`) to
+  pin the rule to the container.
 
 ### How `messageContains` reads the message
 
@@ -66,8 +75,9 @@ automation ID is required**: a rule with none would match every popup, so it is 
   a real browser exposes for an `alert()`'s message is one of the things the live checks will
   confirm.
 - **It is read last when choosing a rule**, only for a rule that has `messageContains` and
-  whose other criteria already matched. Reading it is a call into the browser, so set
-  `nameContains`, `roleContains` or `processName` too.
+  whose other criteria already matched, and at most once per popup however many rules use it.
+  Reading it is a call into the browser, so set `nameContains` or `roleContains` too (an overlay
+  rule needs one of them anyway).
 
 ## The kinds of rule
 
@@ -117,15 +127,17 @@ but see the caveat below.
 ### Watch-only: find out what a real page shows
 
 ```csharp
-browserInterrupt.AddNativeDialogWatchOnlyRule("any-chrome-window", "", "", "chrome", out _);
+browserInterrupt.AddNativeDialogWatchOnlyRule("any-chrome-dialog", "", "", "chrome", out _, roleContains: "dialog");
 browserInterrupt.AddPageOverlayWatchOnlyRule("any-chrome-dialog-role", "", "", "chrome", out _, roleContains: "dialog");
 browserInterrupt.Start(out _);
 // ... run the automation normally ...
 browserInterrupt.GetLogJson(100, out string json, out _);   // name, role, message, process of everything matched
 ```
 
-The first rule reports every window of the browser process (the browser's own windows as
-well as any dialog), so it is noisy: use it only for discovery. Then replace them with specific dismiss rules built from the names and roles the log shows.
+The first rule reports every window of the browser process whose role contains `dialog`,
+which may include more than JavaScript dialogs, so it can be noisy: use it only for discovery.
+(A process name alone is refused for a native rule. If nothing appears, the browser may report
+another role; try a `nameContains` from the dialog's title instead.) Then replace them with specific dismiss rules built from the names and roles the log shows.
 
 ## Finding the names and roles to use
 

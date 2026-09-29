@@ -68,7 +68,7 @@ you want whenever it appears.
 Run once with watch-only rules and read the log:
 
 ```csharp
-browserInterrupt.AddNativeDialogWatchOnlyRule("chrome-windows", "", "", "chrome", out _);
+browserInterrupt.AddNativeDialogWatchOnlyRule("chrome-dialogs-native", "", "", "chrome", out _, roleContains: "dialog");
 browserInterrupt.AddPageOverlayWatchOnlyRule("chrome-dialogs", "", "", "chrome", out _, roleContains: "dialog");
 browserInterrupt.Start(out _);
 // ... run the automation normally ...

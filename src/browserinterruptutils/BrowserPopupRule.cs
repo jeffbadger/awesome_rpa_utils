@@ -73,12 +73,13 @@ namespace BrowserInterruptAutomation
         public bool NeedsMessage => !string.IsNullOrEmpty(MessageContains);
 
         /// <summary>
-        /// Whether the candidate satisfies every criterion the rule sets. <paramref name="processName"/>
-        /// and <paramref name="messageText"/> are passed in, rather than resolved here, because both cost
-        /// a call into the probe; the engine resolves <paramref name="messageText"/> only when
-        /// <see cref="NeedsMessage"/> says it is worth the cost.
+        /// Whether the candidate satisfies every criterion the rule sets except the message. This is
+        /// the cheap phase: it reads only what the candidate already carries, so the engine runs it
+        /// first and fetches message text (a bounded subtree walk) only for a candidate that passes.
+        /// <paramref name="processName"/> is passed in, rather than resolved here, because resolving it
+        /// costs a call into the probe.
         /// </summary>
-        public bool Matches(BrowserElementInfo candidate, string processName, string messageText)
+        public bool MatchesCheap(BrowserElementInfo candidate, string processName)
         {
             if (candidate == null)
                 return false;
@@ -90,10 +91,21 @@ namespace BrowserInterruptAutomation
                 return false;
             if (!string.IsNullOrEmpty(ProcessName) && !ProcessNamesMatch(ProcessName, processName))
                 return false;
-            if (!string.IsNullOrEmpty(MessageContains) && !Contains(messageText, MessageContains))
-                return false;
             return true;
         }
+
+        /// <summary>The message phase: true when the rule sets no message criterion, or the text contains it.</summary>
+        public bool MatchesMessage(string messageText) =>
+            string.IsNullOrEmpty(MessageContains) || Contains(messageText, MessageContains);
+
+        /// <summary>
+        /// Whether the candidate satisfies every criterion the rule sets: <see cref="MatchesCheap"/>
+        /// then <see cref="MatchesMessage"/>. The engine calls the two phases separately so it can
+        /// skip fetching <paramref name="messageText"/> when <see cref="NeedsMessage"/> is false or
+        /// the cheap phase already failed.
+        /// </summary>
+        public bool Matches(BrowserElementInfo candidate, string processName, string messageText) =>
+            MatchesCheap(candidate, processName) && MatchesMessage(messageText);
 
         internal static bool Contains(string haystack, string needle) =>
             haystack != null && haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
@@ -113,27 +125,54 @@ namespace BrowserInterruptAutomation
         }
 
         /// <summary>
-        /// Checks the arguments common to every kind of rule. A rule must be named, must say at
-        /// least one of name, automation ID, process or role (so no rule can mean "dismiss
-        /// whatever popup appears"), and must not pair <see cref="BrowserPopupAction.CloseWindowPattern"/>
-        /// with <see cref="BrowserPopupScope.PageOverlay"/>: closing a window makes no sense for an
-        /// element that has none. This is the one place scope/action compatibility is enforced
-        /// defensively; the public API (a later phase) only exposes the valid combinations as
-        /// distinct methods in the first place.
+        /// Checks the arguments common to every kind of rule. A rule must be named, must not pair
+        /// <see cref="BrowserPopupAction.CloseWindowPattern"/> with <see cref="BrowserPopupScope.PageOverlay"/>
+        /// (closing a window makes no sense for an element that has none), and must say enough to be
+        /// specific to its scope; a process name alone is never enough:
+        /// <list type="bullet">
+        /// <item><see cref="BrowserPopupScope.NativeDialog"/>: at least one of name, message or role. A
+        /// process-only rule matches every top-level window of that process, including the user's
+        /// main browser window. A <see cref="BrowserPopupAction.CloseWindowPattern"/> rule needs name or
+        /// message specifically, since closing the wrong window is the costly mistake.</item>
+        /// <item><see cref="BrowserPopupScope.PageOverlay"/>: at least one of role, name or automation
+        /// ID. Every element on the page belongs to the browser process, so a process-only (or
+        /// message-only) rule would match every element on the page.</item>
+        /// </list>
+        /// The public API only exposes the valid scope/action combinations as distinct methods;
+        /// this is the one place compatibility is enforced defensively.
         /// </summary>
         /// <returns>A message describing the problem, or <c>null</c> if the arguments are acceptable.</returns>
-        internal static string ValidateCommon(string ruleName, string nameContains, string automationIdContains,
+        internal static string ValidateCommon(string ruleName, string nameContains, string messageContains, string automationIdContains,
             string processName, string roleContains, BrowserPopupScope scope, BrowserPopupAction action)
         {
             if (string.IsNullOrWhiteSpace(ruleName))
                 return "ruleName may not be empty.";
             if (ruleName.Trim().Length > MaxNameLength)
                 return "ruleName may be at most " + MaxNameLength + " characters.";
-            if (string.IsNullOrWhiteSpace(nameContains) && string.IsNullOrWhiteSpace(automationIdContains)
-                && string.IsNullOrWhiteSpace(processName) && string.IsNullOrWhiteSpace(roleContains))
-                return "A rule needs at least one of nameContains, automationIdContains, processName or roleContains, so it can never match every popup.";
             if (action == BrowserPopupAction.CloseWindowPattern && scope != BrowserPopupScope.NativeDialog)
                 return "CloseWindowPattern is only valid for a NativeDialog rule.";
+
+            bool hasName = !string.IsNullOrWhiteSpace(nameContains);
+            bool hasMessage = !string.IsNullOrWhiteSpace(messageContains);
+            bool hasId = !string.IsNullOrWhiteSpace(automationIdContains);
+            bool hasRole = !string.IsNullOrWhiteSpace(roleContains);
+
+            if (scope == BrowserPopupScope.PageOverlay)
+            {
+                if (!hasRole && !hasName && !hasId)
+                    return "A PageOverlay rule needs at least one of roleContains, nameContains or automationIdContains "
+                        + "(a process name or message alone is not enough): every element on the page belongs to the browser "
+                        + "process, so such a rule would match every element on the page.";
+                return null;
+            }
+
+            if (!hasName && !hasMessage && !hasRole)
+                return "A NativeDialog rule needs at least one of nameContains, messageContains or roleContains "
+                    + "(a process name alone is not enough): a process-only rule would match every window of that process, "
+                    + "including the browser's main window.";
+            if (action == BrowserPopupAction.CloseWindowPattern && !hasName && !hasMessage)
+                return "A NativeDialog close rule needs nameContains or messageContains: closing a window on a role or "
+                    + "process match alone could close the browser's main window.";
             return null;
         }
     }

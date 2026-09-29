@@ -848,6 +848,51 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Contains("maxEntries", message2);
         }
 
+        // ------------------------------------------------------------------ rule methods: too-broad rules rejected
+
+        [Fact]
+        public void NativeDialogRules_RejectAProcessOnlyRule_WithAnExplanation()
+        {
+            using var rig = new Rig();
+
+            Assert.False(rig.Utils.AddNativeDialogWatchOnlyRule("w", "", "", "chrome", out string m1));
+            Assert.Contains("main window", m1);
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByName("n", "", "", "chrome", "OK", out string m2));
+            Assert.Contains("main window", m2);
+            Assert.False(rig.Utils.AddNativeDialogDismissRuleByAutomationId("a", "", "", "chrome", "ok", out string m3));
+            Assert.Contains("main window", m3);
+            Assert.False(rig.Utils.AddNativeDialogCloseRule("c", "", "", "chrome", out string m4));
+            Assert.NotNull(m4);
+        }
+
+        [Fact]
+        public void NativeDialogCloseRule_NeedsANameOrMessage_ARoleAloneIsNotEnough()
+        {
+            using var rig = new Rig();
+
+            Assert.False(rig.Utils.AddNativeDialogCloseRule("c", "", "", "chrome", out string message, roleContains: "dialog"));
+            Assert.Contains("nameContains or messageContains", message);
+            Assert.True(rig.Utils.AddNativeDialogCloseRule("c2", "", "sure?", "chrome", out message));
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("w2", "", "", "chrome", out message, roleContains: "dialog"));
+        }
+
+        [Fact]
+        public void PageOverlayRules_RejectProcessOnlyAndMessageOnlyRules()
+        {
+            using var rig = new Rig();
+
+            Assert.False(rig.Utils.AddPageOverlayWatchOnlyRule("p", "", "", "chrome", out string m1));
+            Assert.Contains("every element on the page", m1);
+            Assert.False(rig.Utils.AddPageOverlayWatchOnlyRule("m", "", "cookies", "chrome", out string m2));
+            Assert.Contains("every element on the page", m2);
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByName("d", "", "cookies", "chrome", "Accept", out string m3));
+            Assert.NotNull(m3);
+            Assert.False(rig.Utils.AddPageOverlayDismissRuleByAutomationId("i", "", "cookies", "chrome", "accept", out string m4));
+            Assert.NotNull(m4);
+            Assert.True(rig.Utils.AddPageOverlayWatchOnlyRule("ok", "", "cookies", "chrome", out string m5, roleContains: "dialog"));
+            Assert.Null(m5);
+        }
+
         // BrowserPopupEngine.LogCapacity is internal but visible via InternalsVisibleTo.
         private static int BrowserPopupEngineLogCapacity() => BrowserPopupEngine.LogCapacity;
     }
