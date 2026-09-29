@@ -115,18 +115,18 @@ namespace BrowserInterruptAutomation
             public StructureChangedEventHandler Handler;
 
             /// <summary>
-            /// <c>Environment.TickCount64</c> of the last raised notification for this window.
-            /// Seeded at registration time (see <see cref="WatchWindow"/>) via
-            /// <see cref="StructureChangedThrottle.InitialSeed"/> - see that method's doc comment
-            /// for why <see cref="long.MinValue"/> is unsafe here (it made the throttle's
-            /// subtraction overflow and permanently silenced <see cref="WindowStructureChanged"/>
-            /// for every window; a critical Task 4 code-review finding). Read/written only via
-            /// <see cref="Interlocked"/> (see <see cref="StructureChangedThrottle.ShouldRaise"/>).
+            /// The whole coalescing-throttle state for this window as ONE word: last-raised
+            /// <c>Environment.TickCount64</c> plus the trailing-pending bit, packed by
+            /// <see cref="StructureChangedThrottle.Pack"/>. Seeded at registration time (see
+            /// <see cref="WatchWindow"/>) via <see cref="StructureChangedThrottle.InitialState"/> -
+            /// see <see cref="StructureChangedThrottle.InitialSeed"/> for why <see cref="long.MinValue"/>
+            /// is unsafe (it permanently silenced <see cref="WindowStructureChanged"/>; a critical
+            /// Task 4 code-review finding). One word, not two fields, so a timer callback can never
+            /// act on a stale timestamp while clearing a pending bit set after it (a review finding:
+            /// lost trailing). Read/written only via <see cref="Interlocked"/> inside
+            /// <see cref="StructureChangedThrottle"/>.
             /// </summary>
-            public long LastRaisedTicks;
-
-            /// <summary>1 while a trailing notification is pending (see <see cref="StructureChangedThrottle.Decide"/>); Interlocked only.</summary>
-            public int TrailingPending;
+            public long ThrottleState;
 
             /// <summary>Guards <see cref="TrailingTimer"/> and <see cref="TimerDisposed"/>; never held while calling out or while taking <c>_watchLock</c>.</summary>
             public readonly object TimerLock = new object();
@@ -394,8 +394,8 @@ namespace BrowserInterruptAutomation
                         Element = windowElement,
                         Handler = handler,
                         // Seeded so the first real StructureChanged callback for this window always
-                        // raises immediately; see the WatchEntry.LastRaisedTicks doc comment.
-                        LastRaisedTicks = StructureChangedThrottle.InitialSeed(Environment.TickCount64, StructureChangedCoalesceMs)
+                        // raises immediately; see the WatchEntry.ThrottleState doc comment.
+                        ThrottleState = StructureChangedThrottle.InitialState(Environment.TickCount64, StructureChangedCoalesceMs)
                     };
                 }
             }
@@ -502,15 +502,19 @@ namespace BrowserInterruptAutomation
                 }
 
                 long now = Environment.TickCount64;
-                switch (StructureChangedThrottle.Decide(ref entry.LastRaisedTicks, ref entry.TrailingPending, now, StructureChangedCoalesceMs))
+                switch (StructureChangedThrottle.Decide(ref entry.ThrottleState, now, StructureChangedCoalesceMs, out int armDelayMs))
                 {
                     case StructureChangedThrottle.Decision.Raise:
                         RaiseWindowStructureChanged(windowRoot);
                         break;
                     case StructureChangedThrottle.Decision.SuppressedArmTrailing:
-                        // First suppressed signal of this cooldown: one trailing delivery when it ends.
-                        ArmTrailingTimer(windowRoot, entry,
-                            StructureChangedThrottle.DelayUntilCooldownEndsMs(Interlocked.Read(ref entry.LastRaisedTicks), now, StructureChangedCoalesceMs));
+                        // First suppressed signal since the last raise (the 0-to-1 pending transition,
+                        // so exactly one arm per pending episode): one trailing delivery when the
+                        // cooldown ends. The delay comes from the same state snapshot that set the
+                        // pending bit. If a leading raise clears the bit before this timer fires, that
+                        // raise covers the signal and the timer finds nothing pending; a signal
+                        // suppressed after that raise sets the bit again and arms its own timer.
+                        ArmTrailingTimer(windowRoot, entry, armDelayMs);
                         break;
                     default:
                         break; // a trailing is already pending: this signal coalesces into it
@@ -585,7 +589,7 @@ namespace BrowserInterruptAutomation
                     return;
 
                 switch (StructureChangedThrottle.TryConsumeTrailing(
-                    ref entry.LastRaisedTicks, ref entry.TrailingPending, Environment.TickCount64, StructureChangedCoalesceMs, out int rearmDelayMs))
+                    ref entry.ThrottleState, Environment.TickCount64, StructureChangedCoalesceMs, out int rearmDelayMs))
                 {
                     case StructureChangedThrottle.TrailingResult.Raise:
                         if (IsStillWatched(windowRoot, entry))
