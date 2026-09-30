@@ -46,6 +46,28 @@ namespace BrowserInterruptAutomation
         [DllImport("user32.dll", SetLastError = true)]
         internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
+        /// <summary>Process access right: query limited information (enough for the image name and times; granted even for most elevated/protected processes).</summary>
+        internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+        /// <summary>Win32 error: the buffer given to a query was too small.</summary>
+        internal const int ERROR_INSUFFICIENT_BUFFER = 122;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool CloseHandle(IntPtr hObject);
+
+        // FILETIME is two 32-bit halves in native memory, exactly a 64-bit integer, so it is bound as long.
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetProcessTimes(IntPtr hProcess, out long lpCreationTime, out long lpExitTime, out long lpKernelTime, out long lpUserTime);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool QueryFullProcessImageNameW(IntPtr hProcess, uint dwFlags, StringBuilder lpExeName, ref uint lpdwSize);
+
         [DllImport("user32.dll")]
         internal static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
 

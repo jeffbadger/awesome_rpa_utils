@@ -93,6 +93,17 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        /// <summary>Drops every entry from both generations.</summary>
+        public void Clear()
+        {
+            lock (_gate)
+            {
+                _current = new Dictionary<TKey, TValue>();
+                _previous = new Dictionary<TKey, TValue>();
+                _generationStarted = _clockMs();
+            }
+        }
+
         /// <summary>Forces a rotation: current becomes previous, the old previous is dropped.</summary>
         public void Rotate()
         {

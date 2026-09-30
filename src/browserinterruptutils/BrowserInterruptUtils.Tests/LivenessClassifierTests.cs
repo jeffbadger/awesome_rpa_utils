@@ -55,5 +55,21 @@ namespace BrowserInterruptAutomation.Tests
             Assert.False(LivenessClassifier.ShouldEvictCacheEntry(ReadOutcome.OtherFailure)); // a cache hit with a non-definitive failure is not evicted
             Assert.False(LivenessClassifier.ShouldEvictCacheEntry(ReadOutcome.Ok));
         }
+
+        [Fact]
+        public void ProcessIdZero_IsDead_NonZeroIsAlive()
+        {
+            Assert.Equal(Liveness.Dead, LivenessClassifier.ClassifyProcessId(0));
+            Assert.Equal(Liveness.Alive, LivenessClassifier.ClassifyProcessId(7936));
+            Assert.Equal(Liveness.Alive, LivenessClassifier.ClassifyProcessId(4));
+            Assert.False(LivenessClassifier.ReportsAlive(LivenessClassifier.ClassifyProcessId(0)));
+        }
+
+        [Fact]
+        public void ProcessIdZero_EvictsCacheEntry_NonZeroDoesNot()
+        {
+            Assert.True(LivenessClassifier.ShouldEvictCacheEntry(LivenessClassifier.ClassifyProcessIdRead(0)));
+            Assert.False(LivenessClassifier.ShouldEvictCacheEntry(LivenessClassifier.ClassifyProcessIdRead(1234)));
+        }
     }
 }

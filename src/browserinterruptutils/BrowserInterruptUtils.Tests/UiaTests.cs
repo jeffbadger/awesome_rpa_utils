@@ -66,6 +66,12 @@ namespace BrowserInterruptAutomation.Tests
                     }
                     Assert.NotNull(button);
 
+                    // The element came out of the cached walk but must keep a live reference:
+                    // liveness, pinning and the click below all depend on that.
+                    Assert.True(probe.IsAlive(button.Ref));
+                    probe.Retain(button.Ref);
+                    Assert.True(probe.IsAlive(button.Ref));
+
                     Assert.False(host.Clicked);
                     bool ok = probe.TryInvoke(button.Ref, out string failureReason);
                     Assert.True(ok, failureReason);
@@ -88,6 +94,7 @@ namespace BrowserInterruptAutomation.Tests
             {
                 var probe = new UiaBrowserPopupProbe();
                 BrowserElementRef windowRef;
+                BrowserElementRef buttonRef;
                 IntPtr hwnd;
                 using (var host = new WpfButtonHost())
                 {
@@ -96,6 +103,13 @@ namespace BrowserInterruptAutomation.Tests
                     Assert.NotNull(windowInfo);
                     windowRef = windowInfo.Ref;
                     Assert.True(probe.IsAlive(windowRef));
+
+                    // A descendant found by the cached walk, pinned like the engine does.
+                    BrowserElementInfo button = FindByName(probe.FindOverlayCandidates(windowRef, 50, 10), WpfButtonHost.ButtonName);
+                    Assert.NotNull(button);
+                    buttonRef = button.Ref;
+                    probe.Retain(buttonRef);
+                    Assert.True(probe.IsAlive(buttonRef));
                 }
                 // Dispose returns once the host's dispatcher has shut down, but the OS may finish
                 // destroying the HWND a moment later; wait (bounded) for that, so the assertion
@@ -105,7 +119,135 @@ namespace BrowserInterruptAutomation.Tests
                 // The window has since been closed; the same ref must no longer resolve as alive
                 // (IsAlive checks IsWindow first, and evicts the cached element).
                 Assert.False(probe.IsAlive(windowRef));
+                // The pinned descendant has no window handle of its own: its Dead verdict rests on
+                // the LIVE read (never the cached snapshot). A torn-down WPF provider does not throw;
+                // it answers with degraded values (ProcessId 0), which the probe treats as dead.
+                // Bounded wait, since the provider may take a moment after the window is gone.
+                // Only window-close teardown is asserted: a WPF element removed from a still-open
+                // window keeps answering (provider peculiarity, not representative of browsers);
+                // see the vanished-overlay live check in TESTING.md.
+                Assert.True(SpinWait.SpinUntil(() => !probe.IsAlive(buttonRef), TimeSpan.FromSeconds(5)),
+                    "a pinned descendant of a closed window never reported dead");
             });
+        }
+
+        [Fact]
+        public void FindOverlayCandidates_CachedPropertiesEqualLiveValues()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            RunOnStaThread(() =>
+            {
+                using (var host = new WpfButtonHost())
+                {
+                    var probe = new UiaBrowserPopupProbe();
+                    BrowserElementInfo windowInfo = probe.DescribeWindow(host.Hwnd);
+                    Assert.NotNull(windowInfo);
+
+                    var descendants = probe.FindOverlayCandidates(windowInfo.Ref, maxNodes: 50, maxDepth: 10);
+                    BrowserElementInfo button = FindByName(descendants, WpfButtonHost.ButtonName);
+                    Assert.NotNull(button);
+
+                    Assert.Equal(WpfButtonHost.ButtonName, button.Name);
+                    Assert.Equal(WpfButtonHost.ButtonAutomationId, button.AutomationId);
+                    Assert.Equal("Button", button.ControlType);
+                    Assert.Equal("Button", button.ClassName);
+                    Assert.Equal(Environment.ProcessId, button.ProcessId);
+                    Assert.False(string.IsNullOrEmpty(button.LocalizedControlType));
+
+                    // Live values, read independently through UIA's uncached Current.
+                    AutomationElement liveButton = AutomationElement.FromHandle(host.Hwnd).FindFirst(
+                        TreeScope.Descendants,
+                        new PropertyCondition(AutomationElement.AutomationIdProperty, WpfButtonHost.ButtonAutomationId));
+                    Assert.NotNull(liveButton);
+                    Assert.Equal(liveButton.Current.LocalizedControlType, button.LocalizedControlType);
+                    Assert.Equal(liveButton.Current.ClassName, button.ClassName);
+                    Assert.Equal(liveButton.Current.ProcessId, button.ProcessId);
+                    Assert.Equal(liveButton.GetRuntimeId(), button.Ref.RuntimeId);
+
+                    // The TextBlock is described too (every visited element is returned).
+                    BrowserElementInfo text = FindByName(descendants, WpfButtonHost.TextBlockText);
+                    Assert.NotNull(text);
+                    Assert.Equal("Text", text.ControlType);
+
+                    // The cached path was really used: no Cached read fell back to a Current read.
+                    Assert.Equal(0, probe.CachedReadFallbackCount);
+                }
+            });
+        }
+
+        [Fact]
+        public void DescribeWindow_ReturnsClassNameAndProcessId_ThroughTheCachedPath()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            RunOnStaThread(() =>
+            {
+                using (var host = new WpfButtonHost())
+                {
+                    var probe = new UiaBrowserPopupProbe();
+                    BrowserElementInfo windowInfo = probe.DescribeWindow(host.Hwnd);
+                    Assert.NotNull(windowInfo);
+
+                    Assert.Equal(host.Hwnd, windowInfo.Ref.Hwnd);
+                    Assert.Equal(Environment.ProcessId, windowInfo.ProcessId);
+                    Assert.Equal(AutomationElement.FromHandle(host.Hwnd).Current.ClassName, windowInfo.ClassName);
+                    Assert.False(string.IsNullOrEmpty(windowInfo.ClassName));
+                    Assert.Equal("Window", windowInfo.ControlType);
+                    Assert.Equal(0, probe.CachedReadFallbackCount);
+                }
+            });
+        }
+
+        [Fact]
+        public void TryGetMessageText_ReturnsTheTextBlockText_ThroughTheCachedPath()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            RunOnStaThread(() =>
+            {
+                using (var host = new WpfButtonHost())
+                {
+                    var probe = new UiaBrowserPopupProbe();
+                    BrowserElementInfo windowInfo = probe.DescribeWindow(host.Hwnd);
+                    Assert.NotNull(windowInfo);
+
+                    Assert.Equal(WpfButtonHost.TextBlockText, probe.TryGetMessageText(windowInfo.Ref));
+                    Assert.Equal(0, probe.CachedReadFallbackCount);
+                }
+            });
+        }
+
+        [Fact]
+        public void FindOverlayCandidates_MaxNodesOne_VisitsExactlyOneNode()
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            RunOnStaThread(() =>
+            {
+                using (var host = new WpfButtonHost())
+                {
+                    var probe = new UiaBrowserPopupProbe();
+                    BrowserElementInfo windowInfo = probe.DescribeWindow(host.Hwnd);
+                    Assert.NotNull(windowInfo);
+
+                    Assert.Single(probe.FindOverlayCandidates(windowInfo.Ref, maxNodes: 1, maxDepth: 10));
+                }
+            });
+        }
+
+        private static BrowserElementInfo FindByName(System.Collections.Generic.IReadOnlyList<BrowserElementInfo> elements, string name)
+        {
+            foreach (BrowserElementInfo candidate in elements)
+            {
+                if (candidate.Name == name)
+                    return candidate;
+            }
+            return null;
         }
 
         /// <summary>
@@ -156,6 +298,8 @@ namespace BrowserInterruptAutomation.Tests
         private sealed class WpfButtonHost : IDisposable
         {
             internal const string ButtonName = "UiaTestButton";
+            internal const string ButtonAutomationId = "UiaTestButtonId";
+            internal const string TextBlockText = "UiaTestMessageText";
 
             private readonly Thread _uiThread;
             private readonly ManualResetEventSlim _ready = new ManualResetEventSlim(false);
@@ -179,15 +323,18 @@ namespace BrowserInterruptAutomation.Tests
             {
                 var button = new Button { Content = "Click me", Width = 80, Height = 24 };
                 AutomationProperties.SetName(button, ButtonName);
-                AutomationProperties.SetAutomationId(button, "UiaTestButtonId");
+                AutomationProperties.SetAutomationId(button, ButtonAutomationId);
                 button.Click += (_, __) => _clicked = true;
+                var panel = new StackPanel();
+                panel.Children.Add(button);
+                panel.Children.Add(new TextBlock { Text = TextBlockText });
 
                 _window = new Window
                 {
                     Title = "UiaBrowserPopupProbe smoke test",
                     Width = 200,
-                    Height = 100,
-                    Content = button,
+                    Height = 140,
+                    Content = panel,
                     ShowInTaskbar = false,
                     ShowActivated = false,
                     WindowStyle = WindowStyle.ToolWindow,

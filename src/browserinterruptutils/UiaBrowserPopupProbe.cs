@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Text;
+using System.Threading;
 using System.Windows.Automation;
 
 namespace BrowserInterruptAutomation
@@ -78,6 +78,14 @@ namespace BrowserInterruptAutomation
     /// <c>Name</c>, or <c>null</c> if none is found within the (small) bound.
     /// </item>
     /// <item>
+    /// <b>Cached walks.</b> Walks (<see cref="FindOverlayCandidates"/>, <see cref="TryGetMessageText"/>,
+    /// the runtime-id search) fetch each child through a <see cref="CacheRequest"/> (properties of the
+    /// element itself, <see cref="AutomationElementMode.Full"/>) so it arrives with its properties in
+    /// one round trip; <see cref="DescribeElement"/> reads <c>Cached.*</c> and falls back once to the
+    /// live read if a property was not cached. Liveness (<see cref="IsAlive"/>, <see cref="Resolve"/>)
+    /// and patterns always use live reads: a cached snapshot is stale by definition.
+    /// </item>
+    /// <item>
     /// <b><c>EnumerateTopLevelWindows</c> skips invisible windows.</b> A native JS
     /// <c>alert</c>/<c>confirm</c>/<c>prompt</c> dialog is visible for as long as it exists, while a
     /// browser process owns many hidden top-level windows, so <c>NativeMethods.IsWindowVisible</c>
@@ -94,6 +102,45 @@ namespace BrowserInterruptAutomation
         /// <see cref="TreeWalker.ControlViewWalker"/>, was chosen.
         /// </summary>
         private static readonly TreeWalker _childWalker = new TreeWalker(Condition.TrueCondition);
+
+        // UIA property caching (CacheRequest). A walk asks UIA to deliver each child WITH the
+        // properties DescribeElement needs in the same cross-process round trip that returns the
+        // child, instead of one round trip per property read. The request is built per walk by
+        // CreateCacheRequest (never shared, never Activate()d for walks: the walker overloads take
+        // it as an argument), so there is no cross-thread sharing of a mutable CacheRequest to
+        // reason about. TreeScope.Element (only the element itself) and AutomationElementMode.Full
+        // (the default, set explicitly): elements keep LIVE references so TryInvoke, pinning and
+        // liveness checks still work; AutomationElementMode.None would break all three.
+        private static readonly AutomationProperty[] DescribeProperties =
+        {
+            AutomationElement.RuntimeIdProperty,
+            AutomationElement.NameProperty,
+            AutomationElement.AutomationIdProperty,
+            AutomationElement.ClassNameProperty,
+            AutomationElement.ControlTypeProperty,
+            AutomationElement.LocalizedControlTypeProperty,
+            AutomationElement.ProcessIdProperty
+        };
+
+        private static readonly AutomationProperty[] MessageTextProperties =
+        {
+            AutomationElement.ControlTypeProperty,
+            AutomationElement.NameProperty
+        };
+
+        private static readonly AutomationProperty[] RuntimeIdOnlyProperties =
+        {
+            AutomationElement.RuntimeIdProperty
+        };
+
+        private int _cachedReadFallbacks;
+
+        /// <summary>
+        /// Test hook: how many times a <c>Cached</c> read threw <see cref="InvalidOperationException"/>
+        /// (property not cached) and fell back to the live <c>Current</c> read. Zero after a walk
+        /// proves the cached path was really used.
+        /// </summary>
+        internal int CachedReadFallbackCount => Volatile.Read(ref _cachedReadFallbacks);
 
         /// <summary>Most elements one cache generation holds before it rotates (a default 5000-node walk fits in one).</summary>
         internal const int CacheMaxEntriesPerGeneration = 8192;
@@ -121,7 +168,7 @@ namespace BrowserInterruptAutomation
         private const int MessageTextMaxNodes = 200;
         private const int MessageTextMaxDepth = 10;
 
-        public int CurrentProcessId { get; } = Process.GetCurrentProcess().Id;
+        public int CurrentProcessId { get; } = Environment.ProcessId;
 
         // ------------------------------------------------------------------ native windows
 
@@ -151,7 +198,7 @@ namespace BrowserInterruptAutomation
                             Hwnd = hwnd,
                             ClassName = ClassNameOf(hwnd),
                             ProcessId = (int)pid,
-                            ProcessName = ProcessNameOf((int)pid)
+                            ProcessName = ProcessNames.NameOf((int)pid)
                         });
                     }
                     catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -175,7 +222,7 @@ namespace BrowserInterruptAutomation
                 if (hwnd == IntPtr.Zero || !NativeMethods.IsWindow(hwnd))
                     return null;
 
-                AutomationElement element = ResolveFromHandle(hwnd, out _);
+                AutomationElement element = ResolveFromHandle(hwnd, out _, DescribeProperties);
                 return element == null ? null : DescribeElement(element, hwnd);
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -196,8 +243,9 @@ namespace BrowserInterruptAutomation
                 if (!TryResolve(browserWindowRoot, out AutomationElement root) || root == null)
                     return results;
 
+                CacheRequest request = CreateCacheRequest(DescribeProperties);
                 var queue = new Queue<(AutomationElement Element, int Depth)>();
-                EnqueueChildrenUpToBudget(root, 1, 0, maxNodes, queue);
+                EnqueueChildrenUpToBudget(root, 1, 0, maxNodes, queue, request);
 
                 // `visited` is a true visited-node bound: it increments once per dequeue,
                 // unconditionally, whether or not DescribeElement below succeeds. Gating the
@@ -218,7 +266,7 @@ namespace BrowserInterruptAutomation
 
                     results.Add(info);
                     if (depth < maxDepth)
-                        EnqueueChildrenUpToBudget(element, depth + 1, visited, maxNodes, queue);
+                        EnqueueChildrenUpToBudget(element, depth + 1, visited, maxNodes, queue, request);
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -233,23 +281,25 @@ namespace BrowserInterruptAutomation
         /// first-child/next-sibling), stopping the moment <paramref name="alreadyVisited"/> plus
         /// the queue's length reaches <paramref name="maxNodes"/> - the walk can never dequeue
         /// more than that, so an enormous sibling list (a huge page) is never enumerated past the
-        /// budget, and never materialized as a list. Best-effort: an enumeration failure keeps
-        /// whatever was enqueued so far and never throws.
+        /// budget, and never materialized as a list. Each child is fetched through the
+        /// <paramref name="request"/> overloads, so it arrives with its cached properties in the
+        /// same round trip. Best-effort: an enumeration failure keeps whatever was enqueued so far
+        /// and never throws.
         /// </summary>
         private static void EnqueueChildrenUpToBudget(AutomationElement parent, int depth, int alreadyVisited, int maxNodes,
-            Queue<(AutomationElement Element, int Depth)> queue)
+            Queue<(AutomationElement Element, int Depth)> queue, CacheRequest request)
         {
             try
             {
                 if (alreadyVisited + queue.Count >= maxNodes)
                     return;
-                AutomationElement child = _childWalker.GetFirstChild(parent);
+                AutomationElement child = _childWalker.GetFirstChild(parent, request);
                 while (child != null)
                 {
                     queue.Enqueue((child, depth));
                     if (alreadyVisited + queue.Count >= maxNodes)
                         return;
-                    child = _childWalker.GetNextSibling(child);
+                    child = _childWalker.GetNextSibling(child, request);
                 }
             }
             catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -290,8 +340,9 @@ namespace BrowserInterruptAutomation
                 if (!TryResolve(element, out AutomationElement root) || root == null)
                     return null;
 
+                CacheRequest request = CreateCacheRequest(MessageTextProperties);
                 var queue = new Queue<(AutomationElement Element, int Depth)>();
-                EnqueueChildrenUpToBudget(root, 1, 0, MessageTextMaxNodes, queue);
+                EnqueueChildrenUpToBudget(root, 1, 0, MessageTextMaxNodes, queue, request);
 
                 int visited = 0;
                 while (queue.Count > 0 && visited < MessageTextMaxNodes)
@@ -299,17 +350,17 @@ namespace BrowserInterruptAutomation
                     (AutomationElement candidate, int depth) = queue.Dequeue();
                     visited++;
 
-                    ControlType controlType = SafeGet(() => candidate.Current.ControlType, null);
+                    ControlType controlType = ReadCachedOrLive(true, () => candidate.Cached.ControlType, () => candidate.Current.ControlType, null);
                     if (Equals(controlType, ControlType.Text))
                     {
-                        string name = SafeGet(() => candidate.Current.Name, string.Empty);
+                        string name = ReadCachedOrLive(true, () => candidate.Cached.Name, () => candidate.Current.Name, string.Empty);
                         if (!string.IsNullOrEmpty(name))
                             return name;
                     }
 
                     if (depth < MessageTextMaxDepth)
                     {
-                        EnqueueChildrenUpToBudget(candidate, depth + 1, visited, MessageTextMaxNodes, queue);
+                        EnqueueChildrenUpToBudget(candidate, depth + 1, visited, MessageTextMaxNodes, queue, request);
                     }
                 }
                 return null;
@@ -532,10 +583,27 @@ namespace BrowserInterruptAutomation
             }
         }
 
-        private static AutomationElement FindByRuntimeId(AutomationElement root, int[] runtimeId)
+        /// <inheritdoc/>
+        public void ClearCache()
         {
+            try
+            {
+                _cache.Clear();
+                lock (_pinLock)
+                    _pinned.Clear();
+                ProcessNames.Clear();
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                // Never throws; whatever is left is released with the probe or at the next reset.
+            }
+        }
+
+        private AutomationElement FindByRuntimeId(AutomationElement root, int[] runtimeId)
+        {
+            CacheRequest request = CreateCacheRequest(RuntimeIdOnlyProperties);
             var queue = new Queue<(AutomationElement Element, int Depth)>();
-            EnqueueChildrenUpToBudget(root, 1, 0, ResolveFallbackMaxNodes, queue);
+            EnqueueChildrenUpToBudget(root, 1, 0, ResolveFallbackMaxNodes, queue, request);
 
             int visited = 0;
             while (queue.Count > 0 && visited < ResolveFallbackMaxNodes)
@@ -543,12 +611,12 @@ namespace BrowserInterruptAutomation
                 (AutomationElement element, int depth) = queue.Dequeue();
                 visited++;
 
-                if (RuntimeIdEquals(SafeGet(() => element.GetRuntimeId(), null), runtimeId))
+                if (RuntimeIdEquals(ReadCachedOrLive(true, () => ReadCachedRuntimeId(element), () => element.GetRuntimeId(), null), runtimeId))
                     return element;
 
                 if (depth < ResolveFallbackMaxDepth)
                 {
-                    EnqueueChildrenUpToBudget(element, depth + 1, visited, ResolveFallbackMaxNodes, queue);
+                    EnqueueChildrenUpToBudget(element, depth + 1, visited, ResolveFallbackMaxNodes, queue, request);
                 }
             }
             return null;
@@ -576,7 +644,7 @@ namespace BrowserInterruptAutomation
         /// <param name="hwnd">The owning top-level window, or <see cref="IntPtr.Zero"/> for a descendant that is not itself a window.</param>
         private BrowserElementInfo DescribeElement(AutomationElement element, IntPtr hwnd)
         {
-            if (element == null || !IsElementAvailable(element))
+            if (element == null)
                 return null;
 
             // Identity first, then the rest: an element with no runtime ID and no window handle
@@ -584,16 +652,34 @@ namespace BrowserInterruptAutomation
             // aliasing one candidate and one cache slot), so it is not describable at all. An
             // element that is a window (non-zero hwnd) may lack a runtime ID and is keyed by its
             // handle, which is unique; see BrowserElementRef.TryCreate.
-            int[] runtimeId = SafeGet(() => element.GetRuntimeId(), null);
+            //
+            // The RuntimeId read doubles as the "was this element fetched through a CacheRequest?"
+            // probe. If it was, the fetch that produced the element already proved it reachable, so
+            // no separate live availability read is made (that is the per-node `Current.IsEnabled`
+            // round trip this replaces). If it was not (element from FromHandle without an active
+            // request, or from the cache/pins), fall back ONCE to the old behaviour: a live
+            // availability probe plus live reads. Definitive liveness (IsAlive/Resolve) never goes
+            // through here: it stays on live `Current` reads, because a cached snapshot is stale.
+            bool cached = TryReadCachedRuntimeId(element, out int[] runtimeId);
+            if (!cached)
+            {
+                if (!IsElementAvailable(element))
+                    return null;
+                runtimeId = SafeGet(() => element.GetRuntimeId(), null);
+            }
+            else if (runtimeId == null)
+            {
+                runtimeId = SafeGet(() => element.GetRuntimeId(), null); // cached value absent/unsupported
+            }
             if (!BrowserElementRef.TryCreate(runtimeId, hwnd, out BrowserElementRef elementRef))
                 return null;
 
-            string name = SafeGet(() => element.Current.Name, string.Empty) ?? string.Empty;
-            string automationId = SafeGet(() => element.Current.AutomationId, string.Empty) ?? string.Empty;
-            string className = SafeGet(() => element.Current.ClassName, string.Empty) ?? string.Empty;
-            string controlType = SafeGet(() => FriendlyControlTypeName(element.Current.ControlType), string.Empty) ?? string.Empty;
-            string localizedControlType = SafeGet(() => element.Current.LocalizedControlType, string.Empty) ?? string.Empty;
-            int processId = SafeGet(() => element.Current.ProcessId, 0);
+            string name = ReadCachedOrLive(cached, () => element.Cached.Name, () => element.Current.Name, string.Empty) ?? string.Empty;
+            string automationId = ReadCachedOrLive(cached, () => element.Cached.AutomationId, () => element.Current.AutomationId, string.Empty) ?? string.Empty;
+            string className = ReadCachedOrLive(cached, () => element.Cached.ClassName, () => element.Current.ClassName, string.Empty) ?? string.Empty;
+            string controlType = FriendlyControlTypeName(ReadCachedOrLive(cached, () => element.Cached.ControlType, () => element.Current.ControlType, null));
+            string localizedControlType = ReadCachedOrLive(cached, () => element.Cached.LocalizedControlType, () => element.Current.LocalizedControlType, string.Empty) ?? string.Empty;
+            int processId = ReadCachedOrLive(cached, () => element.Cached.ProcessId, () => element.Current.ProcessId, 0);
 
             CacheElement(elementRef, element);
 
@@ -614,13 +700,111 @@ namespace BrowserInterruptAutomation
             };
         }
 
+        // ------------------------------------------------------------------ cache request helpers
+
+        /// <summary>
+        /// Builds a fresh, fully configured, never-activated <see cref="CacheRequest"/> caching
+        /// <paramref name="properties"/> for the element itself (<see cref="TreeScope.Element"/>) with
+        /// <see cref="AutomationElementMode.Full"/> (live references kept). Built per walk and passed
+        /// to the walker overloads, so nothing mutable is shared between threads; configuration is
+        /// complete before first use (a CacheRequest cannot be modified once active). The
+        /// <see cref="CacheRequest.TreeFilter"/> defaults to the control view; it is set to
+        /// <see cref="Condition.TrueCondition"/> so it can never filter a raw-view child (it is not
+        /// consulted for TreeScope.Element or walker navigation; this is belt and braces).
+        /// </summary>
+        private static CacheRequest CreateCacheRequest(AutomationProperty[] properties)
+        {
+            var request = new CacheRequest
+            {
+                AutomationElementMode = AutomationElementMode.Full,
+                TreeScope = TreeScope.Element,
+                TreeFilter = Condition.TrueCondition
+            };
+            foreach (AutomationProperty property in properties)
+                request.Add(property);
+            return request;
+        }
+
+        private static int[] ReadCachedRuntimeId(AutomationElement element) =>
+            element.GetCachedPropertyValue(AutomationElement.RuntimeIdProperty) as int[];
+
+        /// <summary>
+        /// Reads the cached RuntimeId. Returns false when the element was not fetched through a
+        /// request that cached it (<see cref="InvalidOperationException"/>, counted as a fallback) or
+        /// when the element is unavailable; the caller then uses the live path.
+        /// </summary>
+        private bool TryReadCachedRuntimeId(AutomationElement element, out int[] runtimeId)
+        {
+            runtimeId = null;
+            try
+            {
+                runtimeId = ReadCachedRuntimeId(element);
+                return true;
+            }
+            catch (ElementNotAvailableException)
+            {
+                return false; // the live availability probe decides what this means
+            }
+            catch (InvalidOperationException)
+            {
+                Interlocked.Increment(ref _cachedReadFallbacks);
+                return false;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Reads a property from the element's cache when <paramref name="tryCached"/>; a
+        /// <see cref="InvalidOperationException"/> (property not cached) falls back ONCE to the live
+        /// read and is counted. <see cref="ElementNotAvailableException"/> and other failures give
+        /// <paramref name="fallback"/> (same best-effort as <see cref="SafeGet{T}"/>).
+        /// </summary>
+        private T ReadCachedOrLive<T>(bool tryCached, Func<T> cachedRead, Func<T> liveRead, T fallback)
+        {
+            if (tryCached)
+            {
+                try
+                {
+                    return cachedRead();
+                }
+                catch (ElementNotAvailableException)
+                {
+                    return fallback;
+                }
+                catch (InvalidOperationException)
+                {
+                    Interlocked.Increment(ref _cachedReadFallbacks);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    return fallback;
+                }
+            }
+            return SafeGet(liveRead, fallback);
+        }
+
         // ------------------------------------------------------------------ safe UIA helpers
 
-        private static AutomationElement ResolveFromHandle(IntPtr hwnd, out ReadOutcome outcome)
+        private static AutomationElement ResolveFromHandle(IntPtr hwnd, out ReadOutcome outcome, AutomationProperty[] cacheProperties = null)
         {
             try
             {
-                AutomationElement element = AutomationElement.FromHandle(hwnd);
+                AutomationElement element;
+                if (cacheProperties == null)
+                {
+                    element = AutomationElement.FromHandle(hwnd);
+                }
+                else
+                {
+                    // FromHandle has no CacheRequest overload: it uses the calling thread's active
+                    // request (Activate is per-thread, so this never affects another thread). The
+                    // request is thread-local to this call and disposed (popped) before returning.
+                    using (CreateCacheRequest(cacheProperties).Activate())
+                        element = AutomationElement.FromHandle(hwnd);
+                }
                 outcome = ReadOutcome.Ok;
                 return element;
             }
@@ -644,6 +828,10 @@ namespace BrowserInterruptAutomation
         /// One cheap <c>Current</c> read, classified: only <see cref="ElementNotAvailableException"/> is
         /// <see cref="ReadOutcome.Unavailable"/> (definitive); any other failure is
         /// <see cref="ReadOutcome.OtherFailure"/> (non-definitive). A null element is unavailable.
+        /// The property read is <c>Current.ProcessId</c> (one read is enough); a torn-down provider can
+        /// answer with degraded values instead of throwing, and a process id of 0 counts as unavailable
+        /// (see <see cref="LivenessClassifier.ClassifyProcessIdRead"/>). Liveness path only; the cached
+        /// describe path is unchanged.
         /// </summary>
         private static ReadOutcome ReadElement(AutomationElement element)
         {
@@ -651,8 +839,7 @@ namespace BrowserInterruptAutomation
                 return ReadOutcome.Unavailable;
             try
             {
-                _ = element.Current.IsEnabled;
-                return ReadOutcome.Ok;
+                return LivenessClassifier.ClassifyProcessIdRead(element.Current.ProcessId);
             }
             catch (ElementNotAvailableException)
             {
@@ -740,26 +927,6 @@ namespace BrowserInterruptAutomation
             var sb = new StringBuilder(256);
             NativeMethods.GetClassName(hwnd, sb, sb.Capacity);
             return sb.ToString();
-        }
-
-        /// <summary>
-        /// The name of the process with this ID, or <c>string.Empty</c> for an invalid ID or one
-        /// that no longer exists - mirrors <c>Win32PopupProbe.GetProcessName</c>'s race handling
-        /// (the process can exit between enumeration and this lookup).
-        /// </summary>
-        private static string ProcessNameOf(int processId)
-        {
-            if (processId <= 0)
-                return string.Empty;
-            try
-            {
-                using (Process process = Process.GetProcessById(processId))
-                    return process.ProcessName;
-            }
-            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-            {
-                return string.Empty;
-            }
         }
     }
 }

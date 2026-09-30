@@ -224,10 +224,11 @@ invoking one of its own elements.
   `maxAttempts` instead. Stopping the component inside that 400 ms window
   drops the pending confirmation (the popup was closed but is not counted); so does removing
   the rule inside it: a dismissal whose rule is gone is neither counted nor reported.
-- **A walk over a big page costs cross-process reads.** Each element visited reads about
-  eight UI Automation properties, each a cross-process call, and the component does not use
-  a `CacheRequest`. On a very large page a sweep can be slow; lower `maxOverlayNodes` (default
-  5000) if so. Elements the probe has found are held (strongly) in a bounded cache that drops
+- **A walk over a big page still costs cross-process work.** Walks fetch each child through a
+  UI Automation `CacheRequest`, so an element arrives with its properties in about one
+  cross-process round trip instead of about ten (an estimate from platform knowledge, not yet
+  measured). On a very large page a sweep can still be slow, and a hung browser can stall each
+  call for the UI Automation timeout; lower `maxOverlayNodes` (default 5000) if so. Elements the probe has found are held (strongly) in a bounded cache that drops
   entries not used for two generations (8192 entries or 60 s per generation). Every popup the
   engine is tracking is also pinned (kept outside that cache) until it is no longer tracked, so
   a page with more elements than the cache holds cannot make a live popup look closed.

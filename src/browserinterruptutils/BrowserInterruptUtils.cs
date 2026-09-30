@@ -1201,6 +1201,17 @@ namespace BrowserInterruptAutomation
             _lingeringCts = null;
             _lingeringWorker = null;
             cts?.Dispose();
+            // The worker has ended (every caller checked), so nothing is pumping: drop the probe's cache
+            // and pins now instead of holding browser references until the next Start. Rules, counts and
+            // the log are untouched, exactly as Start's own reset leaves them.
+            try
+            {
+                _engine.ResetRuntime();
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                System.Diagnostics.Debug.WriteLine("BrowserInterruptUtils: releasing the run's cache failed: " + ex.Message);
+            }
             _guard.Release();
             if (_disposed)
                 _engine.Dispose();

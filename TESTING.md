@@ -1014,9 +1014,19 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   that Chromium builds its accessibility tree lazily.
 - **Iframe content.** An overlay or dialog-shaped element inside an iframe (same-origin and
   cross-origin) is reached by the bounded walk, or not; record which.
-- **Walk cost on a large page.** Time one overlay sweep on a page with thousands of elements (about 8
-  cross-process property reads per element, no `CacheRequest`); if slow, consider `CacheRequest` and a
-  lower default `maxOverlayNodes`.
+- **Walk cost on a large page (before/after `CacheRequest`).** Time one overlay sweep (Stopwatch log,
+  or UIA Verify / Accessibility Insights call counts) on a page with about 5,000 nodes, on the previous
+  build and this one. Expected: round trips per node fall from about 10 to about 1 (an estimate from
+  platform knowledge, not a measurement); record the actual times.
+- **Cached values equal live values on real browsers.** On Chromium, Edge and Firefox pages, compare
+  `Name`, role (`ControlType`/`LocalizedControlType`), `AutomationId`, `ClassName` and `ProcessId` from a
+  walk with a live read (Accessibility Insights): they must match, and `PageOverlay` rules must fire as
+  before.
+- **Worker CPU/latency during a large-page walk.** Watch the worker thread's CPU and the latency of
+  other windows' handling in the same sweep while a 5,000-node page is walked.
+- **A hung browser still cannot stall past the UIA timeout per call.** Suspend the browser process
+  during a sweep: each cached fetch should fail within the UIA timeout, the walk should keep its
+  bounds, and nothing should throw.
 - **Verify-before-count.** A dismissal is recorded only 400 ms (`VerifyDelayMs`) after the invoke, once
   the popup is gone: confirm `PopupDismissed` fires about 0.4 s after the popup closes and that a control
   whose invoke does nothing ends in `PopupDismissFailed` after `maxAttempts` with no `PopupDismissed`.
@@ -1058,6 +1068,10 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   Automation call has no timeout), and that they return once the browser resumes.
 - **Headless.** Chrome/Edge with `--headless`: expect nothing to be found and no error. Record it.
 - **Locked screen / secure desktop.** Expect no UI Automation events while locked; record the behaviour.
+- **Vanished overlay is reported dead (pending).** A vanished overlay/banner inside a still-open
+  Chrome/Edge/Firefox page is reported dead by `IsAlive` within about one reap interval (2 s). Real
+  browser providers are believed to raise element-not-available for destroyed nodes; WPF is not
+  representative (it keeps answering for a node removed from a live window).
 - **Two instances.** Starting a second `BrowserInterruptUtils` stops the first (and does not disturb a
   running `InterruptUtils`).
 - **Runaway breaker.** A popup that re-appears every time it is dismissed trips
@@ -1071,6 +1085,20 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   appear a moment after the first change's walk (well inside the 250 ms cooldown): the overlay must
   still be found via the one trailing notification. Also confirm a steady stream of changes causes
   at most about one walk per 250 ms plus a final one.
+- **Process names for every window (performance PR).** Process names are now resolved with
+  `OpenProcess`/`QueryFullProcessImageName` and cached per PID (5 s trust window, then a cheap
+  creation-time re-check; failures cached for 3 s). Confirm a rule for `chrome`/`msedge`/`firefox`
+  still matches, that an elevated or protected process still gets its name (the lookup falls back to
+  `Process.ProcessName`), and that a process which exits and whose PID is reused by a different program
+  is re-identified within about 5 s.
+- **CPU cost of the 1 s native sweep (performance PR).** On a desktop with 100+ visible top-level
+  windows, compare the host process's CPU (Process Explorer or PerfMon `% Processor Time`) with the
+  default `sweepIntervalMs` before and after the process-name cache change; expect a clear drop.
+- **Memory released after `Stop` (performance PR).** Cause an overlay/dialog to be tracked, then
+  `Stop`: the probe's cached and pinned UI Automation elements are now released at once (previously at the
+  next `Start`). In Task Manager/Process Explorer watch the browser's handle count or working set and
+  the host's UI Automation client handles; expect them to fall back shortly after `Stop` and after
+  `Dispose` while running.
 - **Windows-only xunit classes.** Run `UiaTests` and `HookThreadUiaTests` (they drive the real
   UI Automation probe and hook against a WPF window, and are compiled but have **not yet been executed**
   anywhere) on a Windows host with the Windows desktop runtime: `dotnet test

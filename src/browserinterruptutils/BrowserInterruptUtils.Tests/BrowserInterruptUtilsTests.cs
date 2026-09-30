@@ -413,6 +413,90 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void Stop_ReleasesTheProbeCachePromptly_AndARestartStillWorks()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("r", "Alert", "", "chrome", out _));
+            rig.StartOk();
+            int afterStart = rig.Probe.ClearCallCount;
+            var w = rig.Probe.AddWindow("Alert");
+            rig.Hook.FireWindowOpened(w);
+            Assert.True(WaitFor(() => rig.Probe.Retained.Count == 1));
+
+            Assert.True(rig.Utils.Stop(out _));
+
+            // Released at Stop, not at the next Start.
+            Assert.Equal(afterStart + 1, rig.Probe.ClearCallCount);
+            Assert.Empty(rig.Probe.Retained);
+
+            // A restart resets again, still works, and keeps the rule and the log.
+            rig.StartOk();
+            Assert.Equal(afterStart + 2, rig.Probe.ClearCallCount);
+            var w2 = rig.Probe.AddWindow("Alert");
+            rig.Hook.FireWindowOpened(w2);
+            Assert.True(WaitFor(() => rig.Probe.Retained.Count == 1));
+            Assert.True(rig.Utils.ListRulesJson(out string rules, out _));
+            Assert.Contains("\"r\"", rules);
+        }
+
+        [Fact]
+        public void DisposeWhileRunning_ClearsTheProbeCache()
+        {
+            var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("r", "Alert", "", "chrome", out _));
+            rig.StartOk();
+            int afterStart = rig.Probe.ClearCallCount;
+            rig.Hook.FireWindowOpened(rig.Probe.AddWindow("Alert"));
+            Assert.True(WaitFor(() => rig.Probe.Retained.Count == 1));
+
+            rig.Utils.Dispose();
+
+            Assert.Equal(afterStart + 1, rig.Probe.ClearCallCount);
+            Assert.Empty(rig.Probe.Retained);
+        }
+
+        [Fact]
+        public void Stop_WhenNeverStarted_DoesNotTouchTheProbeCache()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.Stop(out _));
+            Assert.Equal(0, rig.Probe.ClearCallCount);
+        }
+
+        [Fact]
+        public void LingeringWorker_IsNotResetEarly_ButReleasesItsCacheWhenItEnds()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("r", "Alert", "", "chrome", out _));
+            var entered = new ManualResetEventSlim(false);
+            var gate = new ManualResetEventSlim(false);
+            int blockNext = 0;
+            rig.Probe.Fault = (op, _) =>
+            {
+                if (op == "EnumerateTopLevelWindows" && Interlocked.Exchange(ref blockNext, 0) == 1)
+                {
+                    entered.Set();
+                    gate.Wait(30000); // the worker is stuck mid-pass, as when a browser call hangs
+                }
+                return null;
+            };
+            rig.StartOk(sweepMs: 50);
+            int afterStart = rig.Probe.ClearCallCount;
+            Interlocked.Exchange(ref blockNext, 1);
+            Assert.True(entered.Wait(5000), "the worker never reached the blocking sweep");
+
+            Assert.True(rig.Utils.Stop(out _)); // gives up joining the stuck worker after ~3 s
+
+            Assert.Equal(afterStart, rig.Probe.ClearCallCount); // a pumping worker must not be reset under
+            Assert.False(rig.Utils.Start(out string m), "a restart must wait for the old worker");
+            Assert.Contains("shutting down", m);
+
+            gate.Set();
+
+            Assert.True(WaitFor(() => rig.Probe.ClearCallCount == afterStart + 1), "the finished worker did not release the cache");
+        }
+
+        [Fact]
         public void EveryMethod_AfterDispose_ReportsFailure_WithoutThrowing()
         {
             var rig = new Rig();
