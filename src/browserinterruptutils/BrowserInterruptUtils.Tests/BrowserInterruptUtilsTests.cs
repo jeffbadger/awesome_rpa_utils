@@ -1008,6 +1008,124 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Null(m5);
         }
 
+        // ------------------------------------------------------------------ a slow Start does not stall the other methods
+
+        /// <summary>A guard whose TryAcquire waits on a gate the test opens, like a slow wait for another running instance.</summary>
+        private sealed class SlowGuard : IInstanceGuard
+        {
+            public readonly ManualResetEventSlim Entered = new ManualResetEventSlim(false);
+            public readonly ManualResetEventSlim Gate = new ManualResetEventSlim(false);
+            public int AcquireCalls;
+            public int ReleaseCalls;
+
+            public bool TryAcquire(Action stopRequested, out string message)
+            {
+                Interlocked.Increment(ref AcquireCalls);
+                Entered.Set();
+                Gate.Wait(15000);
+                message = null;
+                return true;
+            }
+
+            public void Release() => Interlocked.Increment(ref ReleaseCalls);
+        }
+
+        private static T RunPromptly<T>(Func<T> call, string what)
+        {
+            T result = default;
+            var thread = new Thread(() => result = call()) { IsBackground = true };
+            thread.Start();
+            Assert.True(thread.Join(3000), what + " did not return while Start was waiting for the guard");
+            return result;
+        }
+
+        [Fact]
+        public void ASlowStart_DoesNotBlockOtherCallsOnTheInstance()
+        {
+            var guard = new SlowGuard();
+            using var rig = new Rig(guard);
+            bool startResult = false;
+            var startThread = new Thread(() => startResult = rig.Utils.Start(out _, 0, 0)) { IsBackground = true };
+            try
+            {
+                startThread.Start();
+                Assert.True(guard.Entered.Wait(5000), "Start never reached the guard");
+
+                Assert.False(RunPromptly(() => rig.Utils.IsRunning(), "IsRunning"));
+                Assert.True(RunPromptly(() => { bool ok = rig.Utils.ListRulesJson(out string json, out _); return ok && json == "[]"; }, "ListRulesJson"));
+                Assert.True(RunPromptly(() => rig.Utils.AddPageOverlayWatchOnlyRule("p", "banner", "", "chrome", out _, roleContains: "dialog"), "AddPageOverlayWatchOnlyRule"));
+                Assert.True(RunPromptly(() => rig.Utils.GetTotalDismissals(out _, out _), "GetTotalDismissals"));
+                Assert.True(RunPromptly(() => rig.Utils.HasUnresolvedPopup(out bool u, out _) && !u, "HasUnresolvedPopup"));
+                Assert.True(RunPromptly(() => rig.Utils.RemoveRule("p", out _), "RemoveRule"));
+            }
+            finally
+            {
+                guard.Gate.Set();
+            }
+
+            Assert.True(startThread.Join(5000));
+            Assert.True(startResult);
+            Assert.True(rig.Utils.IsRunning());
+            Assert.True(rig.Utils.Stop(out _));
+            Assert.False(rig.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void DisposeDuringASlowStart_FailsCallsAtOnce_AndTheStartEndsWithoutARunAndGivesTheGuardBackOnce()
+        {
+            var guard = new SlowGuard();
+            var rig = new Rig(guard);
+            string startMessage = null;
+            bool startResult = true;
+            var startThread = new Thread(() => startResult = rig.Utils.Start(out startMessage, 0, 0)) { IsBackground = true };
+            Thread disposeThread = null;
+            try
+            {
+                startThread.Start();
+                Assert.True(guard.Entered.Wait(5000), "Start never reached the guard");
+
+                disposeThread = new Thread(() => rig.Utils.Dispose()) { IsBackground = true };
+                disposeThread.Start();
+
+                // Dispose waits for the Start (it needs the lifecycle lock), but the instance already reads as disposed.
+                Assert.True(WaitFor(() => RunPromptly(() => !rig.Utils.ListRulesJson(out _, out string m) && m.Contains("disposed"), "ListRulesJson"), 3000));
+                Assert.False(RunPromptly(() => rig.Utils.IsRunning(), "IsRunning"));
+                Assert.False(RunPromptly(() => rig.Utils.AddPageOverlayWatchOnlyRule("p", "banner", "", "chrome", out _, roleContains: "dialog"), "AddPageOverlayWatchOnlyRule"));
+            }
+            finally
+            {
+                guard.Gate.Set();
+            }
+
+            Assert.True(startThread.Join(5000));
+            Assert.False(startResult);
+            Assert.Contains("disposed", startMessage);
+            Assert.True(disposeThread.Join(5000), "Dispose did not finish once Start ended");
+            Assert.Equal(0, rig.Hook.StartCalls); // no run was ever started
+            Assert.Equal(1, Volatile.Read(ref guard.ReleaseCalls));
+            Assert.False(rig.Utils.IsRunning());
+        }
+
+        [Fact]
+        public void DisposeAfterASlowStartFinished_StopsTheRun_AndCallsAfterwardsFailCleanly()
+        {
+            var guard = new SlowGuard();
+            var rig = new Rig(guard);
+            guard.Gate.Set(); // not slow after all
+            Assert.True(rig.Utils.Start(out string m, 0, 0), m);
+            Assert.True(rig.Utils.IsRunning());
+
+            rig.Utils.Dispose();
+
+            Assert.False(rig.Utils.IsRunning());
+            Assert.Equal(1, rig.Hook.StopCalls);
+            Assert.Equal(1, Volatile.Read(ref guard.ReleaseCalls));
+            Assert.False(rig.Utils.Start(out string again, 0, 0));
+            Assert.Contains("disposed", again);
+            Assert.False(rig.Utils.GetTotalDismissals(out _, out string total));
+            Assert.Contains("disposed", total);
+        }
+
         // ------------------------------------------------------------------ rule names are trimmed on lookup too
 
         [Theory]

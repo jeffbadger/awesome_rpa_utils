@@ -49,7 +49,7 @@ namespace BrowserInterruptAutomation
         private CancellationTokenSource _cts;
         private Thread _lingeringWorker;
         private CancellationTokenSource _lingeringCts;
-        private bool _disposed;
+        private volatile bool _disposed; // set in Dispose (before it takes _lifeLock); read lock-free
 
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
@@ -642,6 +642,12 @@ namespace BrowserInterruptAutomation
                     bool started = false;
                     try
                     {
+                        // Disposed while waiting for the guard: do not start a run nobody would stop.
+                        if (_disposed)
+                        {
+                            message = "The component has been disposed.";
+                            return false;
+                        }
                         _engine.SweepIntervalMs = sweepIntervalMs;
                         _engine.OverlaySweepIntervalMs = overlaySweepIntervalMs;
                         _engine.MaxAttempts = maxAttempts;
@@ -733,8 +739,8 @@ namespace BrowserInterruptAutomation
         [Description("Returns True while watching for browser popups is running. Never throws.")]
         public bool IsRunning()
         {
-            lock (_lifeLock)
-                return _worker != null && !_disposed;
+            // Lock-free: Start holds _lifeLock across a possibly slow instance-guard wait.
+            return _worker != null && !_disposed;
         }
 
         /// <summary>
@@ -1107,13 +1113,14 @@ namespace BrowserInterruptAutomation
 
         private bool IsDisposed(out string message)
         {
-            lock (_lifeLock)
+            // Lock-free on purpose: Start holds _lifeLock while it waits (seconds, at worst) for another
+            // running instance to stop, and every public method calls this first. Nothing relies on this
+            // check serializing with lifecycle changes: the lock was released before the caller acted on
+            // the answer anyway, and Dispose's own teardown still runs under _lifeLock.
+            if (_disposed)
             {
-                if (_disposed)
-                {
-                    message = "The component has been disposed.";
-                    return true;
-                }
+                message = "The component has been disposed.";
+                return true;
             }
             message = null;
             return false;
@@ -1205,8 +1212,10 @@ namespace BrowserInterruptAutomation
         {
             if (disposing)
             {
-                lock (_lifeLock)
-                    _disposed = true;
+                // Set before any lock is taken: a Start that is waiting for the guard holds _lifeLock, and
+                // callers must see "disposed" at once. StopCore (below) still waits for that Start, then
+                // tears down whatever run it made.
+                _disposed = true;
 
                 try
                 {
