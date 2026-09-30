@@ -17,7 +17,7 @@
   </PropertyGroup>
 
   <!--
-    BrowserInterruptUtils.cs (Task 5) constructs the real UIA-backed UiaBrowserPopupProbe/
+    BrowserInterruptUtils.cs constructs the real UIA-backed UiaBrowserPopupProbe/
     BrowserPopupHookThread in its production (parameterless) constructor path, but is otherwise
     UIA-free (its internal DI constructor takes IBrowserPopupProbe/IBrowserPopupHookSource, so
     BrowserInterruptUtils.Tests can drive it entirely through fakes). Rather than excluding the
@@ -42,24 +42,19 @@
 
   <ItemGroup>
     <!--
-      UiaBrowserPopupProbe.cs (Task 3) was the first file in this component to genuinely
-      reference System.Windows.Automation; BrowserPopupHookThread.cs (Task 4) is the second.
-      Those types are only available when UseWPF (or UseWindowsForms) is true, which is what
-      actually adds the Microsoft.WindowsDesktop.App framework reference. Task 2 found that
-      overriding -p:UseWPF=false lets `dotnet test` actually *run* (not just build) on a Linux
-      dev host, because it drops this project's runtime dependency on the Windows-only
-      Microsoft.WindowsDesktop.App shared framework, which such a host cannot have installed.
-      That override is a local convenience for re-running the engine's fake-driven tests, not a
-      supported build configuration, so every UIA-dependent file (and the real smoke tests that
-      exercise them) is excluded only when it is in play - the default build (UseWPF=true)
-      always includes them all.
+      UiaBrowserPopupProbe.cs and BrowserPopupHookThread.cs reference System.Windows.Automation,
+      which is only available when UseWPF (or UseWindowsForms) is true — the flag that actually
+      adds the Microsoft.WindowsDesktop.App framework reference. Overriding -p:UseWPF=false lets
+      `dotnet test` *run* (not just build) on a Linux dev host, because it drops this project's
+      runtime dependency on the Windows-only Microsoft.WindowsDesktop.App shared framework, which
+      such a host cannot have installed. That override is a local convenience for re-running the
+      engine's fake-driven tests, not a supported build configuration, so every UIA-dependent
+      file (and the real smoke tests that exercise them) is excluded only when it is in play -
+      the default build (UseWPF=true) always includes them all.
 
-      Kept as one explicit entry per file rather than switching to a folder/naming-convention
-      glob (e.g. a "Uia*.cs" pattern, or moving these into their own subfolder): at two files
-      total, an explicit list is still easier to audit at a glance than a glob whose match set
-      isn't visible without running the build, and nothing here suggests a third file is coming.
-      Revisit this choice (per the prior reviewer's own suggestion) if a Task 6+ addition makes
-      it three or more.
+      Kept as one explicit entry per file rather than a glob: at two files total, an explicit
+      list is still easier to audit at a glance than a glob whose match set isn't visible without
+      running the build. Revisit if a third UIA-dependent file is added.
     -->
     <Compile Remove="UiaBrowserPopupProbe.cs" Condition="'$(UseWPF)' != 'true'" />
     <Compile Remove="BrowserPopupHookThread.cs" Condition="'$(UseWPF)' != 'true'" />

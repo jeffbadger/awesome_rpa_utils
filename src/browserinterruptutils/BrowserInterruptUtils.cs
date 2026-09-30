@@ -80,9 +80,9 @@ namespace BrowserInterruptAutomation
         // `new` calls behind these factory methods, rather than referencing the types directly
         // in the constructor initializer above, is what lets this whole file (and therefore the
         // internal test constructor above) stay compiled - and this file's own tests runnable -
-        // under the local -p:UseWPF=false convenience Tasks 3-4 established for running the
-        // fake-driven tests on a non-Windows dev host, where UiaBrowserPopupProbe.cs and
-        // BrowserPopupHookThread.cs are excluded from the build entirely.
+        // under the local -p:UseWPF=false convenience for running the fake-driven tests on a
+        // non-Windows dev host, where UiaBrowserPopupProbe.cs and BrowserPopupHookThread.cs
+        // are excluded from the build entirely.
 #if BROWSERINTERRUPT_UIA
         private static IBrowserPopupProbe CreateDefaultProbe() => new UiaBrowserPopupProbe();
         private static IBrowserPopupHookSource CreateDefaultHook() => new BrowserPopupHookThread();

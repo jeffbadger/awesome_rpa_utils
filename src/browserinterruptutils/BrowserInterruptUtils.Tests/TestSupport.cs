@@ -64,6 +64,7 @@ namespace BrowserInterruptAutomation.Tests
     internal sealed class FakeBrowserPopupProbe : IBrowserPopupProbe
     {
         private readonly Dictionary<BrowserElementRef, FakeElement> _elements = new Dictionary<BrowserElementRef, FakeElement>();
+        private readonly object _lock = new object();
         private int _nextHandle = 0x2000;
         private int _nextRuntimeId = 1;
 
@@ -111,7 +112,7 @@ namespace BrowserInterruptAutomation.Tests
                 LocalizedControlType = "dialog",
                 IsWindow = true
             };
-            _elements[el.Ref] = el;
+            lock (_lock) _elements[el.Ref] = el;
             return el;
         }
 
@@ -128,11 +129,14 @@ namespace BrowserInterruptAutomation.Tests
                 ControlType = "Group",
                 LocalizedControlType = role
             };
-            _elements[el.Ref] = el;
-            if (parent != null)
+            lock (_lock)
             {
-                parent.Children.Add(el);
-                el.Owner = parent;
+                _elements[el.Ref] = el;
+                if (parent != null)
+                {
+                    parent.Children.Add(el);
+                    el.Owner = parent;
+                }
             }
             return el;
         }
@@ -150,30 +154,37 @@ namespace BrowserInterruptAutomation.Tests
                 LocalizedControlType = role,
                 Owner = parent
             };
-            _elements[el.Ref] = el;
-            parent.Children.Add(el);
+            lock (_lock)
+            {
+                _elements[el.Ref] = el;
+                parent.Children.Add(el);
+            }
             return el;
         }
 
         public void Destroy(FakeElement element) => element.Alive = false;
 
-        public int TotalInvokes => _elements.Values.Sum(e => e.Invokes);
-        public int TotalCloses => _elements.Values.Sum(e => e.Closes);
+        public int TotalInvokes { get { lock (_lock) return _elements.Values.Sum(e => e.Invokes); } }
+        public int TotalCloses { get { lock (_lock) return _elements.Values.Sum(e => e.Closes); } }
 
         // ---- IBrowserPopupProbe ----
 
         public IReadOnlyList<BrowserWindowInfo> EnumerateTopLevelWindows()
         {
             Inject("EnumerateTopLevelWindows", default);
-            return _elements.Values.Where(e => e.IsWindow && e.Alive && e.Visible)
-                .Select(e => new BrowserWindowInfo { Hwnd = e.Ref.Hwnd, ProcessName = e.ProcessName, ProcessId = e.Pid, ClassName = e.ClassName })
-                .ToList();
+            lock (_lock)
+            {
+                return _elements.Values.Where(e => e.IsWindow && e.Alive && e.Visible)
+                    .Select(e => new BrowserWindowInfo { Hwnd = e.Ref.Hwnd, ProcessName = e.ProcessName, ProcessId = e.Pid, ClassName = e.ClassName })
+                    .ToList();
+            }
         }
 
         public BrowserElementInfo DescribeWindow(IntPtr hwnd)
         {
             DescribeWindowCalls++;
-            var el = _elements.Values.FirstOrDefault(e => e.IsWindow && e.Ref.Hwnd == hwnd);
+            FakeElement el;
+            lock (_lock) el = _elements.Values.FirstOrDefault(e => e.IsWindow && e.Ref.Hwnd == hwnd);
             Inject("DescribeWindow", el?.Ref ?? default);
             return el == null || !el.Alive ? null : el.ToInfo();
         }
@@ -184,31 +195,37 @@ namespace BrowserInterruptAutomation.Tests
             Inject("FindOverlayCandidates", browserWindowRoot);
             OverlaySearchCalls++;
             OverlaySearchRoots.Add(browserWindowRoot);
-            if (!_elements.TryGetValue(browserWindowRoot, out var root) || !root.Alive)
-                return Array.Empty<BrowserElementInfo>();
-
-            var result = new List<BrowserElementInfo>();
-            void Walk(FakeElement element, int depth)
+            // BFS to match the real probe's breadth-first walk order. Dead nodes are skipped and
+            // do not count toward the maxNodes budget: the real UIA content-view walker never
+            // surfaces removed elements, so a dead element is invisible just as it would be in the
+            // live tree. Their children are still queued (the fake can't physically remove them from
+            // the parent's Children list), but they will be skipped when dequeued if they too are dead.
+            lock (_lock)
             {
-                if (depth > maxDepth)
-                    return;
-                foreach (var child in element.Children)
+                if (!_elements.TryGetValue(browserWindowRoot, out var root) || !root.Alive)
+                    return Array.Empty<BrowserElementInfo>();
+
+                var result = new List<BrowserElementInfo>();
+                var queue = new Queue<(FakeElement element, int depth)>();
+                foreach (var child in root.Children)
+                    queue.Enqueue((child, 1));
+                while (queue.Count > 0 && result.Count < maxNodes)
                 {
-                    if (result.Count >= maxNodes)
-                        return;
-                    if (child.Alive)
-                        result.Add(child.ToInfo());
-                    Walk(child, depth + 1);
+                    var (element, depth) = queue.Dequeue();
+                    if (depth > maxDepth || !element.Alive)
+                        continue;
+                    result.Add(element.ToInfo());
+                    foreach (var child in element.Children)
+                        queue.Enqueue((child, depth + 1));
                 }
+                return result;
             }
-            Walk(root, 0);
-            return result;
         }
 
         public bool IsAlive(BrowserElementRef element)
         {
             Inject("IsAlive", element);
-            return _elements.TryGetValue(element, out var el) && (el.Alive || el.LivenessUnknown);
+            lock (_lock) return _elements.TryGetValue(element, out var el) && (el.Alive || el.LivenessUnknown);
         }
 
         /// <summary>The refs currently pinned through <see cref="Retain"/>; must be empty when the engine tracks nothing.</summary>
@@ -226,14 +243,17 @@ namespace BrowserInterruptAutomation.Tests
         public void Retain(BrowserElementRef element)
         {
             RetainCalls++;
-            Retained.Add(element);
+            lock (_lock) Retained.Add(element);
         }
 
         public void Release(BrowserElementRef element)
         {
             ReleaseCalls++;
-            if (!Retained.Remove(element))
-                UnbalancedReleases++;
+            lock (_lock)
+            {
+                if (!Retained.Remove(element))
+                    UnbalancedReleases++;
+            }
         }
 
         /// <summary>Every <see cref="ClearCache"/> call.</summary>
@@ -254,7 +274,7 @@ namespace BrowserInterruptAutomation.Tests
         {
             MessageTextCalls++;
             Inject("TryGetMessageText", element);
-            return _elements.TryGetValue(element, out var el) ? el.Message : null;
+            lock (_lock) return _elements.TryGetValue(element, out var el) ? el.Message : null;
         }
 
         /// <summary>Called when an invoke/close begins, before it lands (on the calling thread).</summary>
@@ -274,49 +294,61 @@ namespace BrowserInterruptAutomation.Tests
 
         public bool TryInvoke(BrowserElementRef target, out string failureReason)
         {
+            // EnterAction may block (ActionGate); get element reference first under lock,
+            // then act without holding the lock so the test thread can still modify elements.
+            FakeElement el;
+            lock (_lock) _elements.TryGetValue(target, out el);
             EnterAction();
             Inject("TryInvoke", target);
             failureReason = null;
-            if (!_elements.TryGetValue(target, out var el) || !el.Alive)
+            if (el == null || !el.Alive)
             {
                 failureReason = "element not found";
                 return false;
             }
-            el.Invokes++;
-            el.LastInvokedName = el.Name;
-            if (el.IgnoreInvoke)
+            lock (_lock)
             {
-                failureReason = "invoke ignored";
-                return false;
-            }
-            if (el.SucceedWithoutClosing)
+                el.Invokes++;
+                el.LastInvokedName = el.Name;
+                if (el.IgnoreInvoke)
+                {
+                    failureReason = "invoke ignored";
+                    return false;
+                }
+                if (el.SucceedWithoutClosing)
+                    return true;
+                el.Alive = false;
+                if (el.Owner != null)
+                    el.Owner.Alive = false; // invoking a dialog/overlay's button closes it, like a real one
                 return true;
-            el.Alive = false;
-            if (el.Owner != null)
-                el.Owner.Alive = false; // invoking a dialog/overlay's button closes it, like a real one
-            return true;
+            }
         }
 
         public bool TryClose(BrowserElementRef target, out string failureReason)
         {
+            FakeElement el;
+            lock (_lock) _elements.TryGetValue(target, out el);
             EnterAction();
             Inject("TryClose", target);
             failureReason = null;
-            if (!_elements.TryGetValue(target, out var el) || !el.Alive)
+            if (el == null || !el.Alive)
             {
                 failureReason = "element not found";
                 return false;
             }
-            el.Closes++;
-            if (el.IgnoreClose)
+            lock (_lock)
             {
-                failureReason = "close ignored";
-                return false;
-            }
-            if (el.SucceedWithoutClosing)
+                el.Closes++;
+                if (el.IgnoreClose)
+                {
+                    failureReason = "close ignored";
+                    return false;
+                }
+                if (el.SucceedWithoutClosing)
+                    return true;
+                el.Alive = false;
                 return true;
-            el.Alive = false;
-            return true;
+            }
         }
     }
 
