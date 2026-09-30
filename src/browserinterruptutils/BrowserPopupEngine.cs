@@ -623,6 +623,9 @@ namespace BrowserInterruptAutomation
 
         internal bool HasUnresolvedPopup => UnresolvedCount > 0;
 
+        /// <summary>The number of process names currently cached. For tests; not thread-safe against a running worker.</summary>
+        internal int ProcessNameCacheCountForTests => _processNameCache.Count;
+
         /// <summary>The number of tracked candidates of one scope. For tests; not thread-safe against a running worker.</summary>
         internal int TrackedCandidateCountForTests(BrowserPopupScope scope)
         {
@@ -1290,7 +1293,18 @@ namespace BrowserInterruptAutomation
                 return;
             }
             CacheProcessName(win.ProcessId, win.ProcessName);
-            BrowserElementInfo info = _probe.DescribeWindow(win.Hwnd);
+            BrowserElementInfo info = null;
+            try
+            {
+                info = _probe.DescribeWindow(win.Hwnd);
+            }
+            finally
+            {
+                // No candidate results (gone already, or the probe failed), so nothing would ever
+                // evict the name cached above: forget it unless another candidate carries this PID.
+                if (info == null)
+                    EvictProcessNameIfUnreferenced(win.ProcessId);
+            }
             if (info == null)
                 return; // gone already
 

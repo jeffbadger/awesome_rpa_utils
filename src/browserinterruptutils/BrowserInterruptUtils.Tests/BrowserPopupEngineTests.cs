@@ -3208,6 +3208,50 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void AWindowThatFailsToDescribe_LeavesNoProcessNameCacheEntry()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert");
+            var gone = h.Probe.AddWindow("Alert", pid: 501);
+            h.Probe.Destroy(gone); // DescribeWindow now returns null
+
+            h.AppearWindow(gone);
+
+            Assert.Equal(0, h.Engine.ProcessNameCacheCountForTests);
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.NativeDialog));
+        }
+
+        [Fact]
+        public void AWindowWhoseDescribeThrows_LeavesNoProcessNameCacheEntry()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert");
+            var bad = h.Probe.AddWindow("Alert", pid: 502);
+            h.Probe.Fault = (op, r) => op == "DescribeWindow" && r.Equals(bad.Ref) ? Boom(op) : null;
+
+            h.AppearWindow(bad);
+
+            Assert.Equal(0, h.Engine.ProcessNameCacheCountForTests);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void AWindowThatFailsToDescribe_KeepsTheNameWhileAnotherCandidateCarriesThePid()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert");
+            var tracked = h.Probe.AddWindow("Alert", pid: 503);
+            h.AppearWindow(tracked);
+            Assert.Equal(1, h.Engine.ProcessNameCacheCountForTests);
+
+            var gone = h.Probe.AddWindow("Alert", pid: 503);
+            h.Probe.Destroy(gone);
+            h.AppearWindow(gone);
+
+            Assert.Equal(1, h.Engine.ProcessNameCacheCountForTests); // still needed by the tracked window
+        }
+
+        [Fact]
         public void ThrowingTryInvoke_SpendsAnAttempt_ReleasesTheActionLock_AndCannotFloodTheLog()
         {
             var h = new Harness();
