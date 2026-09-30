@@ -524,16 +524,16 @@ namespace BrowserInterruptAutomation
                     return; // not genuinely top-level
 
                 // The calls below are in-process Win32/.NET calls (IsWindow, GetAncestor, GetClassName,
-                // GetWindowThreadProcessId, Process.GetProcessById), not UIA cross-process reads, so
-                // they are left inline. ProcessNameOf is the costliest; a process-name cache is a
-                // later improvement.
+                // GetWindowThreadProcessId, ProcessNames.NameOf), not UIA cross-process reads, so
+                // they are left inline. ProcessNames.NameOf resolves through the shared
+                // pid cache (OpenProcess/QueryFullProcessImageName, not a process snapshot).
                 NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid);
                 var info = new BrowserWindowInfo
                 {
                     Hwnd = hwnd,
                     ClassName = ClassNameOf(hwnd),
                     ProcessId = (int)pid,
-                    ProcessName = ProcessNameOf((int)pid)
+                    ProcessName = ProcessNames.NameOf((int)pid)
                 };
 
                 RaiseWindowOpened(info);
@@ -766,22 +766,6 @@ namespace BrowserInterruptAutomation
             var sb = new StringBuilder(256);
             NativeMethods.GetClassName(hwnd, sb, sb.Capacity);
             return sb.ToString();
-        }
-
-        /// <summary>The name of the process with this ID, or <c>string.Empty</c> for an invalid ID or one that no longer exists (the process can exit between the callback firing and this lookup).</summary>
-        private static string ProcessNameOf(int processId)
-        {
-            if (processId <= 0)
-                return string.Empty;
-            try
-            {
-                using (Process process = Process.GetProcessById(processId))
-                    return process.ProcessName;
-            }
-            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-            {
-                return string.Empty;
-            }
         }
     }
 }

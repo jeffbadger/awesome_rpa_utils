@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Text;
 using System.Windows.Automation;
 
@@ -121,7 +120,7 @@ namespace BrowserInterruptAutomation
         private const int MessageTextMaxNodes = 200;
         private const int MessageTextMaxDepth = 10;
 
-        public int CurrentProcessId { get; } = Process.GetCurrentProcess().Id;
+        public int CurrentProcessId { get; } = Environment.ProcessId;
 
         // ------------------------------------------------------------------ native windows
 
@@ -151,7 +150,7 @@ namespace BrowserInterruptAutomation
                             Hwnd = hwnd,
                             ClassName = ClassNameOf(hwnd),
                             ProcessId = (int)pid,
-                            ProcessName = ProcessNameOf((int)pid)
+                            ProcessName = ProcessNames.NameOf((int)pid)
                         });
                     }
                     catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
@@ -740,26 +739,6 @@ namespace BrowserInterruptAutomation
             var sb = new StringBuilder(256);
             NativeMethods.GetClassName(hwnd, sb, sb.Capacity);
             return sb.ToString();
-        }
-
-        /// <summary>
-        /// The name of the process with this ID, or <c>string.Empty</c> for an invalid ID or one
-        /// that no longer exists - mirrors <c>Win32PopupProbe.GetProcessName</c>'s race handling
-        /// (the process can exit between enumeration and this lookup).
-        /// </summary>
-        private static string ProcessNameOf(int processId)
-        {
-            if (processId <= 0)
-                return string.Empty;
-            try
-            {
-                using (Process process = Process.GetProcessById(processId))
-                    return process.ProcessName;
-            }
-            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
-            {
-                return string.Empty;
-            }
         }
     }
 }

@@ -1071,6 +1071,15 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   appear a moment after the first change's walk (well inside the 250 ms cooldown): the overlay must
   still be found via the one trailing notification. Also confirm a steady stream of changes causes
   at most about one walk per 250 ms plus a final one.
+- **Process names for every window (performance PR).** Process names are now resolved with
+  `OpenProcess`/`QueryFullProcessImageName` and cached per PID (5 s trust window, then a cheap
+  creation-time re-check; failures cached for 3 s). Confirm a rule for `chrome`/`msedge`/`firefox`
+  still matches, that an elevated or protected process still gets its name (the lookup falls back to
+  `Process.ProcessName`), and that a process which exits and whose PID is reused by a different program
+  is re-identified within about 5 s.
+- **CPU cost of the 1 s native sweep (performance PR).** On a desktop with 100+ visible top-level
+  windows, compare the host process's CPU (Process Explorer or PerfMon `% Processor Time`) with the
+  default `sweepIntervalMs` before and after the process-name cache change; expect a clear drop.
 - **Windows-only xunit classes.** Run `UiaTests` and `HookThreadUiaTests` (they drive the real
   UI Automation probe and hook against a WPF window, and are compiled but have **not yet been executed**
   anywhere) on a Windows host with the Windows desktop runtime: `dotnet test
