@@ -828,6 +828,10 @@ namespace BrowserInterruptAutomation
         /// One cheap <c>Current</c> read, classified: only <see cref="ElementNotAvailableException"/> is
         /// <see cref="ReadOutcome.Unavailable"/> (definitive); any other failure is
         /// <see cref="ReadOutcome.OtherFailure"/> (non-definitive). A null element is unavailable.
+        /// The property read is <c>Current.ProcessId</c> (one read is enough); a torn-down provider can
+        /// answer with degraded values instead of throwing, and a process id of 0 counts as unavailable
+        /// (see <see cref="LivenessClassifier.ClassifyProcessIdRead"/>). Liveness path only; the cached
+        /// describe path is unchanged.
         /// </summary>
         private static ReadOutcome ReadElement(AutomationElement element)
         {
@@ -835,8 +839,7 @@ namespace BrowserInterruptAutomation
                 return ReadOutcome.Unavailable;
             try
             {
-                _ = element.Current.IsEnabled;
-                return ReadOutcome.Ok;
+                return LivenessClassifier.ClassifyProcessIdRead(element.Current.ProcessId);
             }
             catch (ElementNotAvailableException)
             {

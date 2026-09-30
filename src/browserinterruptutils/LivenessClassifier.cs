@@ -47,6 +47,18 @@ namespace BrowserInterruptAutomation
             _ => Liveness.Unknown
         };
 
+        /// <summary>
+        /// Maps the process id read from a live element to a read outcome. A live UIA element always
+        /// belongs to a real process; a torn-down provider can keep answering with degraded values
+        /// instead of throwing (observed on Windows CI: a closed WPF window's element reports
+        /// ProcessId 0), so 0 is <see cref="ReadOutcome.Unavailable"/>.
+        /// </summary>
+        internal static ReadOutcome ClassifyProcessIdRead(int processId) =>
+            processId == 0 ? ReadOutcome.Unavailable : ReadOutcome.Ok;
+
+        /// <summary>Liveness for a successfully read process id: 0 is Dead, anything else Alive.</summary>
+        internal static Liveness ClassifyProcessId(int processId) => ClassifyRead(ClassifyProcessIdRead(processId));
+
         /// <summary>A cache entry may be evicted only when its element is confirmed unavailable, never on a non-definitive failure.</summary>
         internal static bool ShouldEvictCacheEntry(ReadOutcome outcome) => outcome == ReadOutcome.Unavailable;
 

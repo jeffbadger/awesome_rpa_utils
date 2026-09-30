@@ -1068,6 +1068,10 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   Automation call has no timeout), and that they return once the browser resumes.
 - **Headless.** Chrome/Edge with `--headless`: expect nothing to be found and no error. Record it.
 - **Locked screen / secure desktop.** Expect no UI Automation events while locked; record the behaviour.
+- **Vanished overlay is reported dead (pending).** A vanished overlay/banner inside a still-open
+  Chrome/Edge/Firefox page is reported dead by `IsAlive` within about one reap interval (2 s). Real
+  browser providers are believed to raise element-not-available for destroyed nodes; WPF is not
+  representative (it keeps answering for a node removed from a live window).
 - **Two instances.** Starting a second `BrowserInterruptUtils` stops the first (and does not disturb a
   running `InterruptUtils`).
 - **Runaway breaker.** A popup that re-appears every time it is dismissed trips

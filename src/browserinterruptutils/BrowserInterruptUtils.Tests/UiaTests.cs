@@ -120,8 +120,12 @@ namespace BrowserInterruptAutomation.Tests
                 // (IsAlive checks IsWindow first, and evicts the cached element).
                 Assert.False(probe.IsAlive(windowRef));
                 // The pinned descendant has no window handle of its own: its Dead verdict rests on
-                // the LIVE read (never the cached snapshot) reporting the element unavailable. Bounded
-                // wait, since the provider may take a moment after the window is gone.
+                // the LIVE read (never the cached snapshot). A torn-down WPF provider does not throw;
+                // it answers with degraded values (ProcessId 0), which the probe treats as dead.
+                // Bounded wait, since the provider may take a moment after the window is gone.
+                // Only window-close teardown is asserted: a WPF element removed from a still-open
+                // window keeps answering (provider peculiarity, not representative of browsers);
+                // see the vanished-overlay live check in TESTING.md.
                 Assert.True(SpinWait.SpinUntil(() => !probe.IsAlive(buttonRef), TimeSpan.FromSeconds(5)),
                     "a pinned descendant of a closed window never reported dead");
             });
