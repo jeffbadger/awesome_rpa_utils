@@ -45,7 +45,7 @@ namespace BrowserInterruptAutomation
         private readonly IBrowserPopupHookSource _hook;
         private readonly IInstanceGuard _guard;
         private readonly object _lifeLock = new object();
-        private Thread _worker;
+        private volatile Thread _worker;
         private CancellationTokenSource _cts;
         private Thread _lingeringWorker;
         private CancellationTokenSource _lingeringCts;
@@ -870,7 +870,7 @@ namespace BrowserInterruptAutomation
         /// <param name="hasUnresolvedPopup"><c>true</c> if such a popup is open; <c>false</c> if none is, or if this method returns <c>false</c>.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the component is disposed. Never throws.</returns>
-        /// <remarks>Reflects the handler's most recent pass, so it can lag a popup's arrival by a moment. A popup that a dismiss rule matched while the handler is paused counts too: it is held until <see cref="Resume"/>.</remarks>
+        /// <remarks>Reflects the handler's most recent pass, so it can lag a popup's arrival by a moment. A popup that a dismiss rule matched while the handler is paused counts too: it is held until <see cref="Resume"/>. It is <c>false</c> whenever the handler is not running (before <see cref="Start"/> and from <see cref="Stop"/> on): a stopped handler tracks nothing, and a restart begins with a clean slate.</remarks>
         [Category("Interrupt - Results")]
         [Description("Whether a popup matched by a dismiss rule is still open (being retried, or given up on). Returns True on success; never throws.")]
         public bool HasUnresolvedPopup(out bool hasUnresolvedPopup, out string message)
@@ -881,7 +881,10 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                hasUnresolvedPopup = _engine.HasUnresolvedPopup;
+                // Only while watching: the engine keeps its last pass's count after Stop, and a component
+                // that is not running is tracking no popups. Stop clears _worker before anything else, and
+                // a restart resets the engine before the worker exists, so there is no stale window.
+                hasUnresolvedPopup = _worker != null && _engine.HasUnresolvedPopup;
                 message = null;
                 return true;
             }

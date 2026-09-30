@@ -1008,6 +1008,55 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Null(m5);
         }
 
+        // ------------------------------------------------------------------ HasUnresolvedPopup while stopped
+
+        [Fact]
+        public void HasUnresolvedPopup_IsFalseBeforeStart_TrueWhileUnresolved_AndFalseAtOnceAfterStop()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
+
+            Assert.True(rig.Utils.HasUnresolvedPopup(out bool unresolved, out _));
+            Assert.False(unresolved); // never started
+
+            rig.StartOk();
+            var w = rig.Probe.AddWindow("Alert");
+            var yes = rig.Probe.AddChild(w, "Yes");
+            yes.IgnoreInvoke = true; // the popup stays open, so it stays unresolved
+            rig.Hook.FireWindowOpened(w);
+            Assert.True(WaitFor(() => rig.Utils.HasUnresolvedPopup(out bool u, out _) && u), "the popup never counted as unresolved");
+
+            Assert.True(rig.Utils.Pause(out _));
+            Assert.True(rig.Utils.HasUnresolvedPopup(out unresolved, out _));
+            Assert.True(unresolved); // still correct while paused
+            Assert.True(rig.Utils.Resume(out _));
+
+            Assert.True(rig.Utils.Stop(out _));
+            Assert.True(rig.Utils.HasUnresolvedPopup(out unresolved, out string message));
+            Assert.False(unresolved);
+            Assert.Null(message);
+        }
+
+        [Fact]
+        public void HasUnresolvedPopup_IsCorrectAgainAfterARestart()
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogDismissRuleByName("r", "Alert", "", "chrome", "Yes", out _));
+            rig.StartOk();
+            var w = rig.Probe.AddWindow("Alert");
+            rig.Probe.AddChild(w, "Yes").IgnoreInvoke = true;
+            rig.Hook.FireWindowOpened(w);
+            Assert.True(WaitFor(() => rig.Utils.HasUnresolvedPopup(out bool u, out _) && u));
+            Assert.True(rig.Utils.Stop(out _));
+
+            rig.StartOk(); // the popup is unknown to the fresh run until a hook event or sweep reports it
+            Assert.True(rig.Utils.HasUnresolvedPopup(out bool unresolved, out _));
+            Assert.False(unresolved);
+
+            rig.Hook.FireWindowOpened(w);
+            Assert.True(WaitFor(() => rig.Utils.HasUnresolvedPopup(out bool u, out _) && u), "the popup did not count again after the restart");
+        }
+
         // BrowserPopupEngine.LogCapacity is internal but visible via InternalsVisibleTo.
         private static int BrowserPopupEngineLogCapacity() => BrowserPopupEngine.LogCapacity;
     }

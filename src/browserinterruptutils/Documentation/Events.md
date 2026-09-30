@@ -74,7 +74,8 @@ browserInterrupt.ClearLog(out _);                            // counts are kept
 
 `kind` is `Detected`, `Dismissed`, `DismissFailed` or `Error`. The log keeps the newest 500 entries.
 `HasUnresolvedPopup` reflects the handler's most recent pass, so it can lag a popup's arrival by a
-moment.
+moment. It is `false` whenever the handler is not running (before `Start`, and from `Stop` on), even if a
+popup was still unresolved when it stopped.
 
 Counts are kept until the rule is removed; `GetTotalDismissals` counts every popup dismissed since the
 component was created.

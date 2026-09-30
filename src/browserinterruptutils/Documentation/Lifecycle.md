@@ -24,6 +24,8 @@ call can start; a call already under way must finish first, so a hung browser ca
 UI Automation returns before the browser acts, so an action issued before `Stop` may still take effect
 afterwards, and its dismissal result or an in-progress discovery pass may raise events after `Stop`
 returns. `Stop` succeeds even if it was not running, and disposing the component stops it too.
+`HasUnresolvedPopup` is `false` whenever the handler is not running - before the first `Start`, and from
+`Stop` on, even if a popup was still unresolved when it stopped - and a restart begins with a clean slate.
 
 `Start` returns `false` (with a message) if it is already running, a setting is out of range,
 UI Automation events could not be started in this session, a previous run is still shutting down, or
