@@ -1327,6 +1327,105 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Single(h.Of(BrowserPopupRecordKind.Error));
         }
 
+        // ------------------------------------------------------------------ queue overflow
+
+        private static readonly BrowserWindowInfo AnyWindow = new BrowserWindowInfo { Hwnd = new IntPtr(0x1230), ProcessName = "chrome", ProcessId = 7 };
+
+        private static void FillNative(Harness h, int count)
+        {
+            for (int i = 0; i < count; i++)
+                h.Hook.FireWindowOpened(AnyWindow);
+        }
+
+        private static void FillOverlay(Harness h, int count)
+        {
+            var root = new BrowserElementRef(new[] { 1 }, new IntPtr(0x1230));
+            for (int i = 0; i < count; i++)
+                h.Hook.FireStructureChanged(root);
+        }
+
+        [Fact]
+        public void NativeQueueOverflow_RecordsOneErrorPerFillEpisode_AndRearmsOnceDrained()
+        {
+            var h = new Harness();
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems + 25); // many drops, one episode
+            h.Pump(0);
+            var first = Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Contains("window", first.Detail);
+            Assert.Contains("sweep", first.Detail);
+            Assert.Contains("interval of 0", first.Detail); // says a sweep interval of 0 can lose the event
+
+            h.Pump(100); // nothing new dropped: still one
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems + 1); // drained, refilled past the cap
+            h.Pump(200);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Error).Count());
+        }
+
+        [Fact]
+        public void NativeQueue_AtExactlyTheCap_DropsNothingAndRecordsNothing()
+        {
+            var h = new Harness();
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems);
+            h.Pump(0);
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void OverlayQueueOverflow_RecordsOneErrorPerFillEpisode_AndRearmsOnceDrained()
+        {
+            var h = new Harness();
+
+            FillOverlay(h, BrowserPopupEngine.MaxQueuedItems + 25);
+            h.Pump(0);
+            var first = Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Contains("page", first.Detail);
+            Assert.Contains("sweep", first.Detail);
+
+            FillOverlay(h, BrowserPopupEngine.MaxQueuedItems + 1);
+            h.Pump(100);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Error).Count());
+        }
+
+        [Fact]
+        public void OverlayQueue_AtExactlyTheCap_RecordsNothing()
+        {
+            var h = new Harness();
+
+            FillOverlay(h, BrowserPopupEngine.MaxQueuedItems);
+            h.Pump(0);
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void BothQueuesOverflowing_RecordOneErrorEach()
+        {
+            var h = new Harness();
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems + 1);
+            FillOverlay(h, BrowserPopupEngine.MaxQueuedItems + 1);
+            h.Pump(0);
+
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Error).Count());
+        }
+
+        [Fact]
+        public void ResetRuntime_ForgetsAnUnreportedDrop()
+        {
+            var h = new Harness();
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems + 1);
+            h.Engine.ResetRuntime();
+            h.Pump(0);
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+        }
+
         // Fixture sanity, not engine behavior: this exercises FakeBrowserPopupHookSource.Start()
         // directly and asserts nothing about BrowserPopupEngine. It proves the fake will behave
         // correctly when Task 5 reuses it to test Start(...); do not count it toward engine-behavior

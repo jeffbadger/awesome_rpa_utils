@@ -72,6 +72,11 @@ browserInterrupt.GetLastEventJson(out string last, out _);   // just the newest;
 browserInterrupt.ClearLog(out _);                            // counts are kept
 ```
 
+If a burst of events fills the handler's input queue (4,096 waiting windows or page-change signals), the
+extra ones are dropped and one `InterruptError` says so for that burst. The periodic scans
+(`sweepIntervalMs`, `overlaySweepIntervalMs`) are what recover a dropped event; with a scan interval of 0
+it may be lost.
+
 `kind` is `Detected`, `Dismissed`, `DismissFailed` or `Error`. The log keeps the newest 500 entries.
 `HasUnresolvedPopup` reflects the handler's most recent pass, so it can lag a popup's arrival by a
 moment. It is `false` whenever the handler is not running (before `Start`, and from `Stop` on), even if a

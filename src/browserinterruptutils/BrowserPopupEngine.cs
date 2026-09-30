@@ -293,6 +293,14 @@ namespace BrowserInterruptAutomation
         private int _nativeQueued;
         private readonly ConcurrentQueue<BrowserElementRef> _overlayDirtyQueue = new ConcurrentQueue<BrowserElementRef>();
         private int _overlayDirtyQueued;
+
+        // Queue overflow reporting. The hook/UIA callbacks may only enqueue and set a flag, so a drop
+        // sets its flag here and the worker turns it into ONE Error record per fill episode (the
+        // *Reported flags are worker-only and re-arm once the queue is below its cap again).
+        private int _nativeDropped;
+        private int _overlayDirtyDropped;
+        private bool _nativeOverflowReported;
+        private bool _overlayOverflowReported;
         private readonly ConcurrentQueue<string> _faults = new ConcurrentQueue<string>();
         private readonly AutoResetEvent _wake = new AutoResetEvent(false);
 
@@ -657,7 +665,12 @@ namespace BrowserInterruptAutomation
             if (info == null)
                 return;
             if (Volatile.Read(ref _nativeQueued) >= MaxQueuedItems)
-                return; // the periodic native sweep will find anything dropped here
+            {
+                // The periodic native sweep can find what is dropped here; the worker records that it happened.
+                Volatile.Write(ref _nativeDropped, 1);
+                Wake();
+                return;
+            }
             Interlocked.Increment(ref _nativeQueued);
             _nativeQueue.Enqueue(info);
             Wake();
@@ -666,10 +679,46 @@ namespace BrowserInterruptAutomation
         private void OnWindowStructureChanged(BrowserElementRef windowRoot)
         {
             if (Volatile.Read(ref _overlayDirtyQueued) >= MaxQueuedItems)
-                return; // the periodic overlay sweep is the fallback
+            {
+                // The periodic overlay sweep is the fallback; the worker records that a signal was dropped.
+                Volatile.Write(ref _overlayDirtyDropped, 1);
+                Wake();
+                return;
+            }
             Interlocked.Increment(ref _overlayDirtyQueued);
             _overlayDirtyQueue.Enqueue(windowRoot);
             Wake();
+        }
+
+        /// <summary>
+        /// Turns a drop flag set by a hook/UIA callback into one Error record per fill episode. Runs on
+        /// the worker, before the queues are drained.
+        /// </summary>
+        private void ReportQueueOverflows()
+        {
+            if (Interlocked.Exchange(ref _nativeDropped, 0) == 1 && !_nativeOverflowReported)
+            {
+                _nativeOverflowReported = true;
+                RecordError(string.Empty, "The queue of newly opened windows overflowed (" + MaxQueuedItems +
+                    " waiting) and at least one window-opened event was dropped. Recovery depends on the periodic " +
+                    "native-dialog sweep (sweepIntervalMs); with a sweep interval of 0 the event may be lost.");
+            }
+            if (Interlocked.Exchange(ref _overlayDirtyDropped, 0) == 1 && !_overlayOverflowReported)
+            {
+                _overlayOverflowReported = true;
+                RecordError(string.Empty, "The queue of page-change signals overflowed (" + MaxQueuedItems +
+                    " waiting) and at least one signal was dropped. Recovery depends on the periodic overlay " +
+                    "sweep (overlaySweepIntervalMs); with a sweep interval of 0 the change may be missed.");
+            }
+        }
+
+        /// <summary>Re-arms an overflow report once its queue is below the cap again (after the drain).</summary>
+        private void RearmQueueOverflowReports()
+        {
+            if (_nativeOverflowReported && Volatile.Read(ref _nativeQueued) < MaxQueuedItems)
+                _nativeOverflowReported = false;
+            if (_overlayOverflowReported && Volatile.Read(ref _overlayDirtyQueued) < MaxQueuedItems)
+                _overlayOverflowReported = false;
         }
 
         /// <summary>
@@ -707,6 +756,10 @@ namespace BrowserInterruptAutomation
             while (_faults.TryDequeue(out _)) { }
             while (_nativeQueue.TryDequeue(out _)) Interlocked.Decrement(ref _nativeQueued);
             while (_overlayDirtyQueue.TryDequeue(out _)) Interlocked.Decrement(ref _overlayDirtyQueued);
+            Volatile.Write(ref _nativeDropped, 0);
+            Volatile.Write(ref _overlayDirtyDropped, 0);
+            _nativeOverflowReported = false;
+            _overlayOverflowReported = false;
 
             foreach (var windowRef in _watchedWindows.Values)
             {
@@ -765,8 +818,10 @@ namespace BrowserInterruptAutomation
             _sweptThisPass.Clear();
             ApplyRuleChanges(now);
             ResumeHeldCandidates(now);
+            ReportQueueOverflows();
             DrainNativeQueue(now);
             DrainOverlayDirtyQueue(now);
+            RearmQueueOverflowReports();
 
             if (SweepIntervalMs > 0 && (!_nativeSwept || now - _lastNativeSweep >= SweepIntervalMs))
             {
