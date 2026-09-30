@@ -9,7 +9,7 @@ to them (they are unproven in Robot Studio), and they arrive on a different thre
 | Event | Raised when |
 |---|---|
 | `PopupDismissed` | A popup was dismissed by a rule: the invoke or close succeeded and, 400 ms later, the popup was gone. |
-| `PopupDismissFailed` | A popup matched a rule but could not be dismissed. `Detail` says why (for example the element to invoke was not found, or supports neither invoke nor toggle, or the attempts ran out, including when the action succeeded but the popup stayed open, or a close rule matched a window that looks like a main application window and was refused). |
+| `PopupDismissFailed` | A popup matched a rule but could not be dismissed. `Detail` says why (for example the element to invoke was not found, or supports neither invoke nor toggle, or the attempts ran out, including when the action succeeded but the popup stayed open, or an invoke or close rule matched a window that looks like a main application window and was refused). |
 | `PopupDetected` | A popup matching a *watch-only* rule appeared. It is not touched. |
 | `InterruptError` | The handler has a problem, such as a rule that stopped itself for dismissing too many popups. |
 
@@ -29,6 +29,11 @@ The first three carry a `BrowserPopupEventArgs`:
 | `Detail` | Why a dismissal failed; otherwise empty. |
 
 `InterruptError` carries a `BrowserInterruptErrorEventArgs` (`RuleName`, `Message`, `TimestampUtc`).
+
+An unexpected failure inside one popup's handling (for example a UI Automation call that throws) is reported as
+an `InterruptError` and the handler carries on with the other popups, retrying the affected one after a short
+pause. Such reports are rate-limited: about one per popup per 30 seconds, and only a handful per pass, so a popup
+that fails persistently cannot flood the log.
 
 ## Events arrive once the handler's state is up to date
 
@@ -67,9 +72,15 @@ browserInterrupt.GetLastEventJson(out string last, out _);   // just the newest;
 browserInterrupt.ClearLog(out _);                            // counts are kept
 ```
 
+If a burst of events fills the handler's input queue (4,096 waiting windows or page-change signals), the
+extra ones are dropped and one `InterruptError` says so for that burst. The periodic scans
+(`sweepIntervalMs`, `overlaySweepIntervalMs`) are what recover a dropped event; with a scan interval of 0
+it may be lost.
+
 `kind` is `Detected`, `Dismissed`, `DismissFailed` or `Error`. The log keeps the newest 500 entries.
 `HasUnresolvedPopup` reflects the handler's most recent pass, so it can lag a popup's arrival by a
-moment.
+moment. It is `false` whenever the handler is not running (before `Start`, and from `Stop` on), even if a
+popup was still unresolved when it stopped.
 
 Counts are kept until the rule is removed; `GetTotalDismissals` counts every popup dismissed since the
 component was created.

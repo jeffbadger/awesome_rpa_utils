@@ -82,7 +82,10 @@ throws.
 
 ### Rules
 
-Every rule must say enough to be specific, and a process name alone never is. A **native
+Every rule must name the process it applies to in `processName` (`chrome`, `msedge` or
+`firefox`, with or without `.exe`; an empty one is refused): nothing here can tell a browser from
+any other application, so a rule without a process would apply to every window on the desktop.
+Beyond that, every rule must say enough to be specific, and a process name alone never is. A **native
 dialog** rule needs at least one of `nameContains`, `messageContains` and `roleContains`
 (a process-only rule would match every window of the browser, including the main window);
 a native **close** rule needs `nameContains` or `messageContains`. A **page overlay** rule
@@ -158,8 +161,8 @@ invoking one of its own elements.
   attended session or an unattended one with an active desktop.
 - **UI Automation must see the browser.** Chrome, Edge and Firefox expose UI Automation;
   a browser or embedded web view that does not is out of reach and no rule will ever
-  match it. There is no per-browser special-casing beyond `processName` (for example
-  `chrome`, `msedge`, `firefox`).
+  match it. There is no per-browser special-casing beyond the required `processName` (for
+  example `chrome`, `msedge`, `firefox`).
 - **Chromium builds its accessibility tree lazily.** The first UI Automation query against
   a fresh tab, or after the browser has not been asked for a while, can be slow, so the
   first sweep may find a popup later than later ones do.
@@ -170,9 +173,8 @@ invoking one of its own elements.
   window's UI Automation tree breadth-first, visiting at most `maxOverlayNodes` elements
   and descending at most `maxOverlayDepth` levels (a very large page can hide an overlay
   beyond that budget). It runs only for browser windows whose process a `PageOverlay` rule
-  names; a rule that names no process makes every top-level window a candidate, so
-  set `processName` on an overlay rule **and** a `roleContains`, `nameContains` or
-  `automationIdContains` (a process name alone is refused). Only elements that pass at
+  names, since every rule must name its process; give an overlay rule a `roleContains`,
+  `nameContains` or `automationIdContains` as well (a process name alone is refused). Only elements that pass at
   least one overlay rule's non-message criteria are tracked, and the engine tracks at most
   2000 candidates at once (it records one error if that limit is reached). A tracked
   candidate that is parked (a watch-only match, a failed dismissal, or a browser window tracked
@@ -186,13 +188,15 @@ invoking one of its own elements.
   (ID and name) from the browser window it was found in. `processName` on an overlay rule,
   the "never touch the automation's own popups" check, and the `ProcessName`/`ProcessId` of
   its events all use that window.
-- **A close rule never closes a main-window-like window.** A native window with a minimize or
+- **A native rule never acts on a main-window-like window.** A native window with a minimize or
   maximize box looks like a normal application window (for example a browser window whose tab
-  title contains the rule's text), and closing it would close the whole browser. For such a
-  window an `AddNativeDialogCloseRule` rule raises one `PopupDismissFailed` ("refused to close
-  a window that looks like a main application window; use a dismiss-by-button rule or a more
-  specific rule") and never calls close; dismiss-by-button rules are unaffected. That JS
-  dialogs really lack those boxes in each browser is a pending live check.
+  title contains the rule's text). Closing it would close the whole browser, and a
+  dismiss-by-button rule would search its whole subtree, the page, and press the first page
+  control with that name. For such a window every acting native rule (close or dismiss-by-button)
+  raises one `PopupDismissFailed` ("refused to act on a window that looks like a main application
+  window; use a page-overlay rule (scope PageOverlay) or a more specific rule") and makes no probe
+  call; a watch-only rule still reports it. That JS dialogs really lack those boxes in each
+  browser is a pending live check.
 - **Structure-changed notifications are throttled.** A page change wakes an overlay look
   at most once per 250 ms per browser window: the first change wakes one immediately and
   any changes inside that interval collapse into one trailing wake-up when it ends (leading
@@ -214,9 +218,12 @@ invoking one of its own elements.
   nothing: that spends one of the `maxAttempts` attempts (no `PopupDismissed`), the worker
   tries again, and after `maxAttempts` it raises `PopupDismissFailed` with a detail saying the
   action succeeded but the popup is still open. Until then `HasUnresolvedPopup` stays true.
-  Only confirmed dismissals count toward `maxDismissalsPerMinute`; a popup that ignores the
-  click is bounded by `maxAttempts` instead. Stopping the component inside that 400 ms window
-  drops the pending confirmation (the popup was closed but is not counted).
+  Confirmed dismissals, plus actions issued and still awaiting that confirmation, count toward
+  `maxDismissalsPerMinute` (so a burst of simultaneous popups cannot all be acted on before any
+  confirmation lands); an action that leaves the popup open stops counting and is bounded by
+  `maxAttempts` instead. Stopping the component inside that 400 ms window
+  drops the pending confirmation (the popup was closed but is not counted); so does removing
+  the rule inside it: a dismissal whose rule is gone is neither counted nor reported.
 - **A walk over a big page costs cross-process reads.** Each element visited reads about
   eight UI Automation properties, each a cross-process call, and the component does not use
   a `CacheRequest`. On a very large page a sweep can be slow; lower `maxOverlayNodes` (default
@@ -233,7 +240,9 @@ invoking one of its own elements.
   Automation returns; the handler confirms 400 ms later), and its `PopupDismissed` or
   `PopupDismissFailed` event may still be raised. To be certain a popup is untouched, pause
   before it appears, or after `Pause` check `HasUnresolvedPopup` or wait about 400 ms and
-  re-check the popup before driving it. The UI Automation call it is waiting on has no
+  re-check the popup before driving it. A popup that opens while paused is noticed too:
+  `HasUnresolvedPopup` is `true` for one a dismiss rule matches, and its click or close waits
+  for `Resume` (a watch-only rule still raises `PopupDetected`). The UI Automation call it is waiting on has no
   timeout: if the browser is frozen, these methods block for as long as it stays frozen, and
   there is no way to abandon the wait.
 - **A popup that keeps coming back cannot loop forever.** A rule that has dismissed

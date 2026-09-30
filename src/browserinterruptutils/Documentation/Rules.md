@@ -15,8 +15,8 @@ dismissed in different ways, so the API keeps them apart rather than taking a fl
 | `PageOverlay` | An element inside the page: an ARIA `role="dialog"`/`"alertdialog"` overlay, a cookie banner, a permission bar. | It has no window, so the component walks the browser window's UI Automation tree (bounded by `maxOverlayNodes` and `maxOverlayDepth`), woken by page-structure changes and by a periodic sweep (`overlaySweepIntervalMs`). | Invoke a control inside it by name or automation ID. There is no close rule: an overlay has no window to close. |
 
 A page overlay costs more to find than a native dialog, so overlay discovery runs only for
-browser processes that an overlay rule names (or every process, if an overlay rule names none:
-always name the browser).
+browser processes that an overlay rule names. Every rule must name its process (see below), so the
+component never looks at, or acts on, an application no rule names.
 
 ## Match a popup
 
@@ -31,7 +31,8 @@ browserInterrupt.AddNativeDialogDismissRuleByName(
     out string message);
 ```
 
-Five things can identify a popup, and **every one you set must match**:
+Five things can identify a popup, and **every one you set must match**; only `processName` is
+required:
 
 | Field | Compared against | Notes |
 |---|---|---|
@@ -39,26 +40,32 @@ Five things can identify a popup, and **every one you set must match**:
 | `automationIdContains` | The popup's `AutomationId`. Page overlay rules only. | **Best-effort for page content**: see below. |
 | `roleContains` | The popup's `LocalizedControlType`, which is how UI Automation reports an ARIA role (for example `dialog`). | The most reliable way to say "any dialog", combined with a name. The text is localized, so it follows the Windows display language. |
 | `messageContains` | The first non-empty text element inside the popup. | Read only when a rule needs it. See below. |
-| `processName` | The owning process, with or without `.exe`. | Typical values: `chrome`, `msedge`, `firefox`. |
+| `processName` | The owning process, with or without `.exe`. **Required for every rule.** | Typical values: `chrome`, `msedge`, `firefox`. An empty value (or `.exe` or spaces alone) is refused: "processName is required: name the browser process the rule applies to, for example chrome, msedge or firefox." |
 
 All of them compare ignoring case and by substring, except the `processName` (whole name)
-and the `targetAutomationId` (a whole-string, case-insensitive match). Leave one empty (`""`
-or `null`) to not check it. **A process name alone is never enough**, so a too-broad rule is refused:
+and the `targetAutomationId` (a whole-string, case-insensitive match). Leave any other field
+empty (`""` or `null`) to not check it. The process is required because nothing in the component
+can tell a browser from any other application: a rule that named none would be checked against
+(and could act on) every window on the desktop, and a page overlay rule would sweep them all.
+Name every browser you want covered with its own rule. **A process name alone is never enough**,
+so a too-broad rule is refused:
 
 - A native dialog rule needs at least one of `nameContains`, `messageContains` and `roleContains`;
   a native close rule needs `nameContains` or `messageContains`.
 - A page overlay rule needs at least one of `roleContains`, `nameContains` and `automationIdContains`.
 
-### Close rules refuse main-window-like windows
+### Native rules refuse main-window-like windows
 
-A close rule ends the window it matched. Because a `nameContains` can match the browser's own main
-window (a tab title containing the text), the handler checks before closing: a native window that has a
-minimize or maximize box is a normal application window, not a JS or system dialog, and is **never
-closed**. Instead the rule raises one `PopupDismissFailed` (no retries) whose `Detail` is "refused to
-close a window that looks like a main application window; use a dismiss-by-button rule or a more
-specific rule". A style that cannot be read is treated the same way. Prefer a dismiss-by-button rule
-(`AddNativeDialogDismissRuleByName`), which is never refused: it presses a button inside the popup. The
-live checks confirm that each browser's JS dialogs really lack the minimize/maximize boxes.
+Because a `nameContains` can match the browser's own main window (a tab title containing the text), the
+handler checks before acting. A close rule would end the whole browser; a dismiss-by-button rule would
+search the window's whole subtree, which is the page, and press the first page control with that name.
+So a native window that has a minimize or maximize box is a normal application window, not a JS or
+system dialog, and **no native rule ever acts on it**, whether it would invoke or close. Instead the
+rule raises one `PopupDismissFailed` (no retries, nothing searched or clicked) whose `Detail` is "refused
+to act on a window that looks like a main application window; use a page-overlay rule (scope
+PageOverlay) or a more specific rule". A style that cannot be read is treated the same way. A
+watch-only rule is not an action and still reports such a window. The live checks confirm that each
+browser's JS dialogs really lack the minimize/maximize boxes.
 
 ### A page overlay belongs to its window's process
 
@@ -67,12 +74,14 @@ found in, not the process a page element reports for itself (UI Automation can r
 process there). The same window's identity is used for the check that never touches the automation's
 own popups.
 
-### Always set enough to be specific
+### Always name the process and set enough to be specific
 
+- **Always set `processName`.** It is required (see above), and it is the only thing that keeps a rule
+  away from the rest of the desktop. Use one rule per browser you want covered.
 - A **native dialog** rule is checked against every window of the process it names, not only
-  dialogs, so a rule that names only `chrome` could act on the browser's main window. That is
-  why a process-only rule is refused: add a `messageContains`, a `nameContains` or a
-  `roleContains` (a close rule needs a name or message).
+  dialogs, so a rule that names only `chrome` could match the browser's main window (which
+  an acting rule then refuses, see above). That is why a process-only rule is refused: add a
+  `messageContains`, a `nameContains` or a `roleContains` (a close rule needs a name or message).
 - A **page overlay** rule is checked against every element the bounded walk visits, not only
   elements that look like dialogs. A rule with only `nameContains: "Accept"` can match the
   Accept button itself rather than the banner around it. Set `roleContains` (for example
@@ -103,7 +112,7 @@ own popups.
 |---|---|---|
 | `AddNativeDialogDismissRuleByName` | `NativeDialog` | Invokes the descendant element with this name (usually a button such as `OK`). `exactTargetElementName: false` accepts the first descendant whose name *contains* the text. |
 | `AddNativeDialogDismissRuleByAutomationId` | `NativeDialog` | Invokes the descendant with this automation ID. |
-| `AddNativeDialogCloseRule` | `NativeDialog` | Closes the dialog's window through its window pattern, for a dialog with nothing worth clicking. Refuses a window that looks like a main application window (see below). |
+| `AddNativeDialogCloseRule` | `NativeDialog` | Closes the dialog's window through its window pattern, for a dialog with nothing worth clicking. Refuses a window that looks like a main application window (see above). |
 | `AddNativeDialogWatchOnlyRule` | `NativeDialog` | Reports the dialog (event and log); never touches it. |
 | `AddPageOverlayDismissRuleByName` | `PageOverlay` | Invokes the descendant element with this name (a button such as `Accept all` or a close control). |
 | `AddPageOverlayDismissRuleByAutomationId` | `PageOverlay` | Invokes the descendant with this automation ID. |

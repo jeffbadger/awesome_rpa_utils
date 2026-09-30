@@ -936,7 +936,7 @@ nothing.
   `sweepIntervalMs: 0` (window events alone) and with the default.
 - A popup whose title does not match (`--title=...`), or whose process does not match, stays
   open. A watch-only rule raises `PopupDetected` once and leaves the popup open.
-- `Pause` leaves a matching popup open; `Resume` then dismisses it. `SetRuleEnabled(false)`
+- `Pause` leaves a matching popup open (and `HasUnresolvedPopup` is true for one that opened during the pause); `Resume` then dismisses it promptly. `SetRuleEnabled(false)`
   does the same for one rule.
 - Open a popup *before* calling `Start` (run `--delayed-popup --delay-ms=0`) and verify the
   periodic scan dismisses it.
@@ -982,7 +982,7 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   elements of the browser window (then use a `PageOverlay` rule with `roleContains: dialog`). Everything
   in the `alert`/`confirm`/`prompt` check below depends on the answer; record it per browser.
 - **Discovery first.** With watch-only rules for the browser (`AddNativeDialogWatchOnlyRule` with
-  `roleContains: "dialog"` (a process name alone is refused); `AddPageOverlayWatchOnlyRule` with `roleContains: "dialog"`), raise each popup and read
+  `roleContains: "dialog"` (a process name alone is refused; `processName` is required for every rule, so name each browser under test); `AddPageOverlayWatchOnlyRule` with `roleContains: "dialog"`), raise each popup and read
   `GetLogJson`. Record the `name`, `role` and `message` the browser really exposes, and the names of the
   buttons, for every popup type. The dismiss checks below depend on these.
 - **`alert`/`confirm`/`prompt`.** A `NativeDialog` dismiss rule by button name (`OK`; `Cancel` for a
@@ -997,6 +997,15 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   all for page content (Chromium is not expected to pass `id` through reliably).
 - **Cookie-banner style overlay.** A banner with no dialog role is found using `nameContains`/
   `messageContains` alone, and the overlay rule does not match the button itself instead of the banner.
+- **Hook start/stop robustness.** Force the desktop-wide `WindowOpened` registration to fail (for example
+  by starting under a restricted session) and confirm `Start` returns false promptly with a message instead
+  of hanging; `Stop` returns within about 2 s even if the hook thread is busy.
+- **Slow structure watch does not stall other events.** With a large Chromium page just opened (so the
+  Subtree registration is slow), other windows' `PopupDetected` and the `WindowOpened` of a new dialog are
+  still delivered without a visible gap.
+- **`WindowOpened` uses the cached handle on a busy desktop.** With many windows opening (and one hung
+  application), native dialogs are still detected promptly; confirm the cached `NativeWindowHandle` is
+  non-zero for real events (no fallback to the live read).
 - **Structure-changed latency.** Time from an overlay appearing to `PopupDismissed`, with
   `overlaySweepIntervalMs: 0` (page-change events alone) and with the default; check the 250 ms
   per-window throttle (`StructureChangedCoalesceMs`) is short enough that no overlay is missed or
@@ -1011,11 +1020,13 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
 - **Verify-before-count.** A dismissal is recorded only 400 ms (`VerifyDelayMs`) after the invoke, once
   the popup is gone: confirm `PopupDismissed` fires about 0.4 s after the popup closes and that a control
   whose invoke does nothing ends in `PopupDismissFailed` after `maxAttempts` with no `PopupDismissed`.
-- **Main-window refusal.** With `AddNativeDialogCloseRule` whose `nameContains` matches a tab title, open
-  a normal Chrome, Edge and Firefox window with that title: the rule must raise one `PopupDismissFailed`
-  ("refused to close a window that looks like a main application window...") and the window must stay
-  open. Then raise a JS `alert`/`confirm`/`prompt` (and a `beforeunload` prompt) that is a top-level
-  window and confirm a close rule DOES close it, i.e. that each browser's dialogs really lack
+- **Main-window refusal.** With `AddNativeDialogCloseRule` and with `AddNativeDialogDismissRuleByName`
+  (target `OK`, on a page that has a control named `OK`), whose `nameContains` matches a tab title, open
+  a normal Chrome, Edge and Firefox window with that title: each rule must raise one `PopupDismissFailed`
+  ("refused to act on a window that looks like a main application window...") and the window and the page
+  control must stay untouched. Then raise a JS `alert`/`confirm`/`prompt` (and a `beforeunload` prompt)
+  that is a top-level window and confirm a close rule and a dismiss-by-button rule DO dismiss it, i.e.
+  that each browser's dialogs really lack
   `WS_MINIMIZEBOX`/`WS_MAXIMIZEBOX` (read the style with Spy++/Inspect if not). Record per browser.
 - **Overlay in a renderer-owned process.** Inspect a page overlay's UI Automation `ProcessId` in each
   browser: if it differs from the browser window's, confirm a `processName`-scoped `PageOverlay` rule

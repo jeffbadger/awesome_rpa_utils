@@ -24,6 +24,8 @@ call can start; a call already under way must finish first, so a hung browser ca
 UI Automation returns before the browser acts, so an action issued before `Stop` may still take effect
 afterwards, and its dismissal result or an in-progress discovery pass may raise events after `Stop`
 returns. `Stop` succeeds even if it was not running, and disposing the component stops it too.
+`HasUnresolvedPopup` is `false` whenever the handler is not running - before the first `Start`, and from
+`Stop` on, even if a popup was still unresolved when it stopped - and a restart begins with a clean slate.
 
 `Start` returns `false` (with a message) if it is already running, a setting is out of range,
 UI Automation events could not be started in this session, a previous run is still shutting down, or
@@ -85,9 +87,11 @@ finally
 }
 ```
 
-While paused, popups are noticed but not touched. When you `Resume`, any popup that appeared
-meanwhile and is *still open* is then dealt with, so a genuine interruption that arrived during the
-step is not lost.
+While paused, popups are noticed but not touched. A popup that a dismiss rule matches during the
+pause is selected and counted (`HasUnresolvedPopup` is `true` for it) and only the rule's click or
+close is held back; a watch-only rule still raises `PopupDetected`, since reporting does not touch the
+popup. When you `Resume`, any such popup that is *still open* is dealt with promptly, so a genuine
+interruption that arrived during the step is not lost.
 
 To exclude one kind of popup for a longer stretch instead, switch just that rule off with
 `SetRuleEnabled`. Popups owned by the automation's own process are never touched.
@@ -113,7 +117,9 @@ held back until `Resume`.
 
 To be certain a popup is untouched, pause before it appears. Otherwise, after `Pause` check
 `HasUnresolvedPopup`, or wait about 400 ms, and re-check that the popup is still there before driving
-it.
+it. `HasUnresolvedPopup` is `true` for any popup a dismiss rule matched, including one that opened
+after `Pause` and is waiting for `Resume`, so it does not by itself say whether a click was already
+issued: the 400 ms wait covers that.
 
 ## A dismissal is confirmed before it is counted
 
@@ -143,10 +149,12 @@ longer counts toward `HasUnresolvedPopup`.
 
 If a rule's popup reappears every time it is dismissed - the page is complaining about something the
 click does not fix - the handler would click it forever. Instead a rule that has dismissed
-`maxDismissalsPerMinute` popups (confirmed closed, see above) within a minute **stops itself**: it raises `InterruptError` and is
+`maxDismissalsPerMinute` popups within a minute (confirmed closed, plus any it has just acted on and is still waiting 400 ms to
+confirm, so a burst of simultaneous popups is cut off at the limit) **stops itself**: it raises `InterruptError` and is
 listed as `"stopped": true` by `ListRulesJson`. Its popup is then left open, so the problem is visible
 instead of hidden.
 
+An action that is later found to have left the popup open stops counting, but the rule stays stopped once it has tripped.
 Sort out why it recurs, then `SetRuleEnabled(rule, true, ...)` turns the rule back on.
 
 ## Clean-up

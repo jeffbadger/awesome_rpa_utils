@@ -16,8 +16,8 @@ namespace BrowserInterruptAutomation
     /// (<c>UiaBrowserPopupProbe</c>) and the real UIA hook (<c>BrowserPopupHookThread</c>) built
     /// in earlier phases.
     /// <para>
-    /// Describe each popup once with an <c>Add...Rule</c> method (by name, message text, process
-    /// and/or role, plus what to do about it), call <see cref="Start"/>, and carry on. It notices
+    /// Describe each popup once with an <c>Add...Rule</c> method (the browser process it applies to,
+    /// plus name, message text and/or role, and what to do about it), call <see cref="Start"/>, and carry on. It notices
     /// new windows and page-structure changes through UI Automation events (and periodic sweeps
     /// as a safety net), acts on a worker thread, and records the outcome in a log you can query
     /// and in events.
@@ -45,11 +45,11 @@ namespace BrowserInterruptAutomation
         private readonly IBrowserPopupHookSource _hook;
         private readonly IInstanceGuard _guard;
         private readonly object _lifeLock = new object();
-        private Thread _worker;
+        private volatile Thread _worker;
         private CancellationTokenSource _cts;
         private Thread _lingeringWorker;
         private CancellationTokenSource _lingeringCts;
-        private bool _disposed;
+        private volatile bool _disposed; // set in Dispose (before it takes _lifeLock); read lock-free
 
         /// <summary>
         /// Empty constructor required so Pega Robot Studio can create the component.
@@ -123,12 +123,13 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning process's name, with or without <c>.exe</c>; empty to not check the process.</param>
+        /// <param name="processName">The owning process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="targetElementName">The name of the element to invoke (for example a button's text).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="exactTargetElementName"><c>true</c> to need the element's whole name; <c>false</c> to accept the first descendant whose name contains it.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
+        /// <remarks>A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never acted on: the rule reports <c>PopupDismissFailed</c> once instead, and nothing inside the window is searched or invoked. Use a page-overlay rule for in-page content.</remarks>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching native dialog by invoking the named descendant element. Returns True if added; never throws.")]
         public bool AddNativeDialogDismissRuleByName(string ruleName, string nameContains, string messageContains, string processName,
@@ -162,11 +163,12 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning process's name, with or without <c>.exe</c>; empty to not check the process.</param>
+        /// <param name="processName">The owning process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="targetAutomationId">The automation ID of the element to invoke, matched exactly (ignoring case).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
+        /// <remarks>A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never acted on: the rule reports <c>PopupDismissFailed</c> once instead, and nothing inside the window is searched or invoked. Use a page-overlay rule for in-page content.</remarks>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching native dialog by invoking the descendant element with the given automation ID. Returns True if added; never throws.")]
         public bool AddNativeDialogDismissRuleByAutomationId(string ruleName, string nameContains, string messageContains, string processName,
@@ -196,11 +198,11 @@ namespace BrowserInterruptAutomation
         }
 
         /// <summary>Adds a rule that dismisses a matching native dialog by closing its window, for a dialog with no element worth invoking.
-        /// A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never closed: the rule reports <c>PopupDismissFailed</c> once instead.</summary>
+        /// A window with a minimize or maximize box (it looks like a main application window, such as a browser window whose tab title matched) is never closed: the rule reports <c>PopupDismissFailed</c> once instead. Dismiss-by-button rules are refused on such a window too.</summary>
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning process's name, with or without <c>.exe</c>; empty to not check the process.</param>
+        /// <param name="processName">The owning process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
@@ -229,10 +231,11 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the popup's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the popup's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning process's name, with or without <c>.exe</c>; empty to not check the process.</param>
+        /// <param name="processName">The owning process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the popup's UIA localized control type must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
+        /// <remarks>A watch-only rule is not an action, so it still reports a window that looks like a main application window, which acting native rules refuse.</remarks>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that only reports a matching native dialog and never touches it. Returns True if added; never throws.")]
         public bool AddNativeDialogWatchOnlyRule(string ruleName, string nameContains, string messageContains, string processName,
@@ -258,14 +261,14 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the overlay's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the overlay's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>; empty to watch every browser process.</param>
+        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="targetElementName">The name of the element to invoke (for example a button's text).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="exactTargetElementName"><c>true</c> to need the element's whole name; <c>false</c> to accept the first descendant whose name contains it.</param>
         /// <param name="roleContains">Text the overlay's UIA localized control type must contain; empty to not check it.</param>
         /// <param name="automationIdContains">Text the overlay's own automation ID must contain; empty to not check it.</param>
         /// <returns><c>true</c> if the rule was added; <c>false</c> if an argument is invalid, the name is taken, or the component is disposed. Never throws.</returns>
-        /// <remarks>A rule that does not name a process watches every browser process; overlay discovery only ever costs anything for a process at least one such rule is interested in.</remarks>
+        /// <remarks>Every rule must name its process; overlay discovery only ever costs anything for a process at least one overlay rule names.</remarks>
         [Category("Interrupt - Rules")]
         [Description("Adds a rule that dismisses a matching in-page overlay by invoking the named descendant element. Returns True if added; never throws.")]
         public bool AddPageOverlayDismissRuleByName(string ruleName, string nameContains, string messageContains, string processName,
@@ -299,7 +302,7 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the overlay's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the overlay's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>; empty to watch every browser process.</param>
+        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="targetAutomationId">The automation ID of the element to invoke, matched exactly (ignoring case).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the overlay's UIA localized control type must contain; empty to not check it.</param>
@@ -337,7 +340,7 @@ namespace BrowserInterruptAutomation
         /// <param name="ruleName">A name for the rule, unique among rules (ignoring case).</param>
         /// <param name="nameContains">Text the overlay's own name must contain (ignoring case); empty to not check it.</param>
         /// <param name="messageContains">Text the overlay's message must contain (ignoring case); empty to not check it.</param>
-        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>; empty to watch every browser process.</param>
+        /// <param name="processName">The owning browser process's name, with or without <c>.exe</c>, for example <c>chrome</c>, <c>msedge</c> or <c>firefox</c>. Required: the rule only applies to windows of this process.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason the rule was not added.</param>
         /// <param name="roleContains">Text the overlay's UIA localized control type must contain; empty to not check it.</param>
         /// <param name="automationIdContains">Text the overlay's own automation ID must contain; empty to not check it.</param>
@@ -364,7 +367,7 @@ namespace BrowserInterruptAutomation
         }
 
         /// <summary>Removes a rule, and its dismissal count.</summary>
-        /// <param name="ruleName">The rule to remove.</param>
+        /// <param name="ruleName">The rule to remove (surrounding spaces are ignored, as when it was added; case is ignored).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> if the rule existed and was removed; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
         /// <remarks>
@@ -383,9 +386,10 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                if (!_engine.RemoveRule(ruleName ?? string.Empty))
+                string name = NormalizeRuleName(ruleName);
+                if (!_engine.RemoveRule(name))
                 {
-                    message = "There is no rule named '" + ruleName + "'.";
+                    message = NoSuchRule(name);
                     return false;
                 }
                 message = null;
@@ -430,7 +434,7 @@ namespace BrowserInterruptAutomation
         /// Turns a rule off or on without removing it. Turning a rule on also clears a stop
         /// caused by dismissing too many popups.
         /// </summary>
-        /// <param name="ruleName">The rule to change.</param>
+        /// <param name="ruleName">The rule to change (surrounding spaces are ignored, as when it was added; case is ignored).</param>
         /// <param name="enabled"><c>true</c> to turn the rule on; <c>false</c> to turn it off.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> if the rule exists and was changed; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
@@ -450,9 +454,10 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                if (!_engine.SetRuleEnabled(ruleName ?? string.Empty, enabled))
+                string name = NormalizeRuleName(ruleName);
+                if (!_engine.SetRuleEnabled(name, enabled))
                 {
-                    message = "There is no rule named '" + ruleName + "'.";
+                    message = NoSuchRule(name);
                     return false;
                 }
                 message = null;
@@ -513,6 +518,13 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        // The one normalization every public method taking a rule name applies (matching stays
+        // case-insensitive in the engine), so a rule added as " A " is found by "A", " a " or " A ".
+        private static string NormalizeRuleName(string ruleName) => (ruleName ?? string.Empty).Trim();
+
+        private static string NoSuchRule(string normalizedName) =>
+            normalizedName.Length == 0 ? "There is no rule with an empty name." : "There is no rule named '" + normalizedName + "'.";
+
         private bool AddRule(BrowserPopupRule rule, string ruleName, string nameContains, string messageContains,
             string processName, string roleContains, string automationIdContains, out string message)
         {
@@ -522,7 +534,7 @@ namespace BrowserInterruptAutomation
             // Normalize first, then let the engine validate what will actually be stored: a
             // process name of ".exe" trims to nothing, and a rule left without a scope-specific
             // criterion would match every popup (see BrowserPopupRule.ValidateCommon).
-            rule.RuleName = (ruleName ?? string.Empty).Trim();
+            rule.RuleName = NormalizeRuleName(ruleName);
             rule.NameContains = (nameContains ?? string.Empty).Trim();
             rule.MessageContains = (messageContains ?? string.Empty).Trim();
             rule.ProcessName = BrowserPopupRule.TrimExe(processName);
@@ -630,6 +642,12 @@ namespace BrowserInterruptAutomation
                     bool started = false;
                     try
                     {
+                        // Disposed while waiting for the guard: do not start a run nobody would stop.
+                        if (_disposed)
+                        {
+                            message = "The component has been disposed.";
+                            return false;
+                        }
                         _engine.SweepIntervalMs = sweepIntervalMs;
                         _engine.OverlaySweepIntervalMs = overlaySweepIntervalMs;
                         _engine.MaxAttempts = maxAttempts;
@@ -721,8 +739,8 @@ namespace BrowserInterruptAutomation
         [Description("Returns True while watching for browser popups is running. Never throws.")]
         public bool IsRunning()
         {
-            lock (_lifeLock)
-                return _worker != null && !_disposed;
+            // Lock-free: Start holds _lifeLock across a possibly slow instance-guard wait.
+            return _worker != null && !_disposed;
         }
 
         /// <summary>
@@ -746,6 +764,11 @@ namespace BrowserInterruptAutomation
         /// must be certain the popup is untouched, pause before the popup appears, or after
         /// <c>Pause</c> check <see cref="HasUnresolvedPopup"/> or wait about 400 ms and re-check
         /// the popup before driving it.
+        /// A popup that opens while paused is still noticed: a dismiss rule that matches it is
+        /// selected, so <see cref="HasUnresolvedPopup"/> is <c>true</c> for it (it is waiting for
+        /// <see cref="Resume"/>), and only the rule's invoke or close is held back; a watch-only
+        /// rule still raises <c>PopupDetected</c>, since reporting is not touching the popup.
+        /// <see cref="Resume"/> then deals with a held popup that is still open promptly.
         /// The lock is never held during discovery, so the wait lasts only as long as the one
         /// invoke or close already under way. That call has no timeout of its own, though: if the
         /// browser or dialog it targets is frozen, a cross-process UI Automation call can hang, and
@@ -785,8 +808,7 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                _engine.Paused = false;
-                _engine.Wake();
+                _engine.Resume();
                 message = null;
                 return true;
             }
@@ -802,7 +824,7 @@ namespace BrowserInterruptAutomation
         #region Results
 
         /// <summary>How many popups a rule has dismissed.</summary>
-        /// <param name="ruleName">The rule to ask about.</param>
+        /// <param name="ruleName">The rule to ask about (surrounding spaces are ignored, as when it was added; case is ignored).</param>
         /// <param name="count">The number of popups the rule has dismissed; 0 if this method returns <c>false</c>.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
@@ -816,10 +838,11 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                if (!_engine.TryGetCount(ruleName ?? string.Empty, out count))
+                string name = NormalizeRuleName(ruleName);
+                if (!_engine.TryGetCount(name, out count))
                 {
                     count = 0;
-                    message = "There is no rule named '" + ruleName + "'.";
+                    message = NoSuchRule(name);
                     return false;
                 }
                 message = null;
@@ -863,7 +886,7 @@ namespace BrowserInterruptAutomation
         /// <param name="hasUnresolvedPopup"><c>true</c> if such a popup is open; <c>false</c> if none is, or if this method returns <c>false</c>.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if the component is disposed. Never throws.</returns>
-        /// <remarks>Reflects the handler's most recent pass, so it can lag a popup's arrival by a moment.</remarks>
+        /// <remarks>Reflects the handler's most recent pass, so it can lag a popup's arrival by a moment. A popup that a dismiss rule matched while the handler is paused counts too: it is held until <see cref="Resume"/>. It is <c>false</c> whenever the handler is not running (before <see cref="Start"/> and from <see cref="Stop"/> on): a stopped handler tracks nothing, and a restart begins with a clean slate.</remarks>
         [Category("Interrupt - Results")]
         [Description("Whether a popup matched by a dismiss rule is still open (being retried, or given up on). Returns True on success; never throws.")]
         public bool HasUnresolvedPopup(out bool hasUnresolvedPopup, out string message)
@@ -874,7 +897,10 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                hasUnresolvedPopup = _engine.HasUnresolvedPopup;
+                // Only while watching: the engine keeps its last pass's count after Stop, and a component
+                // that is not running is tracking no popups. Stop clears _worker before anything else, and
+                // a restart resets the engine before the worker exists, so there is no stale window.
+                hasUnresolvedPopup = _worker != null && _engine.HasUnresolvedPopup;
                 message = null;
                 return true;
             }
@@ -1087,13 +1113,14 @@ namespace BrowserInterruptAutomation
 
         private bool IsDisposed(out string message)
         {
-            lock (_lifeLock)
+            // Lock-free on purpose: Start holds _lifeLock while it waits (seconds, at worst) for another
+            // running instance to stop, and every public method calls this first. Nothing relies on this
+            // check serializing with lifecycle changes: the lock was released before the caller acted on
+            // the answer anyway, and Dispose's own teardown still runs under _lifeLock.
+            if (_disposed)
             {
-                if (_disposed)
-                {
-                    message = "The component has been disposed.";
-                    return true;
-                }
+                message = "The component has been disposed.";
+                return true;
             }
             message = null;
             return false;
@@ -1185,8 +1212,10 @@ namespace BrowserInterruptAutomation
         {
             if (disposing)
             {
-                lock (_lifeLock)
-                    _disposed = true;
+                // Set before any lock is taken: a Start that is waiting for the guard holds _lifeLock, and
+                // callers must see "disposed" at once. StopCore (below) still waits for that Start, then
+                // tears down whatever run it made.
+                _disposed = true;
 
                 try
                 {

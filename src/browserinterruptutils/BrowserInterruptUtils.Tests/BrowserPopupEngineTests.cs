@@ -26,7 +26,7 @@ namespace BrowserInterruptAutomation.Tests
             }
 
             public BrowserPopupRule AddRule(string name, BrowserPopupScope scope,
-                string nameContains = null, string automationId = null, string process = null, string role = null, string message = null,
+                string nameContains = null, string automationId = null, string process = "chrome", string role = null, string message = null,
                 BrowserPopupAction action = BrowserPopupAction.WatchOnly, string targetName = null, string targetAutomationId = null,
                 bool exactTarget = false)
             {
@@ -103,6 +103,16 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void AddRule_RejectsARuleWithNoProcessName()
+        {
+            var h = new Harness();
+            var rule = new BrowserPopupRule { RuleName = "noProcess", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert" };
+
+            Assert.False(h.Engine.AddRule(rule, out string message));
+            Assert.Equal(BrowserPopupRule.ProcessRequiredMessage, message);
+        }
+
+        [Fact]
         public void AddRule_RejectsNull()
         {
             var h = new Harness();
@@ -115,12 +125,12 @@ namespace BrowserInterruptAutomation.Tests
         {
             var h = new Harness();
             h.AddRule("Alpha", BrowserPopupScope.NativeDialog, nameContains: "x");
-            Assert.False(h.Engine.AddRule(new BrowserPopupRule { RuleName = "ALPHA", Scope = BrowserPopupScope.NativeDialog, NameContains = "y" }, out string dup));
+            Assert.False(h.Engine.AddRule(new BrowserPopupRule { RuleName = "ALPHA", Scope = BrowserPopupScope.NativeDialog, NameContains = "y", ProcessName = "chrome" }, out string dup));
             Assert.Contains("already exists", dup);
 
             for (int i = 1; i < BrowserPopupRule.MaxRules; i++)
                 h.AddRule("rule" + i, BrowserPopupScope.NativeDialog, nameContains: "x");
-            Assert.False(h.Engine.AddRule(new BrowserPopupRule { RuleName = "one too many", Scope = BrowserPopupScope.NativeDialog, NameContains = "y" }, out string full));
+            Assert.False(h.Engine.AddRule(new BrowserPopupRule { RuleName = "one too many", Scope = BrowserPopupScope.NativeDialog, NameContains = "y", ProcessName = "chrome" }, out string full));
             Assert.Contains("At most", full);
         }
 
@@ -593,7 +603,7 @@ namespace BrowserInterruptAutomation.Tests
             var engine = EngineCapturingStateAtDelivery(probe, hook, seen);
             Assert.True(engine.AddRule(new BrowserPopupRule
             {
-                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert",
+                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert", ProcessName = "chrome",
                 Action = BrowserPopupAction.InvokeByName, TargetElementName = "Yes"
             }, out string m), m);
             var w = probe.AddWindow("Alert");
@@ -620,7 +630,7 @@ namespace BrowserInterruptAutomation.Tests
             engine.MaxAttempts = 1;
             Assert.True(engine.AddRule(new BrowserPopupRule
             {
-                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert",
+                RuleName = "r", Scope = BrowserPopupScope.NativeDialog, NameContains = "Alert", ProcessName = "chrome",
                 Action = BrowserPopupAction.InvokeByName, TargetElementName = "Missing"
             }, out string m), m);
             var w = probe.AddWindow("Alert");
@@ -829,18 +839,68 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
-        public void PageOverlayRuleWithNoProcessName_WatchesEveryDiscoveredWindow()
+        public void PageOverlayRule_OnlyWatchesAndSweepsWindowsOfItsNamedProcess()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 100);
+            h.AddRule("chromeOnly", BrowserPopupScope.PageOverlay, nameContains: "Accept", process: "chrome");
+            var chromeWindow = h.Probe.AddWindow("tab", pid: 101, processName: "chrome");
+            var firefoxWindow = h.Probe.AddWindow("tab2", pid: 102, processName: "firefox");
+            var notepadWindow = h.Probe.AddWindow("Untitled", pid: 103, processName: "notepad");
+            h.Probe.AddOverlay(firefoxWindow, "Accept cookies");
+            h.Probe.AddOverlay(notepadWindow, "Accept");
+
+            h.AppearWindow(chromeWindow);
+            h.AppearWindow(firefoxWindow);
+            h.AppearWindow(notepadWindow);
+            h.AppearOverlay(firefoxWindow);
+            h.AppearOverlay(notepadWindow);
+            h.Settle();
+
+            Assert.Equal(new[] { chromeWindow.Ref }, h.Hook.WatchCalls);
+            Assert.DoesNotContain(firefoxWindow.Ref, h.Probe.OverlaySearchRoots);
+            Assert.DoesNotContain(notepadWindow.Ref, h.Probe.OverlaySearchRoots);
+            Assert.Contains(chromeWindow.Ref, h.Probe.OverlaySearchRoots);
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+        }
+
+        [Fact]
+        public void NativeRuleForChrome_NeverDescribesWatchesOrActsOnAnotherProcessesWindow()
         {
             var h = new Harness();
-            h.AddRule("anyProcess", BrowserPopupScope.PageOverlay, nameContains: "Accept");
-            var a = h.Probe.AddWindow("tab", pid: 1, processName: "chrome");
-            var b = h.Probe.AddWindow("tab2", pid: 2, processName: "notepad");
+            h.AddRule("confirmClose", BrowserPopupScope.NativeDialog, nameContains: "Confirm", process: "chrome", action: BrowserPopupAction.CloseWindowPattern);
+            var firefoxDialog = h.Probe.AddWindow("Confirm", pid: 102, processName: "firefox");
+            var notepadDialog = h.Probe.AddWindow("Confirm", pid: 103, processName: "notepad");
 
-            h.AppearWindow(a);
-            h.AppearWindow(b);
+            h.AppearWindow(firefoxDialog);
+            h.AppearWindow(notepadDialog);
+            h.Settle();
 
-            Assert.Contains(a.Ref, h.Hook.WatchCalls);
-            Assert.Contains(b.Ref, h.Hook.WatchCalls);
+            Assert.Equal(0, h.Probe.DescribeWindowCalls);
+            Assert.Empty(h.Hook.WatchCalls);
+            Assert.Equal(0, h.Probe.OverlaySearchCalls);
+            Assert.Equal(0, h.Probe.MessageTextCalls);
+            Assert.Equal(0, h.Probe.TotalCloses);
+            Assert.True(firefoxDialog.Alive);
+            Assert.True(notepadDialog.Alive);
+            Assert.Empty(h.Records);
+        }
+
+        [Fact]
+        public void ProcessNamesWithAndWithoutExe_AreEquivalentForRulesAndWindows()
+        {
+            var h = new Harness();
+            h.AddRule("withExe", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "Chrome.EXE", action: BrowserPopupAction.CloseWindowPattern);
+            h.AddRule("overlayNoExe", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "msedge");
+            var dialog = h.Probe.AddWindow("Alert", pid: 100, processName: "chrome");
+            var edge = h.Probe.AddWindow("edge tab", pid: 200, processName: "msedge.exe");
+
+            h.AppearWindow(dialog);
+            h.AppearWindow(edge);
+            h.PastVerifyDelay();
+
+            Assert.False(dialog.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Contains(edge.Ref, h.Hook.WatchCalls);
         }
 
         // ------------------------------------------------------------------ runaway breaker
@@ -987,8 +1047,8 @@ namespace BrowserInterruptAutomation.Tests
         {
             var h = new Harness();
             h.AddRule("chromeOnly", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
-            // Names no process, so every browser window is watched (the firefox one is walked too).
-            h.AddRule("watchAny", BrowserPopupScope.PageOverlay, nameContains: "zzz-never-matches-xyz");
+            // A second rule that names firefox, so the firefox window is watched and walked too.
+            h.AddRule("watchFirefox", BrowserPopupScope.PageOverlay, nameContains: "zzz-never-matches-xyz", process: "firefox");
             var chromeWindow = h.Probe.AddWindow("chrome tab", pid: 100, processName: "chrome");
             var firefoxWindow = h.Probe.AddWindow("firefox tab", pid: 200, processName: "firefox");
             h.AppearWindow(chromeWindow);
@@ -1076,6 +1136,142 @@ namespace BrowserInterruptAutomation.Tests
             Assert.False(w.Alive);
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void MatchingPopupOpeningDuringPause_IsUnresolved_UntouchedUntilResume_ThenDismissedPromptly(bool useClose)
+        {
+            var h = new Harness();
+            if (useClose)
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            else
+                h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "OK");
+            var w = h.Probe.AddWindow("Alert");
+            var ok = h.Probe.AddChild(w, "OK");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(w);
+            for (long t = 300; t <= 1500; t += 300)
+                h.Pump(t);
+
+            Assert.True(h.Engine.HasUnresolvedPopup);
+            Assert.Equal(1, h.Engine.UnresolvedCount);
+            Assert.Equal(0, h.Probe.TotalCloses);
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(0, h.Probe.OverlaySearchCalls); // not even the target walk
+            Assert.True(w.Alive);
+
+            h.Engine.Resume();
+            h.Pump(h.Now); // one pass at the same instant: no wait for the hold-back to run out
+
+            Assert.Equal(useClose ? 1 : 0, w.Closes);
+            Assert.Equal(useClose ? 0 : 1, ok.Invokes);
+            h.PastVerifyDelay();
+            Assert.False(w.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.False(h.Engine.HasUnresolvedPopup);
+        }
+
+        [Fact]
+        public void NonMatchingPopupOpeningDuringPause_IsNotUnresolved()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var other = h.Probe.AddWindow("Something else");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(other);
+            h.Settle();
+
+            Assert.False(h.Engine.HasUnresolvedPopup);
+            Assert.Equal(0, h.Probe.TotalCloses);
+            Assert.True(other.Alive);
+        }
+
+        [Fact]
+        public void WatchOnlyMatchDuringPause_IsReportedOnce_AndNeverCountsAsUnresolved()
+        {
+            var h = new Harness();
+            h.AddRule("watch", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.WatchOnly);
+            var w = h.Probe.AddWindow("Alert");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(w);
+            h.Settle();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected)); // reporting is not touching the popup
+            Assert.False(h.Engine.HasUnresolvedPopup);
+
+            h.Engine.Resume();
+            h.Pump(h.Now + 1000);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected)); // still once
+            Assert.True(w.Alive);
+        }
+
+        [Fact]
+        public void SeveralPopupsDuringPause_AreAllCounted_AndAllDismissedAfterResume()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var first = h.Probe.AddWindow("Alert one");
+            var second = h.Probe.AddWindow("Alert two");
+            var unrelated = h.Probe.AddWindow("Unrelated");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(first);
+            h.AppearWindow(unrelated);
+            h.Pump(300);
+            Assert.Equal(1, h.Engine.UnresolvedCount);
+            h.AppearWindow(second);
+            h.Pump(600);
+            Assert.Equal(2, h.Engine.UnresolvedCount);
+            Assert.Equal(0, h.Probe.TotalCloses);
+
+            h.Engine.Resume();
+            h.Pump(h.Now);
+            h.PastVerifyDelay();
+
+            Assert.False(first.Alive);
+            Assert.False(second.Alive);
+            Assert.True(unrelated.Alive);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Dismissed).Count());
+            Assert.Equal(0, h.Engine.UnresolvedCount);
+        }
+
+        [Fact]
+        public void HeldPopup_IsNotReSelectedOrItsMessageReReadOnEveryPausedRecheck()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, message: "sure?", nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert", message: "Are you sure?");
+
+            h.Engine.Paused = true;
+            h.AppearWindow(w);
+            int readsAfterFirst = h.Probe.MessageTextCalls;
+            for (long t = 300; t <= 3000; t += 300)
+                h.Pump(t);
+
+            Assert.Equal(1, readsAfterFirst);
+            Assert.Equal(readsAfterFirst, h.Probe.MessageTextCalls);
+            Assert.True(h.Engine.HasUnresolvedPopup);
+        }
+
+        [Fact]
+        public void PendingVerification_IsUnchangedByPause_StillConfirmedWhilePaused()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w); // closed, verification pending
+            Assert.True(h.Engine.HasUnresolvedPopup);
+
+            h.Engine.Paused = true;
+            h.PastVerifyDelay();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.False(h.Engine.HasUnresolvedPopup);
+        }
+
         // ------------------------------------------------------------------ defense in depth
 
         [Fact]
@@ -1129,6 +1325,105 @@ namespace BrowserInterruptAutomation.Tests
             h.Pump(0);
 
             Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        // ------------------------------------------------------------------ queue overflow
+
+        private static readonly BrowserWindowInfo AnyWindow = new BrowserWindowInfo { Hwnd = new IntPtr(0x1230), ProcessName = "chrome", ProcessId = 7 };
+
+        private static void FillNative(Harness h, int count)
+        {
+            for (int i = 0; i < count; i++)
+                h.Hook.FireWindowOpened(AnyWindow);
+        }
+
+        private static void FillOverlay(Harness h, int count)
+        {
+            var root = new BrowserElementRef(new[] { 1 }, new IntPtr(0x1230));
+            for (int i = 0; i < count; i++)
+                h.Hook.FireStructureChanged(root);
+        }
+
+        [Fact]
+        public void NativeQueueOverflow_RecordsOneErrorPerFillEpisode_AndRearmsOnceDrained()
+        {
+            var h = new Harness();
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems + 25); // many drops, one episode
+            h.Pump(0);
+            var first = Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Contains("window", first.Detail);
+            Assert.Contains("sweep", first.Detail);
+            Assert.Contains("interval of 0", first.Detail); // says a sweep interval of 0 can lose the event
+
+            h.Pump(100); // nothing new dropped: still one
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems + 1); // drained, refilled past the cap
+            h.Pump(200);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Error).Count());
+        }
+
+        [Fact]
+        public void NativeQueue_AtExactlyTheCap_DropsNothingAndRecordsNothing()
+        {
+            var h = new Harness();
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems);
+            h.Pump(0);
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void OverlayQueueOverflow_RecordsOneErrorPerFillEpisode_AndRearmsOnceDrained()
+        {
+            var h = new Harness();
+
+            FillOverlay(h, BrowserPopupEngine.MaxQueuedItems + 25);
+            h.Pump(0);
+            var first = Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Contains("page", first.Detail);
+            Assert.Contains("sweep", first.Detail);
+
+            FillOverlay(h, BrowserPopupEngine.MaxQueuedItems + 1);
+            h.Pump(100);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Error).Count());
+        }
+
+        [Fact]
+        public void OverlayQueue_AtExactlyTheCap_RecordsNothing()
+        {
+            var h = new Harness();
+
+            FillOverlay(h, BrowserPopupEngine.MaxQueuedItems);
+            h.Pump(0);
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void BothQueuesOverflowing_RecordOneErrorEach()
+        {
+            var h = new Harness();
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems + 1);
+            FillOverlay(h, BrowserPopupEngine.MaxQueuedItems + 1);
+            h.Pump(0);
+
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Error).Count());
+        }
+
+        [Fact]
+        public void ResetRuntime_ForgetsAnUnreportedDrop()
+        {
+            var h = new Harness();
+
+            FillNative(h, BrowserPopupEngine.MaxQueuedItems + 1);
+            h.Engine.ResetRuntime();
+            h.Pump(0);
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
         }
 
         // Fixture sanity, not engine behavior: this exercises FakeBrowserPopupHookSource.Start()
@@ -2428,7 +2723,7 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Equal(0, mainWindow.Closes);
             Assert.Equal(0, h.Probe.TotalCloses);
             var failed = Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
-            Assert.Equal("refused to close a window that looks like a main application window; use a dismiss-by-button rule or a more specific rule", failed.Detail);
+            Assert.Equal(BrowserPopupEngine.MainWindowRefusal, failed.Detail);
             Assert.Equal(0, failed.Attempts); // no retries were burned
             Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
         }
@@ -2450,8 +2745,10 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
-        public void DismissByNameRule_IsUnaffectedByAMainWindowLikeWindow()
+        public void DismissByNameRule_RefusesAMainWindowLikeWindow_WithoutAnyProbeWalkOrInvoke()
         {
+            // A tab titled "Example Domain" makes the browser's main window match; the invoke rule
+            // must not walk the page and press its first control named "OK".
             var h = new Harness();
             h.AddRule("press", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.InvokeByName, targetName: "OK");
             var window = h.Probe.AddWindow("Example Domain");
@@ -2459,11 +2756,75 @@ namespace BrowserInterruptAutomation.Tests
             var ok = h.Probe.AddChild(window, "OK");
 
             h.AppearWindow(window);
+            h.Settle();
+
+            Assert.Equal(0, ok.Invokes);
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(0, h.Probe.OverlaySearchCalls); // FindTargets never walked the subtree
+            Assert.True(window.Alive);
+            var failed = Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(BrowserPopupEngine.MainWindowRefusal, failed.Detail);
+            Assert.Equal(0, failed.Attempts);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void DismissByAutomationIdRule_RefusesAMainWindowLikeWindow_WithoutAnyProbeWalkOrInvoke()
+        {
+            var h = new Harness();
+            h.AddRule("press", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.InvokeByAutomationId, targetAutomationId: "okButton");
+            var window = h.Probe.AddWindow("Example Domain");
+            window.IsMainWindowLike = true;
+            var ok = h.Probe.AddChild(window, "OK", automationId: "okButton");
+
+            h.AppearWindow(window);
+            h.Settle();
+
+            Assert.Equal(0, ok.Invokes);
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(0, h.Probe.OverlaySearchCalls);
+            var failed = Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(BrowserPopupEngine.MainWindowRefusal, failed.Detail);
+            Assert.Equal(0, failed.Attempts);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void DismissRules_StillWorkOnADialogLikeWindow()
+        {
+            var h = new Harness();
+            h.AddRule("byName", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.InvokeByName, targetName: "OK");
+            h.AddRule("byId", BrowserPopupScope.NativeDialog, nameContains: "Other", action: BrowserPopupAction.InvokeByAutomationId, targetAutomationId: "okButton");
+            var first = h.Probe.AddWindow("Example Domain says");
+            var firstOk = h.Probe.AddChild(first, "OK");
+            var second = h.Probe.AddWindow("Other page says");
+            var secondOk = h.Probe.AddChild(second, "OK", automationId: "okButton");
+
+            h.AppearWindow(first);
+            h.AppearWindow(second);
             h.PastVerifyDelay();
 
-            Assert.Equal(1, ok.Invokes);
-            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(1, firstOk.Invokes);
+            Assert.Equal(1, secondOk.Invokes);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Dismissed).Count());
             Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void WatchOnlyRule_StillReportsAMainWindowLikeWindow()
+        {
+            var h = new Harness();
+            h.AddRule("watch", BrowserPopupScope.NativeDialog, nameContains: "Example", action: BrowserPopupAction.WatchOnly);
+            var window = h.Probe.AddWindow("Example Domain");
+            window.IsMainWindowLike = true;
+
+            h.AppearWindow(window);
+            h.Settle();
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(0, h.Probe.TotalCloses);
         }
 
         [Theory]
@@ -2476,6 +2837,579 @@ namespace BrowserInterruptAutomation.Tests
         public void IsMainWindowStyle_ChecksTheMinimizeAndMaximizeBoxes(uint style, bool expected)
         {
             Assert.Equal(expected, NativeMethods.IsMainWindowStyle(style));
+        }
+
+        // ------------------------------------------------------------------ post-merge review fixes
+
+        [Fact]
+        public void OverlayOrphanedByItsOwnerDyingMidPass_IsNotEvaluatedAfterBeingDropped()
+        {
+            var h = new Harness();
+            // The native rule keeps the owner window due (it has something to evaluate); the overlay
+            // rule's target does not exist yet, so the overlay is parked on its retry schedule.
+            h.AddRule("owner", BrowserPopupScope.NativeDialog, nameContains: "zzz", process: "chrome");
+            h.AddRule("cookie", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome",
+                action: BrowserPopupAction.InvokeByName, targetName: "Accept");
+            var window = h.Probe.AddWindow("tab", pid: 5, processName: "chrome");
+            var sibling = h.Probe.AddWindow("other tab", pid: 5, processName: "chrome"); // keeps the process name cached once window is gone
+            h.AppearWindow(window);
+            h.AppearWindow(sibling);
+            var overlay = h.Probe.AddOverlay(window, "Cookie banner");
+            h.AppearOverlay(window);
+            Assert.Equal(0, h.Probe.TotalInvokes);
+            Assert.Equal(1, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+
+            // Both come due at 150 ms; the owner is evaluated first and finds itself dead, which
+            // drops the overlay from the tracked set while it still sits in the pass's due snapshot.
+            var accept = h.Probe.AddChild(overlay, "Accept");
+            h.Probe.Destroy(window);
+            h.Pump(BrowserPopupEngine.ScheduleMs[1]);
+            h.Settle(200, 3000);
+
+            Assert.Equal(0, accept.Invokes);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+            Assert.DoesNotContain(overlay.Ref, h.Probe.Retained);
+        }
+
+        [Fact]
+        public void ReportedWatchOnlyNativePopup_HasItsMessageTextReadOnce_AcrossManySweeps()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("w", BrowserPopupScope.NativeDialog, nameContains: "Alert", message: "sure", process: "chrome");
+            var w = h.Probe.AddWindow("Alert", message: "Are you sure?");
+
+            h.AppearWindow(w);
+            for (long t = 100; t <= 8000; t += 100)
+                h.Pump(t);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(1, h.Probe.MessageTextCalls);
+        }
+
+        [Fact]
+        public void ReportedWatchOnlyOverlay_HasItsMessageTextReadOnce_AcrossManySweeps()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 500);
+            h.AddRule("w", BrowserPopupScope.PageOverlay, nameContains: "Cookie", message: "accept", process: "chrome");
+            var window = h.Probe.AddWindow("tab", pid: 5, processName: "chrome");
+            h.AppearWindow(window);
+            h.Probe.AddOverlay(window, "Cookie banner", "Please accept");
+            h.AppearOverlay(window);
+            for (long t = 100; t <= 8000; t += 100)
+                h.Pump(t);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal(1, h.Probe.MessageTextCalls);
+        }
+
+        [Fact]
+        public void PopupHeldByATrippedRule_HasItsMessageTextReadOnce_AcrossManySweeps()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.Engine.MaxDismissalsPerMinute = 1;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", message: "again", action: BrowserPopupAction.CloseWindowPattern);
+            h.Now = 1000;
+            h.AppearWindow(h.Probe.AddWindow("Nag", message: "again?"));
+            h.PastVerifyDelay(); // confirmed: the one dismissal the limit allows
+            var second = h.Probe.AddWindow("Nag", message: "again?");
+            h.Now += 1000;
+            h.AppearWindow(second);
+            Assert.True(h.Engine.IsRuleTripped("nag"));
+            int readsAtTrip = h.Probe.MessageTextCalls;
+
+            long from = h.Now;
+            for (long t = from + 100; t <= from + 8000; t += 100)
+                h.Pump(t);
+
+            Assert.Equal(readsAtTrip, h.Probe.MessageTextCalls);
+            Assert.True(second.Alive);
+        }
+
+        [Fact]
+        public void ReportedWatchOnlyPopup_IsStillRedecidedWhenItsRuleIsDisabled()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("w", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "chrome");
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            h.Settle(100, 2000);
+            Assert.True(w.Alive);
+
+            h.AddRule("close", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            Assert.True(w.Alive); // the watch-only rule is earlier, so it still wins
+
+            h.Engine.SetRuleEnabled("w", false);
+            h.Settle(2100, 3000);
+
+            Assert.False(w.Alive);
+        }
+
+        [Fact]
+        public void PopupWhoseScheduleRanOut_GetsTheFullRetryCascade_WhenARuleIsAddedLater()
+        {
+            var h = new Harness();
+            h.AddRule("other", BrowserPopupScope.NativeDialog, nameContains: "zzz", process: "chrome"); // keeps the window evaluated
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            h.Settle(100, 2600); // unmatched for over 2 s: the retry schedule is spent
+            Assert.True(w.Alive);
+
+            h.AddRule("close", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            h.Pump(2700);
+            h.Pump(2800);
+            var yes = h.Probe.AddChild(w, "Yes"); // the button renders 300 ms after the rule appears
+            for (long t = 2900; t <= 4000; t += 100)
+                h.Pump(t);
+
+            Assert.Equal(1, yes.Invokes);
+            Assert.False(w.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Empty(h.Of(BrowserPopupRecordKind.DismissFailed));
+        }
+
+        [Fact]
+        public void PopupFreedByADisabledRule_GetsTheFullRetryCascadeForTheNextRule()
+        {
+            var h = new Harness();
+            h.AddRule("first", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Nope"); // never finds its target: spends the schedule, fails
+            h.AddRule("second", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            h.Settle(100, 2600);
+
+            h.Engine.SetRuleEnabled("first", false);
+            h.Pump(2700);
+            h.Pump(2800);
+            var yes = h.Probe.AddChild(w, "Yes");
+            for (long t = 2900; t <= 4000; t += 100)
+                h.Pump(t);
+
+            Assert.Equal(1, yes.Invokes);
+            Assert.Equal("first", Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed)).RuleName);
+            Assert.Equal("second", Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)).RuleName);
+        }
+
+        [Fact]
+        public void RuleRemovedBeforeThePassObservesIt_ThenThePopupClosing_CountsAndRecordsNothing()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+            h.AppearWindow(w);
+            Assert.False(w.Alive);
+
+            Assert.True(h.Engine.RemoveRule("r"));
+            h.Settle(100, 2000); // ApplyRuleChanges sees the removal first and drops the pending dismissal
+
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(0, h.Engine.TotalDismissals);
+            Assert.False(h.Engine.TryGetCount("r", out _));
+        }
+
+        [Fact]
+        public void RuleRemovedAfterThePassAppliedRuleChanges_ThenConfirmation_CountsAndRecordsNothing_TotalMatchesPerRuleSum()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 500);
+            h.AddRule("ov", BrowserPopupScope.PageOverlay, nameContains: "zzz", process: "chrome"); // watches the chrome window: its sweep runs mid-pass
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "notepad", action: BrowserPopupAction.CloseWindowPattern);
+            var chrome = h.Probe.AddWindow("tab", pid: 5, processName: "chrome");
+            var dialog = h.Probe.AddWindow("Alert", pid: 6, processName: "notepad");
+            h.AppearWindow(chrome);
+            h.AppearWindow(dialog);
+            Assert.False(dialog.Alive); // closed; verification pending
+
+            // At 600 ms the pass has already applied rule changes when the overlay sweep runs; the
+            // rule is removed from inside it, so the confirmation of the pending dismissal comes
+            // first and only afterwards would ApplyRuleChanges (next pass) see the removal.
+            bool removed = false;
+            h.Probe.OnFindOverlayCandidates = () =>
+            {
+                if (!removed)
+                {
+                    removed = true;
+                    h.Engine.RemoveRule("r");
+                }
+            };
+            h.Pump(600);
+
+            Assert.True(removed);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Dismissed));
+            Assert.Equal(0, h.Engine.TotalDismissals);
+            Assert.False(h.Engine.TryGetCount("r", out _));
+        }
+
+        [Fact]
+        public void ConfirmedDismissal_WithTheRuleStillRegistered_CountsPerRuleAndInTotal()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            h.AppearWindow(h.Probe.AddWindow("Alert"));
+            h.PastVerifyDelay();
+
+            Assert.True(h.Engine.TryGetCount("r", out int count));
+            Assert.Equal(1, count);
+            Assert.Equal(1, h.Engine.TotalDismissals);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+        }
+
+        [Fact]
+        public void BurstOfSimultaneousPopups_IsCappedAtTheLimit_BeforeAnyConfirmationLands()
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 3;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", action: BrowserPopupAction.CloseWindowPattern);
+            var windows = Enumerable.Range(0, 5).Select(_ => h.Probe.AddWindow("Nag")).ToList();
+
+            foreach (var w in windows)
+                h.Hook.FireWindowOpened(w);
+            h.Pump(0);
+
+            Assert.Equal(3, h.Probe.TotalCloses);
+            Assert.True(h.Engine.IsRuleTripped("nag"));
+            var error = Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Equal("nag", error.RuleName);
+            Assert.Contains("SetRuleEnabled", error.Detail);
+
+            h.PastVerifyDelay();
+            h.Settle(1000, 4000);
+
+            Assert.Equal(3, h.Probe.TotalCloses);
+            Assert.Equal(3, h.Of(BrowserPopupRecordKind.Dismissed).Count());
+            Assert.Equal(3, h.Engine.TotalDismissals);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error)); // one trip, one error
+            Assert.Equal(2, windows.Count(w => w.Alive));
+        }
+
+        [Fact]
+        public void ActionThatLeavesThePopupOpen_IsNotCountedAsADismissal_AndStopsCountingTowardTheBreaker()
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 2;
+            h.Engine.MaxAttempts = 1;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var ignoring = h.Probe.AddWindow("Nag");
+            h.Probe.AddChild(ignoring, "Yes").SucceedWithoutClosing = true;
+            var normal = h.Probe.AddWindow("Nag");
+            h.Probe.AddChild(normal, "Yes");
+
+            h.Hook.FireWindowOpened(ignoring);
+            h.Hook.FireWindowOpened(normal);
+            h.Pump(0); // two actions issued, none confirmed yet: at the limit, but not over it
+            Assert.False(h.Engine.IsRuleTripped("nag"));
+
+            h.PastVerifyDelay(); // the ignored one is still open: DismissFailed, no longer pending; the other is confirmed
+            Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed));
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+
+            var third = h.Probe.AddWindow("Nag");
+            h.Probe.AddChild(third, "Yes");
+            h.Now += 100;
+            h.AppearWindow(third); // 1 confirmed + 0 pending: room for one more
+            h.PastVerifyDelay();
+
+            Assert.False(third.Alive);
+            Assert.False(h.Engine.IsRuleTripped("nag"));
+            Assert.Equal(2, h.Engine.TotalDismissals);
+            Assert.Empty(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void ConfirmedDismissals_AreNotCountedTwice_WhenTheyMoveFromPendingToConfirmed()
+        {
+            var h = new Harness();
+            h.Engine.MaxDismissalsPerMinute = 3;
+            h.AddRule("nag", BrowserPopupScope.NativeDialog, nameContains: "Nag", action: BrowserPopupAction.CloseWindowPattern);
+
+            for (int i = 0; i < 3; i++)
+            {
+                h.Now += 1000;
+                h.AppearWindow(h.Probe.AddWindow("Nag"));
+                h.PastVerifyDelay(); // each is confirmed before the next appears
+            }
+
+            // 3 confirmed, 0 pending: the fourth is over the limit (3 >= 3) exactly once, not earlier.
+            Assert.Equal(3, h.Engine.TotalDismissals);
+            Assert.False(h.Engine.IsRuleTripped("nag"));
+            var fourth = h.Probe.AddWindow("Nag");
+            h.Now += 1000;
+            h.AppearWindow(fourth);
+            Assert.True(fourth.Alive);
+            Assert.True(h.Engine.IsRuleTripped("nag"));
+        }
+
+        // ------------------------------------------------------------------ unexpected probe/hook exceptions
+
+        private static Exception Boom(string what) => new InvalidOperationException("boom: " + what);
+
+        private static void AssertNothingTrackedAndPinsBalanced(Harness h)
+        {
+            Assert.Equal(0, TrackedTotal(h));
+            Assert.Empty(h.Probe.Retained);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void ThrowingIsAlive_ForOneCandidate_DoesNotStopTheRestOfThePass_ErrorIsBounded_AndPinsStayBalanced()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var bad = h.Probe.AddWindow("Alert");
+            var good = h.Probe.AddWindow("Alert");
+            h.Probe.Fault = (op, r) => op == "IsAlive" && r.Equals(bad.Ref) ? Boom(op) : null;
+            h.Hook.FireWindowOpened(bad);
+            h.Hook.FireWindowOpened(good);
+
+            long next = h.Pump(0);
+
+            Assert.False(good.Alive); // handled although the candidate before it threw
+            Assert.True(bad.Alive);
+            var error = Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Contains("boom", error.Detail);
+            Assert.True(next > 0 && next <= BrowserPopupEngine.FaultBackoffMs, "the failing candidate is parked on a backoff, not re-run at once");
+
+            for (long t = 100; t <= 20000; t += 100)
+                h.Pump(t);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error)); // one error per candidate per FaultLogIntervalMs, however often it fails
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed));
+
+            h.Pump(BrowserPopupEngine.FaultLogIntervalMs + 1000);
+            Assert.Equal(2, h.Of(BrowserPopupRecordKind.Error).Count()); // still failing: reported again, later
+
+            h.Probe.Fault = null;
+            h.Probe.Destroy(bad);
+            h.Settle(40000, 44000);
+            AssertNothingTrackedAndPinsBalanced(h);
+        }
+
+        [Fact]
+        public void ThrowingDescribeWindow_ForOneCandidate_DoesNotStopTheRestOfThePass()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var bad = h.Probe.AddWindow("Alert"); // no button yet: stays tracked, retrying
+            h.AppearWindow(bad);
+            h.Probe.Fault = (op, r) => op == "DescribeWindow" && r.Equals(bad.Ref) ? Boom(op) : null;
+            var good = h.Probe.AddWindow("Alert");
+            h.Probe.AddChild(good, "Yes");
+
+            h.Hook.FireWindowOpened(good);
+            h.Pump(200); // bad is due (150 ms) and throws; good comes after or before it, either way is handled
+
+            Assert.False(good.Alive);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            h.Probe.Fault = null;
+            h.Probe.Destroy(bad);
+            h.Settle(1500, 4000);
+            AssertNothingTrackedAndPinsBalanced(h);
+        }
+
+        [Fact]
+        public void AWindowThatFailsToDescribe_LeavesNoProcessNameCacheEntry()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert");
+            var gone = h.Probe.AddWindow("Alert", pid: 501);
+            h.Probe.Destroy(gone); // DescribeWindow now returns null
+
+            h.AppearWindow(gone);
+
+            Assert.Equal(0, h.Engine.ProcessNameCacheCountForTests);
+            Assert.Equal(0, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.NativeDialog));
+        }
+
+        [Fact]
+        public void AWindowWhoseDescribeThrows_LeavesNoProcessNameCacheEntry()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert");
+            var bad = h.Probe.AddWindow("Alert", pid: 502);
+            h.Probe.Fault = (op, r) => op == "DescribeWindow" && r.Equals(bad.Ref) ? Boom(op) : null;
+
+            h.AppearWindow(bad);
+
+            Assert.Equal(0, h.Engine.ProcessNameCacheCountForTests);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void AWindowThatFailsToDescribe_KeepsTheNameWhileAnotherCandidateCarriesThePid()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert");
+            var tracked = h.Probe.AddWindow("Alert", pid: 503);
+            h.AppearWindow(tracked);
+            Assert.Equal(1, h.Engine.ProcessNameCacheCountForTests);
+
+            var gone = h.Probe.AddWindow("Alert", pid: 503);
+            h.Probe.Destroy(gone);
+            h.AppearWindow(gone);
+
+            Assert.Equal(1, h.Engine.ProcessNameCacheCountForTests); // still needed by the tracked window
+        }
+
+        [Fact]
+        public void ThrowingTryInvoke_SpendsAnAttempt_ReleasesTheActionLock_AndCannotFloodTheLog()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.InvokeByName, targetName: "Yes");
+            var bad = h.Probe.AddWindow("Alert");
+            var badYes = h.Probe.AddChild(bad, "Yes");
+            var good = h.Probe.AddWindow("Alert");
+            h.Probe.AddChild(good, "Yes");
+            h.Probe.Fault = (op, r) => op == "TryInvoke" && r.Equals(badYes.Ref) ? Boom(op) : null;
+            h.Hook.FireWindowOpened(bad);
+            h.Hook.FireWindowOpened(good);
+
+            h.Pump(0);
+            Assert.False(good.Alive);
+            Assert.True(bad.Alive);
+            Assert.True(System.Threading.Tasks.Task.Run(() => h.Engine.WaitForIdle()).Wait(3000), "the action lock must not stay held after a throw");
+
+            for (long t = 100; t <= 8000; t += 100)
+                h.Pump(t);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            Assert.Single(h.Of(BrowserPopupRecordKind.Dismissed)); // only the good one
+            Assert.Equal("The popup was still open after 3 attempts.", Assert.Single(h.Of(BrowserPopupRecordKind.DismissFailed)).Detail); // bounded by MaxAttempts
+        }
+
+        [Fact]
+        public void ThrowingOverlaySearch_OfOneWindow_DoesNotStopTheOtherWindowsSweep()
+        {
+            var h = new Harness(overlaySweepIntervalMs: 500);
+            h.AddRule("w", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
+            var first = h.Probe.AddWindow("tab1", pid: 5, processName: "chrome");
+            var second = h.Probe.AddWindow("tab2", pid: 5, processName: "chrome");
+            h.AppearWindow(first);
+            h.AppearWindow(second);
+            h.Probe.AddOverlay(first, "Cookie banner one");
+            h.Probe.AddOverlay(second, "Cookie banner two");
+            h.Probe.Fault = (op, r) => op == "FindOverlayCandidates" && r.Equals(first.Ref) ? Boom(op) : null;
+
+            h.Pump(600);
+
+            var detected = Assert.Single(h.Of(BrowserPopupRecordKind.Detected));
+            Assert.Equal("Cookie banner two", detected.Name);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void ThrowingEnumerateTopLevelWindows_DoesNotStopTheRestOfThePass()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var w = h.Probe.AddWindow("Alert");
+            h.Probe.Fault = (op, r) => op == "EnumerateTopLevelWindows" ? Boom(op) : null;
+            h.Hook.FireWindowOpened(w);
+
+            h.Pump(0);
+            h.Pump(1000);
+
+            Assert.False(w.Alive); // found through the hook although the scan failed
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+        }
+
+        [Fact]
+        public void FaultRecords_AreCappedPerPass_AndEachCandidateIsReportedOnce()
+        {
+            var h = new Harness();
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", action: BrowserPopupAction.CloseWindowPattern);
+            var windows = Enumerable.Range(0, 20).Select(_ => h.Probe.AddWindow("Alert")).ToList();
+            h.Probe.Fault = (op, r) => op == "IsAlive" ? Boom(op) : null;
+            foreach (var w in windows)
+                h.Hook.FireWindowOpened(w);
+
+            h.Pump(0);
+            Assert.Equal(BrowserPopupEngine.MaxFaultRecordsPerPass, h.Of(BrowserPopupRecordKind.Error).Count());
+
+            for (long t = 100; t <= 20000; t += 100)
+                h.Pump(t);
+            Assert.Equal(windows.Count, h.Of(BrowserPopupRecordKind.Error).Count()); // each once, spread over passes
+        }
+
+        [Fact]
+        public void ThrowingWatchWindow_DoesNotHalfApplyARuleChange()
+        {
+            var h = new Harness();
+            var first = h.Probe.AddWindow("tab1", pid: 5, processName: "chrome");
+            var second = h.Probe.AddWindow("tab2", pid: 5, processName: "chrome");
+            var dialog = h.Probe.AddWindow("Alert", pid: 7, processName: "notepad");
+            h.Hook.FireWindowOpened(first);
+            h.Hook.FireWindowOpened(second);
+            h.Hook.FireWindowOpened(dialog);
+            h.Pump(0); // no rule wants any of them yet: remembered, undescribed
+
+            h.Hook.Fault = (op, r) => op == "WatchWindow" && r.Equals(first.Ref) ? Boom(op) : null;
+            h.AddRule("ov", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
+            h.AddRule("r", BrowserPopupScope.NativeDialog, nameContains: "Alert", process: "notepad", action: BrowserPopupAction.CloseWindowPattern);
+            h.Pump(100); // one rules-version bump handles both rules
+
+            Assert.False(dialog.Alive); // the rest of the rule-change handling ran
+            Assert.Contains(second.Ref, h.Hook.CurrentlyWatched);
+            Assert.DoesNotContain(first.Ref, h.Hook.CurrentlyWatched);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+
+            int attempts = h.Hook.WatchCalls.Count(r => r.Equals(first.Ref));
+            for (long t = 200; t <= 3000; t += 100)
+                h.Pump(t);
+            Assert.Equal(attempts, h.Hook.WatchCalls.Count(r => r.Equals(first.Ref))); // not re-applied in a loop
+
+            h.Hook.Fault = null;
+            h.AddRule("ov2", BrowserPopupScope.PageOverlay, nameContains: "Other", process: "chrome"); // the next rule change offers it again
+            h.Pump(3100);
+            Assert.Contains(first.Ref, h.Hook.CurrentlyWatched);
+        }
+
+        [Fact]
+        public void ThrowingUnwatchWindow_OnARuleChange_StillUnwatchesTheOthers_AndTheEngineForgetsTheWatch()
+        {
+            var h = new Harness();
+            h.AddRule("ov", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
+            var first = h.Probe.AddWindow("tab1", pid: 5, processName: "chrome");
+            var second = h.Probe.AddWindow("tab2", pid: 5, processName: "chrome");
+            h.AppearWindow(first);
+            h.AppearWindow(second);
+            Assert.Equal(2, h.Hook.CurrentlyWatched.Count);
+
+            h.Hook.Fault = (op, r) => op == "UnwatchWindow" && r.Equals(first.Ref) ? Boom(op) : null;
+            Assert.True(h.Engine.SetRuleEnabled("ov", false));
+            h.Pump(100);
+
+            Assert.DoesNotContain(second.Ref, h.Hook.CurrentlyWatched);
+            Assert.Equal(2, h.Hook.UnwatchCalls.Count);
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+
+            h.Hook.Fault = null;
+            Assert.True(h.Engine.SetRuleEnabled("ov", true));
+            h.Pump(200);
+            // The engine forgot both watches, so turning the rule back on watches both again.
+            Assert.Equal(2, h.Hook.WatchCalls.Count(r => r.Equals(first.Ref)));
+            Assert.Equal(2, h.Hook.WatchCalls.Count(r => r.Equals(second.Ref)));
+            Assert.Contains(second.Ref, h.Hook.CurrentlyWatched);
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
+        public void ThrowingUnwatchWindow_WhenAWatchedWindowDies_StillDropsItAndItsOverlays()
+        {
+            var h = new Harness(sweepIntervalMs: 1000);
+            h.AddRule("ov", BrowserPopupScope.PageOverlay, nameContains: "Cookie", process: "chrome");
+            var window = h.Probe.AddWindow("tab", pid: 5, processName: "chrome");
+            h.AppearWindow(window);
+            h.Probe.AddOverlay(window, "Cookie banner");
+            h.AppearOverlay(window);
+            Assert.Equal(1, h.Engine.TrackedCandidateCountForTests(BrowserPopupScope.PageOverlay));
+
+            h.Hook.Fault = (op, r) => op == "UnwatchWindow" ? Boom(op) : null;
+            h.Probe.Destroy(window);
+            h.Settle(1000, 4000);
+
+            Assert.Single(h.Of(BrowserPopupRecordKind.Error));
+            AssertNothingTrackedAndPinsBalanced(h);
         }
     }
 }

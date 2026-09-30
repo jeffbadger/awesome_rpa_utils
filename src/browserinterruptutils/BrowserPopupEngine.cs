@@ -31,8 +31,11 @@ namespace BrowserInterruptAutomation
     /// action did nothing, so it consumes an attempt (retry through the normal path, or
     /// <c>DismissFailed</c> once <see cref="MaxAttempts"/> is spent) and no <c>Dismissed</c> is
     /// ever recorded for it. That bounds a do-nothing invoke to <see cref="MaxAttempts"/> per
-    /// popup instance; the runaway breaker only sees confirmed dismissals, which is what it is
-    /// for (a popup that keeps coming back after real dismissals). The verification is
+    /// popup instance. The runaway breaker counts confirmed dismissals plus actions still awaiting
+    /// their verification (so a burst of simultaneous popups cannot all be acted on before any
+    /// confirmation lands); an action that ends "still open" stops counting, so a do-nothing
+    /// invoke never inflates it (a popup that keeps coming back after real dismissals is what it is
+    /// for). The verification is
     /// read-only, so it takes no action lock and needs no Paused/rule re-check; a retry it
     /// schedules goes through <see cref="Act"/> and its re-checks. The action
     /// still has a window to race against, though: a pass reads <see cref="Paused"/>, then does
@@ -78,10 +81,10 @@ namespace BrowserInterruptAutomation
     /// <b>Overlay discovery is opt-in per process, driven by which rules are registered.</b> The
     /// engine tracks, from each rules-version bump, which process names at least one registered
     /// <see cref="BrowserPopupScope.PageOverlay"/> rule names (case-insensitive, trailing
-    /// <c>.exe</c> ignored). A rule with no <see cref="BrowserPopupRule.ProcessName"/> set can't
-    /// be scoped to specific processes, so it is treated as "watch every browser process" - there
-    /// is no way to satisfy "opt-in per process" for a rule that opts in to everything by not
-    /// naming one. Only for a window whose process is in that interest set does the engine ever
+    /// <c>.exe</c> ignored). Every rule must name its process (<see cref="BrowserPopupRule.ValidateCommon"/>
+    /// rejects one that does not): nothing in the engine can tell a browser from any other
+    /// application, so a rule that opted in to "every process" would describe, watch and sweep the
+    /// whole desktop. Only for a window whose process is in that interest set does the engine ever
     /// call <see cref="IBrowserPopupHookSource.WatchWindow"/> (enabling
     /// <see cref="IBrowserPopupHookSource.WindowStructureChanged"/> for it) or call
     /// <see cref="IBrowserPopupProbe.FindOverlayCandidates"/> against it during a sweep; a window
@@ -165,6 +168,15 @@ namespace BrowserInterruptAutomation
         internal const int PausedRecheckMs = 250;
         internal const int RunawayWindowMs = 60000;
 
+        /// <summary>How long a candidate whose evaluation hit an unexpected exception waits before it is looked at again (no busy loop on a persistent fault).</summary>
+        internal const int FaultBackoffMs = 1000;
+
+        /// <summary>At most one fault <c>Error</c> record per candidate (or per kind of stage-level failure) in this many milliseconds, so a persistently failing element cannot flood the log.</summary>
+        internal const int FaultLogIntervalMs = 30000;
+
+        /// <summary>The most fault <c>Error</c> records one pass may produce in total; the rest are dropped silently (they are logged on a later pass if they persist).</summary>
+        internal const int MaxFaultRecordsPerPass = 8;
+
         /// <summary>
         /// How long after a successful invoke/close the engine waits before checking whether the
         /// popup really went away. UI Automation's <c>Invoke</c>/<c>Close</c> return before the
@@ -231,6 +243,13 @@ namespace BrowserInterruptAutomation
             public BrowserPopupRule Rule;
             public int RetryToken;
 
+            /// <summary>The rules version (<c>_seenRulesVersion</c>) <see cref="Rule"/> was selected under; a settled candidate is only re-decided once the rules change.</summary>
+            public int SelectedVersion;
+
+            /// <summary>When (pump clock) a fault for this candidate was last logged; <see cref="FaultLogged"/> tells whether that ever happened.</summary>
+            public bool FaultLogged;
+            public long FaultLoggedAt;
+
             /// <summary>Set between a successful action and its verification (<see cref="VerifyDelayMs"/> later); the candidate stays counted as unresolved meanwhile.</summary>
             public PendingDismissal Pending;
 
@@ -265,17 +284,23 @@ namespace BrowserInterruptAutomation
         // Process names of interest to at least one registered PageOverlay rule (trimmed, no
         // ".exe"), recomputed whenever the rule list changes. See the type remarks.
         private HashSet<string> _overlayProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private bool _overlayWatchesAnyProcess;
 
         // Same, for enabled NativeDialog rules: a top-level window is only tracked/described when
-        // its process is named by one of them (or one names no process). See TrackNativeWindow.
+        // its process is named by one of them. See TrackNativeWindow.
         private HashSet<string> _nativeProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private bool _nativeWatchesAnyProcess;
 
         private readonly ConcurrentQueue<BrowserWindowInfo> _nativeQueue = new ConcurrentQueue<BrowserWindowInfo>();
         private int _nativeQueued;
         private readonly ConcurrentQueue<BrowserElementRef> _overlayDirtyQueue = new ConcurrentQueue<BrowserElementRef>();
         private int _overlayDirtyQueued;
+
+        // Queue overflow reporting. The hook/UIA callbacks may only enqueue and set a flag, so a drop
+        // sets its flag here and the worker turns it into ONE Error record per fill episode (the
+        // *Reported flags are worker-only and re-arm once the queue is below its cap again).
+        private int _nativeDropped;
+        private int _overlayDirtyDropped;
+        private bool _nativeOverflowReported;
+        private bool _overlayOverflowReported;
         private readonly ConcurrentQueue<string> _faults = new ConcurrentQueue<string>();
         private readonly AutoResetEvent _wake = new AutoResetEvent(false);
 
@@ -305,6 +330,12 @@ namespace BrowserInterruptAutomation
         // engine, e.g. Dismissed delivered while HasUnresolvedPopup is still true.
         private readonly List<BrowserPopupRecord> _deferred = new List<BrowserPopupRecord>();
         private int _pumpThreadId; // managed thread id currently inside Pump, 0 when none
+
+        // Fault reporting (worker-thread-only): the pass's clock, how many fault records this pass has
+        // produced, and when each kind of stage-level failure was last logged. See ReportFault.
+        private long _passNow;
+        private int _faultRecordsThisPass;
+        private readonly Dictionary<string, long> _stageFaultLoggedAt = new Dictionary<string, long>();
 
         // Overlay windows already swept during the current Pump pass, so a dirty-signal sweep and
         // the periodic sweep (or N signals for one window) never walk the same window twice.
@@ -356,7 +387,8 @@ namespace BrowserInterruptAutomation
         internal int MaxAttempts { get; set; } = 3;
 
         /// <summary>
-        /// How many popups one rule may dismiss in a minute before it stops itself. Set before
+        /// How many popups one rule may dismiss in a minute before it stops itself; dismissals still
+        /// awaiting their verification count toward it (see <see cref="IsRunaway"/>). Set before
         /// starting the worker loop; not safe to change while <see cref="Pump"/> is running on
         /// another thread.
         /// </summary>
@@ -383,9 +415,11 @@ namespace BrowserInterruptAutomation
         // already under way instead of returning while it is still about to land.
         private readonly object _actionLock = new object();
         private bool _actionsStopped;
+        private int _resumed;
 
         /// <summary>
-        /// While set, popups are noticed but not touched; they are dealt with after it is cleared.
+        /// While set, popups are noticed (a matching one is selected, and counts as unresolved) but
+        /// not touched; a rule's action on them is taken after it is cleared with <see cref="Resume"/>.
         /// Setting it does not by itself wait for a call already under way; call
         /// <see cref="WaitForIdle"/> afterwards for that.
         /// </summary>
@@ -525,6 +559,30 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        /// <summary>
+        /// Clears <see cref="Paused"/> and wakes the worker. Candidates a rule matched while paused
+        /// are held with a recheck due up to <see cref="PausedRecheckMs"/> later; the next pass
+        /// makes them due at once, so they are handled promptly rather than after that hold-back.
+        /// </summary>
+        internal void Resume()
+        {
+            Paused = false;
+            Volatile.Write(ref _resumed, 1);
+            Wake();
+        }
+
+        /// <summary>Makes the candidates held for <see cref="Resume"/> due now (once per resume).</summary>
+        private void ResumeHeldCandidates(long now)
+        {
+            if (Interlocked.Exchange(ref _resumed, 0) == 0)
+                return;
+            foreach (var state in _candidates.Values)
+            {
+                if (state.Rule != null && state.Pending == null && !state.Failed && state.NextDue != long.MaxValue && state.NextDue > now)
+                    state.NextDue = now;
+            }
+        }
+
         /// <summary>Stops new invoke/close calls and waits for any one already under way to finish.</summary>
         internal void StopActions()
         {
@@ -564,6 +622,9 @@ namespace BrowserInterruptAutomation
         internal int UnresolvedCount => Volatile.Read(ref _unresolved);
 
         internal bool HasUnresolvedPopup => UnresolvedCount > 0;
+
+        /// <summary>The number of process names currently cached. For tests; not thread-safe against a running worker.</summary>
+        internal int ProcessNameCacheCountForTests => _processNameCache.Count;
 
         /// <summary>The number of tracked candidates of one scope. For tests; not thread-safe against a running worker.</summary>
         internal int TrackedCandidateCountForTests(BrowserPopupScope scope)
@@ -607,7 +668,12 @@ namespace BrowserInterruptAutomation
             if (info == null)
                 return;
             if (Volatile.Read(ref _nativeQueued) >= MaxQueuedItems)
-                return; // the periodic native sweep will find anything dropped here
+            {
+                // The periodic native sweep can find what is dropped here; the worker records that it happened.
+                Volatile.Write(ref _nativeDropped, 1);
+                Wake();
+                return;
+            }
             Interlocked.Increment(ref _nativeQueued);
             _nativeQueue.Enqueue(info);
             Wake();
@@ -616,10 +682,46 @@ namespace BrowserInterruptAutomation
         private void OnWindowStructureChanged(BrowserElementRef windowRoot)
         {
             if (Volatile.Read(ref _overlayDirtyQueued) >= MaxQueuedItems)
-                return; // the periodic overlay sweep is the fallback
+            {
+                // The periodic overlay sweep is the fallback; the worker records that a signal was dropped.
+                Volatile.Write(ref _overlayDirtyDropped, 1);
+                Wake();
+                return;
+            }
             Interlocked.Increment(ref _overlayDirtyQueued);
             _overlayDirtyQueue.Enqueue(windowRoot);
             Wake();
+        }
+
+        /// <summary>
+        /// Turns a drop flag set by a hook/UIA callback into one Error record per fill episode. Runs on
+        /// the worker, before the queues are drained.
+        /// </summary>
+        private void ReportQueueOverflows()
+        {
+            if (Interlocked.Exchange(ref _nativeDropped, 0) == 1 && !_nativeOverflowReported)
+            {
+                _nativeOverflowReported = true;
+                RecordError(string.Empty, "The queue of newly opened windows overflowed (" + MaxQueuedItems +
+                    " waiting) and at least one window-opened event was dropped. Recovery depends on the periodic " +
+                    "native-dialog sweep (sweepIntervalMs); with a sweep interval of 0 the event may be lost.");
+            }
+            if (Interlocked.Exchange(ref _overlayDirtyDropped, 0) == 1 && !_overlayOverflowReported)
+            {
+                _overlayOverflowReported = true;
+                RecordError(string.Empty, "The queue of page-change signals overflowed (" + MaxQueuedItems +
+                    " waiting) and at least one signal was dropped. Recovery depends on the periodic overlay " +
+                    "sweep (overlaySweepIntervalMs); with a sweep interval of 0 the change may be missed.");
+            }
+        }
+
+        /// <summary>Re-arms an overflow report once its queue is below the cap again (after the drain).</summary>
+        private void RearmQueueOverflowReports()
+        {
+            if (_nativeOverflowReported && Volatile.Read(ref _nativeQueued) < MaxQueuedItems)
+                _nativeOverflowReported = false;
+            if (_overlayOverflowReported && Volatile.Read(ref _overlayDirtyQueued) < MaxQueuedItems)
+                _overlayOverflowReported = false;
         }
 
         /// <summary>
@@ -657,6 +759,10 @@ namespace BrowserInterruptAutomation
             while (_faults.TryDequeue(out _)) { }
             while (_nativeQueue.TryDequeue(out _)) Interlocked.Decrement(ref _nativeQueued);
             while (_overlayDirtyQueue.TryDequeue(out _)) Interlocked.Decrement(ref _overlayDirtyQueued);
+            Volatile.Write(ref _nativeDropped, 0);
+            Volatile.Write(ref _overlayDirtyDropped, 0);
+            _nativeOverflowReported = false;
+            _overlayOverflowReported = false;
 
             foreach (var windowRef in _watchedWindows.Values)
             {
@@ -674,6 +780,8 @@ namespace BrowserInterruptAutomation
             _overlaySwept = false;
             _reapStarted = false;
             _reapCursor = 0;
+            _stageFaultLoggedAt.Clear();
+            _faultRecordsThisPass = 0;
             Volatile.Write(ref _unresolved, 0);
         }
 
@@ -708,10 +816,15 @@ namespace BrowserInterruptAutomation
             // Ahead of draining: the overlay process-interest set it (re)computes here is what
             // DrainNativeQueue's watch-registration decision below reads, so a rule added in the
             // same tick a window is first reported must be visible before that decision is made.
+            _passNow = now;
+            _faultRecordsThisPass = 0;
             _sweptThisPass.Clear();
             ApplyRuleChanges(now);
+            ResumeHeldCandidates(now);
+            ReportQueueOverflows();
             DrainNativeQueue(now);
             DrainOverlayDirtyQueue(now);
+            RearmQueueOverflowReports();
 
             if (SweepIntervalMs > 0 && (!_nativeSwept || now - _lastNativeSweep >= SweepIntervalMs))
             {
@@ -735,7 +848,24 @@ namespace BrowserInterruptAutomation
                     _due.Add(state);
             }
             foreach (var state in _due)
-                Evaluate(state, now);
+            {
+                // An earlier evaluation in this pass may have dropped this one: an owner window that
+                // died takes its overlay candidates with it (RemoveCandidate). A dropped candidate is
+                // unpinned and must not be matched, searched or acted on, nor emit a stale record.
+                if (!IsTracked(state))
+                    continue;
+                try
+                {
+                    Evaluate(state, now);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    // One candidate's probe failure must not abort the pass (the rest of the due
+                    // candidates, the reap, the bookkeeping below). Look at it again after a backoff.
+                    ReportFault("evaluating a popup candidate", ex, state);
+                    state.NextDue = now + FaultBackoffMs;
+                }
+            }
 
             long next = long.MaxValue;
             int unresolved = 0;
@@ -761,6 +891,10 @@ namespace BrowserInterruptAutomation
                 next = Math.Min(next, _lastReap + ReapIntervalMs); // wake up to reap even if nothing else is due
             return next;
         }
+
+        /// <summary>Whether <paramref name="state"/> is still the candidate tracked under its ref (not dropped, not replaced) - the pass's due snapshot can outlive a removal.</summary>
+        private bool IsTracked(CandidateState state) =>
+            _candidates.TryGetValue(state.Ref, out var current) && ReferenceEquals(current, state);
 
         /// <summary>A candidate (either scope) waiting on nothing but a rule change or a sweep re-finding it (NextDue is never) and with no dismissal awaiting verification.</summary>
         private static bool IsParked(CandidateState state) =>
@@ -803,7 +937,16 @@ namespace BrowserInterruptAutomation
             for (int i = 0; i < checks; i++)
             {
                 BrowserElementRef key = parked[(start + i) % parked.Count];
-                if (!_probe.IsAlive(key))
+                bool alive = true; // unknown is not dead: a failed check leaves the candidate alone
+                try
+                {
+                    alive = _probe.IsAlive(key);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    ReportFault("checking whether a parked popup is still open", ex, _candidates.TryGetValue(key, out var checking) ? checking : null);
+                }
+                if (!alive)
                     (dead ??= new List<BrowserElementRef>()).Add(key);
             }
             _reapCursor = (start + checks) % parked.Count;
@@ -829,8 +972,10 @@ namespace BrowserInterruptAutomation
             int version = Volatile.Read(ref _rulesVersion);
             if (version == _seenRulesVersion)
                 return;
-            _seenRulesVersion = version;
 
+            // The version is advanced only once the handling below has run to the end, and no step can
+            // stop the ones after it: the probe/hook calls inside are guarded individually, and each
+            // step is safe to repeat. A rule change is therefore never half-applied and forgotten.
             RecomputeOverlayInterest();
             RetrySkippedWindows(now);
 
@@ -844,6 +989,7 @@ namespace BrowserInterruptAutomation
                     state.Failed = false;
                     state.Reported = false;
                     state.Attempts = 0;
+                    RestartSchedule(state, now);
                     state.NextDue = now;
                 }
                 else if (state.Rule != null && !state.Rule.Enabled && state.Pending == null)
@@ -868,16 +1014,22 @@ namespace BrowserInterruptAutomation
                     {
                         state.Failed = false;
                         state.Attempts = 0;
+                        RestartSchedule(state, now);
                         state.NextDue = now;
                     }
                 }
                 else if (state.NextDue == long.MaxValue)
                 {
+                    // Parked (unmatched with its schedule spent, watch-only, tripped): a rule change may
+                    // give it a new rule, which deserves the full retry cascade for a target that has not
+                    // rendered yet, not an immediate failure on the first look.
+                    RestartSchedule(state, now);
                     state.NextDue = now;
                 }
             }
 
             ReconcileOverlayWatches();
+            _seenRulesVersion = version;
         }
 
         /// <summary>Forgets what a (now disabled) rule decided about a candidate and makes it due for re-evaluation.</summary>
@@ -887,46 +1039,44 @@ namespace BrowserInterruptAutomation
             state.Failed = false;
             state.Reported = false;
             state.Attempts = 0;
+            RestartSchedule(state, now);
             state.NextDue = now;
+        }
+
+        /// <summary>
+        /// Starts the <see cref="ScheduleMs"/> retry schedule over, as if the candidate had just been
+        /// seen: a candidate whose schedule ran out while nothing matched must get the whole cascade
+        /// again when a rule change hands it to a rule, or that rule fails it on the first look.
+        /// </summary>
+        private static void RestartSchedule(CandidateState state, long now)
+        {
+            state.Step = 0;
+            state.FirstSeen = now;
         }
 
         private void RecomputeOverlayInterest()
         {
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            bool any = false;
-            foreach (var rule in SnapshotRules())
-            {
-                // A disabled rule never acts, so it must not keep a process in the watch set (the
-                // native interest below already skips it). Turning it back on bumps the rules
-                // version, which recomputes this and re-watches.
-                if (rule.Scope != BrowserPopupScope.PageOverlay || !rule.Enabled)
-                    continue;
-                if (string.IsNullOrWhiteSpace(rule.ProcessName))
-                    any = true;
-                else
-                    names.Add(BrowserPopupRule.TrimExe(rule.ProcessName));
-            }
-            _overlayProcessNames = names;
-            _overlayWatchesAnyProcess = any;
-
             var nativeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            bool nativeAny = false;
             foreach (var rule in SnapshotRules())
             {
-                if (rule.Scope != BrowserPopupScope.NativeDialog || !rule.Enabled)
+                // A disabled rule never acts, so it must not keep a process in the watch set.
+                // Turning it back on bumps the rules version, which recomputes this and re-watches.
+                if (!rule.Enabled)
                     continue;
-                if (string.IsNullOrWhiteSpace(rule.ProcessName))
-                    nativeAny = true;
+                // Every rule names its process (ValidateCommon), so there is always a name to add.
+                if (rule.Scope == BrowserPopupScope.PageOverlay)
+                    names.Add(BrowserPopupRule.TrimExe(rule.ProcessName));
                 else
                     nativeNames.Add(BrowserPopupRule.TrimExe(rule.ProcessName));
             }
+            _overlayProcessNames = names;
             _nativeProcessNames = nativeNames;
-            _nativeWatchesAnyProcess = nativeAny;
         }
 
         /// <summary>Whether some enabled NativeDialog rule could match a window of this process (the cheap pre-filter before describing it).</summary>
         private bool IsNativeInterestingProcess(string processName) =>
-            _nativeWatchesAnyProcess || (!string.IsNullOrEmpty(processName) && _nativeProcessNames.Contains(BrowserPopupRule.TrimExe(processName)));
+            !string.IsNullOrEmpty(processName) && _nativeProcessNames.Contains(BrowserPopupRule.TrimExe(processName));
 
         /// <summary>Whether a top-level window of this process is worth tracking at all: a native rule or an overlay rule wants it.</summary>
         private bool IsTrackableProcess(string processName) =>
@@ -944,7 +1094,7 @@ namespace BrowserInterruptAutomation
         }
 
         private bool IsOverlayInterestingProcess(string processName) =>
-            _overlayWatchesAnyProcess || (!string.IsNullOrEmpty(processName) && _overlayProcessNames.Contains(BrowserPopupRule.TrimExe(processName)));
+            !string.IsNullOrEmpty(processName) && _overlayProcessNames.Contains(BrowserPopupRule.TrimExe(processName));
 
         /// <summary>
         /// Un-watches a currently watched window whose process no longer interests any
@@ -966,22 +1116,60 @@ namespace BrowserInterruptAutomation
             {
                 foreach (var hwnd in toUnwatch)
                 {
-                    _hookSource.UnwatchWindow(_watchedWindows[hwnd]);
+                    SafeUnwatch(_watchedWindows[hwnd]);
                     _watchedWindows.Remove(hwnd);
                 }
             }
 
+            List<KeyValuePair<IntPtr, BrowserElementRef>> toWatch = null;
             foreach (var pair in _hwndIndex)
             {
                 if (_watchedWindows.ContainsKey(pair.Key))
                     continue;
                 if (!_candidates.TryGetValue(pair.Value, out var candidate))
                     continue;
-                if (IsOverlayInterestingProcess(ProcessNameOf(candidate.ProcessId)))
-                {
-                    _hookSource.WatchWindow(candidate.Ref);
-                    _watchedWindows[pair.Key] = candidate.Ref;
-                }
+                if (IsOverlayInterestingProcess(ProcessNameOf(candidate.ProcessId)) && SafeWatch(candidate.Ref))
+                    (toWatch ??= new List<KeyValuePair<IntPtr, BrowserElementRef>>()).Add(new KeyValuePair<IntPtr, BrowserElementRef>(pair.Key, candidate.Ref));
+            }
+            if (toWatch != null)
+            {
+                foreach (var pair in toWatch)
+                    _watchedWindows[pair.Key] = pair.Value;
+            }
+        }
+
+        /// <summary>
+        /// <see cref="IBrowserPopupHookSource.WatchWindow"/> that cannot throw: a failure is reported
+        /// (rate-limited) and answered <c>false</c>, so the window is not recorded as watched and is
+        /// offered again the next time it is seen (a sweep or a rule change).
+        /// </summary>
+        private bool SafeWatch(BrowserElementRef windowRef)
+        {
+            try
+            {
+                _hookSource.WatchWindow(windowRef);
+                return true;
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                ReportFault("watching a browser window", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// <see cref="IBrowserPopupHookSource.UnwatchWindow"/> that cannot throw. A failure is reported
+        /// but the engine forgets the watch regardless (best effort): keeping it would retry forever.
+        /// </summary>
+        private void SafeUnwatch(BrowserElementRef windowRef)
+        {
+            try
+            {
+                _hookSource.UnwatchWindow(windowRef);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                ReportFault("un-watching a browser window", ex);
             }
         }
 
@@ -1001,15 +1189,22 @@ namespace BrowserInterruptAutomation
             while (_nativeQueue.TryDequeue(out BrowserWindowInfo win))
             {
                 Interlocked.Decrement(ref _nativeQueued);
-                if (_hwndIndex.TryGetValue(win.Hwnd, out var existingRef) && _candidates.TryGetValue(existingRef, out var existing))
+                try
                 {
-                    CacheProcessName(win.ProcessId, win.ProcessName);
-                    if (existing.NextDue == long.MaxValue && IsNativeInterestingProcess(win.ProcessName))
-                        existing.NextDue = now;
-                    MaybeWatchForOverlay(win.Hwnd, win.ProcessName, existing.Ref);
-                    continue;
+                    if (_hwndIndex.TryGetValue(win.Hwnd, out var existingRef) && _candidates.TryGetValue(existingRef, out var existing))
+                    {
+                        CacheProcessName(win.ProcessId, win.ProcessName);
+                        if (existing.NextDue == long.MaxValue && IsNativeInterestingProcess(win.ProcessName))
+                            existing.NextDue = now;
+                        MaybeWatchForOverlay(win.Hwnd, win.ProcessName, existing.Ref);
+                        continue;
+                    }
+                    TrackNativeWindow(win, now, rememberIfSkipped: true);
                 }
-                TrackNativeWindow(win, now, rememberIfSkipped: true);
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    ReportFault("tracking a reported window", ex);
+                }
             }
         }
 
@@ -1020,7 +1215,17 @@ namespace BrowserInterruptAutomation
             {
                 if (!_candidates.TryGetValue(pair.Value, out var state))
                     continue;
-                if (!_probe.IsAlive(pair.Value))
+                bool alive;
+                try
+                {
+                    alive = _probe.IsAlive(pair.Value);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    ReportFault("checking whether a window is still open", ex, state);
+                    continue; // unknown is not dead
+                }
+                if (!alive)
                     (gone ??= new List<BrowserElementRef>()).Add(pair.Value);
                 else if (state.NextDue == long.MaxValue && !state.Failed && IsNativeInterestingProcess(ProcessNameOf(state.ProcessId)))
                     state.NextDue = now; // idle: look again, its name or message may have changed
@@ -1028,21 +1233,43 @@ namespace BrowserInterruptAutomation
             if (gone != null)
             {
                 foreach (var key in gone)
-                    RemoveCandidate(_candidates[key]);
+                {
+                    if (_candidates.TryGetValue(key, out var dead))
+                        RemoveCandidate(dead);
+                }
             }
 
-            foreach (var win in _probe.EnumerateTopLevelWindows())
+            IReadOnlyList<BrowserWindowInfo> windows;
+            try
+            {
+                windows = _probe.EnumerateTopLevelWindows();
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                ReportFault("scanning for windows", ex);
+                return;
+            }
+            if (windows == null)
+                return;
+            foreach (var win in windows)
             {
                 if (win == null)
                     continue;
-                if (_hwndIndex.ContainsKey(win.Hwnd))
+                try
                 {
-                    CacheProcessName(win.ProcessId, win.ProcessName);
-                    MaybeWatchForOverlay(win.Hwnd, win.ProcessName, _hwndIndex[win.Hwnd]);
+                    if (_hwndIndex.ContainsKey(win.Hwnd))
+                    {
+                        CacheProcessName(win.ProcessId, win.ProcessName);
+                        MaybeWatchForOverlay(win.Hwnd, win.ProcessName, _hwndIndex[win.Hwnd]);
+                    }
+                    else
+                    {
+                        TrackNativeWindow(win, now);
+                    }
                 }
-                else
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
                 {
-                    TrackNativeWindow(win, now);
+                    ReportFault("tracking a window", ex);
                 }
             }
         }
@@ -1066,7 +1293,18 @@ namespace BrowserInterruptAutomation
                 return;
             }
             CacheProcessName(win.ProcessId, win.ProcessName);
-            BrowserElementInfo info = _probe.DescribeWindow(win.Hwnd);
+            BrowserElementInfo info = null;
+            try
+            {
+                info = _probe.DescribeWindow(win.Hwnd);
+            }
+            finally
+            {
+                // No candidate results (gone already, or the probe failed), so nothing would ever
+                // evict the name cached above: forget it unless another candidate carries this PID.
+                if (info == null)
+                    EvictProcessNameIfUnreferenced(win.ProcessId);
+            }
             if (info == null)
                 return; // gone already
 
@@ -1112,8 +1350,16 @@ namespace BrowserInterruptAutomation
             foreach (var win in wanted)
             {
                 _skippedWindows.Remove(win.Hwnd); // stale entries in _skippedOrder are harmless: Remove of a missing key is a no-op
-                if (!_hwndIndex.ContainsKey(win.Hwnd))
-                    TrackNativeWindow(win, now);
+                try
+                {
+                    if (!_hwndIndex.ContainsKey(win.Hwnd))
+                        TrackNativeWindow(win, now);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    ReportFault("tracking a remembered window", ex);
+                    RememberSkipped(win); // not lost: offered again on the next rule change or sweep
+                }
             }
         }
 
@@ -1123,8 +1369,8 @@ namespace BrowserInterruptAutomation
                 return;
             if (!IsOverlayInterestingProcess(processName))
                 return;
-            _hookSource.WatchWindow(windowRef);
-            _watchedWindows[hwnd] = windowRef;
+            if (SafeWatch(windowRef))
+                _watchedWindows[hwnd] = windowRef;
         }
 
         // ------------------------------------------------------------------ page-overlay discovery
@@ -1144,7 +1390,7 @@ namespace BrowserInterruptAutomation
             if (dirty == null)
                 return;
             foreach (var windowRef in dirty)
-                SweepOneOverlayWindow(windowRef, now);
+                SweepOneOverlayWindowGuarded(windowRef, now);
         }
 
         private void OverlaySweepAll(long now)
@@ -1154,7 +1400,20 @@ namespace BrowserInterruptAutomation
             var windows = new BrowserElementRef[_watchedWindows.Count];
             _watchedWindows.Values.CopyTo(windows, 0);
             foreach (var windowRef in windows)
+                SweepOneOverlayWindowGuarded(windowRef, now);
+        }
+
+        /// <summary>One window's overlay walk that cannot abort the others' (or the rest of the pass).</summary>
+        private void SweepOneOverlayWindowGuarded(BrowserElementRef windowRef, long now)
+        {
+            try
+            {
                 SweepOneOverlayWindow(windowRef, now);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                ReportFault("searching a browser window for page overlays", ex, _candidates.TryGetValue(windowRef, out var owner) ? owner : null);
+            }
         }
 
         private void SweepOneOverlayWindow(BrowserElementRef windowRef, long now)
@@ -1243,14 +1502,31 @@ namespace BrowserInterruptAutomation
             bool replacing = _candidates.ContainsKey(state.Ref); // already pinned: Retain is idempotent, and Release must stay 1:1
             _candidates[state.Ref] = state;
             if (!replacing)
-                _probe.Retain(state.Ref);
+            {
+                try
+                {
+                    _probe.Retain(state.Ref);
+                }
+                catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+                {
+                    ReportFault("pinning a popup element", ex, state); // still tracked; its liveness is just less certain
+                }
+            }
         }
 
         /// <summary>The one place a candidate stops being tracked (every removal path): removes it and releases its pin.</summary>
         private void DropCandidate(BrowserElementRef key)
         {
-            if (_candidates.Remove(key))
+            if (!_candidates.Remove(key))
+                return;
+            try
+            {
                 _probe.Release(key);
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                ReportFault("releasing a popup element", ex);
+            }
         }
 
         private void RemoveCandidate(CandidateState state)
@@ -1265,7 +1541,7 @@ namespace BrowserInterruptAutomation
             _hwndIndex.Remove(state.Hwnd);
             if (_watchedWindows.TryGetValue(state.Hwnd, out var watchedRef))
             {
-                _hookSource.UnwatchWindow(watchedRef);
+                SafeUnwatch(watchedRef);
                 _watchedWindows.Remove(state.Hwnd);
             }
 
@@ -1358,13 +1634,30 @@ namespace BrowserInterruptAutomation
                 state.NextDue = long.MaxValue;
                 return;
             }
-            if (Paused)
+            if (Paused && state.Rule != null && state.Rule.Action != BrowserPopupAction.WatchOnly)
             {
+                // Already matched (so already counted as unresolved) and held for Resume: nothing
+                // to re-decide, and no reason to re-read its message text every recheck. A rule
+                // change that could alter the match resets state.Rule (ApplyRuleChanges).
                 state.NextDue = now + PausedRecheckMs;
                 return;
             }
 
             string processName = ProcessNameOf(info.ProcessId);
+
+            // Settled and waiting on nothing but a rule change: a watch-only match already reported, or
+            // one whose rule has tripped. Every native (1 s) and overlay (2 s) sweep re-arms a parked
+            // candidate, and re-selecting would re-walk its message text each time for no decision.
+            // Selected under the current rules and still passing the cheap criteria (a renamed popup
+            // is looked at again), it stays parked; a rule change bumps the version and re-decides.
+            if (state.Rule != null && state.SelectedVersion == _seenRulesVersion && state.Rule.Enabled
+                && (IsTripped(state.Rule) || (state.Reported && state.Rule.Action == BrowserPopupAction.WatchOnly))
+                && state.Rule.MatchesCheap(info, processName))
+            {
+                state.NextDue = long.MaxValue;
+                return;
+            }
+
             BrowserPopupRule rule = null;
             string text = null;
             foreach (var candidate in SnapshotRules())
@@ -1395,9 +1688,20 @@ namespace BrowserInterruptAutomation
             }
 
             state.Rule = rule;
+            state.SelectedVersion = _seenRulesVersion;
             if (IsTripped(rule))
             {
                 state.NextDue = long.MaxValue;
+                return;
+            }
+
+            // Rule selection deliberately runs while paused: a popup that opens during a pause is
+            // matched, counted as unresolved (HasUnresolvedPopup), and only its ACTION is held
+            // back until Resume (see ResumeHeldCandidates). A watch-only match is not an action, so
+            // its Detected report is still raised while paused.
+            if (Paused && rule.Action != BrowserPopupAction.WatchOnly)
+            {
+                state.NextDue = now + PausedRecheckMs;
                 return;
             }
 
@@ -1420,30 +1724,31 @@ namespace BrowserInterruptAutomation
 
         private void Act(CandidateState state, BrowserPopupRule rule, BrowserElementInfo info, string text, string processName, long now)
         {
+            // Defense in depth for every acting NativeDialog rule: a name/message substring can match
+            // the browser's MAIN window (a tab title containing it). Closing that closes the whole
+            // browser, and an invoke rule would walk the window's whole subtree - the PAGE - and press
+            // the first page control with the target's name. A window with a minimize/maximize box is a
+            // normal application window, not a JS or system dialog, so refuse any action on it before
+            // any probe call (WatchOnly never reaches here). Refused once, without spending retries:
+            // nothing about it will change on a retry.
+            if (state.Scope == BrowserPopupScope.NativeDialog && info.IsMainWindowLike)
+            {
+                Fail(state, rule, info, text, processName, MainWindowRefusal);
+                return;
+            }
+
             if (IsRunaway(rule, now))
             {
                 TripRule(rule);
                 state.NextDue = long.MaxValue;
                 RecordError(rule.RuleName, "Rule '" + rule.RuleName + "' dismissed " + MaxDismissalsPerMinute
-                    + " popups in the last minute, so it stopped dismissing. Its popup keeps coming back; "
+                    + " popups in the last minute (counting actions still awaiting confirmation), so it stopped dismissing. Its popup keeps coming back; "
                     + "call SetRuleEnabled to turn it back on once that is sorted out.");
                 return;
             }
             if (state.Attempts >= MaxAttempts)
             {
                 Fail(state, rule, info, text, processName, "The popup was still open after " + state.Attempts + " attempts.");
-                return;
-            }
-
-            // Defense in depth for CloseWindowPattern: a name/message substring can match the
-            // browser's MAIN window (a tab title containing it), and closing that closes the whole
-            // browser. A window with a minimize/maximize box is a normal application window, not a JS
-            // or system dialog, so refuse before any probe call. Refused once, without spending
-            // retries: nothing about it will change on a retry (Invoke-based dismissals, which only
-            // press a button inside the popup, are unaffected).
-            if (rule.Action == BrowserPopupAction.CloseWindowPattern && state.Scope == BrowserPopupScope.NativeDialog && info.IsMainWindowLike)
-            {
-                Fail(state, rule, info, text, processName, MainWindowRefusal);
                 return;
             }
 
@@ -1536,8 +1841,10 @@ namespace BrowserInterruptAutomation
         /// <summary>
         /// The popup an action was taken on is gone: counts it (per-rule count, total, the runaway
         /// breaker's window) and records <c>Dismissed</c>. No-op unless a dismissal awaits
-        /// verification. Counted even if the rule was removed meanwhile (the popup did close), but
-        /// only into a rule that is still registered.
+        /// verification. One deterministic rule for a rule removed meanwhile: if the rule is no longer
+        /// registered when this runs, nothing is counted or recorded, whichever of this and
+        /// <see cref="ApplyRuleChanges"/> (which drops such a pending dismissal too) gets there first,
+        /// so the total always equals the sum of the per-rule counts.
         /// </summary>
         private void ConfirmDismissal(CandidateState state)
         {
@@ -1549,10 +1856,11 @@ namespace BrowserInterruptAutomation
             BrowserPopupRule rule = pending.Rule;
             lock (_lock)
             {
+                if (!_rules.Contains(rule))
+                    return; // removed (or cleared) before the confirmation: nothing left to count or report
                 if (_ruleRuntime.TryGetValue(rule.RuleName, out var runtime))
                     runtime.RecentDismissals.Enqueue(pending.ActedAt);
-                if (_rules.Exists(r => string.Equals(r.RuleName, rule.RuleName, StringComparison.OrdinalIgnoreCase)))
-                    _counts[rule.RuleName] = (_counts.TryGetValue(rule.RuleName, out int c) ? c : 0) + 1;
+                _counts[rule.RuleName] = (_counts.TryGetValue(rule.RuleName, out int c) ? c : 0) + 1;
                 _total++;
             }
             RecordCore(BrowserPopupRecordKind.Dismissed, rule.RuleName, pending.Scope, pending.Info.Name,
@@ -1588,9 +1896,9 @@ namespace BrowserInterruptAutomation
                 state.NextDue = now + RetryDelayMs;
         }
 
-        /// <summary>The <c>DismissFailed</c> detail when a close rule matched a main-window-like window.</summary>
-        internal const string MainWindowRefusal = "refused to close a window that looks like a main application window; "
-            + "use a dismiss-by-button rule or a more specific rule";
+        /// <summary>The <c>DismissFailed</c> detail when an acting (invoke or close) native rule matched a main-window-like window.</summary>
+        internal const string MainWindowRefusal = "refused to act on a window that looks like a main application window; "
+            + "use a page-overlay rule (scope PageOverlay) or a more specific rule";
 
         private static bool SetUnreachableFailure(out string failureReason)
         {
@@ -1648,15 +1956,29 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        /// <summary>
+        /// Whether acting once more would take the rule past <see cref="MaxDismissalsPerMinute"/>: the
+        /// confirmed dismissals of the last minute PLUS the actions already issued and still awaiting
+        /// verification (<see cref="VerifyDelayMs"/> later). Counting only confirmed ones would let a
+        /// burst of simultaneous popups all be acted on before any confirmation landed. No double
+        /// counting: a pending action leaves the candidate the moment it is confirmed (and is queued
+        /// as a confirmed one), and one that ends "still open" or failed stops counting altogether.
+        /// </summary>
         private bool IsRunaway(BrowserPopupRule rule, long now)
         {
+            int issued = 0;
+            foreach (var candidate in _candidates.Values)
+            {
+                if (candidate.Pending != null && ReferenceEquals(candidate.Pending.Rule, rule))
+                    issued++;
+            }
             lock (_lock)
             {
                 if (!_ruleRuntime.TryGetValue(rule.RuleName, out var runtime))
                     return false;
                 while (runtime.RecentDismissals.Count > 0 && now - runtime.RecentDismissals.Peek() > RunawayWindowMs)
                     runtime.RecentDismissals.Dequeue();
-                return runtime.RecentDismissals.Count >= MaxDismissalsPerMinute;
+                return runtime.RecentDismissals.Count + issued >= MaxDismissalsPerMinute;
             }
         }
 
@@ -1693,6 +2015,40 @@ namespace BrowserInterruptAutomation
             state.Step++;
             state.NextDue = Math.Max(state.FirstSeen + ScheduleMs[state.Step], now + 1);
             return true;
+        }
+
+        // ------------------------------------------------------------------ fault reporting
+
+        /// <summary>
+        /// Reports an unexpected (recoverable) exception from a probe or hook call the engine caught so
+        /// the pass could carry on. The real UIA classes swallow nearly everything, so this is defense
+        /// in depth: the engine's contract does not depend on that. Bounded so a persistently failing
+        /// element cannot flood the 500-entry log: at most one <c>Error</c> per candidate (or, for a
+        /// stage that has no candidate, per kind of failure) every <see cref="FaultLogIntervalMs"/>,
+        /// and at most <see cref="MaxFaultRecordsPerPass"/> per pass in total. A record skipped for
+        /// the per-pass cap is logged by a later pass if the fault persists.
+        /// </summary>
+        private void ReportFault(string what, Exception ex, CandidateState state = null)
+        {
+            long now = _passNow;
+            if (_faultRecordsThisPass >= MaxFaultRecordsPerPass)
+                return;
+            if (state != null)
+            {
+                if (state.FaultLogged && now - state.FaultLoggedAt < FaultLogIntervalMs)
+                    return;
+                state.FaultLogged = true;
+                state.FaultLoggedAt = now;
+            }
+            else
+            {
+                if (_stageFaultLoggedAt.TryGetValue(what, out long last) && now - last < FaultLogIntervalMs)
+                    return;
+                _stageFaultLoggedAt[what] = now;
+            }
+            _faultRecordsThisPass++;
+            RecordError(state?.Rule?.RuleName ?? string.Empty,
+                "Unexpected " + ex.GetType().Name + " while " + what + ": " + ex.Message + " The handler carried on and will try again shortly.");
         }
 
         // ------------------------------------------------------------------ recording

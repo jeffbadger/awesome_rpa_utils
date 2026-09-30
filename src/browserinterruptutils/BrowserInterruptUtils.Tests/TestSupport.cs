@@ -69,6 +69,20 @@ namespace BrowserInterruptAutomation.Tests
 
         public int CurrentProcessId { get; set; } = 1;
 
+        /// <summary>
+        /// Throw-injection: called with the operation name (<c>IsAlive</c>, <c>DescribeWindow</c>, <c>EnumerateTopLevelWindows</c>,
+        /// <c>FindOverlayCandidates</c>, <c>TryInvoke</c>, <c>TryClose</c>, <c>TryGetMessageText</c>) and the element it concerns
+        /// (default for enumeration); a non-null result is thrown before the operation does anything.
+        /// </summary>
+        public Func<string, BrowserElementRef, Exception> Fault;
+
+        private void Inject(string operation, BrowserElementRef element)
+        {
+            var exception = Fault?.Invoke(operation, element);
+            if (exception != null)
+                throw exception;
+        }
+
         /// <summary>How many times <see cref="FindOverlayCandidates"/> has been called - the perf-gating contract's assertion point.</summary>
         public int OverlaySearchCalls { get; private set; }
 
@@ -148,21 +162,26 @@ namespace BrowserInterruptAutomation.Tests
 
         // ---- IBrowserPopupProbe ----
 
-        public IReadOnlyList<BrowserWindowInfo> EnumerateTopLevelWindows() =>
-            _elements.Values.Where(e => e.IsWindow && e.Alive && e.Visible)
+        public IReadOnlyList<BrowserWindowInfo> EnumerateTopLevelWindows()
+        {
+            Inject("EnumerateTopLevelWindows", default);
+            return _elements.Values.Where(e => e.IsWindow && e.Alive && e.Visible)
                 .Select(e => new BrowserWindowInfo { Hwnd = e.Ref.Hwnd, ProcessName = e.ProcessName, ProcessId = e.Pid, ClassName = e.ClassName })
                 .ToList();
+        }
 
         public BrowserElementInfo DescribeWindow(IntPtr hwnd)
         {
             DescribeWindowCalls++;
             var el = _elements.Values.FirstOrDefault(e => e.IsWindow && e.Ref.Hwnd == hwnd);
+            Inject("DescribeWindow", el?.Ref ?? default);
             return el == null || !el.Alive ? null : el.ToInfo();
         }
 
         public IReadOnlyList<BrowserElementInfo> FindOverlayCandidates(BrowserElementRef browserWindowRoot, int maxNodes, int maxDepth)
         {
             OnFindOverlayCandidates?.Invoke();
+            Inject("FindOverlayCandidates", browserWindowRoot);
             OverlaySearchCalls++;
             OverlaySearchRoots.Add(browserWindowRoot);
             if (!_elements.TryGetValue(browserWindowRoot, out var root) || !root.Alive)
@@ -186,7 +205,11 @@ namespace BrowserInterruptAutomation.Tests
             return result;
         }
 
-        public bool IsAlive(BrowserElementRef element) => _elements.TryGetValue(element, out var el) && (el.Alive || el.LivenessUnknown);
+        public bool IsAlive(BrowserElementRef element)
+        {
+            Inject("IsAlive", element);
+            return _elements.TryGetValue(element, out var el) && (el.Alive || el.LivenessUnknown);
+        }
 
         /// <summary>The refs currently pinned through <see cref="Retain"/>; must be empty when the engine tracks nothing.</summary>
         public readonly HashSet<BrowserElementRef> Retained = new HashSet<BrowserElementRef>();
@@ -216,6 +239,7 @@ namespace BrowserInterruptAutomation.Tests
         public string TryGetMessageText(BrowserElementRef element)
         {
             MessageTextCalls++;
+            Inject("TryGetMessageText", element);
             return _elements.TryGetValue(element, out var el) ? el.Message : null;
         }
 
@@ -237,6 +261,7 @@ namespace BrowserInterruptAutomation.Tests
         public bool TryInvoke(BrowserElementRef target, out string failureReason)
         {
             EnterAction();
+            Inject("TryInvoke", target);
             failureReason = null;
             if (!_elements.TryGetValue(target, out var el) || !el.Alive)
             {
@@ -261,6 +286,7 @@ namespace BrowserInterruptAutomation.Tests
         public bool TryClose(BrowserElementRef target, out string failureReason)
         {
             EnterAction();
+            Inject("TryClose", target);
             failureReason = null;
             if (!_elements.TryGetValue(target, out var el) || !el.Alive)
             {
@@ -292,6 +318,16 @@ namespace BrowserInterruptAutomation.Tests
         public int StartCalls;
         public int StopCalls;
 
+        /// <summary>Throw-injection for <c>WatchWindow</c>/<c>UnwatchWindow</c> (operation name and window); a non-null result is thrown before the call does anything.</summary>
+        public Func<string, BrowserElementRef, Exception> Fault;
+
+        private void Inject(string operation, BrowserElementRef window)
+        {
+            var exception = Fault?.Invoke(operation, window);
+            if (exception != null)
+                throw exception;
+        }
+
         public readonly List<BrowserElementRef> WatchCalls = new List<BrowserElementRef>();
         public readonly List<BrowserElementRef> UnwatchCalls = new List<BrowserElementRef>();
         public readonly HashSet<BrowserElementRef> CurrentlyWatched = new HashSet<BrowserElementRef>();
@@ -318,12 +354,14 @@ namespace BrowserInterruptAutomation.Tests
         public void WatchWindow(BrowserElementRef windowRoot)
         {
             WatchCalls.Add(windowRoot);
+            Inject("WatchWindow", windowRoot);
             CurrentlyWatched.Add(windowRoot);
         }
 
         public void UnwatchWindow(BrowserElementRef windowRoot)
         {
             UnwatchCalls.Add(windowRoot);
+            Inject("UnwatchWindow", windowRoot);
             CurrentlyWatched.Remove(windowRoot);
         }
 
