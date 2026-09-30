@@ -1080,6 +1080,11 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
 - **CPU cost of the 1 s native sweep (performance PR).** On a desktop with 100+ visible top-level
   windows, compare the host process's CPU (Process Explorer or PerfMon `% Processor Time`) with the
   default `sweepIntervalMs` before and after the process-name cache change; expect a clear drop.
+- **Memory released after `Stop` (performance PR).** Cause an overlay/dialog to be tracked, then
+  `Stop`: the probe's cached and pinned UI Automation elements are now released at once (previously at the
+  next `Start`). In Task Manager/Process Explorer watch the browser's handle count or working set and
+  the host's UI Automation client handles; expect them to fall back shortly after `Stop` and after
+  `Dispose` while running.
 - **Windows-only xunit classes.** Run `UiaTests` and `HookThreadUiaTests` (they drive the real
   UI Automation probe and hook against a WPF window, and are compiled but have **not yet been executed**
   anywhere) on a Windows host with the Windows desktop runtime: `dotnet test

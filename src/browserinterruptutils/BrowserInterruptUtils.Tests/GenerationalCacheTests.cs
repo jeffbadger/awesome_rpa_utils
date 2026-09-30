@@ -14,6 +14,25 @@ namespace BrowserInterruptAutomation.Tests
             new GenerationalCache<int, string>(cap, rotateAfterMs, clock);
 
         [Fact]
+        public void Clear_DropsBothGenerations()
+        {
+            var cache = Cache(cap: 2);
+            cache.Set(1, "a");
+            cache.Set(2, "b");
+            cache.Set(3, "c"); // rotates: 1 and 2 are now the previous generation
+            Assert.True(cache.CurrentCount > 0 && cache.PreviousCount > 0);
+
+            cache.Clear();
+
+            Assert.Equal(0, cache.CurrentCount);
+            Assert.Equal(0, cache.PreviousCount);
+            Assert.False(cache.TryGet(1, out _));
+            Assert.False(cache.TryGet(3, out _));
+            cache.Set(4, "d");
+            Assert.True(cache.TryGet(4, out _)); // still usable
+        }
+
+        [Fact]
         public void HitAndMiss()
         {
             var cache = Cache();

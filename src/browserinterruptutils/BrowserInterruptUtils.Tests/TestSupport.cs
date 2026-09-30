@@ -236,6 +236,20 @@ namespace BrowserInterruptAutomation.Tests
                 UnbalancedReleases++;
         }
 
+        /// <summary>Every <see cref="ClearCache"/> call.</summary>
+        public int ClearCallCount { get; private set; }
+
+        /// <summary>How many refs were still pinned when <see cref="ClearCache"/> last ran (0 when the engine released its candidates first).</summary>
+        public int RetainedAtLastClear { get; private set; }
+
+        /// <summary>Mirrors the real probe: clearing the cache also drops every pin (without counting as an unbalanced release).</summary>
+        public void ClearCache()
+        {
+            ClearCallCount++;
+            RetainedAtLastClear = Retained.Count;
+            Retained.Clear();
+        }
+
         public string TryGetMessageText(BrowserElementRef element)
         {
             MessageTextCalls++;

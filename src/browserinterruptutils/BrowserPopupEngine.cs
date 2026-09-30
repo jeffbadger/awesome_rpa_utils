@@ -776,6 +776,10 @@ namespace BrowserInterruptAutomation
                 DropCandidate(key);
             _hwndIndex.Clear();
             _processNameCache.Clear();
+            // After the candidates are dropped (and their pins released): the probe's own cache and
+            // any pin it still holds are strong references into the browser and are not released by rotation alone.
+            try { _probe.ClearCache(); }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex)) { }
             _nativeSwept = false;
             _overlaySwept = false;
             _reapStarted = false;

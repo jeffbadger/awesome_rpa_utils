@@ -531,6 +531,22 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        /// <inheritdoc/>
+        public void ClearCache()
+        {
+            try
+            {
+                _cache.Clear();
+                lock (_pinLock)
+                    _pinned.Clear();
+                ProcessNames.Clear();
+            }
+            catch (Exception ex) when (NeverThrowsGuard.IsRecoverable(ex))
+            {
+                // Never throws; whatever is left is released with the probe or at the next reset.
+            }
+        }
+
         private static AutomationElement FindByRuntimeId(AutomationElement root, int[] runtimeId)
         {
             var queue = new Queue<(AutomationElement Element, int Depth)>();

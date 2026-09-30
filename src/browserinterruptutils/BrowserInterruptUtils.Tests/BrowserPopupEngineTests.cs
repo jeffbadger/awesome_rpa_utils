@@ -2378,6 +2378,22 @@ namespace BrowserInterruptAutomation.Tests
         }
 
         [Fact]
+        public void ResetRuntime_ClearsTheProbeCache_AfterReleasingTheCandidates()
+        {
+            var h = new Harness();
+            h.AddRule("native", BrowserPopupScope.NativeDialog, nameContains: "Alert");
+            h.AppearWindow(h.Probe.AddWindow("Alert", processName: "chrome"));
+            Assert.True(h.Probe.Retained.Count >= 1);
+            int before = h.Probe.ClearCallCount;
+
+            h.Engine.ResetRuntime();
+
+            Assert.Equal(before + 1, h.Probe.ClearCallCount);
+            Assert.Equal(0, h.Probe.RetainedAtLastClear); // pins were already released one by one
+            Assert.Equal(0, h.Probe.UnbalancedReleases);
+        }
+
+        [Fact]
         public void CapRefusedAdmission_IsNeverRetained()
         {
             var h = new Harness();

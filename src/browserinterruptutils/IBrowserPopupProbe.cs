@@ -169,6 +169,15 @@ namespace BrowserInterruptAutomation
         /// <summary>Drops the pin taken by <see cref="Retain"/>. Safe to call for an element that was never retained.</summary>
         void Release(BrowserElementRef element);
 
+        /// <summary>
+        /// Drops everything the probe holds on to between calls: its element cache, every pin and its
+        /// process-name cache. Each is a strong reference into a browser process (or state derived from
+        /// one), and cache rotation only happens on use, so without this a stopped component would keep
+        /// them until the next <c>Start</c>. The engine calls it from <c>ResetRuntime</c>, after it has
+        /// dropped its candidates. Never throws; the probe simply re-discovers what it needs afterwards.
+        /// </summary>
+        void ClearCache();
+
         /// <summary>The element's first non-empty text descendant, or <c>null</c> if none is found.</summary>
         string TryGetMessageText(BrowserElementRef element);
 
