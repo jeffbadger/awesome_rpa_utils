@@ -367,7 +367,7 @@ namespace BrowserInterruptAutomation
         }
 
         /// <summary>Removes a rule, and its dismissal count.</summary>
-        /// <param name="ruleName">The rule to remove.</param>
+        /// <param name="ruleName">The rule to remove (surrounding spaces are ignored, as when it was added; case is ignored).</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> if the rule existed and was removed; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
         /// <remarks>
@@ -386,9 +386,10 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                if (!_engine.RemoveRule(ruleName ?? string.Empty))
+                string name = NormalizeRuleName(ruleName);
+                if (!_engine.RemoveRule(name))
                 {
-                    message = "There is no rule named '" + ruleName + "'.";
+                    message = NoSuchRule(name);
                     return false;
                 }
                 message = null;
@@ -433,7 +434,7 @@ namespace BrowserInterruptAutomation
         /// Turns a rule off or on without removing it. Turning a rule on also clears a stop
         /// caused by dismissing too many popups.
         /// </summary>
-        /// <param name="ruleName">The rule to change.</param>
+        /// <param name="ruleName">The rule to change (surrounding spaces are ignored, as when it was added; case is ignored).</param>
         /// <param name="enabled"><c>true</c> to turn the rule on; <c>false</c> to turn it off.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> if the rule exists and was changed; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
@@ -453,9 +454,10 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                if (!_engine.SetRuleEnabled(ruleName ?? string.Empty, enabled))
+                string name = NormalizeRuleName(ruleName);
+                if (!_engine.SetRuleEnabled(name, enabled))
                 {
-                    message = "There is no rule named '" + ruleName + "'.";
+                    message = NoSuchRule(name);
                     return false;
                 }
                 message = null;
@@ -516,6 +518,13 @@ namespace BrowserInterruptAutomation
             }
         }
 
+        // The one normalization every public method taking a rule name applies (matching stays
+        // case-insensitive in the engine), so a rule added as " A " is found by "A", " a " or " A ".
+        private static string NormalizeRuleName(string ruleName) => (ruleName ?? string.Empty).Trim();
+
+        private static string NoSuchRule(string normalizedName) =>
+            normalizedName.Length == 0 ? "There is no rule with an empty name." : "There is no rule named '" + normalizedName + "'.";
+
         private bool AddRule(BrowserPopupRule rule, string ruleName, string nameContains, string messageContains,
             string processName, string roleContains, string automationIdContains, out string message)
         {
@@ -525,7 +534,7 @@ namespace BrowserInterruptAutomation
             // Normalize first, then let the engine validate what will actually be stored: a
             // process name of ".exe" trims to nothing, and a rule left without a scope-specific
             // criterion would match every popup (see BrowserPopupRule.ValidateCommon).
-            rule.RuleName = (ruleName ?? string.Empty).Trim();
+            rule.RuleName = NormalizeRuleName(ruleName);
             rule.NameContains = (nameContains ?? string.Empty).Trim();
             rule.MessageContains = (messageContains ?? string.Empty).Trim();
             rule.ProcessName = BrowserPopupRule.TrimExe(processName);
@@ -809,7 +818,7 @@ namespace BrowserInterruptAutomation
         #region Results
 
         /// <summary>How many popups a rule has dismissed.</summary>
-        /// <param name="ruleName">The rule to ask about.</param>
+        /// <param name="ruleName">The rule to ask about (surrounding spaces are ignored, as when it was added; case is ignored).</param>
         /// <param name="count">The number of popups the rule has dismissed; 0 if this method returns <c>false</c>.</param>
         /// <param name="message"><c>null</c> on success; otherwise a human-readable reason.</param>
         /// <returns><c>true</c> on success; <c>false</c> if there is no such rule or the component is disposed. Never throws.</returns>
@@ -823,10 +832,11 @@ namespace BrowserInterruptAutomation
             {
                 if (IsDisposed(out message))
                     return false;
-                if (!_engine.TryGetCount(ruleName ?? string.Empty, out count))
+                string name = NormalizeRuleName(ruleName);
+                if (!_engine.TryGetCount(name, out count))
                 {
                     count = 0;
-                    message = "There is no rule named '" + ruleName + "'.";
+                    message = NoSuchRule(name);
                     return false;
                 }
                 message = null;

@@ -1008,6 +1008,59 @@ namespace BrowserInterruptAutomation.Tests
             Assert.Null(m5);
         }
 
+        // ------------------------------------------------------------------ rule names are trimmed on lookup too
+
+        [Theory]
+        [InlineData("A")]
+        [InlineData(" a ")]
+        [InlineData(" A ")]
+        [InlineData("\tA\r\n")]
+        public void RuleNameLookups_AcceptTheNameAsTrimmedOnAdd(string lookup)
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule(" A ", "Alert", "", "chrome", out string add), add);
+
+            Assert.True(rig.Utils.GetDismissalCount(lookup, out int count, out string m1), m1);
+            Assert.Equal(0, count);
+            Assert.True(rig.Utils.SetRuleEnabled(lookup, false, out string m2), m2);
+            Assert.True(rig.Utils.SetRuleEnabled(lookup, true, out string m3), m3);
+            Assert.True(rig.Utils.RemoveRule(lookup, out string m4), m4);
+            Assert.False(rig.Utils.GetDismissalCount("A", out _, out _)); // it was removed
+        }
+
+        [Fact]
+        public void RuleNameLookups_ReportTheTrimmedNameWhenThereIsNoSuchRule()
+        {
+            using var rig = new Rig();
+
+            Assert.False(rig.Utils.RemoveRule("  nope ", out string m1));
+            Assert.Equal("There is no rule named 'nope'.", m1);
+            Assert.False(rig.Utils.SetRuleEnabled(" nope ", true, out string m2));
+            Assert.Equal("There is no rule named 'nope'.", m2);
+            Assert.False(rig.Utils.GetDismissalCount(" nope ", out int count, out string m3));
+            Assert.Equal("There is no rule named 'nope'.", m3);
+            Assert.Equal(0, count);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void RuleNameLookups_FailCleanlyForANullOrBlankName(string name)
+        {
+            using var rig = new Rig();
+            Assert.True(rig.Utils.AddNativeDialogWatchOnlyRule("A", "Alert", "", "chrome", out _));
+
+            Assert.False(rig.Utils.RemoveRule(name, out string m1));
+            Assert.Equal("There is no rule with an empty name.", m1);
+            Assert.False(rig.Utils.SetRuleEnabled(name, true, out string m2));
+            Assert.Equal("There is no rule with an empty name.", m2);
+            Assert.False(rig.Utils.GetDismissalCount(name, out int count, out string m3));
+            Assert.Equal("There is no rule with an empty name.", m3);
+            Assert.Equal(0, count);
+            Assert.True(rig.Utils.GetDismissalCount("A", out _, out _)); // the existing rule is untouched
+        }
+
         // ------------------------------------------------------------------ HasUnresolvedPopup while stopped
 
         [Fact]
