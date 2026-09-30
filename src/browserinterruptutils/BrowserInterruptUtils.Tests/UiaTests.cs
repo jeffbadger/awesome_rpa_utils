@@ -127,198 +127,6 @@ namespace BrowserInterruptAutomation.Tests
             });
         }
 
-        // TEMPORARY: remove once the dead-element behavior is understood (PR #185).
-        [Fact]
-        public void Diag_DeadElementBehavior_TEMP()
-        {
-            if (!OperatingSystem.IsWindows())
-                return;
-
-            var report = new System.Text.StringBuilder();
-            void Line(string text) { lock (report) report.AppendLine(text); }
-            Line("Diag_DeadElementBehavior_TEMP report");
-            Line("Environment.Version=" + Environment.Version + "; OSVersion=" + Environment.OSVersion);
-            Line("Classification below replicates UiaBrowserPopupProbe.ReadElement (private): reads element.Current.IsEnabled -> Ok / ElementNotAvailableException=Unavailable / other=OtherFailure, then LivenessClassifier.ClassifyRead.");
-
-            try
-            {
-                RunOnStaThread(() =>
-                {
-                    Guarded("ScenarioC", Line, () => DiagScenarioC(Line));
-                    Guarded("ScenarioA", Line, () => DiagScenario(Line, "A (window closed)", removeButtonOnly: false));
-                    Guarded("ScenarioB", Line, () => DiagScenario(Line, "B (button removed, window open)", removeButtonOnly: true));
-                });
-            }
-            catch (Exception ex)
-            {
-                Line("OUTER FAILURE: " + Describe(ex));
-            }
-
-            string text;
-            lock (report) text = report.ToString();
-            throw new Xunit.Sdk.XunitException(text);
-        }
-
-        private static void Guarded(string name, Action<string> line, Action body)
-        {
-            try { body(); }
-            catch (Exception ex) { line(name + " aborted: " + Describe(ex)); }
-        }
-
-        private static string Describe(Exception ex)
-        {
-            string msg = ex.Message ?? "";
-            if (msg.Length > 120) msg = msg.Substring(0, 120);
-            return ex.GetType().FullName + " HResult=0x" + ex.HResult.ToString("X8") + " msg=" + msg.Replace("\r", " ").Replace("\n", " ");
-        }
-
-        private static string Try(Func<object> read)
-        {
-            try
-            {
-                object v = read();
-                if (v is int[] ids) return "ok [" + string.Join(",", ids) + "]";
-                return "ok " + (v == null ? "<null>" : v.ToString());
-            }
-            catch (Exception ex) { return "THROWS " + Describe(ex); }
-        }
-
-        private static string Classify(AutomationElement element)
-        {
-            ReadOutcome outcome;
-            try
-            {
-                _ = element.Current.IsEnabled;
-                outcome = ReadOutcome.Ok;
-            }
-            catch (ElementNotAvailableException) { outcome = ReadOutcome.Unavailable; }
-            catch (Exception) { outcome = ReadOutcome.OtherFailure; }
-            return outcome + " -> " + LivenessClassifier.ClassifyRead(outcome);
-        }
-
-        private static string Observe(AutomationElement element, UiaBrowserPopupProbe probe, BrowserElementRef pinnedRef, IntPtr hostHwnd, bool includeOffscreen)
-        {
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine("    raw Current.Name        : " + Try(() => element.Current.Name));
-            sb.AppendLine("    raw Current.IsEnabled   : " + Try(() => element.Current.IsEnabled));
-            if (includeOffscreen)
-                sb.AppendLine("    raw Current.IsOffscreen : " + Try(() => element.Current.IsOffscreen));
-            sb.AppendLine("    raw GetRuntimeId()      : " + Try(() => element.GetRuntimeId()));
-            sb.AppendLine("    raw Current.ProcessId   : " + Try(() => element.Current.ProcessId));
-            sb.AppendLine("    raw InvokePattern       : " + Try(() => element.GetCurrentPattern(InvokePattern.Pattern) != null ? "pattern object" : "<null>"));
-            sb.AppendLine("    NativeMethods.IsWindow  : " + Try(() => NativeMethods.IsWindow(hostHwnd)));
-            sb.AppendLine("    replicated ReadElement  : " + Classify(element));
-            sb.AppendLine("    probe.IsAlive(pinnedRef): " + Try(() => probe.IsAlive(pinnedRef)) + " (ref.Hwnd=" + pinnedRef.Hwnd + ")");
-            return sb.ToString();
-        }
-
-        private static void PollAndCollapse(Action<string> line, string title, Func<string> observe)
-        {
-            line(title);
-            string last = null;
-            int count = 0;
-            int firstMs = 0;
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            void Flush()
-            {
-                if (last != null)
-                    line("  first seen at +" + firstMs + " ms, x " + count + " times:" + Environment.NewLine + last.TrimEnd());
-            }
-            while (sw.ElapsedMilliseconds < 5000)
-            {
-                string now = observe();
-                if (now == last)
-                    count++;
-                else
-                {
-                    Flush();
-                    last = now;
-                    count = 1;
-                    firstMs = (int)sw.ElapsedMilliseconds;
-                }
-                Thread.Sleep(250);
-            }
-            Flush();
-        }
-
-        private static void DiagScenarioC(Action<string> line)
-        {
-            using (var host = new WpfButtonHost())
-            {
-                var probe = new UiaBrowserPopupProbe();
-                AutomationElement root = AutomationElement.FromHandle(host.Hwnd);
-                AutomationElement element = root.FindFirst(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.NameProperty, WpfButtonHost.ButtonName));
-                BrowserElementInfo button = FindByName(probe.FindOverlayCandidates(probe.DescribeWindow(host.Hwnd).Ref, 50, 10), WpfButtonHost.ButtonName);
-                if (element == null || button == null)
-                {
-                    line("Scenario C: button not found (raw=" + (element != null) + ", probe=" + (button != null) + ")");
-                    return;
-                }
-                probe.Retain(button.Ref);
-                line("Scenario C (control, window open, button present):");
-                line(Observe(element, probe, button.Ref, host.Hwnd, includeOffscreen: true).TrimEnd());
-            }
-        }
-
-        private static void DiagScenario(Action<string> line, string name, bool removeButtonOnly)
-        {
-            var host = new WpfButtonHost();
-            bool disposed = false;
-            try
-            {
-                var probe = new UiaBrowserPopupProbe();
-                BrowserElementInfo windowInfo = probe.DescribeWindow(host.Hwnd);
-                BrowserElementRef windowRef = windowInfo.Ref;
-                AutomationElement root = AutomationElement.FromHandle(host.Hwnd);
-                AutomationElement element = root.FindFirst(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.NameProperty, WpfButtonHost.ButtonName));
-                BrowserElementInfo button = FindByName(probe.FindOverlayCandidates(windowRef, 50, 10), WpfButtonHost.ButtonName);
-                if (element == null || button == null)
-                {
-                    line("Scenario " + name + ": button not found before the action (raw=" + (element != null) + ", probe=" + (button != null) + ")");
-                    return;
-                }
-                probe.Retain(button.Ref);
-                line("Scenario " + name + ": before action, alive:");
-                line(Observe(element, probe, button.Ref, host.Hwnd, includeOffscreen: false).TrimEnd());
-
-                if (removeButtonOnly)
-                {
-                    host.RemoveButton();
-                    line("Scenario " + name + ": button removed from its StackPanel; window still open.");
-                }
-                else
-                {
-                    host.Dispose();
-                    disposed = true;
-                    line("Scenario " + name + ": host disposed (window closing).");
-                }
-
-                IntPtr hwnd = host.Hwnd;
-                PollAndCollapse(line, "Scenario " + name + ": polls every 250 ms for 5 s:",
-                    () => Observe(element, probe, button.Ref, hwnd, includeOffscreen: false));
-
-                if (removeButtonOnly)
-                {
-                    string again = Try(() =>
-                    {
-                        var found = FindByName(probe.FindOverlayCandidates(windowRef, 50, 10), WpfButtonHost.ButtonName);
-                        return found != null ? "STILL RETURNED" : "not returned";
-                    });
-                    line("Scenario " + name + ": re-running FindOverlayCandidates from window root: " + again);
-                    string rawAgain = Try(() => root.FindFirst(TreeScope.Descendants,
-                        new PropertyCondition(AutomationElement.NameProperty, WpfButtonHost.ButtonName)) != null ? "STILL FOUND" : "not found");
-                    line("Scenario " + name + ": raw FindFirst by name from window root: " + rawAgain);
-                }
-            }
-            finally
-            {
-                if (!disposed)
-                    host.Dispose();
-            }
-        }
-
         [Fact]
         public void FindOverlayCandidates_CachedPropertiesEqualLiveValues()
         {
@@ -492,8 +300,6 @@ namespace BrowserInterruptAutomation.Tests
             private readonly Thread _uiThread;
             private readonly ManualResetEventSlim _ready = new ManualResetEventSlim(false);
             private Window _window;
-            private StackPanel _panel;
-            private Button _button;
             private Dispatcher _dispatcher;
             private volatile bool _clicked;
 
@@ -519,8 +325,6 @@ namespace BrowserInterruptAutomation.Tests
                 panel.Children.Add(button);
                 panel.Children.Add(new TextBlock { Text = TextBlockText });
 
-                _panel = panel;
-                _button = button;
                 _window = new Window
                 {
                     Title = "UiaBrowserPopupProbe smoke test",
@@ -539,12 +343,6 @@ namespace BrowserInterruptAutomation.Tests
                 _ready.Set();
 
                 Dispatcher.Run();
-            }
-
-            // TEMPORARY (PR #185 diagnostic): removes the button from the visual tree, window stays open.
-            public void RemoveButton()
-            {
-                _dispatcher.Invoke(() => _panel.Children.Remove(_button));
             }
 
             public void Dispose()
