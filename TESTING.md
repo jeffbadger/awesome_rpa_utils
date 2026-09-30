@@ -1099,10 +1099,10 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   next `Start`). In Task Manager/Process Explorer watch the browser's handle count or working set and
   the host's UI Automation client handles; expect them to fall back shortly after `Stop` and after
   `Dispose` while running.
-- **Windows-only xunit classes.** Run `UiaTests` and `HookThreadUiaTests` (they drive the real
-  UI Automation probe and hook against a WPF window, and are compiled but have **not yet been executed**
-  anywhere) on a Windows host with the Windows desktop runtime: `dotnet test
-  src/browserinterruptutils/BrowserInterruptUtils.Tests/BrowserInterruptUtils.Tests.csproj`.
+- **Windows-only xunit classes.** `UiaTests` and `HookThreadUiaTests` drive the real UI
+  Automation probe and hook against a WPF window; they run on Windows CI (`dotnet test
+  src/browserinterruptutils/BrowserInterruptUtils.Tests/BrowserInterruptUtils.Tests.csproj`).
+  Re-run them if you change `UiaBrowserPopupProbe.cs` or `BrowserPopupHookThread.cs`.
 - **Robot Studio.** Confirm the component drops onto a design surface, the `Add...Rule` methods appear
   with their descriptions, and whether events can be subscribed (they are unproven; prefer reading
   `GetDismissalCount`/`GetLogJson` from a later step).

@@ -142,8 +142,9 @@ invoking one of its own elements.
 
 - **Not yet verified on a real browser.** The automated tests drive the decision logic
   with a fake browser. The real UI Automation probe and event hook compile, but have not
-  been run against Chrome, Edge or Firefox on a Windows host, and the two Windows-only
-  test classes (`UiaTests`, `HookThreadUiaTests`) have not yet been executed. Treat every
+  been run against Chrome, Edge or Firefox on a Windows host. The two Windows-only
+  test classes (`UiaTests`, `HookThreadUiaTests`) do run on Windows CI and are all
+  passing, but no claim below has been verified against a real browser. Treat every
   browser-specific claim below as the design intent until the live checks in
   [TESTING.md](../../TESTING.md#browserinterruptutils-needs-a-desktop-and-a-real-browser-live-checks-pending)
   are done.

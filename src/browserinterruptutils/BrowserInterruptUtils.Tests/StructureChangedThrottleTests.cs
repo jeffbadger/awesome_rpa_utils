@@ -13,7 +13,7 @@ namespace BrowserInterruptAutomation.Tests
     /// without this extraction none of this logic could be covered by a real, executing test here
     /// at all - only by a standalone scratch reproduction.
     ///
-    /// These tests are a regression guard for a critical Task 4 code-review finding: seeding the
+    /// These tests are a regression guard for a critical code-review finding: seeding the
     /// per-window last-raised timestamp to <see cref="long.MinValue"/> made the throttle's
     /// "now - last" subtraction overflow (unchecked arithmetic wraps it to a huge negative number,
     /// always less than the coalesce window), which coalesced away the very first
