@@ -1014,9 +1014,19 @@ Pending live checks (run each in Chrome, Edge and Firefox unless noted):
   that Chromium builds its accessibility tree lazily.
 - **Iframe content.** An overlay or dialog-shaped element inside an iframe (same-origin and
   cross-origin) is reached by the bounded walk, or not; record which.
-- **Walk cost on a large page.** Time one overlay sweep on a page with thousands of elements (about 8
-  cross-process property reads per element, no `CacheRequest`); if slow, consider `CacheRequest` and a
-  lower default `maxOverlayNodes`.
+- **Walk cost on a large page (before/after `CacheRequest`).** Time one overlay sweep (Stopwatch log,
+  or UIA Verify / Accessibility Insights call counts) on a page with about 5,000 nodes, on the previous
+  build and this one. Expected: round trips per node fall from about 10 to about 1 (an estimate from
+  platform knowledge, not a measurement); record the actual times.
+- **Cached values equal live values on real browsers.** On Chromium, Edge and Firefox pages, compare
+  `Name`, role (`ControlType`/`LocalizedControlType`), `AutomationId`, `ClassName` and `ProcessId` from a
+  walk with a live read (Accessibility Insights): they must match, and `PageOverlay` rules must fire as
+  before.
+- **Worker CPU/latency during a large-page walk.** Watch the worker thread's CPU and the latency of
+  other windows' handling in the same sweep while a 5,000-node page is walked.
+- **A hung browser still cannot stall past the UIA timeout per call.** Suspend the browser process
+  during a sweep: each cached fetch should fail within the UIA timeout, the walk should keep its
+  bounds, and nothing should throw.
 - **Verify-before-count.** A dismissal is recorded only 400 ms (`VerifyDelayMs`) after the invoke, once
   the popup is gone: confirm `PopupDismissed` fires about 0.4 s after the popup closes and that a control
   whose invoke does nothing ends in `PopupDismissFailed` after `maxAttempts` with no `PopupDismissed`.
